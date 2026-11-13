@@ -133,10 +133,19 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             try? FileManager.default.removeItem(at: dir)
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
-        let fd = open(fifo.path, O_RDWR | O_NONBLOCK)
+        let fd = open(fifo.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else {
             try? FileManager.default.removeItem(at: dir)
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        // Keep a writer open so idle reads behave as before. On Darwin,
+        // FIONREAD on an O_RDWR FIFO reports the write side's byte count.
+        let keepAlive = open(fifo.path, O_WRONLY | O_NONBLOCK | O_CLOEXEC)
+        guard keepAlive >= 0 else {
+            let failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            close(fd)
+            try? FileManager.default.removeItem(at: dir)
+            throw failure
         }
         let capture = Capture(id: UUID(), path: fifo.path)
         queue.sync {
@@ -156,7 +165,10 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
                 guard let self else { return }
                 self.drain(fd: fd, maximumReads: self.readsPerPoll)
             }
-            source.setCancelHandler { close(fd) }
+            source.setCancelHandler {
+                close(keepAlive)
+                close(fd)
+            }
             reader = source
             readerFD = fd
             source.resume()
