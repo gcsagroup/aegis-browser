@@ -8,6 +8,8 @@ require "psych"
 require "rbconfig"
 require "time"
 require "uri"
+require "tmpdir"
+require "shellwords"
 
 module AegisRelease
   ROOT = File.expand_path("../..", __dir__)
@@ -294,12 +296,14 @@ module AegisRelease
       Dir.mkdir(request.directory, 0o700)
       paths, details = package_ios(archive_args)
       sha = Receipt.create(request, paths, source, details)
-      publish_args = request.destination == 'github-draft' ? ['--draft'] : []
-      begin
-        run('python3', File.join(request.root, 'scripts/release/ios-publish.py'),
-            '--directory', request.directory, '--manifest-sha256', sha, *publish_args)
-      rescue Error
-        warn 'Downloads catalogue copy failed; retain the verified package and rerun ios-publish.py.'
+      unless details['privateBetaTestNode']
+        publish_args = request.destination == 'github-draft' ? ['--draft'] : []
+        begin
+          run('python3', File.join(request.root, 'scripts/release/ios-publish.py'),
+              '--directory', request.directory, '--manifest-sha256', sha, *publish_args)
+        rescue Error
+          warn 'Downloads catalogue copy failed; retain the verified package and rerun ios-publish.py.'
+        end
       end
       puts "Manifest SHA-256: #{sha}"
       if ENV['GITHUB_OUTPUT']
@@ -315,6 +319,34 @@ module AegisRelease
     end
 
     def package_ios(archive_args = nil)
+      # Consume private values before any build subprocess receives its environment.
+      enabled = ENV.delete('AEGIS_IOS_BETA_TEST_NODE_ENABLED').to_s
+      secrets = %w[AEGIS_IOS_TEST_NODE_BASE64 AEGIS_IOS_TEST_SUBSCRIPTION_BASE64].to_h do |key|
+        [key, ENV.delete(key).to_s]
+      end
+      AegisRelease.require!(%w[true false].include?(enabled) || enabled.empty?, 'Invalid private Beta input switch')
+      unless enabled == 'true'
+        AegisRelease.require!(secrets.values.all?(&:empty?), 'Private Beta inputs require explicit opt-in')
+        return package_ios_impl(archive_args)
+      end
+      AegisRelease.require!(request.profile == 'beta' && request.signing_mode == 'manual',
+                            'Private Beta inputs require Beta with explicit manual signing')
+      FileUtils.mkdir_p(request.directory)
+      Dir.mktmpdir('private-beta-', request.directory) do |private_dir|
+        helper = File.join(request.root, 'scripts/release/private-beta-inputs.py')
+        run('python3', helper, 'stage', '--directory', private_dir, env: secrets)
+        @private_beta_xcargs = ['AEGIS_PRIVATE_TEST_NODE_FILE=' + File.join(private_dir, 'node.vless'),
+                               'AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE=' + File.join(private_dir, 'subscription.json')]
+                               .map { |value| Shellwords.escape(value) }.join(' ')
+        paths, details = package_ios_impl(archive_args)
+        run('python3', helper, 'verify', '--directory', private_dir, '--ipa', paths.first)
+        [paths, details.merge('privateBetaTestNode' => true, 'privateBetaQuota' => true)]
+      ensure
+        @private_beta_xcargs = nil
+      end
+    end
+
+    def package_ios_impl(archive_args = nil)
       return package_ios_cloud(archive_args) if request.signing_mode == 'cloud'
       profiles = ios_profiles
       work = File.join(request.directory, 'work')
@@ -336,7 +368,7 @@ module AegisRelease
                          archive_path: File.join(work, 'Aegis.xcarchive'), derived_data_path: File.join(work, 'DerivedData'),
                          buildlog_path: File.join(work, 'logs'), export_method: 'app-store',
                          skip_profile_detection: true, disable_package_automatic_updates: true,
-                         xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile} AEGIS_ACCESS_RELEASE_CHANNEL=#{request.profile}",
+                         xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile} AEGIS_ACCESS_RELEASE_CHANNEL=#{request.profile} #{@private_beta_xcargs}",
                          export_options: { method: 'app-store-connect', teamID: team, signingStyle: 'manual',
                                            provisioningProfiles: profiles, manageAppVersionAndBuildNumber: false,
                                            testFlightInternalTestingOnly: request.profile == 'alpha' })
@@ -459,6 +491,7 @@ module AegisRelease
       receipt = Receipt.verify(request, expected_digest)
       preflight_upload
       if request.destination == 'github-draft'
+        AegisRelease.require!(!receipt.fetch('details')['privateBetaTestNode'], 'Private Beta is only delivered to TestFlight')
         result = Draft.new(request, receipt, expected_digest, admission: method(:preflight_upload)).upload
         AegisRelease.write_new(File.join(request.directory, 'github-upload-result.json'), result)
       else

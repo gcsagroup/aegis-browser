@@ -43,6 +43,21 @@ If **Wait** times out, the run fails and retains the last observed Apple state i
 
 **Wait** 超时仍会失败，并在 Summary 和状态 artifact 中保留最后一次 Apple 状态。使用 **Status** 或 **Wait** 再次查询同一构建，不要重新上传。
 
+### Private TestFlight Beta / 私有测试包
+
+For a Beta that embeds the shared test node and reads its 3X-UI quota, choose
+**Package and upload**, **Beta**, **manual**, and **Private Beta: yes**. Store
+`AEGIS_IOS_TEST_NODE_BASE64` and `AEGIS_IOS_TEST_SUBSCRIPTION_BASE64` in the
+upstream `aegis-ios-signing` Environment. The signing job checks both resources
+in the signed IPA and uploads that IPA directly to TestFlight. Actions retains a
+redacted receipt. If the result is uncertain, query **Status** with the original
+version and build before scheduling another attempt.
+
+内置共享测试节点并查询 3X-UI 实际额度时，选择 **Package and upload**、**Beta**、
+**manual** 和 **Private Beta: yes**。两项输入只存入上游的
+`aegis-ios-signing` 环境。签名作业检查 IPA 中的两份资源后直接上传 TestFlight，
+Actions 保留脱敏回执。结果不明时先用原版本和构建号执行 **Status** 查询。
+
 ## Full / 分阶段交付
 
 **Full** includes the **Simple** operations and adds the following stages. **Auto** uses **Alpha** for new packages and the receipt's profile for existing packages.
