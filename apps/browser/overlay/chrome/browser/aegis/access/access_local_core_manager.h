@@ -10,7 +10,12 @@
 #include "base/functional/callback.h"
 #include "base/threading/sequence_bound.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
+#if BUILDFLAG(IS_MAC)
+#include "base/files/scoped_file.h"
+#endif
 #include "net/base/auth.h"
+#include "chrome/browser/aegis/access/access_core_log_store.h"
 
 namespace aegis::access {
 enum class AccessLocalCoreSource { kDevFiles, kPrivateTestBundle };
@@ -20,6 +25,10 @@ struct AccessLocalCoreInput {
   base::FilePath manifest;
   base::FilePath node_config;
   AccessLocalCoreSource source = AccessLocalCoreSource::kDevFiles;
+  scoped_refptr<AccessCoreLogStore> log_store = nullptr;
+#if BUILDFLAG(IS_MAC)
+  bool (*create_log_pipe_for_testing)(base::ScopedFD*, base::ScopedFD*, bool) = nullptr;
+#endif
 };
 // Resolves paths only. File parsing, pins, process launch and readiness remain
 // on the core IO thread. Alpha never takes node paths from command-line flags.

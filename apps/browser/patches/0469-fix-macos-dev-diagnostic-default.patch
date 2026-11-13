@@ -1,0 +1,103 @@
+From 876a3eba857847da917900d91f41c8d61a008a4f Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Thu, 12 Nov 2026 13:00:00 +0800
+Subject: [PATCH] fix(access): recognize ordinary unbranded DEV diagnostic
+ defaults
+
+---
+ .../aegis/access/access_build_channel.cc      |  3 ++-
+ .../aegis/access/access_build_channel.h       | 15 ++++++++----
+ .../aegis/access/access_core_log_unittest.cc  | 23 +++++++++++++++++++
+ 3 files changed, 36 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_build_channel.cc b/chrome/browser/aegis/access/access_build_channel.cc
+index 9a488c8ce6af385f7772100f6d4666a69795e8b3..aa7166af04c97434aae7d71b38be19d23d26d82f 100644
+--- a/chrome/browser/aegis/access/access_build_channel.cc
++++ b/chrome/browser/aegis/access/access_build_channel.cc
+@@ -53,6 +53,7 @@ const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel) {
+ 
+ std::string_view DefaultCoreLogLevelForCurrentBuild() {
+   return DefaultCoreLogLevelForBuild(
+-      BrowserReleaseChannel(), BundledAccessTestChannel());
++      BrowserReleaseChannel(), BundledAccessTestChannel(),
++      BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED));
+ }
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_build_channel.h b/chrome/browser/aegis/access/access_build_channel.h
+index 39a2ace97365f526a13b03ac7b946c95bb167537..5fee6393e02d1e8252b3d2507cfc693d861ba085 100644
+--- a/chrome/browser/aegis/access/access_build_channel.h
++++ b/chrome/browser/aegis/access/access_build_channel.h
+@@ -17,16 +17,23 @@ const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel);
+ // Unrecognized builds keep the production logging baseline.
+ constexpr std::string_view DefaultCoreLogLevelForBuild(
+     aegis_access::BrowserReleaseChannel channel,
+-    aegis_access::ChannelNamespace bundled_test_channel) {
++    aegis_access::ChannelNamespace bundled_test_channel,
++    bool dev_local_node_allowed = false) {
+   switch (channel) {
+     case aegis_access::BrowserReleaseChannel::kDev:
+       return "debug";
+     case aegis_access::BrowserReleaseChannel::kCanary:
+       return "info";
+     case aegis_access::BrowserReleaseChannel::kUnknown:
+-      return bundled_test_channel == aegis_access::ChannelNamespace::kAlpha
+-                 ? "info"
+-                 : "warning";
++      if (bundled_test_channel == aegis_access::ChannelNamespace::kAlpha)
++        return "info";
++      // Unbranded Aegis always reports UNKNOWN. The existing trusted build
++      // flag distinguishes ordinary local DEV builds from official Release;
++      // an explicit private Beta identity still takes precedence.
++      if (bundled_test_channel == aegis_access::ChannelNamespace::kInvalid &&
++          dev_local_node_allowed)
++        return "debug";
++      return "warning";
+     case aegis_access::BrowserReleaseChannel::kBeta:
+     case aegis_access::BrowserReleaseChannel::kStable:
+     case aegis_access::BrowserReleaseChannel::kInvalid:
+diff --git a/chrome/browser/aegis/access/access_core_log_unittest.cc b/chrome/browser/aegis/access/access_core_log_unittest.cc
+index 6dd0b660b42f23c030c87a08e1ecdb244ea5fe62..398065bbcf4fb600ddb295efc4f9db10e6d0a034 100644
+--- a/chrome/browser/aegis/access/access_core_log_unittest.cc
++++ b/chrome/browser/aegis/access/access_core_log_unittest.cc
+@@ -2,11 +2,28 @@
+ #include "chrome/browser/aegis/access/access_core_log.h"
+ 
+ #include "chrome/browser/aegis/access/access_build_channel.h"
++#include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
+ namespace {
+ constexpr char kTime[] = "2026/11/11 13:14:15.123456 ";
++// Run with each unbranded Aegis build variant, using the actual compiled
++// channel resolver instead of substituting a Chromium DEV enum value.
++TEST(AccessCoreLogTest, CurrentUnbrandedBuildChoosesDiagnosticDefault) {
++#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
++#if BUILDFLAG(AEGIS_BETA_TEST_NODE_ENABLED)
++  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "warning");
++#else
++  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "info");
++#endif
++#elif BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
++  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "debug");
++#else
++  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "warning");
++#endif
++}
++
+ TEST(AccessCoreLogTest, BuildChannelsChooseDiagnosticDefaults) {
+   using Channel = aegis_access::BrowserReleaseChannel;
+   using Bundled = aegis_access::ChannelNamespace;
+@@ -21,6 +38,12 @@ TEST(AccessCoreLogTest, BuildChannelsChooseDiagnosticDefaults) {
+   EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kDev, Bundled::kAlpha), "debug");
+   EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kStable, Bundled::kAlpha), "warning");
+   EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kInvalid, Bundled::kAlpha), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kInvalid, true), "debug");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kAlpha, true), "info");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kBeta, true), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kRelease, true), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kInvalid, Bundled::kInvalid, true), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kStable, Bundled::kInvalid, true), "warning");
+ }
+ 
+ TEST(AccessCoreLogTest, ChannelDefaultsRetainThresholdRedactionAndManualOff) {

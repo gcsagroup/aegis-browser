@@ -10,6 +10,46 @@ import XCTest
 /// Failed page reloads through the app HTTP CONNECT listener, not a test-only proxy socket.
 @MainActor
 final class AccessHostRecoveryWebKitTests: XCTestCase {
+    func testPaidDownloadSelectionFollowsDisplayedSiteAfterFailedCrossHostNavigation() async throws {
+        let first = OriginReceipt(port: 18_267)
+        let second = OriginReceipt(port: 18_268)
+        try await first.start()
+        defer { first.stop() }
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        defer { browser.closeWindow() }
+        let coordinator = AccessHostStoreCoordinator()
+        browser.hostCoordinator = coordinator
+        let panel = AccessSiteProxySessionStore()
+        panel.hostRouting = coordinator
+        let account = AccessAccountSession(client: nil, keychain: .init(service: UUID().uuidString))
+        let tab = try XCTUnwrap(browser.activeTab)
+        let window = show(tab.webView)
+        defer { window.isHidden = true }
+        let a = URL(string: "http://127.0.0.1:\(first.port)/first")!
+        let b = URL(string: "http://localhost:\(second.port)/second")!
+        tab.load(a)
+        try await waitUntil({ tab.committedMainFrameURL == a && !tab.isLoading }, message: "A must commit")
+        tab.load(b)
+        try await waitUntil({ tab.lastMainFrameFailure?.url == b }, message: "B must fail before its origin starts")
+        XCTAssertEqual(tab.committedMainFrameURL, a)
+        XCTAssertEqual(panel.snapshot(for: tab).host?.rawValue, b.host)
+        XCTAssertNil(panel.paidDownloadHost(for: tab))
+        XCTAssertNil(panel.setProxyEnabled(true, for: tab, account: account))
+        XCTAssertNil(tab.selectedAccessHost)
+
+        try await second.start()
+        defer { second.stop() }
+        tab.load(b)
+        try await waitUntil({ tab.committedMainFrameURL == b && !tab.isLoading }, message: "B must commit after retry")
+        XCTAssertEqual(panel.snapshot(for: tab).host?.rawValue, b.host)
+        let activeHost = try XCTUnwrap(panel.paidDownloadHost(for: tab))
+        XCTAssertNil(panel.setProxyEnabled(true, for: tab, account: account, displayedHost: try AccessSiteHost("127.0.0.1")))
+        XCTAssertNotNil(panel.setProxyEnabled(true, for: tab, account: account, displayedHost: activeHost))
+        XCTAssertEqual(tab.selectedAccessHost, b.host)
+        tab.onDownload?(b.appendingPathComponent("file"))
+        XCTAssertEqual(browser.pendingAccessDownload?.host, b.host)
+    }
+
     func testFailedPageReloadsOnceThroughTheListener() async throws {
         let nonce = UUID().uuidString
         let opener = AnsweringOpener()
@@ -141,7 +181,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertFalse(opener.transcript.contains("other.invalid"))
     }
 
-    func testFailedEndpointKeepsTheProxyAndDoesNotAddADirectRequest() async throws {
+    func testFailedEndpointKeepsTheProxyAndDisallowsDirectFailover() async throws {
         let opener = AnsweringOpener()
         let listener = try await makeListener(port: 18_242, tunnels: opener)
         try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
@@ -167,7 +207,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
                 window.addSubview(tab.webView)
                 window.makeKeyAndVisible()
             }
-            return opener.transcript.contains("example.invalid")
+            return opener.transcript.contains("GET /kept")
         }, message: "proxy=\(opener.transcript) loads=\(tab.recoveryLoadCount) loading=\(tab.isLoading) failure=\(coordinator.lastRecoveryFailure ?? "") error=\(tab.loadingError ?? "")")
         let host = try AccessSiteHost("example.invalid")
         let store = try XCTUnwrap(coordinator.registry.storeForTab(
@@ -179,7 +219,6 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
             intent: .on
         ))
         let before = store.proxyConfigurations.count
-        let seen = opener.transcript
         coordinator.registry.setEndpoint(
             AccessManagedProxyEndpoint(
                 identity: "entry-failed",
@@ -192,11 +231,18 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
             host: host,
             isPrivate: false
         )
-        tab.load(URLRequest(url: URL(string: "http://example.invalid/again")!))
-        try await Task.sleep(for: .milliseconds(700))
+        let nonce = UUID().uuidString
+        let nextURL = URL(string: "http://example.invalid/again?n=\(nonce)")!
+        tab.load(URLRequest(url: nextURL))
+        // A failed health state retains the existing proxy route. WebKit may
+        // still send through that proxy or report its failure; neither result
+        // may replace this store or enable DIRECT fallback.
+        try await waitUntil({ !tab.isLoading }, message: opener.transcript)
+        XCTAssertEqual(tab.requestedURL, nextURL)
+        XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertEqual(store.proxyConfigurations.count, before)
         XCTAssertFalse(store.proxyConfigurations.isEmpty)
-        XCTAssertEqual(opener.transcript, seen)
+        XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
     }
 
     func testAutoRecoverySendsTheMemberThroughTheProxyAndTheOutsideHostToOrigin() async throws {
@@ -906,6 +952,7 @@ private final class DelayedWindowTabCleanup: BrowserHostStoreCoordinating {
     let base: AccessHostStoreCoordinator
     var pending: [BrowserTab] = []
     init(_ base: AccessHostStoreCoordinator) { self.base = base }
+    func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool { base.wouldSwitchStore(tab: tab, url: url) }
     func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore? { base.dataStoreForMainFrame(tab: tab, url: url) }
     func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError) { base.mainFrameFailed(tab: tab, failure: failure, error: error) }
     func pendingRecoveryInvalidated(tab: BrowserTab) { base.pendingRecoveryInvalidated(tab: tab) }

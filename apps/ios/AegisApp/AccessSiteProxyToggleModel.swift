@@ -1,4 +1,5 @@
 import AccessKit
+import BrowserKit
 import Foundation
 
 /// Short intent-line ids. UI localizes; never conflate with connection copy.
@@ -54,12 +55,8 @@ enum AccessSiteProxyToggleModel {
     /// Resolves an exact-host product key from the current navigation URL.
     /// Only http(s) with a host are admitted — internal pages are excluded.
     static func resolveTrustedHost(from url: URL?) -> AccessSiteHost? {
-        guard let url else { return nil }
-        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
-            return nil
-        }
-        guard let host = url.host, !host.isEmpty else { return nil }
-        return try? AccessSiteHost.normalize(host)
+        guard let host = BrowserAccessDownload.canonicalHost(of: url) else { return nil }
+        return try? AccessSiteHost(host)
     }
 
     static func connectionStatus(

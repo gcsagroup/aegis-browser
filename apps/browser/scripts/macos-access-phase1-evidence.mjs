@@ -2,7 +2,7 @@
 // Overlay unit greens must never alone produce status=PASS (B4-2 / B4-3).
 import {createHash} from 'node:crypto';
 import {openAsBlob} from 'node:fs';
-import {access, constants, opendir} from 'node:fs/promises';
+import {access, constants, opendir, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -81,7 +81,7 @@ function stepNameAt(index) {
 }
 
 export async function validatePhase1EvidencePack(packDirectory, options = {}) {
-  const root = resolve(packDirectory);
+  const root = await realpath(packDirectory);
   const statusPath = join(root, 'status.json');
   const templatePath = join(root, 'manifest.template.json');
   const readmePath = join(root, 'README.md');
@@ -167,7 +167,7 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
             !artifact.path.split(/[\\/]/u).includes('..') &&
             /^[a-f0-9]{64}$/u.test(artifact.sha256),
         `artifact for ${step.id} path/sha256 invalid`);
-        const absolute = resolve(root, artifact.path);
+        const absolute = await realpath(resolve(root, artifact.path));
         const child = relative(root, absolute);
         requireValue(child && child !== '..' && !child.startsWith(`..${sep}`) &&
             !isAbsolute(child),

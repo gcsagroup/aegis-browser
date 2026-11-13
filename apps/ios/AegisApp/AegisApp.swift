@@ -5,6 +5,7 @@ import SwiftUI
 
 final class AegisAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        _ = AccessDiagnosticArchive.recoveredTemporaryArchives
         AegisFirebase.shared.start()
         return true
     }
@@ -31,6 +32,7 @@ struct AegisApp: App {
     @StateObject private var settings: BrowserSettings
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
+    @StateObject private var accountSession = AccessAccountSession.product()
     @StateObject private var readingLibrary: ReadingLibrary
     @StateObject private var accessSiteProxyRegistry: AccessSiteProxyStoreRegistry
     @StateObject private var hostStores: AccessHostStoreCoordinator
@@ -122,6 +124,7 @@ struct AegisApp: App {
                 .environmentObject(downloads)
                 .environmentObject(assistantTasks)
                 .environmentObject(readingLibrary)
+                .environmentObject(accountSession)
                 .environmentObject(accessSiteProxyRegistry)
                 .environmentObject(hostStores)
                 .preferredColorScheme(settings.colorScheme)
@@ -132,6 +135,11 @@ struct AegisApp: App {
         .commands { BrowserKeyboardCommands(language: language) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { language.refresh(); AegisFirebase.shared.refreshOnForeground() }
+            if phase == .background { Task { try? await AccessDiagnosticLog.shared.flush() } }
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            accountSession.usageRefresh.setActive(phase == .active)
+            if phase != .active { accountSession.suspend() }
         }
     }
 

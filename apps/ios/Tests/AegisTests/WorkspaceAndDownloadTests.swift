@@ -1,9 +1,22 @@
 import XCTest
+import UIKit
 import WebKit
 @testable import BrowserKit
 
 @MainActor
 final class WorkspaceAndDownloadTests: XCTestCase {
+    private func showTab(_ tab: BrowserTab) throws -> UIWindow {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        let view = tab.webView
+        view.frame = controller.view.bounds
+        controller.view.addSubview(view)
+        return window
+    }
+
     func testWebsiteDataClearRemovesCookiesAndPreservesBookmarks() async throws {
         let store = BrowserDataStore(persistenceURL: nil)
         _ = store.toggleBookmark(title: "保留收藏", url: URL(string: "https://example.com")!, isPrivate: false)
@@ -20,6 +33,8 @@ final class WorkspaceAndDownloadTests: XCTestCase {
     func testLivePageSnapshotOmitsHiddenAndFormText() async throws {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
         let tab = try XCTUnwrap(browser.activeTab)
+        let window = try showTab(tab)
+        defer { window.isHidden = true }
         tab.load(URL(string: "http://127.0.0.1:8768/article")!)
         try await waitUntil { tab.url?.path == "/article" && !tab.isLoading }
         _ = try await tab.webView.evaluateJavaScript("document.querySelector('main').insertAdjacentHTML('beforeend', '<p style=display:none>HIDDEN_SENTINEL</p><input value=FORM_SENTINEL>')")
@@ -40,6 +55,8 @@ final class WorkspaceAndDownloadTests: XCTestCase {
         let browser = BrowserSession(dataStore: store, windowStore: windows)
         browser.switchProfile(to: .privateMode)
         let tab = try XCTUnwrap(browser.activeTab)
+        let window = try showTab(tab)
+        defer { window.isHidden = true }
         let url = URL(string: "http://127.0.0.1:8768/article?case=private-consent-test")!
         tab.load(url)
         try await waitUntil { tab.url == url && !tab.isLoading }

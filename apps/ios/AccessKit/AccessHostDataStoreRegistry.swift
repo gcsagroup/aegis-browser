@@ -40,6 +40,9 @@ public final class AccessHostDataStoreRegistry {
 
     public init() {}
 
+    /// Snapshot includes canonical landing stores with a tab-scoped inherited route.
+    public var endpointSnapshot: [AccessHostStoreKey: AccessManagedProxyEndpoint] { endpoints }
+
     public func endpoint(
         scopeID: String,
         host: AccessSiteHost,

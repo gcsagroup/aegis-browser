@@ -10,12 +10,14 @@
 
 #include "base/barrier_closure.h"
 #include "base/functional/bind.h"
+#include "base/no_destructor.h"
 #include "base/functional/callback_helpers.h"
 #include "base/uuid.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/profiles/profile.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "net/base/proxy_server.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_info.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -93,6 +95,12 @@ AccessNetworkContextTransport* AccessNetworkContextTransport::GetOrCreate(
   auto transport = std::unique_ptr<AccessNetworkContextTransport>(
       new AccessNetworkContextTransport());
   auto* result = transport.get();
+#if BUILDFLAG(IS_MAC)
+  profile->SetAccountProxyDispatchGate(base::BindRepeating(
+      [](base::WeakPtr<AccessNetworkContextTransport> self, const GURL& url) {
+        return !self || self->AccountDispatchBlocked(url);
+      }, result->weak_factory_.GetWeakPtr()));
+#endif
   profile->SetUserData(kTransportUserDataKey, std::move(transport));
   return result;
 }
@@ -157,6 +165,10 @@ bool AccessNetworkContextTransport::ConfigureNetworkContext(
   }
   ++state.clients_generation;
   state.clients.Add(std::move(client));
+#if BUILDFLAG(IS_MAC)
+  if (!state.account_fenced.empty() || !state.account_sites.empty())
+    transport->PublishAccountConfig(state);
+#endif
   return true;
 }
 
@@ -210,11 +222,96 @@ bool AccessNetworkContextTransport::PublishProxySelection(
   }
 
   PartitionState& state = partitions_[*key];
+#if BUILDFLAG(IS_MAC)
+  if (state.account_config) return false;
+#endif
   state.endpoint = std::move(candidate.endpoint);
   state.exact_hosts = std::move(candidate.exact_hosts);
   Broadcast(state);
   return true;
 }
+
+#if BUILDFLAG(IS_MAC)
+const std::vector<std::string>& AccessNetworkContextTransport::AccountSites() const {
+  static const base::NoDestructor<std::vector<std::string>> empty;
+  const auto it = partitions_.find("<default>");
+  return it == partitions_.end() ? *empty : it->second.account_sites;
+}
+
+bool AccessNetworkContextTransport::AccountDispatchBlocked(const GURL& url) const {
+  auto it = partitions_.find("<default>");
+  if (it == partitions_.end()) return false;
+  std::string host(url.host());
+  while (!host.empty() && host.back() == '.') host.pop_back();
+  return it->second.account_fenced.contains(host);
+}
+
+void AccessNetworkContextTransport::PublishAccountConfig(PartitionState& state) {
+  const auto revision = ++state.account_publication;
+  if (state.clients.empty()) return;
+  auto config = BuildConfig(state);
+  if (!config) return;
+  UpdateClientConfigs(state, config, base::BindOnce(
+      [](base::WeakPtr<AccessNetworkContextTransport> self, uint64_t revision, bool accepted) {
+        if (!self || !accepted) return;
+        auto& current = self->partitions_.at("<default>");
+        if (current.account_publication == revision) current.account_fenced.clear();
+      }, weak_factory_.GetWeakPtr(), revision));
+}
+
+bool AccessNetworkContextTransport::SetAccountNodeSites(
+    const std::vector<std::string>& sites, const std::string& host, uint16_t port,
+    const std::string& authorization) {
+  auto& state = partitions_["<default>"];
+  if (sites.empty()) {
+    state.account_fenced.insert(state.account_sites.begin(), state.account_sites.end());
+    state.account_sites.clear();
+    state.account_config.reset();
+    PublishAccountConfig(state);
+    return true;
+  }
+  // Private request routes carry their own per-request endpoint. Only the
+  // legacy partition-wide custom proxy competes for this configuration.
+  if (!AreCanonicalExactHosts(sites) || (state.endpoint && !state.private_routing))
+    return false;
+  auto config = network::mojom::CustomProxyConfig::New();
+  auto blocked = net::ProxyServer::FromSchemeHostAndPort(
+      net::ProxyServer::SCHEME_HTTPS, "blocked.invalid", 443);
+  auto proxy = host.empty() ? blocked : net::ProxyServer::FromSchemeHostAndPort(
+      net::ProxyServer::SCHEME_HTTPS, host, port);
+  if (!proxy.is_valid() || (!host.empty() && authorization.empty())) return false;
+  config->rules.type = net::ProxyConfig::ProxyRules::Type::PROXY_LIST_PER_SCHEME;
+  for (const auto& site : sites)
+    config->rules.bypass_rules.AddAegisExactSite(site);
+  // Keep this single endpoint exclusive to the config. The CONNECT-only node
+  // rejects ordinary HTTP and no tunnel header accompanies those requests.
+  config->rules.proxies_for_http.SetSingleProxyServer(proxy);
+  config->rules.proxies_for_https.SetSingleProxyServer(proxy);
+  config->rules.reverse_bypass = true;
+  config->should_override_existing_config = true;
+  config->allow_non_idempotent_methods = true;
+  // An empty value marks a blocked account route during acquisition/logout.
+  // The delegate never sends that placeholder on the wire.
+  config->connect_tunnel_headers.SetHeader(net::HttpRequestHeaders::kProxyAuthorization,
+                                           authorization);
+  // The Browser dispatch path and all NetworkContexts have separate pipes.
+  // Fence changed exact hosts before publishing, until every recipient ACKs.
+  if (!state.account_config ||
+      state.account_config->connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization) !=
+          config->connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization) ||
+      state.account_config->rules.proxies_for_https.AllChains() != config->rules.proxies_for_https.AllChains()) {
+    state.account_fenced.insert(state.account_sites.begin(), state.account_sites.end());
+    state.account_fenced.insert(sites.begin(), sites.end());
+  } else {
+    std::set_symmetric_difference(state.account_sites.begin(), state.account_sites.end(),
+        sites.begin(), sites.end(), std::inserter(state.account_fenced, state.account_fenced.end()));
+  }
+  state.account_sites = sites;
+  state.account_config = std::move(config);
+  PublishAccountConfig(state);
+  return true;
+}
+#endif
 
 bool AccessNetworkContextTransport::ClearProxySelection(
     const base::FilePath& relative_partition_path) {
@@ -766,6 +863,9 @@ bool AccessNetworkContextTransport::IsEndpointCurrentForPartition(
 
 network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(
     const PartitionState& state) const {
+#if BUILDFLAG(IS_MAC)
+  if (state.account_config) return state.account_config->Clone();
+#endif
   auto config = network::mojom::CustomProxyConfig::New();
   if (state.private_routing || !state.endpoint.has_value() ||
       state.exact_hosts.empty()) {

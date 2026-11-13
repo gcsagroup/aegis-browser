@@ -10,7 +10,15 @@ from .store import Unavailable
 
 
 class Panel:
-    def __init__(self, base_url, api_token):
+    def __init__(self, base_url, api_token, *, alpha_panel_client=None):
+        if alpha_panel_client is not None and (
+                not isinstance(alpha_panel_client, str) or not alpha_panel_client
+                or alpha_panel_client in (".", "..")
+                or any(ch in alpha_panel_client for ch in "/\\")
+                or not alpha_panel_client.isprintable()
+                or any(ch.isspace() for ch in alpha_panel_client)):
+            raise ValueError("invalid Alpha panel client")
+        self.alpha_panel_client = alpha_panel_client
         url = urlsplit(base_url)
         if (not url.hostname or url.username is not None or url.password is not None
                 or url.query or url.fragment or not api_token or not api_token.isascii()
@@ -54,6 +62,9 @@ class Panel:
         return obj
 
     def read(self, client, now_ms):
+        # Check the operator's single-client allowlist before any panel HTTP request.
+        if self.alpha_panel_client is not None and client != self.alpha_panel_client:
+            raise Unavailable("panel client outside Alpha scope")
         if client in ("", ".", "..") or "/" in client or "\\" in client:
             raise Unavailable("invalid panel client binding")
         usage = self._get("traffic", client)
@@ -67,13 +78,19 @@ class Panel:
         up, down = usage.get("up"), usage.get("down")
         if any(type(v) is not int or not 0 <= v <= 2**63 - 1 for v in (quota, expiry, up, down)):
             raise Unavailable("invalid panel counter or limit")
-        if (not quota or not 0 < expiry <= 2**53 - 1 or settings.get("trafficReset") != "never"
+        minimum_expiry = 0 if self.alpha_panel_client is not None else 1
+        allowed_resets = ("never", "daily") if self.alpha_panel_client is not None else ("never",)
+        if (not quota or not minimum_expiry <= expiry <= 2**53 - 1
+                or settings.get("trafficReset") not in allowed_resets
                 or any(type(settings.get(k)) is not int or settings[k] != 0
                        for k in ("reset", "resetDay", "resetWeekday"))):
             raise Unavailable("a dedicated finite plan with an absolute expiry is required")
         for row in (settings, usage):
             if type(row.get("enable")) is not bool or (not row["enable"] and up + down < quota
-                                                       and received < expiry):
+                                                       and (expiry == 0 or received < expiry)):
                 raise Unavailable("panel client disabled")
-        return dict(quota_bytes=quota, uploaded_bytes=up, downloaded_bytes=down,
-                    expires_at=expiry, received_at=received, measured_at=None)
+        observed = dict(quota_bytes=quota, uploaded_bytes=up, downloaded_bytes=down,
+                        expires_at=expiry, received_at=received, measured_at=None)
+        if self.alpha_panel_client is not None:
+            observed["quota_source"] = "3xui_alpha"
+        return observed
