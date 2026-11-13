@@ -38,6 +38,7 @@
 		13B54E21C3763A114F93CFD4 /* AccessSiteProxyToggleModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E3ECA8DE63818F6343B787 /* AccessSiteProxyToggleModelTests.swift */; };
 		1519DBFC5053B6B1BF38F8E6 /* PageProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B2AA0F3D4460E567A3A15 /* PageProtection.swift */; };
 		1574320BAEC61DF0AC8936C0 /* BrowserPreferenceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A516AD15208D05CCF03B38F1 /* BrowserPreferenceViews.swift */; };
+		15E3622E2DBBE73D2D534790 /* AccessDiagnosticLogStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E15216C715019288D968C9 /* AccessDiagnosticLogStorage.swift */; };
 		160A6A7262204A8BDA6C708D /* DownloadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 614955B474654A3F4433E4DA /* DownloadPlan.swift */; };
 		180B90BB6A48239F7984C179 /* AccessMutexGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C669CC4428605B9AB83C2A36 /* AccessMutexGate.swift */; };
 		1B04420E7DA458B3AEB10868 /* AccessContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8818EBA7BABACB087E7F616 /* AccessContractTests.swift */; };
@@ -193,6 +194,7 @@
 		9052B6F7B79C479FC266E798 /* icon-512.png in Resources */ = {isa = PBXBuildFile; fileRef = 97D5FD3BB7B355F6A9C3BBC9 /* icon-512.png */; };
 		91A2586038370E4E9FCC8C1C /* AccessKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A17DFAF27700574B0C5F4C4 /* AccessKit.framework */; };
 		9315F5632BC390EC66110999 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 669E8874CA5612998070CDBC /* LocalizationTests.swift */; };
+		94E486D821FCDABEFC587B2E /* AccessDiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8756C4E777C08AF7D26AF3F0 /* AccessDiagnosticLog.swift */; };
 		951712A24A4B4F6A0FA3D2F7 /* ShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D70A73F99051BB71BD7B95D /* ShareInbox.swift */; };
 		966246A7BCD0D2E3007E96AF /* ActionCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01D7E15A595D78AE85CA380C /* ActionCapability.swift */; };
 		966EA9CF1919C20609D86F5A /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = EAB3E0EE5DAAC62A328954CE /* InfoPlist.strings */; };
@@ -222,6 +224,7 @@
 		A81B549D1197E1C4752D1B75 /* CapabilitySecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6107C5E1917AE2F2CB7D23 /* CapabilitySecurityTests.swift */; };
 		A898BF1FA630965F7515A6E1 /* AccessRealityVisionOutboundConfigBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27A42E94132BE0AA339DFD6 /* AccessRealityVisionOutboundConfigBuilder.swift */; };
 		A8F53DCF23F78A6D05997E79 /* SafariReadOnlyGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97F1508E0BB36F8EDAA83DB8 /* SafariReadOnlyGate.swift */; };
+		A95B25CD525E6F022509942F /* AccessDiagnosticArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A5DB2AAE6BBEAC5556F7FD /* AccessDiagnosticArchive.swift */; };
 		AA5FE750B35C666CEB8C90D4 /* AccessXrayRuntimeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63FD48CD8E64788934A253F8 /* AccessXrayRuntimeError.swift */; };
 		AB58AF37F04905AC75968269 /* ThirdPartyNoticesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF75434476653116BC005C2 /* ThirdPartyNoticesView.swift */; };
 		AB71E30ECA77D90F1491D3CF /* FirebaseInstallPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90ED978B671DD9BF0DD0B06 /* FirebaseInstallPreferences.swift */; };
@@ -568,6 +571,7 @@
 		377FD9FAC5FA036BC6F4BA0D /* BrowserLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserLibraryView.swift; sourceTree = "<group>"; };
 		39572A60EB59172506D03265 /* AegisUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AegisUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		397CB2F7CB8A372260242996 /* AegisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AegisApp.swift; sourceTree = "<group>"; };
+		39E15216C715019288D968C9 /* AccessDiagnosticLogStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDiagnosticLogStorage.swift; sourceTree = "<group>"; };
 		3A1AF984EFBC41C80C433CB8 /* ReadingLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingLibrary.swift; sourceTree = "<group>"; };
 		3B191048BDD989006216DCB6 /* AgentContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContracts.swift; sourceTree = "<group>"; };
 		3BEDE5E915B0EE590981A1AD /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -675,6 +679,7 @@
 		8505E24B26D61C484EF0E7E8 /* TabSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitcher.swift; sourceTree = "<group>"; };
 		855BC0E736799C26DA7783F1 /* BrowserSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSession.swift; sourceTree = "<group>"; };
 		8639BBDA3C7A77E352404520 /* AccessProxyRecoveryViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyRecoveryViewTests.swift; sourceTree = "<group>"; };
+		8756C4E777C08AF7D26AF3F0 /* AccessDiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDiagnosticLog.swift; sourceTree = "<group>"; };
 		8779F8FBFBC494A635B5AADA /* AppLanguageSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageSettings.swift; sourceTree = "<group>"; };
 		87EB17B4F5C546EEF07289E6 /* AccessProxyRecoveryCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyRecoveryCoordinatorTests.swift; sourceTree = "<group>"; };
 		880FAF17AB05E711C2E21A69 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -834,6 +839,7 @@
 		F0F4FD6207031E55916E22E9 /* AccessRealityProbeExecuting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeExecuting.swift; sourceTree = "<group>"; };
 		F1280E2DA533BDDC280D3BC2 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		F14ADD5234E18C200708DDDF /* AccessDevAllowBlockPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanel.swift; sourceTree = "<group>"; };
+		F1A5DB2AAE6BBEAC5556F7FD /* AccessDiagnosticArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDiagnosticArchive.swift; sourceTree = "<group>"; };
 		F27154ED6604ABE4B3DF66C2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F2E3ECA8DE63818F6343B787 /* AccessSiteProxyToggleModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleModelTests.swift; sourceTree = "<group>"; };
 		F35E3C87832461540D80ADBF /* SecurityRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityRules.swift; sourceTree = "<group>"; };
@@ -1235,6 +1241,9 @@
 				998785AAE90857E6EAA12A96 /* AccessContractError.swift */,
 				F006BFE2B07CD4D4A457D66A /* AccessCredentialSlot.swift */,
 				F14ADD5234E18C200708DDDF /* AccessDevAllowBlockPanel.swift */,
+				F1A5DB2AAE6BBEAC5556F7FD /* AccessDiagnosticArchive.swift */,
+				8756C4E777C08AF7D26AF3F0 /* AccessDiagnosticLog.swift */,
+				39E15216C715019288D968C9 /* AccessDiagnosticLogStorage.swift */,
 				C5DE91E95FF7C94D7ABC1B96 /* AccessEmbeddedCoreAdapter.swift */,
 				C7DA9C8D56A2E49FE62F43B0 /* AccessEmbeddedCoreControlling.swift */,
 				CC63DB3239D1822719346EFE /* AccessEmbeddedCoreManifest.swift */,
@@ -2173,6 +2182,9 @@
 				F167F66753F204AA52B13063 /* AccessContractError.swift in Sources */,
 				B0262F3A0FBD60EDB6535CD6 /* AccessCredentialSlot.swift in Sources */,
 				AD97567B8E7543950D161E4E /* AccessDevAllowBlockPanel.swift in Sources */,
+				A95B25CD525E6F022509942F /* AccessDiagnosticArchive.swift in Sources */,
+				94E486D821FCDABEFC587B2E /* AccessDiagnosticLog.swift in Sources */,
+				15E3622E2DBBE73D2D534790 /* AccessDiagnosticLogStorage.swift in Sources */,
 				CB76A5CA7C582A76C02A7797 /* AccessEmbeddedCoreAdapter.swift in Sources */,
 				A1E8F1323DC0DE4CE8EBB037 /* AccessEmbeddedCoreControlling.swift in Sources */,
 				56157E73BB67F915DD473BD6 /* AccessEmbeddedCoreManifest.swift in Sources */,
