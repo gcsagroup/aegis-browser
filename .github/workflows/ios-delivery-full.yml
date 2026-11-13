@@ -41,6 +41,11 @@ on:
         type: choice
         options: [cloud, manual]
         default: cloud
+      private_beta:
+        description: "Embed protected test inputs and upload privately (Beta/manual only)"
+        type: choice
+        options: ['no', 'yes']
+        default: 'no'
       package_entrypoint:
         description: "Package through the Actions CLI adapter or directly through Fastlane"
         type: choice

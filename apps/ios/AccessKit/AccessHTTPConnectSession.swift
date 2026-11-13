@@ -17,6 +17,7 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
     private var buffer = Data()
     private var lateBytes = Data()
     private var finished = false
+    private var admissionTimeout: DispatchWorkItem?
     private let onOutcome: (Outcome) -> Void
 
     public init(
@@ -30,8 +31,17 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
     }
 
     public func start() {
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, !self.finished else { return }
+            self.finish(.rejected(.incompleteRequest))
+            self.connection.cancel()
+        }
+        admissionTimeout = timeout
+        queue.asyncAfter(deadline: .now() + 15, execute: timeout)
         receiveMore()
     }
+
+    deinit { admissionTimeout?.cancel() }
 
     private func receiveMore() {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1_024) { [weak self] data, _, isComplete, error in
@@ -82,6 +92,9 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
 
     private func writeSuccess(for request: AccessHTTPConnectRequest, remainder: Data) {
         finished = true
+        admissionTimeout?.cancel()
+        admissionTimeout = nil
+        buffer.removeAll()
         let response = AccessHTTPConnectParser.successResponse(httpVersion: request.httpVersion)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
@@ -119,6 +132,10 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
     private func finish(_ outcome: Outcome) {
         guard !finished else { return }
         finished = true
+        admissionTimeout?.cancel()
+        admissionTimeout = nil
+        buffer.removeAll()
+        lateBytes.removeAll()
         onOutcome(outcome)
     }
 }

@@ -27,7 +27,7 @@ public enum AccessLocalV2RayConfigLoader {
         case "dev":
             return configuredPath(environment: environment)
                 ?? bundle.url(forResource: "AegisPrivateTestNode", withExtension: "vless")?.path
-        case "alpha":
+        case "alpha", "beta":
             return bundle.url(forResource: "AegisPrivateTestNode", withExtension: "vless")?.path
         default:
             return nil

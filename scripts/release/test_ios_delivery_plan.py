@@ -61,6 +61,19 @@ class DeliveryPlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 planner.normalize('workflow_dispatch', 'refs/heads/main', dict(base, operation=operation, signing_mode='fallback'))
 
+    def test_private_beta_is_an_explicit_manual_testflight_route(self):
+        inputs = dict(operation='Package and upload', product='Beta', signing_mode='manual',
+                      version='1.0.3', build='13', private_beta='yes')
+        for mode in ('simple', 'full'):
+            plan = planner.normalize('workflow_dispatch', 'refs/heads/main', inputs, mode)
+            self.assertEqual((plan['private_beta'], plan['destination']), ('true', 'testflight'))
+            self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main',
+                                              dict(inputs, private_beta='no'), mode)['private_beta'], 'false')
+            for invalid in (dict(signing_mode='cloud'), dict(product='Release'), dict(operation='Package'),
+                            dict(operation='Status'), dict(private_beta='maybe')):
+                with self.assertRaises(ValueError):
+                    planner.normalize('workflow_dispatch', 'refs/heads/main', dict(inputs, **invalid), mode)
+
     def test_cloud_form_default_cannot_block_reads_or_reinterpret_existing_package_stages(self):
         for form in ['simple', 'full']:
             for operation in ['Status', 'Wait']:

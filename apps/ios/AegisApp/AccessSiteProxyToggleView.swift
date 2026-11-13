@@ -26,14 +26,12 @@ struct AccessSiteProxyToggleView: View {
         return store.snapshot(for: url)
     }
 
-    private var attachment: AccessProxyAttachment {
-        guard let tab else { return .notAttached }
-        return store.attachment(tab: tab, url: url)
-    }
-
     var body: some View {
         let _ = localizationLocale
         let snap = snapshot
+        // The failed target can differ from WebKit's last committed URL. All
+        // route labels must describe the same host as the visible site switch.
+        let attachment = snap.attachment
         let capability = AccessProxyCapabilityPresentation.make(
             nodeID: configuredNodeID,
             attached: attachment != .notAttached,
@@ -73,25 +71,27 @@ struct AccessSiteProxyToggleView: View {
                     .accessibilityIdentifier("access-site-proxy-no-host")
             }
 
+            Toggle("本站使用代理", isOn: Binding(
+                get: { snap.toggleOn },
+                set: { enabled in
+                    guard let tab, let host = snap.host else { return }
+                    store.setSiteProxyEnabled(enabled, for: tab, displayedHost: host)
+                }
+            ))
+            .disabled(!snap.toggleEnabled || tab == nil)
+            .accessibilityIdentifier("access-site-proxy-toggle")
             Toggle(
                 AccessAutoRecoveryCopy.toggleTitle,
                 isOn: Binding(
-                    get: { snap.autoRecoveryEnabled || snap.toggleOn },
+                    get: { snap.autoRecoveryEnabled },
                     set: { enabled in
                         guard let tab else { return }
-                        if enabled {
-                            _ = store.setAutoRecoveryEnabled(true, for: tab)
-                        } else if snap.autoRecoveryEnabled {
-                            // Auto-off must keep an independently armed manual proxy.
-                            _ = store.setAutoRecoveryEnabled(false, for: tab)
-                        } else {
-                            store.setProxyEnabled(false, for: tab)
-                        }
+                        _ = store.setAutoRecoveryEnabled(enabled, for: tab)
                     }
                 )
             )
             .disabled(!snap.toggleEnabled || tab == nil)
-            .accessibilityIdentifier("access-site-proxy-toggle")
+            .accessibilityIdentifier("access-site-auto-recovery-toggle")
             if let tab, account.supportsAccountAuthorization {
                 let paidHost = store.paidDownloadHost(for: tab)
                 Toggle(

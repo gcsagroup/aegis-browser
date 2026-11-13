@@ -12,6 +12,59 @@ spec.loader.exec_module(action)
 
 
 class IosActionTests(unittest.TestCase):
+    def test_private_beta_package_never_exports_and_only_allows_manual_testflight_upload(self):
+        env = dict(AEGIS_IOS_BETA_TEST_NODE_ENABLED='true', GITHUB_REPOSITORY=action.durable.REPOSITORY,
+                   GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', RELEASE_RUN_ID='ios-gh-12-1',
+                   RELEASE_OPERATION='package-upload', RELEASE_DESTINATION='testflight',
+                   RELEASE_PROFILE='beta', RELEASE_SIGNING_MODE='manual', RELEASE_VERSION='1.0.3', RELEASE_BUILD='13')
+        for change in (dict(RELEASE_OPERATION='package'), dict(RELEASE_DESTINATION='github-draft'),
+                       dict(RELEASE_PROFILE='release'), dict(RELEASE_SIGNING_MODE='cloud'), dict(GITHUB_RUN_ATTEMPT='2')):
+            with patch.dict(os.environ, dict(env, **change), clear=True), patch.object(action, 'run') as run:
+                with self.assertRaises(ValueError):
+                    action.package()
+                run.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/'ios-manifest.json').write_text('{}')
+            with patch.dict(os.environ, env, clear=True), patch.object(action, 'directory', return_value=root), \
+                    patch.object(action, 'run'), patch.object(action, 'source', return_value=('a'*40, 'b'*40)), \
+                    patch.object(action, 'private_beta_manifest'), patch.object(action, 'output'), \
+                    patch.object(action, 'export') as export:
+                action.package()
+                export.assert_not_called()
+
+    def test_previous_direct_upload_step_with_unknown_result_blocks_new_run(self):
+        row = dict(id=12, run_attempt=1, head_sha='a'*40, path='.github/workflows/ios-delivery-full.yml', status='completed')
+        for conclusion in ('skipped', 'failure', 'success', None):
+            job = dict(name='delivery / ios-package', run_id=12, run_attempt=1, head_sha='a'*40,
+                       steps=[dict(name='Upload private Beta directly to TestFlight', conclusion=conclusion)])
+            def lookup(path):
+                return dict(total_count=1, jobs=[job]) if '/jobs?' in path else row
+            with patch.object(action, 'api', side_effect=lookup):
+                self.assertEqual(action.unstarted_store_run(row), conclusion == 'skipped')
+
+    def test_private_beta_evidence_exposes_only_confirmed_status_and_allowlisted_identity(self):
+        digest = 'c'*64
+        manifest = dict(source=dict(sha='a'*40, tree='b'*40, dirty=False), platform='ios',
+                        applicationId='com.gcsa.aegis', format='ipa', profile='beta', version='1.0.3', build='13',
+                        details={'privateBetaTestNode': True, 'fixturePrivateData': 'never export me'})
+        intent = {k: manifest[k] for k in ('platform', 'applicationId', 'profile', 'version', 'build', 'format')}
+        intent.update(operation='apple-upload', manifestSha256=digest)
+        for start, finish, expected in (
+                (None, None, 'not_started'), (intent, None, 'unknown_reconcile_with_apple'),
+                (intent, dict(intent=intent, result={'status': 'uploaded_processing_unverified',
+                                                   'fixturePrivateData': 'never export me'}), 'uploaded_processing_unverified')):
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, dict(RUNNER_TEMP=tmp,
+                    GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', RELEASE_MANIFEST_SHA256=digest)), \
+                    patch.object(action, 'require_private_beta_upload'), \
+                    patch.object(action, 'private_beta_manifest', return_value=manifest), \
+                    patch.object(action.durable, 'records') as records, patch.object(action, 'output'), patch('builtins.print'):
+                records.return_value.read.side_effect = [start, finish]
+                action.private_beta_evidence()
+                receipt = Path(tmp)/'aegis-private-beta-12-1.json'
+                self.assertEqual(json.loads(receipt.read_text())['uploadState'], expected)
+                self.assertNotIn('never export me', receipt.read_text())
+
     def test_package_entrypoints_use_cloud_default_and_forward_explicit_manual_fallback(self):
         base = dict(RELEASE_PROFILE='beta', RELEASE_VERSION='1.0.2', RELEASE_BUILD='12',
                     RELEASE_RUN_ID='ios-gh-12-1', RELEASE_DESTINATION='artifacts')

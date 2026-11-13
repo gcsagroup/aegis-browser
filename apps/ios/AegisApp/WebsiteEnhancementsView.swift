@@ -504,6 +504,7 @@ private struct CurrentWebsitePanel: View {
   let isPrivate: Bool
   @ObservedObject var accessSiteProxy: AccessSiteProxySessionStore
   @EnvironmentObject private var accountSession: AccessAccountSession
+  @EnvironmentObject private var subscriptionUsage: AccessSubscriptionUsageSession
   @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
   @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var markdownDocument: MarkdownDocument?
@@ -519,7 +520,11 @@ private struct CurrentWebsitePanel: View {
         .onAppear { accessSiteProxy.hostRouting = hostStores }
         .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
       if !isPrivate {
-        AccessAccountUsageView(session: accountSession)
+        if subscriptionUsage.isSelected {
+          AccessSubscriptionUsageView(session: subscriptionUsage)
+        } else {
+          AccessAccountUsageView(session: accountSession)
+        }
       } else {
         Section("Access 账户额度") {
           Text("私密会话不显示普通账户的额度；请在普通窗口查询。")

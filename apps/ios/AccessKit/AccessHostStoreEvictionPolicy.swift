@@ -53,7 +53,7 @@ public struct AccessHostStoreEviction: Sendable, Equatable {
 }
 
 public enum AccessHostStoreEvictionPolicy {
-    public static let idleLimit: TimeInterval = 30 * 60
+    public static let idleLimit: TimeInterval = 60
     public static let idleCap = 8
 
     /// Forced revocation is listed before idle reclamation.

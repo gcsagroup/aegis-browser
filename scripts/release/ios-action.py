@@ -5,6 +5,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,6 +70,9 @@ def export():
 
 
 def package():
+    private_beta = os.environ.get('AEGIS_IOS_BETA_TEST_NODE_ENABLED') == 'true'
+    if private_beta:
+        require_private_beta_upload()
     if os.environ.get('RELEASE_PACKAGE_ENTRYPOINT', 'actions') not in {'actions', 'fastlane'}:
         raise ValueError('Unsupported package entrypoint')
     args = identity()+['--destination', os.environ.get('RELEASE_DESTINATION', 'artifacts'),
@@ -87,7 +92,83 @@ def package():
                   runIdLocal=os.environ['RELEASE_RUN_ID'], manifestSha256=transport.digest(directory()/'ios-manifest.json'))
     with (directory()/'package-origin.json').open('x') as f:
         json.dump(origin, f, indent=2)
-    export()
+    if private_beta:
+        private_beta_manifest(origin['manifestSha256'])
+        output('manifest_sha256', origin['manifestSha256'])
+    else:
+        export()
+    output('private_beta', str(private_beta).lower())
+
+
+def require_private_beta_upload():
+    if (os.environ.get('GITHUB_REPOSITORY') != durable.REPOSITORY
+            or os.environ.get('RELEASE_OPERATION') != 'package-upload'
+            or os.environ.get('RELEASE_DESTINATION') != 'testflight'
+            or os.environ.get('RELEASE_PROFILE') != 'beta'
+            or os.environ.get('RELEASE_SIGNING_MODE') != 'manual'
+            or os.environ.get('GITHUB_RUN_ATTEMPT') != '1'
+            or os.environ.get('RELEASE_RUN_ID') != f"ios-gh-{os.environ.get('GITHUB_RUN_ID')}-1"):
+        raise ValueError('Private Beta requires a first-attempt manual Package and upload to TestFlight')
+
+
+def private_beta_manifest(digest):
+    root = directory()
+    sha, tree = source()
+    path = root/'ios-manifest.json'
+    manifest = json.loads(path.read_text())
+    if (re.fullmatch(r'[0-9a-f]{64}', digest) is None or transport.digest(path) != digest
+            or manifest.get('source') != dict(sha=sha, tree=tree, dirty=False)
+            or manifest.get('repository') != durable.REPOSITORY or manifest.get('platform') != 'ios'
+            or any(manifest.get(k) != os.environ['RELEASE_'+k.upper()] for k in ('profile', 'version', 'build'))
+            or manifest['details'].get('privateBetaTestNode') is not True
+            or manifest['details'].get('privateBetaQuota') is not True):
+        raise ValueError('Private Beta manifest identity differs')
+    return manifest
+
+
+def private_beta_upload():
+    require_private_beta_upload()
+    private_beta_manifest(os.environ['RELEASE_MANIFEST_SHA256'])
+    check_new_upload_runs()
+    if os.environ.get('RELEASE_STAGE') != 'upload':
+        raise ValueError('Private Beta can only run the Apple upload stage')
+    stage()
+
+
+def private_beta_evidence():
+    require_private_beta_upload()
+    digest = os.environ['RELEASE_MANIFEST_SHA256']
+    manifest = private_beta_manifest(digest)
+    store = durable.records()
+    allocation = durable.key(manifest['version'], manifest['build'])
+    started = store.read('upload-start', allocation)
+    finished = store.read('upload-result', allocation)
+    if started is not None and (started.get('operation') != 'apple-upload'
+            or started.get('manifestSha256') != digest or any(started.get(k) != manifest.get(k)
+                for k in ('platform', 'applicationId', 'profile', 'version', 'build', 'format'))):
+        raise ValueError('Private Beta upload intent differs')
+    if finished is not None and (started is None or finished.get('intent') != started
+            or finished.get('result', {}).get('status') != 'uploaded_processing_unverified'):
+        raise ValueError('Private Beta upload result differs')
+    record = dict(source=manifest['source'], manifestSha256=digest, profile='beta',
+                  version=manifest['version'], build=manifest['build'],
+                  runId=int(os.environ['GITHUB_RUN_ID']), attempt=int(os.environ['GITHUB_RUN_ATTEMPT']),
+                  uploadState=('uploaded_processing_unverified' if finished is not None else
+                               'unknown_reconcile_with_apple' if started is not None else 'not_started'))
+    path = Path(os.environ['RUNNER_TEMP'])/f"aegis-private-beta-{record['runId']}-{record['attempt']}.json"
+    with path.open('x') as out:
+        json.dump(record, out, indent=2)
+    output('receipt_path', path)
+    print(json.dumps(record))
+
+
+def cleanup_private_beta():
+    require_private_beta_upload()
+    root = directory()
+    if root.is_symlink() or root.resolve() != root:
+        raise ValueError('Refuse to clean an aliased private Beta directory')
+    if root.exists():
+        shutil.rmtree(root)
 
 
 def receipt():
@@ -218,7 +299,11 @@ def unstarted_store_run(row):
         for job in jobs:
             if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
                 return False
-            if (job.get('name') in {'store', 'upload-new'} or any(str(job.get('name', '')).endswith(' / '+name) for name in ['store', 'upload-new'])) and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
+            name = str(job.get('name', '')).rsplit(' / ', 1)[-1]
+            if name in {'store', 'upload-new'} and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
+                return False
+            if name == 'ios-package' and any(step.get('name') == 'Upload private Beta directly to TestFlight'
+                    and step.get('conclusion') != 'skipped' for step in job.get('steps', [])):
                 return False
     final = api(f'actions/runs/{row["id"]}')
     return final.get('run_attempt') == attempts and final.get('status') == 'completed' and final.get('head_sha') == record['head_sha']
@@ -338,4 +423,6 @@ def stage():
 
 
 if __name__ == '__main__':
-    {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt, 'check-new-upload': check_new_upload_runs}[sys.argv[1]]()
+    {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt,
+     'check-new-upload': check_new_upload_runs, 'private-beta-upload': private_beta_upload,
+     'private-beta-evidence': private_beta_evidence, 'cleanup-private-beta': cleanup_private_beta}[sys.argv[1]]()
