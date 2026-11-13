@@ -7,12 +7,41 @@ import json
 import os
 from pathlib import Path
 import plistlib
+# Runs only this checked-in helper with the current Python interpreter and fixed argv.
+import subprocess  # nosec B404
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+
+QUOTA_TIMEOUT_SECONDS = 20
+
+
+def run_live_quota(configuration):
+    # A separate process bounds DNS, TLS, response headers and slow-drip bodies together.
+    # Values travel only over stdin; child output and exception details remain private.
+    try:
+        subprocess.run(  # nosec B603
+            [sys.executable, str(Path(__file__).resolve()), 'quota'],
+            input=json.dumps(configuration).encode(), stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=QUOTA_TIMEOUT_SECONDS, check=True)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        raise ValueError('Live quota verification failed') from None
+
+
+def unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError('Duplicate quota field')
+        value[key] = item
+    return value
+
+
+def invalid_constant(_value):
+    raise ValueError('Nonstandard JSON constant')
 
 
 def module(name):
@@ -63,10 +92,21 @@ def check_live_quota(configuration):
         if (response.status != 200 or response.geturl() != url
                 or response.headers.get_content_type() != 'application/json'):
             raise ValueError('Invalid quota response')
+        lengths = response.headers.get_all('Content-Length', [])
+        if len(lengths) > 1:
+            raise ValueError('Ambiguous quota response length')
+        length = None
+        if lengths:
+            value = lengths[0].strip()
+            if not value.isascii() or not value.isdecimal() or len(value) > 5:
+                raise ValueError('Invalid quota response length')
+            length = int(value)
+            if length > 65536 or response.headers.get('Transfer-Encoding') is not None:
+                raise ValueError('Invalid quota response framing')
         raw = response.read(65537)
-    if len(raw) > 65536:
-        raise ValueError('Oversized quota response')
-    usage = json.loads(raw)
+    if len(raw) > 65536 or (length is not None and len(raw) != length):
+        raise ValueError('Oversized or incomplete quota response')
+    usage = json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
     if not isinstance(usage, dict):
         raise ValueError('Invalid quota payload')
     maximum = (1 << 64) - 1
@@ -99,18 +139,25 @@ def verify(directory, ipa, live_quota=False):
             if archive.read(root + member) != (directory / expected).read_bytes():
                 raise ValueError('Private Beta resource mismatch')
         if live_quota:
-            check_live_quota(json.loads(archive.read(root + 'AegisPrivateTestSubscription.json')))
+            run_live_quota(json.loads(archive.read(root + 'AegisPrivateTestSubscription.json')))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('stage', 'verify'))
-    parser.add_argument('--directory', type=Path, required=True)
+    parser.add_argument('operation', choices=('stage', 'verify', 'quota'))
+    parser.add_argument('--directory', type=Path)
     parser.add_argument('--ipa', type=Path)
     parser.add_argument('--live-quota', action='store_true')
     args = parser.parse_args()
     try:
-        if args.operation == 'stage':
+        if args.operation != 'quota' and args.directory is None:
+            raise ValueError('Directory required')
+        if args.operation == 'quota':
+            raw = sys.stdin.buffer.read(8193)
+            if len(raw) > 8192:
+                raise ValueError('Oversized quota configuration')
+            check_live_quota(json.loads(raw))
+        elif args.operation == 'stage':
             stage(args.directory, os.environ)
         else:
             if args.ipa is None:

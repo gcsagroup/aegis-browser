@@ -1,12 +1,14 @@
 import base64
 from email.message import Message
 import importlib.util
+import io
 import json
 from pathlib import Path
 import plistlib
 import runpy
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 import zipfile
@@ -92,10 +94,9 @@ class PrivateBetaTests(unittest.TestCase):
                         archive.writestr(root + 'AegisPrivateTestSubscription.json',
                                          (directory / 'expected-subscription').read_bytes())
                 if change == 'none':
-                    with patch.object(beta.urllib.request, 'build_opener') as factory:
-                        factory.return_value.open.return_value = self.quota_response()
+                    with patch.object(beta, 'run_live_quota') as query:
                         beta.verify(directory, ipa, live_quota=True)
-                        factory.return_value.open.assert_called_once()
+                        query.assert_called_once_with(json.loads((directory / 'expected-subscription').read_bytes()))
                 else:
                     with self.assertRaises((ValueError, KeyError)):
                         beta.verify(directory, ipa)
@@ -110,25 +111,60 @@ class PrivateBetaTests(unittest.TestCase):
                 beta.stage(Path(temp), environment)
 
     def test_http_protocol_failures_do_not_expose_private_values_in_cli_errors(self):
+        helper = str(Path(beta.__file__))
+        source = MagicMock(buffer=io.BytesIO(QUOTA))
+        with (patch.object(sys, 'argv', [helper, 'quota']), patch.object(sys, 'stdin', source),
+              patch.object(beta.urllib.request, 'build_opener') as factory):
+            factory.return_value.open.side_effect = beta.http.client.BadStatusLine('private-response-marker')
+            with self.assertRaises(SystemExit) as failure:
+                runpy.run_path(helper, run_name='__main__')
+            self.assertEqual(str(failure.exception),
+                             'Private Beta input validation failed; no private values are logged.')
+            factory.return_value.open.assert_called_once()
+
+    def test_worker_deadline_and_failures_stop_delivery_without_forwarding_output(self):
         with tempfile.TemporaryDirectory() as temp:
-            directory = Path(temp)
-            beta.stage(directory, self.environment())
-            ipa = directory / 'fixture.ipa'
-            root = 'Payload/Aegis.app/'
-            with zipfile.ZipFile(ipa, 'w') as archive:
-                archive.writestr(root + 'Info.plist', plistlib.dumps({
-                    'AegisAccessReleaseChannel': 'beta', 'AegisReleaseProfile': 'beta'}))
-                archive.writestr(root + 'AegisPrivateTestNode.vless', NODE)
-                archive.writestr(root + 'AegisPrivateTestSubscription.json',
-                                 (directory / 'expected-subscription').read_bytes())
-            helper = str(Path(beta.__file__))
-            argv = [helper, 'verify', '--directory', str(directory), '--ipa', str(ipa), '--live-quota']
-            with patch.object(sys, 'argv', argv), patch.object(beta.urllib.request, 'build_opener') as factory:
-                factory.return_value.open.side_effect = beta.http.client.BadStatusLine('private-response-marker')
-                with self.assertRaises(SystemExit) as failure:
-                    runpy.run_path(helper, run_name='__main__')
-                self.assertEqual(str(failure.exception),
-                                 'Private Beta input validation failed; no private values are logged.')
+            for behavior in ('success', 'failure', 'timeout'):
+                helper = Path(temp) / (behavior + '.py')
+                helper.write_text(
+                    'import json, sys, time\n'
+                    'assert sys.argv[1:] == ["quota"]\n'
+                    'assert json.load(sys.stdin)["allowedTestClient"] == "fixture"\n'
+                    'print("private-response-marker", file=sys.stderr)\n' +
+                    ('time.sleep(5)\n' if behavior == 'timeout' else '') +
+                    ('sys.exit(1)\n' if behavior == 'failure' else ''))
+                started = time.monotonic()
+                with (patch.object(beta, '__file__', str(helper)),
+                      patch.object(beta, 'QUOTA_TIMEOUT_SECONDS', 0.5)):
+                    if behavior == 'success':
+                        beta.run_live_quota(json.loads(QUOTA))
+                    else:
+                        with self.assertRaisesRegex(ValueError, '^Live quota verification failed$'):
+                            beta.run_live_quota(json.loads(QUOTA))
+                self.assertLess(time.monotonic() - started, 3)
+
+    def test_truncated_framing_and_ambiguous_json_are_rejected(self):
+        with patch.object(beta.urllib.request, 'build_opener') as factory:
+            response = self.quota_response()
+            raw = response.read.return_value
+            response.headers['Content-Length'] = str(len(raw))
+            factory.return_value.open.return_value = response
+            beta.check_live_quota(json.loads(QUOTA))
+            for length in (str(len(raw) + 1), '65537', '-1', 'garbage'):
+                response.headers.replace_header('Content-Length', length)
+                with self.subTest(length=length), self.assertRaises(ValueError):
+                    beta.check_live_quota(json.loads(QUOTA))
+            response.headers.replace_header('Content-Length', str(len(raw)))
+            response.headers['Content-Length'] = str(len(raw))
+            with self.assertRaises(ValueError):
+                beta.check_live_quota(json.loads(QUOTA))
+            for content in (raw.replace(b'"enabled": true', b'"enabled": false, "enabled": true'),
+                            raw[:-1] + b', "ignored": NaN}', raw[:-1] + b', "ignored": Infinity}'):
+                response = self.quota_response()
+                response.read.return_value = content
+                factory.return_value.open.return_value = response
+                with self.subTest(content=content), self.assertRaises(ValueError):
+                    beta.check_live_quota(json.loads(QUOTA))
 
     def test_existing_input_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as temp:
