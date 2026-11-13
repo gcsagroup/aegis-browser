@@ -25,10 +25,14 @@ class CoreLogShareSession {
  public:
   using Ready =
       base::OnceCallback<void(base::FilePath, base::ScopedClosureRunner)>;
+  using Cleanup = base::OnceCallback<void(bool)>;
   CoreLogShareSession();
   ~CoreLogShareSession();
   static void RecoverAtStartup(const base::FilePath& profile);
-  void Start(const base::FilePath& profile, std::string preview, Ready ready);
+  void Start(const base::FilePath& profile,
+             std::string preview,
+             Ready ready,
+             Cleanup cleanup);
   void ShutDown();
   // Runs cleanup on writer sequences and completes without a UI reply. Also
   // includes writers whose UI owner is already awaiting asynchronous destruction.
@@ -43,10 +47,12 @@ class CoreLogShareSession {
   class ShutdownHandle;
   void StartOn(std::string preview,
                Ready ready,
+               Cleanup cleanup,
                scoped_refptr<base::SequencedTaskRunner> runner,
                base::FilePath parent,
                bool recover);
-  void OnWritten(Ready ready, base::FilePath path);
+  void OnWritten(Ready ready, Cleanup cleanup, base::FilePath path);
+  void Release(Cleanup cleanup);
   void Finish();
 
   bool shutting_down_ = false;

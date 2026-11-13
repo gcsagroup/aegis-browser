@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 
 #include <atomic>
+#include <cerrno>
 #include <map>
 #include <vector>
 
@@ -28,29 +29,44 @@ base::LazyThreadPoolSequencedTaskRunner g_archive_runner =
         base::TaskTraits(base::MayBlock(),
                          base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
 
-bool IsOwnedDirectory(const base::FilePath& path, bool require_private) {
+bool IsOwnedDirectory(const base::FilePath& path) {
   struct stat info;
   return lstat(path.value().c_str(), &info) == 0 && S_ISDIR(info.st_mode) &&
-         info.st_uid == geteuid() &&
-         (!require_private || (info.st_mode & 0777) == 0700);
+         info.st_uid == geteuid();
 }
 
-// Accessed only on g_archive_runner. Recover once before sharing so another
-// active share from the same original profile is never swept.
-bool EnsureArchiveRecovery(const base::FilePath& profile) {
-  static base::NoDestructor<std::map<base::FilePath, bool>> results;
-  auto [it, inserted] = results->try_emplace(profile, false);
-  if (inserted) {
-    it->second = RecoverCoreLogArchives(profile);
-    if (!it->second)
-      LOG(WARNING) << "Could not recover abandoned Access log archives.";
+bool RemoveOwnedArchive(const base::FilePath& path) {
+  struct stat info;
+  if (lstat(path.value().c_str(), &info) != 0)
+    return errno == ENOENT;
+  return S_ISDIR(info.st_mode) && info.st_uid == geteuid() &&
+         (info.st_mode & 0777) == 0700 && base::DeletePathRecursively(path);
+}
+
+// Accessed only on g_archive_runner. There is one active archive per
+// original profile, including its private browsing windows.
+struct ArchiveState {
+  bool recovered = false;
+  bool active = false;
+
+  bool Recover(const base::FilePath& profile) {
+    if (!active && !recovered) {
+      recovered = RecoverCoreLogArchives(profile);
+      if (!recovered)
+        LOG(WARNING) << "Could not recover abandoned Access log archives.";
+    }
+    return recovered;
   }
-  return it->second;
+};
+
+ArchiveState& StateForProfile(const base::FilePath& profile) {
+  static base::NoDestructor<std::map<base::FilePath, ArchiveState>> states;
+  return (*states)[profile];
 }
 }  // namespace
 
 bool RecoverCoreLogArchives(const base::FilePath& profile) {
-  if (!IsOwnedDirectory(profile, false))
+  if (!IsOwnedDirectory(profile))
     return false;
   base::FileEnumerator files(
       profile, false, base::FileEnumerator::FILES |
@@ -69,7 +85,7 @@ bool RecoverCoreLogArchives(const base::FilePath& profile) {
     if (suffix.find_first_not_of(
             "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") != suffix.npos)
       continue;
-    if (!IsOwnedDirectory(path, true) || !base::DeletePathRecursively(path))
+    if (!RemoveOwnedArchive(path))
       recovered = false;
   }
   return recovered && files.GetError() == base::File::FILE_OK;
@@ -155,8 +171,18 @@ class CoreLogShareSession::Writer {
     shutdown_->CompleteStop();
   }
   base::FilePath Write(base::FilePath parent, std::string text, bool recover) {
-    if (shutdown_->stop_requested() || (recover && !EnsureArchiveRecovery(parent)))
+    if (shutdown_->stop_requested())
       return {};
+    if (recover) {
+      auto& state = StateForProfile(parent);
+      if (state.active)
+        return {};
+      cleanup_failed_ = !state.Recover(parent);
+      if (cleanup_failed_)
+        return {};
+      state.active = true;
+      profile_ = parent;
+    }
     const bool created = directory_.CreateUniqueTempDirUnderPath(
         parent, kCoreLogSharePrefix);
     // mkdtemp creates a 0700 directory.
@@ -164,17 +190,28 @@ class CoreLogShareSession::Writer {
       return {};
     return directory_.GetPath().AppendASCII(kCoreLogArchive);
   }
-  void CleanUp() {
-    if (directory_.IsValid()) {
-      const bool deleted = directory_.Delete();
-      if (!deleted)
-        LOG(WARNING) << "Could not delete the temporary Access log archive.";
+  bool CleanUp() {
+    const auto directory = directory_.Take();
+    if (!directory.empty() && !RemoveOwnedArchive(directory)) {
+      // Startup-style recovery on the same sequence retries this directory
+      // before another copy can be made. Leave the path for that retry.
+      cleanup_failed_ = true;
+      LOG(WARNING) << "Could not delete the temporary Access log archive.";
     }
+    if (!profile_.empty()) {
+      auto& state = StateForProfile(profile_);
+      state.recovered = !cleanup_failed_;
+      state.active = false;
+      profile_.clear();
+    }
+    return !cleanup_failed_;
   }
 
  private:
   std::shared_ptr<ShutdownHandle> shutdown_;
+  base::FilePath profile_;
   base::ScopedTempDir directory_;
+  bool cleanup_failed_ = false;
 };
 
 void CoreLogShareSession::ShutdownHandle::StopOnWriter() {
@@ -187,13 +224,15 @@ CoreLogShareSession::~CoreLogShareSession() = default;
 
 void CoreLogShareSession::RecoverAtStartup(const base::FilePath& profile) {
   g_archive_runner.Get()->PostTask(FROM_HERE, base::BindOnce(
-      [](base::FilePath path) { EnsureArchiveRecovery(path); }, profile));
+      [](base::FilePath path) { StateForProfile(path).Recover(path); }, profile));
 }
 
 void CoreLogShareSession::Start(const base::FilePath& profile,
-                               std::string preview, Ready ready) {
-  StartOn(std::move(preview), std::move(ready), g_archive_runner.Get(),
-          profile, /*recover=*/true);
+                               std::string preview,
+                               Ready ready,
+                               Cleanup cleanup) {
+  StartOn(std::move(preview), std::move(ready), std::move(cleanup),
+          g_archive_runner.Get(), profile, /*recover=*/true);
 }
 
 void CoreLogShareSession::StartForTesting(
@@ -201,18 +240,21 @@ void CoreLogShareSession::StartForTesting(
     Ready ready,
     scoped_refptr<base::SequencedTaskRunner> runner,
     base::FilePath parent) {
-  StartOn(std::move(preview), std::move(ready), std::move(runner),
+  StartOn(std::move(preview), std::move(ready), Cleanup(), std::move(runner),
           std::move(parent), /*recover=*/false);
 }
 
 void CoreLogShareSession::StartOn(
     std::string preview,
     Ready ready,
+    Cleanup cleanup,
     scoped_refptr<base::SequencedTaskRunner> runner,
     base::FilePath parent,
     bool recover) {
   if (shutting_down_ || writer_) {
     std::move(ready).Run({}, {});
+    if (cleanup)
+      std::move(cleanup).Run(true);
     return;
   }
   shutdown_ = std::make_shared<ShutdownHandle>(runner);
@@ -223,18 +265,36 @@ void CoreLogShareSession::StartOn(
   writer_.AsyncCall(&Writer::Write)
       .WithArgs(std::move(parent), std::move(preview), recover)
       .Then(base::BindOnce(&CoreLogShareSession::OnWritten, weak_.GetWeakPtr(),
-                           std::move(ready)));
+                           std::move(ready), std::move(cleanup)));
 }
 
-void CoreLogShareSession::OnWritten(Ready ready, base::FilePath path) {
+void CoreLogShareSession::OnWritten(Ready ready,
+                                   Cleanup cleanup,
+                                   base::FilePath path) {
   if (shutdown_->stop_requested()) {
     Finish();
     std::move(ready).Run({}, {});
+    if (cleanup)
+      std::move(cleanup).Run(true);
     return;
   }
   base::ScopedClosureRunner release(
-      base::BindOnce(&CoreLogShareSession::Finish, weak_.GetWeakPtr()));
+      base::BindOnce(&CoreLogShareSession::Release, weak_.GetWeakPtr(),
+                     std::move(cleanup)));
   std::move(ready).Run(std::move(path), std::move(release));
+}
+
+void CoreLogShareSession::Release(Cleanup cleanup) {
+  writer_.AsyncCall(&Writer::CleanUp)
+      .Then(base::BindOnce(
+          [](base::WeakPtr<CoreLogShareSession> session, Cleanup done,
+             bool cleaned) {
+            if (!session)
+              return;
+            session->Finish();
+            if (done)
+              std::move(done).Run(cleaned);
+          }, weak_.GetWeakPtr(), std::move(cleanup)));
 }
 
 void CoreLogShareSession::Finish() {

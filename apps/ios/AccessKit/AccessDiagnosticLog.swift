@@ -18,6 +18,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     private let limit: Int
     private let pollInterval: DispatchTimeInterval
     private let readsPerPoll: Int
+    private let afterClearPipeSnapshot: (() -> Void)?
     private var lines: [String] = []
     private var byteCount = 0
     private var pending = Data()
@@ -47,10 +48,12 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
          initialLevel: AccessLogLevel = .warning,
          pollInterval: DispatchTimeInterval = .milliseconds(100),
          readsPerPoll: Int = 4,
+         afterClearPipeSnapshot: (() -> Void)? = nil,
          storageQueue: DispatchQueue? = nil) {
         limit = max(256, capacity)
         self.pollInterval = pollInterval
         self.readsPerPoll = readsPerPoll
+        self.afterClearPipeSnapshot = afterClearPipeSnapshot
         storage = storageDirectory.map {
             if let storageQueue { return AccessDiagnosticLogStorage(directory: $0, queue: storageQueue) }
             return AccessDiagnosticLogStorage(directory: $0)
@@ -428,6 +431,23 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         lines.removeAll(); byteCount = 0
         discardingLine = discardingLine || !pending.isEmpty
         pending.removeAll()
+        storageGeneration &+= 1
+        let generation = storageGeneration
+        dirty = false
+        saveWork?.cancel(); saveWork = nil; saveWorkID = nil
+        if let storage {
+            clearingStorage = true
+            storage.clear { [weak self] result in
+                guard let self else { completion?(result); return }
+                self.queue.async {
+                    if self.storageGeneration == generation {
+                        self.clearingStorage = false
+                        self.storageFailed = result.isFailure
+                    }
+                    completion?(result)
+                }
+            }
+        }
         if let fd = readerFD, !disable {
             // Darwin FIONREAD = _IOR('f', 127, int). Swift cannot import
             // this SDK macro. A failed snapshot discards until an empty read.
@@ -438,24 +458,10 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
                 result = withUnsafeMutablePointer(to: &pendingBytes) { ioctl(fd, fionread, $0) }
             } while result < 0 && errno == EINTR
             discardPrefix = result == 0 ? max(0, Int(pendingBytes)) : nil
+            afterClearPipeSnapshot?()
             drain(fd: fd, maximumReads: readsPerPoll)
         }
-        storageGeneration &+= 1
-        let generation = storageGeneration
-        dirty = false
-        saveWork?.cancel(); saveWork = nil; saveWorkID = nil
-        guard let storage else { completion?(.success(())); return }
-        clearingStorage = true
-        storage.clear { [weak self] result in
-            guard let self else { completion?(result); return }
-            self.queue.async {
-                if self.storageGeneration == generation {
-                    self.clearingStorage = false
-                    self.storageFailed = result.isFailure
-                }
-                completion?(result)
-            }
-        }
+        if storage == nil { completion?(.success(())) }
     }
 
     private func flushLocked(completion: @escaping @Sendable (Result<Void, Error>) -> Void) {

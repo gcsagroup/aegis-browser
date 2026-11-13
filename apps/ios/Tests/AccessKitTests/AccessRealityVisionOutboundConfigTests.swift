@@ -467,6 +467,35 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         XCTAssertFalse(log.snapshot().contains("old.invalid"))
     }
 
+    func testClearPersistsFreshRecordsReadWhileDrainingOldBytes() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("access-clear-drain-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let new = Data("2026/11/11 00:00:00 from local accepted //during-clear.invalid:443\n".utf8)
+        let writer = Mutex<FileHandle?>(nil)
+        let log = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info,
+                                      pollInterval: .seconds(60), afterClearPipeSnapshot: {
+            writer.withLock { try? $0?.write(contentsOf: new) }
+        })
+        let capture = try XCTUnwrap(log.start(level: .info, secrets: []))
+        defer { log.stop() }
+        let pipe = try FileHandle(forWritingTo: URL(fileURLWithPath: capture.path))
+        defer { try? pipe.close() }
+        writer.withLock { $0 = pipe }
+        try await log.flush()
+        try pipe.write(contentsOf: Data("2026/11/11 00:00:00 from local accepted //old.invalid:443\n".utf8))
+        try await log.clearStoredLogs()
+        XCTAssertTrue(log.snapshot().contains("during-clear.invalid:443"))
+        let history = directory.appendingPathComponent("history.json")
+        let deadline = Date().addingTimeInterval(5)
+        while !FileManager.default.fileExists(atPath: history.path) && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let persisted = try String(contentsOf: history, encoding: .utf8)
+        XCTAssertTrue(persisted.contains("during-clear.invalid:443"))
+        XCTAssertFalse(persisted.contains("old.invalid"))
+    }
+
     func testShortRedactedRecordsRespectTheDiskRecordLimit() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("access-record-limit-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

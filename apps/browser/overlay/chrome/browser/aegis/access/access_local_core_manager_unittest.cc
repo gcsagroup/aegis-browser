@@ -397,6 +397,56 @@ bool WaitWithoutUiReplies(const std::shared_ptr<base::WaitableEvent>& event) {
   return event->TimedWait(base::Seconds(5));
 }
 
+TEST(AccessCoreLogArchiveTest, FailedCleanupBlocksNewArchiveUntilRecovery) {
+  base::test::TaskEnvironment environment;
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  CoreLogShareSession session;
+  base::FilePath folder;
+  base::ScopedClosureRunner release;
+  std::optional<bool> cleaned;
+  session.Start(parent.GetPath(), "private destination",
+                base::BindLambdaForTesting(
+                    [&](base::FilePath file, base::ScopedClosureRunner cleanup) {
+                      folder = file.DirName();
+                      release = std::move(cleanup);
+                    }),
+                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
+  environment.RunUntilIdle();
+  ASSERT_FALSE(folder.empty());
+  // Make the parent non-writable. This prevents removing the archive
+  // directory while keeping its identity intact for the retry.
+  ASSERT_TRUE(base::SetPosixFilePermissions(parent.GetPath(), 0500));
+  release.RunAndReset();
+  environment.RunUntilIdle();
+  EXPECT_EQ(cleaned, false);
+  EXPECT_TRUE(base::PathExists(folder));
+  bool blocked = false;
+  session.Start(parent.GetPath(), "another destination",
+                base::BindLambdaForTesting(
+                    [&](base::FilePath file, base::ScopedClosureRunner) {
+                      blocked = file.empty();
+                    }),
+                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
+  environment.RunUntilIdle();
+  EXPECT_TRUE(blocked);
+  EXPECT_EQ(cleaned, false);
+  EXPECT_TRUE(base::PathExists(folder));
+  ASSERT_TRUE(base::SetPosixFilePermissions(parent.GetPath(), 0700));
+
+  bool written = false;
+  session.Start(parent.GetPath(), "new destination",
+                base::BindLambdaForTesting(
+                    [&](base::FilePath file, base::ScopedClosureRunner) {
+                      written = !file.empty() && base::PathExists(file);
+                    }),
+                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
+  environment.RunUntilIdle();
+  EXPECT_TRUE(written);
+  EXPECT_EQ(cleaned, true);
+  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
+}
+
 TEST(AccessCoreLogArchiveTest, SessionEndingCleansAnOpenPickerWithoutUiReplies) {
   base::test::TaskEnvironment environment;
   base::ScopedTempDir parent;

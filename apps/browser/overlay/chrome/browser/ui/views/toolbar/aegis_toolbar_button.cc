@@ -486,14 +486,21 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     RefreshSoon();
     if (auto* controller = AccessBubble()) {
       auto [preview, version] = std::move(*confirmation);
+      using ShareResult = aegis::access::AccessSiteProxyBubbleController::CoreLogShareResult;
       controller->ShareCoreLogs(source_.get(), std::move(preview), version,
-          base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
-            if (self && !ok) {
-              self->log_notice_ = Copy(u"未能分享日志。请检查磁盘权限，重启可重试清理上次的临时文件。",
-                  u"Could not share the logs. Check disk permissions and restart to retry temporary file cleanup.",
-                  u"未能分享日誌。請檢查磁碟權限，重啟可重試清理上次的暫存檔。");
-              self->RefreshSoon();
+          base::BindOnce([](base::WeakPtr<AegisPageBubble> self, ShareResult result) {
+            if (!self || result == ShareResult::kCompleted)
+              return;
+            if (result == ShareResult::kCleanupFailed) {
+              self->log_notice_ = Copy(u"临时压缩日志未能删除。下次分享前会重试清理。",
+                  u"The temporary archive could not be deleted. Cleanup will be retried before the next share.",
+                  u"暫存壓縮日誌未能刪除。下次分享前會重試清理。");
+            } else {
+              self->log_notice_ = Copy(u"未能分享日志，请重试。",
+                  u"Could not share the logs. Try again.",
+                  u"未能分享日誌，請重試。");
             }
+            self->RefreshSoon();
           }, weak_.GetWeakPtr()));
     }
   }
