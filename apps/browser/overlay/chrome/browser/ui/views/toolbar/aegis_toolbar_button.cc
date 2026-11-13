@@ -451,7 +451,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
             if (auto* c = self->AccessBubble()) c->ShareCoreLogs(self->source_.get(), std::move(preview), version,
                 base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
                   if (self && !ok) {
-                    self->log_notice_ = Copy(u"未能打开分享。", u"Could not share the logs.", u"未能開啟分享。");
+                    self->log_notice_ = Copy(u"未能分享日志。请检查磁盘权限，重启可重试清理上次的临时文件。", u"Could not share the logs. Check disk permissions and restart to retry temporary file cleanup.", u"未能分享日誌。請檢查磁碟權限，重啟可重試清理上次的暫存檔。");
                     self->RefreshSoon();
                   }
                 }, self->weak_.GetWeakPtr()));

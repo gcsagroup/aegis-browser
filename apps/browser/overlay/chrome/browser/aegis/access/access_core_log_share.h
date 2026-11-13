@@ -14,6 +14,9 @@ namespace aegis::access {
 // Write only inside a freshly created private directory owned by the caller.
 bool WriteCoreLogArchive(const base::FilePath& directory,
                          const std::string& text);
+inline constexpr char kCoreLogSharePrefix[] = "aegis-access-share-";
+// The caller supplies the original profile directory. Never traverses links.
+bool RecoverCoreLogArchives(const base::FilePath& profile);
 inline constexpr char kCoreLogArchive[] = "Aegis-Access.log.gz";
 
 // UI owns the operation. Its worker owns the temporary directory from the
@@ -24,7 +27,8 @@ class CoreLogShareSession {
       base::OnceCallback<void(base::FilePath, base::ScopedClosureRunner)>;
   CoreLogShareSession();
   ~CoreLogShareSession();
-  void Start(std::string preview, Ready ready);
+  static void RecoverAtStartup(const base::FilePath& profile);
+  void Start(const base::FilePath& profile, std::string preview, Ready ready);
   void ShutDown();
   // Runs cleanup on writer sequences and completes without a UI reply. Also
   // includes writers whose UI owner is already awaiting asynchronous destruction.
@@ -40,7 +44,8 @@ class CoreLogShareSession {
   void StartOn(std::string preview,
                Ready ready,
                scoped_refptr<base::SequencedTaskRunner> runner,
-               base::FilePath parent);
+               base::FilePath parent,
+               bool recover);
   void OnWritten(Ready ready, base::FilePath path);
   void Finish();
 

@@ -484,6 +484,32 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         }
     }
 
+    func testDelayedRestoreRedactsCredentialsAfterCaptureStops() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("access-stop-before-restore-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let line = "2026/11/11 00:00:00 [Access] accepted private.example:443"
+        try JSONSerialization.data(withJSONObject: ["version": 1, "lines": [line]])
+            .write(to: directory.appendingPathComponent("history.json"))
+        let storageQueue = DispatchQueue(label: "access.stop.before.restore.test")
+        storageQueue.suspend()
+        let log = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info, storageQueue: storageQueue)
+        do {
+            let capture = try XCTUnwrap(log.start(level: .info, secrets: ["private"]))
+            XCTAssertTrue(log.stop(capture: capture))
+        } catch {
+            storageQueue.resume()
+            throw error
+        }
+        storageQueue.resume()
+        try await log.flush()
+        let sanitized = "2026/11/11 00:00:00 [Access] accepted [redacted]"
+        XCTAssertEqual(log.snapshot(), sanitized)
+        let reopened = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info)
+        try await reopened.flush()
+        XCTAssertEqual(reopened.snapshot(), sanitized)
+    }
+
     func testChangingCredentialsResanitizesHistoryThatAlreadyRestored() async throws {
         for secret in ["2026", "ac", "private"] {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("access-restored-before-start-" + UUID().uuidString)

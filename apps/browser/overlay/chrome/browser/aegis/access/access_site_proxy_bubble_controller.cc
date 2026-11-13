@@ -434,7 +434,7 @@ void AccessSiteProxyBubbleController::ShareCoreLogs(content::WebContents* tab, s
     std::move(done).Run(false);
     return;
   }
-  log_share_.Start(std::move(preview), base::BindOnce(
+  log_share_.Start(profile_->GetOriginalProfile()->GetPath(), std::move(preview), base::BindOnce(
       [](base::WeakPtr<content::WebContents> tab, content::GlobalRenderFrameHostId frame,
          scoped_refptr<AccessCoreLogStore> store, uint64_t version,
          base::OnceCallback<void(bool)> done, base::FilePath path,

@@ -24,6 +24,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     private var discardingBuffered = false
     private var enabled = false
     private var failed = false
+    // History can finish restoring after the current FIFO is retired.
     private var secrets: [String] = []
     private var reader: DispatchSourceTimer?
     private var readerFD: Int32?
@@ -107,7 +108,18 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     /// Creates the reader before Xray opens the FIFO, preventing an open from
     /// blocking. A failure leaves logging disabled; the proxy can still work.
     func start(level: AccessLogLevel, secrets: [String]) throws -> Capture? {
-        guard stop() else { throw POSIXError(.EIO) }
+        let stopped = stop()
+        queue.sync {
+            self.secrets = secrets.filter { !$0.isEmpty }
+            let sanitized = lines.compactMap(restoredLine)
+            if sanitized != lines {
+                lines = sanitized
+                trimLocked()
+                dirty = true
+                scheduleSaveLocked()
+            }
+        }
+        guard stopped else { throw POSIXError(.EIO) }
         guard level != .none else { clear(); return nil }
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("aegis-access-log-\(UUID().uuidString)", isDirectory: true)
@@ -125,14 +137,6 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         }
         let capture = Capture(id: UUID(), path: fifo.path)
         queue.sync {
-            self.secrets = secrets.filter { !$0.isEmpty }
-            let sanitized = lines.compactMap(restoredLine)
-            if sanitized != lines {
-                lines = sanitized
-                trimLocked()
-                dirty = true
-                scheduleSaveLocked()
-            }
             enabled = true
             failed = false
             directory = dir
@@ -189,7 +193,6 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             reader?.cancel()
             reader = nil
             readerFD = nil
-            secrets.removeAll()
             pending.removeAll()
             directory = nil
             captureID = nil

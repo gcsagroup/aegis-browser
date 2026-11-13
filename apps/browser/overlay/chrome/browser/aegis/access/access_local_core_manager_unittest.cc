@@ -321,6 +321,32 @@ TEST(AccessCoreLogArchiveTest, PrivateCompressedCopyWithoutOverwrite) {
   EXPECT_EQ(decoded, "unchanged");
 }
 
+TEST(AccessCoreLogArchiveTest, StartupRecoversOnlyOwnedPrivateArchives) {
+  base::ScopedTempDir profile;
+  base::ScopedTempDir unrelated;
+  ASSERT_TRUE(profile.CreateUniqueTempDir());
+  ASSERT_TRUE(unrelated.CreateUniqueTempDir());
+  base::ScopedTempDir abandoned;
+  ASSERT_TRUE(abandoned.CreateUniqueTempDirUnderPath(profile.GetPath(),
+                                                     kCoreLogSharePrefix));
+  ASSERT_TRUE(WriteCoreLogArchive(abandoned.GetPath(), "private destination"));
+  const auto abandoned_path = abandoned.Take();
+  const auto keep = unrelated.GetPath().AppendASCII("keep");
+  ASSERT_TRUE(base::WriteFile(keep, "unrelated"));
+  const auto link = profile.GetPath().AppendASCII("aegis-access-share-ABC123");
+  ASSERT_TRUE(base::CreateSymbolicLink(unrelated.GetPath(), link));
+  const auto other = profile.GetPath().AppendASCII("unrelated-folder");
+  ASSERT_TRUE(base::CreateDirectory(other));
+
+  EXPECT_FALSE(RecoverCoreLogArchives(profile.GetPath()));
+  EXPECT_FALSE(base::PathExists(abandoned_path));
+  EXPECT_TRUE(base::IsLink(link));
+  EXPECT_TRUE(base::PathExists(keep));
+  EXPECT_TRUE(base::PathExists(other));
+  ASSERT_TRUE(base::DeleteFile(link));
+  EXPECT_TRUE(RecoverCoreLogArchives(profile.GetPath()));
+}
+
 TEST(AccessCoreLogArchiveTest, QuitWhileWriteIsQueuedCleansWithoutUiReply) {
   base::test::TaskEnvironment environment(
       base::test::TaskEnvironment::ThreadPoolExecutionMode::QUEUED);
@@ -493,7 +519,19 @@ TEST_F(AccessLocalCoreFaultTest, CapturesDiagnosticWithoutAdmittingFailedChild) 
   auto [level, generation] = log->LaunchConfig();
   log->SetLevel("none");
   log->SetLevel("debug");
-  log->Add(generation, "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started", {});
+  log->Add(generation, log->clear_epoch(), "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started", {});
+  EXPECT_TRUE(log->Snapshot().empty());
+}
+
+TEST_F(AccessLocalCoreFaultTest, RejectsMultilineNodeBeforeStartingChild) {
+  auto input = Input("exit-with-diagnostic\n2026/11/11 12:10:09 [Warning] core: Xray 12345678.1 started");
+  auto log = base::MakeRefCounted<AccessCoreLogStore>();
+  input.log_store = log;
+  AccessLocalCoreManager manager(std::move(input));
+  base::test::TestFuture<AccessLocalCoreReady> prepared;
+  manager.Prepare(prepared.GetCallback());
+  ExpectUnavailable(prepared.Get());
+  EXPECT_FALSE(State());
   EXPECT_TRUE(log->Snapshot().empty());
 }
 

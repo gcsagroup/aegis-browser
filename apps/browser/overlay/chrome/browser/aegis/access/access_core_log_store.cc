@@ -1,13 +1,25 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_core_log_store.h"
 
+#include "base/strings/string_split.h"
+
 #if BUILDFLAG(IS_MAC)
 #include "base/functional/bind.h"
-#include "base/strings/string_split.h"
 #include "base/task/lazy_thread_pool_task_runner.h"
 #endif
 
 namespace aegis::access {
+namespace {
+void ReadSanitizedLines(AccessCoreLog& log, std::string_view text,
+                        const std::vector<std::string>& protected_values) {
+  for (auto line : base::SplitStringPiece(text, "\n", base::KEEP_WHITESPACE,
+                                          base::SPLIT_WANT_NONEMPTY)) {
+    if (line.size() <= 4096)
+      log.Add(line, protected_values);
+  }
+}
+}  // namespace
+
 AccessCoreLogStore::AccessCoreLogStore() = default;
 AccessCoreLogStore::~AccessCoreLogStore() = default;
 
@@ -24,11 +36,27 @@ void AccessCoreLogStore::SetLevel(std::string_view level) {
     ScheduleSaveLocked();
 #endif
 }
+void AccessCoreLogStore::SetProtectedValues(std::vector<std::string> values) {
+  base::AutoLock guard(lock_);
+  if (protected_values_ == values)
+    return;
+  protected_values_ = std::move(values);
+  ++view_version_;
+  const std::string old = log_.Snapshot();
+  log_.Clear();
+  ReadSanitizedLines(log_, old, protected_values_);
+#if BUILDFLAG(IS_MAC)
+  if (log_.Snapshot() != old)
+    ScheduleSaveLocked();
+#endif
+}
 void AccessCoreLogStore::Add(uint64_t generation,
+                             uint64_t clear_epoch,
                              std::string_view line,
                              const std::vector<std::string>& protected_values) {
   base::AutoLock guard(lock_);
-  if (generation != generation_ || !log_.Add(line, protected_values))
+  if (generation != generation_ || clear_epoch != clear_epoch_ ||
+      !log_.Add(line, protected_values, protected_values_))
     return;
 #if BUILDFLAG(IS_MAC)
   ScheduleSaveLocked();
@@ -37,6 +65,7 @@ void AccessCoreLogStore::Add(uint64_t generation,
 void AccessCoreLogStore::Clear() {
   base::AutoLock guard(lock_);
   ++view_version_;
+  ++clear_epoch_;
   log_.Clear();
 #if BUILDFLAG(IS_MAC)
   ScheduleClearLocked();
@@ -51,13 +80,6 @@ base::LazyThreadPoolSequencedTaskRunner g_log_disk =
     LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
         base::TaskTraits(base::MayBlock(),
                          base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
-void ReadSanitizedLines(AccessCoreLog& log, std::string_view text) {
-  for (auto line : base::SplitStringPiece(text, "\n", base::KEEP_WHITESPACE,
-                                          base::SPLIT_WANT_NONEMPTY)) {
-    if (line.size() <= 4096)
-      log.Add(line);
-  }
-}
 }  // namespace
 
 void AccessCoreLogStore::FlushAllForSessionEnding(base::OnceClosure completion) {
@@ -104,8 +126,11 @@ void AccessCoreLogStore::Restore(uint64_t epoch) {
   // bytes through the same bounded sanitizer used for fresh child records.
   std::string fresh = log_.Snapshot();
   log_.Clear();
-  ReadSanitizedLines(log_, stored);
-  ReadSanitizedLines(log_, fresh);
+  ReadSanitizedLines(log_, stored, protected_values_);
+  const bool changed = log_.Snapshot() != stored;
+  ReadSanitizedLines(log_, fresh, protected_values_);
+  if (changed)
+    ScheduleSaveLocked();
 }
 void AccessCoreLogStore::ScheduleSaveLocked() {
   lock_.AssertAcquired();

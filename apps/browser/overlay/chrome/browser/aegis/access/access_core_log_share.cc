@@ -4,20 +4,77 @@
 #include <sys/stat.h>
 
 #include <atomic>
+#include <map>
 #include <vector>
 
 #include "base/barrier_closure.h"
 #include "base/containers/span.h"
 #include "base/files/file.h"
+#include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
 #include "base/synchronization/lock.h"
-#include "base/task/thread_pool.h"
+#include "base/task/lazy_thread_pool_task_runner.h"
 #include "third_party/zlib/google/compression_utils.h"
 
 namespace aegis::access {
+namespace {
+base::LazyThreadPoolSequencedTaskRunner g_archive_runner =
+    LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
+        base::TaskTraits(base::MayBlock(),
+                         base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
+
+bool IsOwnedDirectory(const base::FilePath& path, bool require_private) {
+  struct stat info;
+  return lstat(path.value().c_str(), &info) == 0 && S_ISDIR(info.st_mode) &&
+         info.st_uid == geteuid() &&
+         (!require_private || (info.st_mode & 0777) == 0700);
+}
+
+// Accessed only on g_archive_runner. Recover once before sharing so another
+// active share from the same original profile is never swept.
+bool EnsureArchiveRecovery(const base::FilePath& profile) {
+  static base::NoDestructor<std::map<base::FilePath, bool>> results;
+  auto [it, inserted] = results->try_emplace(profile, false);
+  if (inserted) {
+    it->second = RecoverCoreLogArchives(profile);
+    if (!it->second)
+      LOG(WARNING) << "Could not recover abandoned Access log archives.";
+  }
+  return it->second;
+}
+}  // namespace
+
+bool RecoverCoreLogArchives(const base::FilePath& profile) {
+  if (!IsOwnedDirectory(profile, false))
+    return false;
+  base::FileEnumerator files(
+      profile, false, base::FileEnumerator::FILES |
+                          base::FileEnumerator::DIRECTORIES |
+                          base::FileEnumerator::SHOW_SYM_LINKS,
+      std::string(kCoreLogSharePrefix) + "??????",
+      base::FileEnumerator::FolderSearchPolicy::MATCH_ONLY,
+      base::FileEnumerator::ErrorPolicy::STOP_ENUMERATION);
+  bool recovered = true;
+  for (auto path = files.Next(); !path.empty(); path = files.Next()) {
+    const auto name = path.BaseName().value();
+    const std::string_view prefix(kCoreLogSharePrefix);
+    if (!std::string_view(name).starts_with(prefix) || name.size() != prefix.size() + 6)
+      continue;
+    const auto suffix = std::string_view(name).substr(prefix.size());
+    if (suffix.find_first_not_of(
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") != suffix.npos)
+      continue;
+    if (!IsOwnedDirectory(path, true) || !base::DeletePathRecursively(path))
+      recovered = false;
+  }
+  return recovered && files.GetError() == base::File::FILE_OK;
+}
+
 bool WriteCoreLogArchive(const base::FilePath& directory,
                          const std::string& text) {
   if (text.empty() || text.size() > 65536)
@@ -97,12 +154,12 @@ class CoreLogShareSession::Writer {
     shutdown_->SetWriter(nullptr);
     shutdown_->CompleteStop();
   }
-  base::FilePath Write(base::FilePath parent, std::string text) {
-    if (shutdown_->stop_requested()) return {};
-    const bool created = parent.empty()
-                             ? directory_.CreateUniqueTempDir()
-                             : directory_.CreateUniqueTempDirUnderPath(parent);
-    // Both calls use mkdtemp on macOS, creating a 0700 directory.
+  base::FilePath Write(base::FilePath parent, std::string text, bool recover) {
+    if (shutdown_->stop_requested() || (recover && !EnsureArchiveRecovery(parent)))
+      return {};
+    const bool created = directory_.CreateUniqueTempDirUnderPath(
+        parent, kCoreLogSharePrefix);
+    // mkdtemp creates a 0700 directory.
     if (!created || !WriteCoreLogArchive(directory_.GetPath(), text))
       return {};
     return directory_.GetPath().AppendASCII(kCoreLogArchive);
@@ -110,7 +167,8 @@ class CoreLogShareSession::Writer {
   void CleanUp() {
     if (directory_.IsValid()) {
       const bool deleted = directory_.Delete();
-      (void)deleted;
+      if (!deleted)
+        LOG(WARNING) << "Could not delete the temporary Access log archive.";
     }
   }
 
@@ -127,11 +185,15 @@ void CoreLogShareSession::ShutdownHandle::StopOnWriter() {
 CoreLogShareSession::CoreLogShareSession() = default;
 CoreLogShareSession::~CoreLogShareSession() = default;
 
-void CoreLogShareSession::Start(std::string preview, Ready ready) {
-  StartOn(std::move(preview), std::move(ready),
-          base::ThreadPool::CreateSequencedTaskRunner(
-              {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN}),
-          {});
+void CoreLogShareSession::RecoverAtStartup(const base::FilePath& profile) {
+  g_archive_runner.Get()->PostTask(FROM_HERE, base::BindOnce(
+      [](base::FilePath path) { EnsureArchiveRecovery(path); }, profile));
+}
+
+void CoreLogShareSession::Start(const base::FilePath& profile,
+                               std::string preview, Ready ready) {
+  StartOn(std::move(preview), std::move(ready), g_archive_runner.Get(),
+          profile, /*recover=*/true);
 }
 
 void CoreLogShareSession::StartForTesting(
@@ -140,14 +202,15 @@ void CoreLogShareSession::StartForTesting(
     scoped_refptr<base::SequencedTaskRunner> runner,
     base::FilePath parent) {
   StartOn(std::move(preview), std::move(ready), std::move(runner),
-          std::move(parent));
+          std::move(parent), /*recover=*/false);
 }
 
 void CoreLogShareSession::StartOn(
     std::string preview,
     Ready ready,
     scoped_refptr<base::SequencedTaskRunner> runner,
-    base::FilePath parent) {
+    base::FilePath parent,
+    bool recover) {
   if (shutting_down_ || writer_) {
     std::move(ready).Run({}, {});
     return;
@@ -158,7 +221,7 @@ void CoreLogShareSession::StartOn(
   handles.emplace_back(shutdown_);
   writer_.emplace(std::move(runner), shutdown_);
   writer_.AsyncCall(&Writer::Write)
-      .WithArgs(std::move(parent), std::move(preview))
+      .WithArgs(std::move(parent), std::move(preview), recover)
       .Then(base::BindOnce(&CoreLogShareSession::OnWritten, weak_.GetWeakPtr(),
                            std::move(ready)));
 }

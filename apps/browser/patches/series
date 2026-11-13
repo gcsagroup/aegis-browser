@@ -470,3 +470,4 @@
 0468-feat-access-local-core-diagnostic-logs.patch
 0469-fix-macos-dev-diagnostic-default.patch
 0470-fix-core-log-severity-buffer.patch
+0471-fix-diagnostic-history-privacy-boundaries.patch

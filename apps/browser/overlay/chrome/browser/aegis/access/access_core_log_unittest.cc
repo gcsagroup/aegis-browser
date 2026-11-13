@@ -114,6 +114,32 @@ TEST(AccessCoreLogTest, StripAccessSecretsKeepOnlyDestination) {
   log.Add(std::string(kTime) + "[Debug] untrusted/node: secret-token");
   EXPECT_EQ(log.Snapshot(), std::string(kTime) + "[Debug] [redacted]");
 }
+TEST(AccessCoreLogTest, ProtectsNumericFieldsAndWholeRecord) {
+  AccessCoreLog log;
+  EXPECT_FALSE(log.Add(std::string(kTime) + "[Warning] core: Xray 12345678.1 started",
+                       {"12345678"}));
+  EXPECT_FALSE(log.Add(std::string(kTime) + "[Error] [307] core: unknown", {"307"}));
+  EXPECT_FALSE(log.Add(std::string(kTime) + "[Error] core: unknown", {"2026"}));
+  EXPECT_TRUE(log.Snapshot().empty());
+  EXPECT_TRUE(log.Add(std::string(kTime) + "[Warning] core: Xray 26.1.18 started",
+                      {"12345678"}));
+}
+
+TEST(AccessCoreLogTest, ClearDiscardsUnreadBytesAndPartialRecord) {
+  CoreLogFramer framer;
+  std::vector<std::string> accepted;
+  auto sink = [&accepted](std::string_view line) { accepted.emplace_back(line); };
+  framer.Feed("before", sink);
+  framer.DiscardPartial();
+  framer.Discard("-clear\nold-complete\nold-tail");
+  framer.Feed("-continued\nnew-record\n", sink);
+  EXPECT_EQ(accepted, (std::vector<std::string>{"new-record"}));
+  framer.Feed("before", sink);
+  framer.DiscardPartial();
+  framer.Feed("-continued\nnext-record\n", sink);
+  EXPECT_EQ(accepted, (std::vector<std::string>{"new-record", "next-record"}));
+}
+
 TEST(AccessCoreLogTest, FragmentOversizeAndBoundedHistory) {
   CoreLogFramer framer;
   AccessCoreLog log;

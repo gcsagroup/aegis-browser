@@ -2,6 +2,7 @@
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
 #include <signal.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -93,17 +94,36 @@ constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
       })");
 constexpr char kCanary[] = "https://www.gstatic.com/generate_204";
 std::string Token() { return base::Uuid::GenerateRandomV4().AsLowercaseString(); }
-// Keep configured strings out of access targets as well as free-form messages.
-// Exceeding the small comparison budget disables address disclosure.
-void ProtectValue(const base::Value& value, std::vector<std::string>& values) {
-  if (values.size() >= 256) return;
+// Refuse control characters before Xray can print a multiline node field as
+// an independent diagnostic. Bound redaction work even for large configs.
+bool CollectProtectedValues(const base::Value& value,
+                            std::vector<std::string>& values,
+                            std::string_view field = {}) {
   if (value.is_dict()) {
-    for (auto entry : value.GetDict()) ProtectValue(entry.second, values);
+    for (auto entry : value.GetDict()) {
+      if (!CollectProtectedValues(entry.second, values, entry.first))
+        return false;
+    }
   } else if (value.is_list()) {
-    for (const auto& item : value.GetList()) ProtectValue(item, values);
-  } else if (value.is_string() && !value.GetString().empty()) {
-    values.push_back(base::ToLowerASCII(value.GetString()));
+    for (const auto& item : value.GetList()) {
+      if (!CollectProtectedValues(item, values))
+        return false;
+    }
+  } else if (value.is_string()) {
+    const auto& text = value.GetString();
+    if (std::any_of(text.begin(), text.end(), [](unsigned char c) {
+          return c < 0x20 || c == 0x7f;
+        }))
+      return false;
+    const bool structural = (field == "protocol" && text == "vless") ||
+                            (field == "network" && text == "tcp") ||
+                            (field == "security" && text == "reality") ||
+                            (field == "flow" && text == "xtls-rprx-vision") ||
+                            (field == "encryption" && text == "none");
+    if (!structural && !text.empty() && values.size() < 256)
+      values.push_back(base::ToLowerASCII(text));
   }
+  return true;
 }
 }  // namespace
 
@@ -301,12 +321,16 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     credentials_.emplace(base::UTF8ToUTF16(user), base::UTF8ToUTF16(password));
     registration_ = Token();
     std::string level = "none";
-    if (input_.log_store) std::tie(level, log_generation_) = input_.log_store->LaunchConfig();
     protected_values_ = {user, password, registration_,
                          base::ToLowerASCII(base::Base64Encode(user + ":" + password))};
-    if (CoreLogRank(level) < 2) {
-      ProtectValue(outbounds->front(), protected_values_);
-      if (protected_values_.size() >= 256) protected_values_ = {""};
+    if (!CollectProtectedValues(outbounds->front(), protected_values_))
+      return false;
+    if (protected_values_.size() >= 256)
+      protected_values_ = {""};  // A saturated budget suppresses every record.
+    if (input_.log_store) {
+      input_.log_store->SetProtectedValues(protected_values_);
+      std::tie(level, log_generation_) = input_.log_store->LaunchConfig();
+      log_clear_epoch_ = input_.log_store->clear_epoch();
     }
     auto log = base::DictValue().Set("loglevel", level);
     if (CoreLogRank(level) >= 2) log.Set("access", "none");
@@ -353,18 +377,42 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     return process_.IsValid();
   }
   void DrainLog() {
-    // Bound each turn so noisy children cannot starve cancellation or probes.
+    if (!log_read_.is_valid())
+      return;
+    // A clear invalidates any batch already in flight. On this sequence,
+    // discard the unread prefix and any partial line at that boundary.
+    const uint64_t epoch = input_.log_store->clear_epoch();
+    if (epoch != log_clear_epoch_) {
+      log_clear_epoch_ = epoch;
+      framer_.DiscardPartial();
+      int pending = 0;
+      discard_until_empty_ = HANDLE_EINTR(ioctl(log_read_.get(), FIONREAD, &pending)) < 0;
+      discard_bytes_ = discard_until_empty_ ? 0 : std::max(pending, 0);
+    }
     char chunk[4096];
     for (int i = 0; i < 16 && log_read_.is_valid(); ++i) {
       auto count = HANDLE_EINTR(read(log_read_.get(), chunk, sizeof(chunk)));
-      if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+      if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        discard_until_empty_ = false;
+        discard_bytes_ = 0;
+        return;
+      }
       if (count <= 0) {
         log_watch_.reset();
         log_read_.reset();
         break;
       }
-      framer_.Feed(std::string_view(chunk, count), [this](std::string_view line) {
-        input_.log_store->Add(log_generation_, line, protected_values_);
+      std::string_view bytes(chunk, count);
+      const size_t discard = discard_until_empty_
+                                 ? bytes.size() : std::min(discard_bytes_, bytes.size());
+      if (discard) {
+        framer_.Discard(bytes.substr(0, discard));
+        if (!discard_until_empty_)
+          discard_bytes_ -= discard;
+        bytes.remove_prefix(discard);
+      }
+      framer_.Feed(bytes, [this, epoch](std::string_view line) {
+        input_.log_store->Add(log_generation_, epoch, line, protected_values_);
       });
     }
   }
@@ -486,6 +534,8 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     log_watch_.reset();
     log_read_.reset();
     framer_ = CoreLogFramer();
+    discard_bytes_ = 0;
+    discard_until_empty_ = false;
     protected_values_.clear();
     credentials_.reset();
     authenticated_ = false;
@@ -499,6 +549,9 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
   std::unique_ptr<base::FileDescriptorWatcher::Controller> log_watch_;
   CoreLogFramer framer_;
   uint64_t log_generation_ = 0;
+  uint64_t log_clear_epoch_ = 0;
+  size_t discard_bytes_ = 0;
+  bool discard_until_empty_ = false;
   std::vector<std::string> protected_values_;
   base::ScopedTempDir directory_;
   base::Process process_;

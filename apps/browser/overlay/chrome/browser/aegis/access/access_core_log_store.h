@@ -37,7 +37,13 @@ class AccessCoreLogStore
     base::AutoLock guard(lock_);
     return {std::string(log_.level()), generation_};
   }
+  uint64_t clear_epoch() {
+    base::AutoLock guard(lock_);
+    return clear_epoch_;
+  }
+  void SetProtectedValues(std::vector<std::string> values);
   void Add(uint64_t generation,
+           uint64_t clear_epoch,
            std::string_view line,
            const std::vector<std::string>& protected_values);
   std::string Snapshot() {
@@ -76,6 +82,8 @@ class AccessCoreLogStore
 #endif
   uint64_t view_version_ GUARDED_BY(lock_) = 0;
   uint64_t generation_ GUARDED_BY(lock_) = 0;
+  uint64_t clear_epoch_ GUARDED_BY(lock_) = 0;
+  std::vector<std::string> protected_values_ GUARDED_BY(lock_);
   AccessCoreLog log_ GUARDED_BY(lock_);
 };
 }  // namespace aegis::access

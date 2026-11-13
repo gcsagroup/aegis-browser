@@ -3,6 +3,10 @@
 #include "chrome/browser/aegis/aegis_service_factory.h"
 
 #include "base/feature_list.h"
+#include "build/build_config.h"
+#if BUILDFLAG(IS_MAC)
+#include "chrome/browser/aegis/access/access_core_log_share.h"
+#endif
 #include "chrome/browser/aegis/aegis_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/features.h"
@@ -20,6 +24,10 @@ AegisServiceFactory* AegisServiceFactory::GetInstance() {
 // static
 void AegisServiceFactory::EnsureIncognitoGuardForProfile(Profile* profile) {
   GetForProfileImpl(profile, /*create=*/true);
+#if BUILDFLAG(IS_MAC)
+  if (profile && profile->IsRegularProfile())
+    access::CoreLogShareSession::RecoverAtStartup(profile->GetPath());
+#endif
 }
 
 // static
