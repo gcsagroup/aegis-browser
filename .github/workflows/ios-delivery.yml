@@ -369,8 +369,11 @@ jobs:
       - id: quota
         name: Verify private Beta and live quota without ASC credentials
         run: python3 scripts/release/ios-action.py private-beta-preflight
+      - name: Require matching quota verification before loading ASC credentials
+        env:
+          AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256: ${{ steps.quota.outputs.manifest_sha256 }}
+        run: python3 scripts/release/ios-action.py require-private-beta-preflight
       - name: Upload private Beta inside the store environment
-        if: ${{ success() && steps.quota.outputs.manifest_sha256 == needs.ios-package.outputs.manifest_sha256 }}
         env:
           AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256: ${{ steps.quota.outputs.manifest_sha256 }}
           AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
@@ -381,6 +384,9 @@ jobs:
         name: Read permanent upload state for private Beta
         if: ${{ always() && steps.restore.outcome == 'success' }}
         run: python3 scripts/release/ios-action.py private-beta-evidence
+      - name: Clean this attempt's private restore staging
+        if: ${{ always() && steps.restore.outcome != 'skipped' }}
+        run: python3 scripts/release/ios-action.py cleanup-private-beta-restore
       - name: Clean restored private Beta workspace
         if: ${{ always() && steps.restore.outcome == 'success' }}
         run: python3 scripts/release/ios-action.py cleanup-private-beta

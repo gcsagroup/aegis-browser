@@ -2,6 +2,9 @@ import hashlib
 import importlib.util
 import json
 import os
+import signal
+import subprocess  # nosec B404
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -95,6 +98,42 @@ class IosActionTests(unittest.TestCase):
                 self.assertFalse(workspace.exists())
                 self.assertEqual(list(workspace.parent.glob('.private-beta-restore-*')), [])
                 self.assertEqual(payload.read_bytes(), raw_ipa)
+                child = """
+import importlib.util, os, signal, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+spec = importlib.util.spec_from_file_location('ios_action', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+def interrupted_copy(_source, destination):
+    destination.mkdir(mode=0o700)
+    (destination / 'fixture.ipa').write_bytes(b'partial private fixture')
+    os.kill(os.getpid(), signal.SIGTERM)
+with (patch.object(module.Path, 'home', return_value=Path(sys.argv[2])),
+      patch.object(module, 'directory', return_value=Path(sys.argv[3])),
+      patch.object(module, 'source', return_value=('a'*40, 'b'*40)),
+      patch.object(module.shutil, 'copytree', side_effect=interrupted_copy)):
+    module.restore_private_beta()
+"""
+                # Fixed interpreter and literal test program; all arguments are local fixture paths.
+                # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+                terminated = subprocess.run([sys.executable, '-c', child, action.__file__, str(home), str(workspace)],  # nosec B603
+                                            env=env, capture_output=True, timeout=10, check=False)
+                self.assertEqual(terminated.returncode, -signal.SIGTERM, terminated.stderr.decode())
+                staging, owner = action.private_beta_restore_staging()
+                self.assertTrue((staging / 'package/fixture.ipa').is_file())
+                self.assertFalse(workspace.exists())
+                self.assertEqual(staging.stat().st_mode & 0o077, 0)
+                self.assertEqual(payload.read_bytes(), raw_ipa)
+                marker = staging / 'owner.json'
+                marker.write_text(json.dumps(dict(owner, runId='other-run')))
+                with self.assertRaises(ValueError): action.cleanup_private_beta_restore()
+                self.assertTrue(staging.exists())
+                marker.write_text(json.dumps(owner))
+                action.cleanup_private_beta_restore()
+                self.assertFalse(staging.exists())
+                self.assertEqual(payload.read_bytes(), raw_ipa)
                 action.restore_private_beta()
                 self.assertEqual((workspace / 'fixture.ipa').read_bytes(), raw_ipa)
                 with self.assertRaises(ValueError):
@@ -117,14 +156,16 @@ class IosActionTests(unittest.TestCase):
               patch.object(action, 'output') as output):
             with self.assertRaises(ValueError): action.private_beta_upload()
             stage.assert_not_called()
-            with patch.dict(os.environ, {'AEGIS_ASC_KEY_BASE64': 'synthetic'}), self.assertRaises(ValueError):
-                action.private_beta_preflight()
+            for name in ('AEGIS_ASC_KEY_BASE64', 'AEGIS_ASC_KEY_PATH'):
+                with self.subTest(name=name), patch.dict(os.environ, {name: 'synthetic'}), self.assertRaises(ValueError):
+                    action.private_beta_preflight()
             run.assert_not_called()
             with patch.object(action, 'run', side_effect=ValueError('quota unavailable')), self.assertRaises(ValueError):
                 action.private_beta_preflight()
             output.assert_not_called()
             action.private_beta_preflight()
             self.assertIn('verify-live', run.call_args.args)
+            self.assertEqual(run.call_args.kwargs, {'environment': {}})
             output.assert_called_once_with('manifest_sha256', digest)
             with patch.dict(os.environ, {'AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256': 'd'*64}), self.assertRaises(ValueError):
                 action.private_beta_upload()
@@ -132,6 +173,17 @@ class IosActionTests(unittest.TestCase):
                 action.private_beta_upload()
             stage.assert_called_once()
             run.assert_called_once()
+
+    def test_preflight_output_guard_fails_missing_empty_and_mismatched_outputs(self):
+        expected = 'c'*64
+        with patch.object(action, 'require_private_beta_upload'):
+            for value in (None, '', 'd'*64, expected):
+                env = {'RELEASE_MANIFEST_SHA256': expected}
+                if value is not None: env['AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256'] = value
+                with self.subTest(value=value), patch.dict(os.environ, env, clear=True):
+                    if value == expected: action.require_private_beta_preflight()
+                    else:
+                        with self.assertRaises(ValueError): action.require_private_beta_preflight()
 
     def test_private_beta_manifest_requires_internal_testflight_audience(self):
         sha, tree = 'a' * 40, 'b' * 40

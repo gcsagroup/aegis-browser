@@ -337,7 +337,11 @@ test('private Beta crosses the store gate without publishing its package', () =>
   const quota = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-preflight');
   assert(restore >= 0 && restore < quota && quota < upload);
   assert.equal(store.steps[quota].env, undefined);
-  assert(store.steps[upload].if.includes('steps.quota.outputs.manifest_sha256 == needs.ios-package.outputs.manifest_sha256'));
+  const authorize = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py require-private-beta-preflight');
+  assert(quota < authorize && authorize < upload);
+  assert.equal(store.steps[authorize].env.AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256, '${{ steps.quota.outputs.manifest_sha256 }}');
+  assert(!Object.keys(store.steps[authorize].env).some(key => key.startsWith('AEGIS_ASC_')));
+  assert.equal(store.steps[upload].if, undefined);
   assert.equal(store.steps[upload].env.AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256, '${{ steps.quota.outputs.manifest_sha256 }}');
   assert.equal(store.steps[upload].env.AEGIS_ASC_KEY_BASE64, '${{ secrets.AEGIS_ASC_KEY_BASE64 }}');
   assert(!Object.keys(store.steps[upload].env).some(key => key.includes('TEST_NODE') || key.includes('DISTRIBUTION')));
@@ -347,6 +351,8 @@ test('private Beta crosses the store gate without publishing its package', () =>
   assert.equal(uploads.length, 1);
   assert.equal(uploads[0].with.path, '${{ steps.private-evidence.outputs.receipt_path }}');
   assert(store.steps.some(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-handoff'));
+  const cancelledRestoreCleanup = store.steps.find(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-restore');
+  assert.equal(cancelledRestoreCleanup.if, "${{ always() && steps.restore.outcome != 'skipped' }}");
   for (const job of ['seal-package', 'upload-new', 'ios-draft']) {
     assert(jobs[job].if.includes("needs.ios-package.outputs.private_beta == 'false'"));
   }

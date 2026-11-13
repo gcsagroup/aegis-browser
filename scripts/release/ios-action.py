@@ -23,8 +23,8 @@ durable = importlib.util.module_from_spec(durable_spec)
 durable_spec.loader.exec_module(durable)
 
 
-def run(*args, capture=False):
-    result = subprocess.run(list(map(str, args)), cwd=ROOT, text=True, capture_output=capture)
+def run(*args, capture=False, environment=None):
+    result = subprocess.run(list(map(str, args)), cwd=ROOT, text=True, capture_output=capture, env=environment)
     if result.returncode:
         raise ValueError('Delivery command failed; no success is inferred')
     return result.stdout.strip() if capture else None
@@ -187,15 +187,41 @@ def checked_private_beta_handoff():
     return retained
 
 
+def private_beta_restore_staging():
+    root = directory()
+    if root.resolve() != root:
+        raise ValueError('Aliased private Beta workspace')
+    _, identity = private_beta_handoff(os.environ['RELEASE_MANIFEST_SHA256'])
+    return root.parent / ('.private-beta-restore-' + os.environ['RELEASE_RUN_ID']), identity
+
+
+def cleanup_private_beta_restore():
+    staging, expected = private_beta_restore_staging()
+    if not staging.exists() and not staging.is_symlink():
+        return
+    marker = staging / 'owner.json'
+    if (staging.is_symlink() or not staging.is_dir() or staging.stat().st_uid != os.getuid()
+            or staging.stat().st_mode & 0o077 or marker.is_symlink() or not marker.is_file()
+            or marker.stat().st_uid != os.getuid() or marker.stat().st_mode & 0o077
+            or json.loads(marker.read_text()) != expected):
+        raise ValueError('Private Beta restore ownership differs')
+    shutil.rmtree(staging)
+
+
 def restore_private_beta():
     retained = checked_private_beta_handoff()
     root = directory()
     if root.exists() or root.is_symlink() or root.resolve() != root:
         raise ValueError('Refuse to overwrite or alias a private Beta workspace')
     root.parent.mkdir(parents=True, exist_ok=True)
-    # A failed copy must not leave even a partial credential-bearing IPA in the workspace.
-    with tempfile.TemporaryDirectory(prefix='.private-beta-restore-', dir=root.parent) as temporary:
-        pending = Path(temporary) / 'package'
+    staging, identity = private_beta_restore_staging()
+    staging.mkdir(mode=0o700)
+    marker = staging / 'owner.json'
+    with marker.open('x') as output_file:
+        json.dump(identity, output_file)
+    marker.chmod(0o600)
+    try:
+        pending = staging / 'package'
         shutil.copytree(retained / 'package', pending)
         digest = os.environ['RELEASE_MANIFEST_SHA256']
         private_beta_manifest(digest, root=pending)
@@ -204,6 +230,9 @@ def restore_private_beta():
         if root.exists() or root.is_symlink():
             raise ValueError('Private Beta workspace appeared during restoration')
         pending.rename(root)
+    finally:
+        # The workflow repeats this exact, ownership-bound cleanup after cancellation.
+        cleanup_private_beta_restore()
 
 
 def cleanup_private_beta_handoff():
@@ -213,7 +242,7 @@ def cleanup_private_beta_handoff():
 
 
 def private_beta_preflight():
-    if any(os.environ.get(key) for key in ('AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64')):
+    if any(os.environ.get(key) for key in ('AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64', 'AEGIS_ASC_KEY_PATH')):
         raise ValueError('Private Beta quota preflight must not receive ASC credentials')
     require_private_beta_upload()
     digest = os.environ['RELEASE_MANIFEST_SHA256']
@@ -224,15 +253,22 @@ def private_beta_preflight():
     if os.environ.get('RELEASE_STAGE') != 'upload':
         raise ValueError('Private Beta can only run the Apple upload stage')
     ipa = next(asset['name'] for asset in manifest['assets'] if asset['name'].endswith('.ipa'))
-    run('python3', Path(__file__).with_name('private-beta-inputs.py'), 'verify-live', '--ipa', directory() / ipa)
+    run(sys.executable, Path(__file__).with_name('private-beta-inputs.py'), 'verify-live',
+        '--ipa', directory() / ipa, environment={})
     output('manifest_sha256', digest)
 
 
-def private_beta_upload():
+def require_private_beta_preflight():
     require_private_beta_upload()
     digest = os.environ['RELEASE_MANIFEST_SHA256']
-    if os.environ.get('AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256') != digest:
+    if (re.fullmatch(r'[0-9a-f]{64}', digest) is None
+            or os.environ.get('AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256') != digest):
         raise ValueError('Private Beta requires a successful credential-free quota preflight')
+
+
+def private_beta_upload():
+    require_private_beta_preflight()
+    digest = os.environ['RELEASE_MANIFEST_SHA256']
     private_beta_manifest(digest)
     sha, tree = source()
     transport.verify_package(directory(), sha, tree, digest)
@@ -533,6 +569,8 @@ if __name__ == '__main__':
     {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt,
      'check-new-upload': check_new_upload_runs, 'private-beta-upload': private_beta_upload,
      'private-beta-preflight': private_beta_preflight,
+     'require-private-beta-preflight': require_private_beta_preflight,
+     'cleanup-private-beta-restore': cleanup_private_beta_restore,
      'private-beta-evidence': private_beta_evidence, 'cleanup-private-beta': cleanup_private_beta,
      'retain-private-beta': retain_private_beta, 'restore-private-beta': restore_private_beta,
      'cleanup-private-beta-handoff': cleanup_private_beta_handoff}[sys.argv[1]]()
