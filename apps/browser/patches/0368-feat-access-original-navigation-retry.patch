@@ -1,0 +1,422 @@
+From 36bcbe8a0e0840003ba4028e800231fa02323317 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 09:14:43 +0800
+Subject: [PATCH] feat(access): bind one-shot retry to original failed
+ navigation
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  26 +++
+ .../access_navigation_retry_tab_helper.cc     | 103 +++++++++++
+ .../access_navigation_retry_tab_helper.h      |  43 +++++
+ ...ss_navigation_retry_tab_helper_unittest.cc | 168 ++++++++++++++++++
+ .../access_proxying_url_loader_factory.cc     |   8 +
+ 5 files changed, 348 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+ create mode 100644 chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+ create mode 100644 chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 5d6f5195f78974a35227ef5b1468a4561a462d2b..34c7eb832c875ef48d473f5212f18ab6535bb090 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -3,6 +3,31 @@
+ 
+ import("//testing/test.gni")
+ 
++source_set("access_navigation_retry_tab_helper") {
++  sources = [
++    "access_navigation_retry_tab_helper.cc",
++    "access_navigation_retry_tab_helper.h",
++  ]
++  public_deps = [
++    ":access_navigation_retry_state",
++    "//base",
++    "//content/public/browser",
++  ]
++  deps = [ "//ui/base" ]
++}
++
++test("access_navigation_retry_tab_helper_unittests") {
++  sources = [ "access_navigation_retry_tab_helper_unittest.cc" ]
++  deps = [
++    ":access_navigation_retry_tab_helper",
++    "//content/test:run_all_unittests",
++    "//content/test:test_support",
++    "//net",
++    "//testing/gtest",
++  ]
++  data_deps = [ "//content/shell:pak" ]
++}
++
+ source_set("access_navigation_retry_state") {
+   sources = [
+     "access_navigation_retry_state.cc",
+@@ -115,6 +140,7 @@ source_set("access_proxying_url_loader_factory") {
+   ]
+   deps = [
+     ":access_browser_request_adapter",
++    ":access_navigation_retry_tab_helper",
+     ":access_network_context_transport",
+     ":access_published_request_runtime",
+     ":access_request_dispatch_state",
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ae766d3ee6182ec9d1ccdbd90c392f851bbc282c
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -0,0 +1,103 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
++
++#include "base/functional/bind.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/common/page_type.h"
++#include "ui/base/page_transition_types.h"
++
++namespace aegis::access {
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(AccessNavigationRetryTabHelper);
++
++AccessNavigationRetryTabHelper::AccessNavigationRetryTabHelper(
++    content::WebContents* contents)
++    : content::WebContentsObserver(contents),
++      content::WebContentsUserData<AccessNavigationRetryTabHelper>(*contents) {}
++
++AccessNavigationRetryTabHelper::~AccessNavigationRetryTabHelper() = default;
++
++void AccessNavigationRetryTabHelper::ObservePendingNavigation(
++    content::WebContents* contents,
++    int64_t navigation_id) {
++  if (!contents || FromWebContents(contents)) {
++    return;
++  }
++  CreateForWebContents(contents);
++  FromWebContents(contents)->state_.BeginNavigation(navigation_id);
++}
++
++std::optional<AccessNavigationRetryTicket>
++AccessNavigationRetryTabHelper::FailureForRetry() const {
++  if (!web_contents()) {
++    return std::nullopt;
++  }
++  auto& controller = web_contents()->GetController();
++  const auto* entry = controller.GetLastCommittedEntry();
++  if (controller.GetPendingEntry() || !entry ||
++      entry->GetPageType() != content::PAGE_TYPE_ERROR) {
++    return std::nullopt;
++  }
++  return state_.Capture();
++}
++
++base::OnceClosure AccessNavigationRetryTabHelper::CaptureRouteReadyCallback() {
++  auto ticket = FailureForRetry();
++  if (!ticket) {
++    return {};
++  }
++  const int entry_id =
++      web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID();
++  return base::BindOnce(&AccessNavigationRetryTabHelper::OnRouteReady,
++                        weak_factory_.GetWeakPtr(), *ticket, entry_id);
++}
++
++void AccessNavigationRetryTabHelper::DidStartNavigation(
++    content::NavigationHandle* navigation) {
++  if (navigation->IsInPrimaryMainFrame()) {
++    weak_factory_.InvalidateWeakPtrs();
++    state_.BeginNavigation(navigation->GetNavigationId());
++  }
++}
++
++void AccessNavigationRetryTabHelper::DidFinishNavigation(
++    content::NavigationHandle* navigation) {
++  if (!navigation->IsInPrimaryMainFrame()) {
++    return;
++  }
++  const auto& redirects = navigation->GetRedirectChain();
++  state_.RecordFailure(
++      navigation->GetNavigationId(),
++      redirects.empty() ? navigation->GetURL() : redirects.front(),
++      navigation->GetURL(), navigation->GetRequestMethod(),
++      navigation->GetNetErrorCode(),
++      navigation->HasCommitted() && navigation->IsErrorPage());
++}
++
++void AccessNavigationRetryTabHelper::NavigationStopped() {
++  weak_factory_.InvalidateWeakPtrs();
++  state_.BeginNavigation(0);
++}
++
++void AccessNavigationRetryTabHelper::OnRouteReady(
++    AccessNavigationRetryTicket ticket,
++    int error_entry_id) {
++  const auto current = FailureForRetry();
++  if (!current || *current != ticket ||
++      web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID() !=
++          error_entry_id || !state_.Consume(ticket)) {
++    return;
++  }
++  // Consume before LoadURLWithParams: navigation observers may re-enter here.
++  content::NavigationController::LoadURLParams params(ticket.original_url);
++  params.transition_type = ui::PAGE_TRANSITION_RELOAD;
++  params.should_replace_current_entry = true;
++  params.has_user_gesture = true;
++  web_contents()->GetController().LoadURLWithParams(params);
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..ae406f444967074a1ae859db2e3701bcfc31193d
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+@@ -0,0 +1,43 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NAVIGATION_RETRY_TAB_HELPER_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NAVIGATION_RETRY_TAB_HELPER_H_
++
++#include "base/functional/callback.h"
++#include "base/memory/weak_ptr.h"
++#include "chrome/browser/aegis/access/access_navigation_retry_state.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++
++namespace aegis::access {
++
++class AccessNavigationRetryTabHelper
++    : public content::WebContentsObserver,
++      public content::WebContentsUserData<AccessNavigationRetryTabHelper> {
++ public:
++  ~AccessNavigationRetryTabHelper() override;
++
++  // Factory interception can begin after DidStartNavigation. Bootstrap only
++  // a newly attached observer with that browser-owned navigation identity.
++  static void ObservePendingNavigation(content::WebContents* contents,
++                                       int64_t navigation_id);
++  std::optional<AccessNavigationRetryTicket> FailureForRetry() const;
++  base::OnceClosure CaptureRouteReadyCallback();
++
++  void DidStartNavigation(content::NavigationHandle* navigation) override;
++  void DidFinishNavigation(content::NavigationHandle* navigation) override;
++  void NavigationStopped() override;
++
++ private:
++  friend class content::WebContentsUserData<AccessNavigationRetryTabHelper>;
++  explicit AccessNavigationRetryTabHelper(content::WebContents* contents);
++  void OnRouteReady(AccessNavigationRetryTicket ticket, int error_entry_id);
++
++  AccessNavigationRetryState state_;
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++  base::WeakPtrFactory<AccessNavigationRetryTabHelper> weak_factory_{this};
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NAVIGATION_RETRY_TAB_HELPER_H_
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..23334f3932ba5bb0429b1edc85c8e6d9d363ed33
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+@@ -0,0 +1,168 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
++
++#include <utility>
++
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/test/navigation_simulator.h"
++#include "content/public/test/test_renderer_host.h"
++#include "net/base/net_errors.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++class AccessNavigationRetryTabHelperTest
++    : public content::RenderViewHostTestHarness {
++ protected:
++  void SetUp() override {
++    content::RenderViewHostTestHarness::SetUp();
++    AccessNavigationRetryTabHelper::CreateForWebContents(web_contents());
++  }
++  AccessNavigationRetryTabHelper* helper() {
++    return AccessNavigationRetryTabHelper::FromWebContents(web_contents());
++  }
++  void Fail(const GURL& url) {
++    content::NavigationSimulator::NavigateAndFailFromBrowser(
++        web_contents(), url, net::ERR_NAME_NOT_RESOLVED);
++  }
++};
++
++TEST_F(AccessNavigationRetryTabHelperTest, ReloadsOriginalUrlOnceAfterRedirect) {
++  const GURL original("https://start.example/path?q=1#section");
++  const GURL failed("https://target.example/redirect?q=2");
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      original, web_contents());
++  navigation->Start();
++  navigation->Redirect(failed);
++  navigation->Fail(net::ERR_CONNECTION_RESET);
++  navigation->CommitErrorPage();
++  ASSERT_TRUE(helper()->FailureForRetry());
++  EXPECT_EQ(helper()->FailureForRetry()->failed_url, failed);
++  const int entry_count = controller().GetEntryCount();
++  auto ready = helper()->CaptureRouteReadyCallback();
++  auto duplicate = helper()->CaptureRouteReadyCallback();
++  ASSERT_TRUE(ready);
++  ASSERT_TRUE(duplicate);
++
++  std::move(ready).Run();
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), original);
++  content::NavigationSimulator::CreateFromPending(controller())->Commit();
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), original);
++  EXPECT_EQ(controller().GetEntryCount(), entry_count);
++  std::move(duplicate).Run();
++  EXPECT_FALSE(controller().GetPendingEntry());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, NavigationRevokesLateRouteReady) {
++  Fail(GURL("https://failed.example/path"));
++  auto ready = helper()->CaptureRouteReadyCallback();
++  ASSERT_TRUE(ready);
++  const GURL replacement("https://other.example/");
++  content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(),
++                                                            replacement);
++  std::move(ready).Run();
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), replacement);
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, ClosedTabRevokesRouteReady) {
++  Fail(GURL("https://failed.example/path"));
++  auto ready = helper()->CaptureRouteReadyCallback();
++  ASSERT_TRUE(ready);
++  DeleteContents();
++  std::move(ready).Run();
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, OnlyInitiatingWebContentsReloads) {
++  const GURL url("https://failed.example/path?q=1");
++  Fail(url);
++  auto other = CreateTestWebContents();
++  AccessNavigationRetryTabHelper::CreateForWebContents(other.get());
++  content::NavigationSimulator::NavigateAndFailFromBrowser(
++      other.get(), url, net::ERR_NAME_NOT_RESOLVED);
++  auto ready = helper()->CaptureRouteReadyCallback();
++  ASSERT_TRUE(ready);
++  std::move(ready).Run();
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), url);
++  EXPECT_FALSE(other->GetController().GetPendingEntry());
++  EXPECT_TRUE(AccessNavigationRetryTabHelper::FromWebContents(other.get())
++                  ->FailureForRetry());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, FailedPostDoesNotOfferReplay) {
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      GURL("https://failed.example/submit"), web_contents());
++  navigation->SetMethod("POST");
++  navigation->Start();
++  navigation->Fail(net::ERR_CONNECTION_RESET);
++  navigation->CommitErrorPage();
++  EXPECT_FALSE(helper()->FailureForRetry());
++  EXPECT_FALSE(helper()->CaptureRouteReadyCallback());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, StopRevokesPendingRouteReady) {
++  Fail(GURL("https://failed.example/path"));
++  auto ready = helper()->CaptureRouteReadyCallback();
++  ASSERT_TRUE(ready);
++  helper()->NavigationStopped();
++  std::move(ready).Run();
++  EXPECT_FALSE(controller().GetPendingEntry());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, PendingNavigationRevokesLateReady) {
++  Fail(GURL("https://failed.example/path"));
++  auto ready = helper()->CaptureRouteReadyCallback();
++  ASSERT_TRUE(ready);
++  const GURL next("https://next.example/pending");
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      next, web_contents());
++  navigation->Start();
++  std::move(ready).Run();
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), next);
++  EXPECT_FALSE(helper()->FailureForRetry());
++  navigation->Commit();
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, LateObserverUsesTrustedNavigationId) {
++  auto other = CreateTestWebContents();
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      GURL("https://failed.example/path"), other.get());
++  navigation->Start();
++  AccessNavigationRetryTabHelper::ObservePendingNavigation(
++      other.get(), navigation->GetNavigationHandle()->GetNavigationId());
++  navigation->Fail(net::ERR_CONNECTION_REFUSED);
++  navigation->CommitErrorPage();
++  EXPECT_TRUE(AccessNavigationRetryTabHelper::FromWebContents(other.get())
++                  ->FailureForRetry());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, SecurityFailureDoesNotOfferReplay) {
++  content::NavigationSimulator::NavigateAndFailFromBrowser(
++      web_contents(), GURL("https://failed.example/path"),
++      net::ERR_CERT_AUTHORITY_INVALID);
++  EXPECT_FALSE(helper()->FailureForRetry());
++  EXPECT_FALSE(helper()->CaptureRouteReadyCallback());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, InitialPostRedirectDoesNotOfferReplay) {
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      GURL("https://failed.example/submit"), web_contents());
++  navigation->SetMethod("POST");
++  navigation->Start();
++  navigation->Redirect(GURL("https://failed.example/after-post"));
++  navigation->Fail(net::ERR_CONNECTION_RESET);
++  navigation->CommitErrorPage();
++  EXPECT_FALSE(helper()->FailureForRetry());
++  EXPECT_FALSE(helper()->CaptureRouteReadyCallback());
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index f58c3577ea82b3d6f752234d73f8bf4924a1b45d..3c21307330d9333b8c4b9bf19197d61c4937fa83 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -15,6 +15,7 @@
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/supports_user_data.h"
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
++#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+@@ -686,6 +687,13 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
+     int64_t navigation_id,
+     network::URLLoaderFactoryBuilder& factory_builder) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  // Observe native failures too: the user may enable a proxy only after this
++  // navigation fails. The identity comes from the browser navigation hook.
++  if (frame && frame->IsInPrimaryMainFrame() && navigation_id > 0) {
++    AccessNavigationRetryTabHelper::ObservePendingNavigation(
++        content::WebContents::FromRenderFrameHost(frame), navigation_id);
++  }
++
+   std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
+       CaptureProxyFactoryMetadata(profile, frame, navigation_id);
+   if (!metadata.has_value() ||
+-- 
+2.54.0 (Apple Git-157)
+

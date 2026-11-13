@@ -94,7 +94,7 @@ mkdir -p "$brand_app/Contents/Frameworks/Aegis Browser Framework.framework/Versi
 cat > "$brand_app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-<key>CFBundleExecutable</key><string>GCSA Aegis</string>
+<key>CFBundleExecutable</key><string>Aegis Browser</string>
 </dict></plist>
 EOF
 mkdir -p "$brand_root/Aegis Browser Helper Sibling.app"

@@ -1,0 +1,26 @@
+From b91c461cb101716aeae883127477a2939369c9f9 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 22:27:16 +0800
+Subject: [PATCH] test(access): pass migration repair SQL through safe string
+ view
+
+---
+ chrome/browser/aegis/access/access_rule_store_unittest.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index 2ce06a06f2290fe8fe59616c1a58256560f1a190..ae7bce036cf246176295976fc8feee68cef7ac54 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -1691,7 +1691,7 @@ TEST(AccessRuleStoreTest, LegacySchemaCannotReinterpretUnknownOrdinalAsWebsiteGr
+     const auto repair = "UPDATE access_rules SET scope=" +
+         std::to_string(static_cast<int>(PolicyScope::kSite)) +
+         " WHERE rule_id='future-scope'";
+-    ASSERT_TRUE(legacy.Execute(repair.c_str()));
++    ASSERT_TRUE(legacy.Execute(repair));
+   }
+   ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
+   const auto recovered = migrated.ReadCommittedSnapshot("partition-A");
+-- 
+2.54.0 (Apple Git-157)
+

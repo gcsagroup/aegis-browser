@@ -10,10 +10,7 @@ function qualityRunMatches(run, {repo, branch, sha}) {
 }
 
 function qualityRunSourceMatches(run) {
-  // Push remains the common path; workflow_dispatch covers self-hosted tip
-  // diagnostics when push-event history was rewritten or base SHAs were orphaned.
-  return (run?.event === 'push' || run?.event === 'workflow_dispatch') &&
-    run?.path === QUALITY_WORKFLOW_PATH;
+  return run?.event === 'push' && run?.path === QUALITY_WORKFLOW_PATH;
 }
 
 function qualityRunTargetMatches(run, {repo, branch, sha}) {
@@ -78,7 +75,7 @@ export async function requireGreenQuality(
   apiFn = githubApi,
 ) {
   const expected = {repo, branch, sha: commitSha};
-  const query = new URLSearchParams({branch, head_sha: commitSha, per_page: '100'});
+  const query = new URLSearchParams({branch, event: 'push', head_sha: commitSha, per_page: '100'});
   const result = await apiFn(repo, `/actions/workflows/quality.yml/runs?${query}`, {token});
   const selected = latestQualityRun(result?.workflow_runs, expected);
   if (!selected) {

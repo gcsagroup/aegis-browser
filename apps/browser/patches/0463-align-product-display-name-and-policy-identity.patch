@@ -1,0 +1,430 @@
+From b8ade2055b04262752ec1570b8eb2d376428d58c Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 15:18:12 +0800
+Subject: [PATCH] chore(branding): align product display names and retain
+ policy identity
+
+---
+ chrome/app/theme/gcsa_aegis/BRANDING          |  8 +--
+ .../template_writers/writer_configuration.py  |  7 ++-
+ .../writers/adm_writer_unittest.py            | 56 +++++++++----------
+ .../writers/plist_strings_writer_unittest.py  | 30 +++++-----
+ .../writers/plist_writer_unittest.py          | 22 ++++----
+ 5 files changed, 62 insertions(+), 61 deletions(-)
+
+diff --git a/chrome/app/theme/gcsa_aegis/BRANDING b/chrome/app/theme/gcsa_aegis/BRANDING
+index dfebe2211b3594ef813399d73355509976c0140e..b2f88bfff9d526a024c39fdddf232947d79acf29 100644
+--- a/chrome/app/theme/gcsa_aegis/BRANDING
++++ b/chrome/app/theme/gcsa_aegis/BRANDING
+@@ -1,9 +1,9 @@
+ COMPANY_FULLNAME=GCSA
+ COMPANY_SHORTNAME=GCSA
+-PRODUCT_FULLNAME=GCSA Aegis
+-PRODUCT_SHORTNAME=GCSA Aegis
+-PRODUCT_INSTALLER_FULLNAME=GCSA Aegis Installer
+-PRODUCT_INSTALLER_SHORTNAME=GCSA Aegis Installer
++PRODUCT_FULLNAME=Aegis Browser
++PRODUCT_SHORTNAME=Aegis Browser
++PRODUCT_INSTALLER_FULLNAME=Aegis Browser Installer
++PRODUCT_INSTALLER_SHORTNAME=Aegis Browser Installer
+ COPYRIGHT=Copyright @LASTCHANGE_YEAR@ GCSA. All rights reserved.
+ MAC_BUNDLE_ID=app.gcsa.aegis
+ MAC_CREATOR_CODE=Cr24
+diff --git a/components/policy/tools/template_writers/writer_configuration.py b/components/policy/tools/template_writers/writer_configuration.py
+index 48541df6adb829fd4d0b239e625a724f69b075a4..d6fcb68c44fc8d9998da16d36ee162a58a8ab998 100755
+--- a/components/policy/tools/template_writers/writer_configuration.py
++++ b/components/policy/tools/template_writers/writer_configuration.py
+@@ -27,21 +27,22 @@ def GetConfigurationForBuild(defines):
+   if '_chromium' in defines:
+     config = {
+         'build': 'chromium',
+-        'app_name': 'GCSA Aegis',
++        'app_name': 'Aegis Browser',
+         'doc_url': 'https://chromeenterprise.google/policies/',
+         'frame_name': 'Chromium Frame',
+         'os_name': 'ChromiumOS',
+         'webview_name': 'Chromium WebView',
+         'win_config': {
+             'win': {
++                # The registry identity stays stable when display names change.
+                 'reg_mandatory_key_name': 'Software\\Policies\\GCSA Aegis',
+                 'reg_recommended_key_name':
+                 'Software\\Policies\\GCSA Aegis\\Recommended',
+                 'mandatory_category_path': ['chromium'],
+                 'recommended_category_path': ['chromium_recommended'],
+                 'category_path_strings': {
+-                    'chromium': 'GCSA Aegis',
+-                    'chromium_recommended': 'GCSA Aegis - {doc_recommended}',
++                    'chromium': 'Aegis Browser',
++                    'chromium_recommended': 'Aegis Browser - {doc_recommended}',
+                 },
+                 'namespace': 'GCSA.Policies.Aegis',
+             },
+diff --git a/components/policy/tools/template_writers/writers/adm_writer_unittest.py b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
+index 14ac76d212b45534eb0fbda6d441608a44e54e0e..b63002663283fc315d141371ce86222a9fc58837 100755
+--- a/components/policy/tools/template_writers/writers/adm_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
+@@ -104,8 +104,8 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"''')
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"''')
+     self.CompareOutputs(output, expected_output)
+ 
+   def testVersionAnnotation(self):
+@@ -137,8 +137,8 @@ chromium_recommended="GCSA Aegis - Recommended"''')
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"''')
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"''')
+     self.CompareOutputs(output, expected_output)
+ 
+   def testMainPolicy(self):
+@@ -327,8 +327,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ StringPolicy_Policy="Caption of policy."
+ StringPolicy_Explain="Description of group.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -395,8 +395,8 @@ StringPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -464,8 +464,8 @@ IntPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -534,8 +534,8 @@ IntPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -784,8 +784,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ListPolicy_Policy="Caption of list policy."
+ ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -860,8 +860,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ListPolicy_Policy="Caption of list policy."
+ ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -928,8 +928,8 @@ ListPolicy_Part="Label of list policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ DictionaryPolicy_Policy="Caption of policy."
+ DictionaryPolicy_Explain="Description of group.\\n\\n\
+ Reference: \
+@@ -996,8 +996,8 @@ DictionaryPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ExternalPolicy_Policy="Caption of policy."
+ ExternalPolicy_Explain="Description of group.\\n\\n\
+ Reference: \
+@@ -1047,8 +1047,8 @@ ExternalPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ''')
+     self.CompareOutputs(output, expected_output)
+ 
+@@ -1200,8 +1200,8 @@ With a newline."""
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ Group1_Category="Caption of group."
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="Description of policy1.\\nWith a newline.\\n\\n\
+@@ -1379,8 +1379,8 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ DeprecatedPolicies_Category="Deprecated policies"
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="This policy is deprecated. blah blah blah\\n\\n"
+@@ -1455,8 +1455,8 @@ Policy1_Part="Caption of policy1."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ RemovedPolicies_Category="Removed policies"
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="This policy is removed. blah blah blah\\n\\n"
+diff --git a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
+index 01faff6fd3836a56c8de69290427a298150e9235..fc5ffb295db371a444ca18443bfc4f0071cbfe6c 100755
+--- a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
+@@ -26,7 +26,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'GCSA Aegis preferen"ces',
++            'text': 'Aegis Browser preferen"ces',
+             'desc': 'blah'
+           }
+         }
+@@ -35,8 +35,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";')
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Aegis Browser preferen\\"ces";')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+   def testEmptyVersion(self):
+@@ -48,7 +48,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'GCSA Aegis preferen"ces',
++            'text': 'Aegis Browser preferen"ces',
+             'desc': 'blah'
+           }
+         }
+@@ -60,8 +60,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+             'version': '39.0.0.0'
+         }, 'plist_strings')
+     expected_output = ('/* chromium version: 39.0.0.0 */\n'
+-                       'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";')
++                       'Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Aegis Browser preferen\\"ces";')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+   def testMainPolicy(self):
+@@ -131,7 +131,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of GCSA Aegis',
++            'text': 'Preferences of Aegis Browser',
+             'desc': 'blah'
+           }
+         }
+@@ -140,8 +140,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
+                        'StringPolicy.pfm_title = "Caption of policy.";\n'
+                        'StringPolicy.pfm_description = '
+                        '"Description of policy.\\nWith a newline.";')
+@@ -176,7 +176,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of GCSA Aegis',
++            'text': 'Preferences of Aegis Browser',
+             'desc': 'blah'
+           }
+         }
+@@ -185,8 +185,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
+                        'ListPolicy.pfm_title = "Caption of policy.";\n'
+                        'ListPolicy.pfm_description = '
+                        '"Description of policy.\\nWith a newline.";')
+@@ -233,7 +233,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of GCSA Aegis',
++            'text': 'Preferences of Aegis Browser',
+             'desc': 'blah'
+           }
+         }
+@@ -242,8 +242,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
+                        'EnumPolicy.pfm_title = "Caption of policy.";\n'
+                        'EnumPolicy.pfm_description = '
+                        '"one - Option1\\ntwo - Option2\\n'
+diff --git a/components/policy/tools/template_writers/writers/plist_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
+index a3f0626c5d94c905231c3ce4898cf515b3829817..c70c60598b65f456d278b13ccc88f4129d4bdaec 100755
+--- a/components/policy/tools/template_writers/writers/plist_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
+@@ -99,7 +99,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+-    expected_output = self._GetExpectedOutputs('GCSA_Aegis', 'com.example.Test',
++    expected_output = self._GetExpectedOutputs('Aegis_Browser', 'com.example.Test',
+                                                '<array/>')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+@@ -120,7 +120,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+             'version': '39.0.0.0'
+         }, 'plist')
+     expected_output = self._GetExpectedOutputsWithVersion(
+-        'GCSA_Aegis', 'com.example.Test', '<array/>',
++        'Aegis_Browser', 'com.example.Test', '<array/>',
+         'chromium version: 39.0.0.0')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+@@ -153,7 +153,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -203,7 +203,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -255,7 +255,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -302,7 +302,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>StringPolicy</string>
+@@ -353,7 +353,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ListPolicy</string>
+@@ -416,7 +416,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ListPolicy</string>
+@@ -470,7 +470,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>IntPolicy</string>
+@@ -629,7 +629,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>DictionaryPolicy</string>
+@@ -676,7 +676,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ExternalPolicy</string>
+-- 
+2.54.0 (Apple Git-157)
+

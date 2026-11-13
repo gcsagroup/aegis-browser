@@ -1,0 +1,112 @@
+// Copyright 2026 GCSA
+module network.mojom;
+
+import "services/network/public/mojom/auth.mojom";
+import "url/mojom/url.mojom";
+import "services/network/public/mojom/url_request.mojom";
+
+// These interfaces are issued only through the Browser-owned NetworkContext.
+// They must never be exposed to a renderer or embedded in ResourceRequest.
+enum AegisAccessChannel { kDev, kAlpha, kBeta, kRelease };
+enum AegisAccessAttribution { kDocument, kPendingNavigation, kProfileOnly };
+enum AegisAccessRuleScope { kSite, kProfile, kWebsite };
+enum AegisAccessMode { kNone, kDirect, kProxy, kReject };
+enum AegisAccessScheme { kHttp, kHttps, kWs, kWss };
+enum AegisAccessPortScope { kAllBrowserPermitted, kExplicitSubset };
+enum AegisAccessProtection { kNone, kTracker, kEasyList, kCname };
+
+struct AegisAccessOwner {
+  AegisAccessChannel channel;
+  string profile_token;
+  string storage_partition_token;
+};
+struct AegisAccessGenerations {
+  uint64 policy_generation;
+  uint64 identity_generation;
+  uint64 selection_generation;
+  uint64 network_epoch;
+  uint64 base_proxy_config_generation;
+};
+struct AegisAccessFactoryBinding {
+  AegisAccessOwner owner;
+  string incarnation;
+  AegisAccessAttribution attribution;
+  string document_token;
+  string pending_navigation_token;
+  // Absent for a main navigation, whose site is derived per approved hop.
+  // Subframe navigation and document requests retain the Browser's top site.
+  url.mojom.Url? top_frame_site;
+};
+struct AegisAccessRule {
+  string rule_id;
+  AegisAccessRuleScope scope;
+  string top_level_site;
+  string destination_host;
+  bool include_subdomains;
+  array<AegisAccessScheme> schemes;
+  AegisAccessPortScope port_scope;
+  array<uint16> explicit_ports;
+  AegisAccessMode mode;
+  string proxy_group_id;
+  AegisAccessProtection protection_override;
+  uint64 row_revision;
+  uint64 last_operation_sequence;
+};
+struct AegisAccessHttpEndpoint {
+  string proxy_group_id;
+  string registration_id;
+  uint64 selection_generation;
+  string numeric_loopback_host;
+  uint16 port;
+  // Process-local inbound credentials, never the upstream node credentials.
+  // These are not echoed in ACKs, request envelopes, diagnostics or renderer IPC.
+  AuthCredentials? credentials;
+};
+// A saved PROXY group without a ready core still fails as PROXY. Selection zero
+// is allowed only before that group has selected an endpoint in this Context.
+struct AegisAccessUnavailableGroup {
+  string proxy_group_id;
+  uint64 selection_generation;
+};
+struct AegisAccessSnapshot {
+  AegisAccessOwner owner;
+  string incarnation;
+  uint64 sequence;
+  // Selection generation is zero here and is explicit for each endpoint.
+  AegisAccessGenerations common_generations;
+  array<AegisAccessRule> rules;
+  array<AegisAccessHttpEndpoint> endpoints;
+  array<AegisAccessUnavailableGroup> unavailable_groups;
+};
+struct AegisAccessRequestEnvelope {
+  string request_token;
+  string incarnation;
+  uint32 hop;
+  url.mojom.Url target;
+  string method;
+  AegisAccessGenerations generations;
+  // Empty for an independently validated native or unavailable-group decision.
+  string registration_id;
+};
+
+// The envelope travels only with this Browser-private message.
+struct AegisAccessRoutedRequest {
+  URLRequest request;
+  AegisAccessRequestEnvelope envelope;
+};
+
+// Receipt of the exact complete snapshot; never contains inbound credentials.
+struct AegisAccessRegistrationAck {
+  string proxy_group_id;
+  string registration_id;
+  uint64 selection_generation;
+};
+struct AegisAccessSnapshotAck {
+  bool accepted;
+  AegisAccessOwner owner;
+  string incarnation;
+  uint64 sequence;
+  AegisAccessGenerations common_generations;
+  array<AegisAccessRegistrationAck> registrations;
+  array<AegisAccessUnavailableGroup> unavailable_groups;
+};

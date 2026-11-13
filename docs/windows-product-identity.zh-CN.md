@@ -2,12 +2,14 @@
 
 从 086 内部候选起，Aegis 使用独立的安装目录、用户资料和系统注册身份，避免覆盖原版 Chromium。以下标识属于长期产品身份，不能随版本号、构建时间或机器变化。
 
-- 用户级安装：`%LOCALAPPDATA%\Aegis Browser\Application\chrome.exe`。
-- 系统级安装：`%PROGRAMFILES%\Aegis Browser\Application\chrome.exe`，实际位置遵循 Windows 安装模式。
-- 默认资料：`%LOCALAPPDATA%\Aegis Browser\User Data`。
-- 快捷方式名称：`Aegis Browser`；应用标识：`app.gcsa.aegis`。
+产品显示名称采用 **Aegis Browser**。本次显示名更新保留以下 Windows 安装、资料与策略身份，继续读取已有用户资料和管理策略。
+
+- 用户级安装：`%LOCALAPPDATA%\GCSA Aegis\Application\chrome.exe`。
+- 系统级安装：`%PROGRAMFILES%\GCSA Aegis\Application\chrome.exe`，实际位置遵循 Windows 安装模式。
+- 默认资料：`%LOCALAPPDATA%\GCSA Aegis\User Data`。
+- 快捷方式名称：`GCSA Aegis`；应用标识：`app.gcsa.aegis`。
 - HTML/PDF 注册前缀：`AegisHTM`、`AegisPDF`；直接启动协议：`aegis`。
-- Windows 管理策略：`Software\Policies\Aegis Browser`。生成的策略模板与运行时使用同一路径；macOS 策略模板沿用实际 Bundle ID `app.gcsa.aegis`。
+- Windows 管理策略：`Software\Policies\GCSA Aegis`。生成的策略模板与运行时使用同一路径；macOS 策略模板沿用实际 Bundle ID `app.gcsa.aegis`。
 
 ## 服务身份
 

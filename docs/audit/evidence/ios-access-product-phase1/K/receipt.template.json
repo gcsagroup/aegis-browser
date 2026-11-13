@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "ios-access-core-k-receipt",
+  "status": "NOT_RUN",
+  "detail": "Copy to a run folder after scripts/release/ios-access-core-tests.sh; replace placeholders. Never paste node credentials.",
+  "recordedAt": "REPLACE_ISO8601_UTC",
+  "candidate": {
+    "sourceSha": "REPLACE_WITH_40_LOWERCASE_HEX",
+    "platformKind": "simulator"
+  },
+  "inputs": {
+    "lockPathName": "embedded-core-lock.json",
+    "lockSha256": "REPLACE_LOCK_FILE_SHA256",
+    "lockStatus": "verified_build",
+    "nodePathName": "test-reality-vision.uri",
+    "nodePresent": true
+  },
+  "embeddedCoreSlices": {
+    "iosArm64Sha256": "REPLACE_FROM_LOCK",
+    "iosArm64SimulatorSha256": "REPLACE_FROM_LOCK"
+  },
+  "notes": [
+    "Desensitized receipt only; no UUID/publicKey/shortId/URL contents.",
+    "simulator results must not be labeled device."
+  ]
+}

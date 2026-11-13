@@ -1,0 +1,314 @@
+From a97cd3b48f7a3463d5c9f55b9f7b31799b80a81a Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 12 Nov 2026 00:59:12 +0800
+Subject: [PATCH] fix(access): retain managed HTTPS policy and settle cancelled
+ proxy retries
+
+---
+ .../access_navigation_retry_tab_helper.cc     | 37 ++++++-----
+ .../access_navigation_retry_tab_helper.h      |  5 +-
+ ...ss_navigation_retry_tab_helper_unittest.cc | 24 +++++++
+ .../access_site_proxy_product_unittest.cc     |  8 +++
+ .../access_http_route_execution_unittest.cc   | 66 ++++++++++++++++++-
+ net/http/http_network_transaction.cc          |  9 +--
+ 6 files changed, 124 insertions(+), 25 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index 53e79facc02bfbeadb8d23a42bdced3281cee483..78a5ea46b7032bfa461663e1d39984782e7e6a17 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -21,7 +21,9 @@ AccessNavigationRetryTabHelper::AccessNavigationRetryTabHelper(
+     : content::WebContentsObserver(contents),
+       content::WebContentsUserData<AccessNavigationRetryTabHelper>(*contents) {}
+ 
+-AccessNavigationRetryTabHelper::~AccessNavigationRetryTabHelper() = default;
++AccessNavigationRetryTabHelper::~AccessNavigationRetryTabHelper() {
++  ResetForNavigation(0);
++}
+ 
+ void AccessNavigationRetryTabHelper::ObservePendingNavigation(
+     content::WebContents* contents,
+@@ -68,39 +70,46 @@ bool AccessNavigationRetryTabHelper::RequestProxyRetry(
+           << " remembered_ticket=" << state_.Capture().has_value()
+           << " pending_entry=" << !!web_contents()->GetController().GetPendingEntry()
+           << " handler=" << !!proxy_retry_handler_
+-          << " preparing=" << proxy_preparation_pending_;
+-  if (!ticket || !proxy_retry_handler_ || proxy_preparation_pending_) {
++          << " preparing=" << !!pending_retry_reply_;
++  if (!ticket || !proxy_retry_handler_ || pending_retry_reply_) {
+     std::move(completion).Run(false);
+     return false;
+   }
+-  proxy_preparation_pending_ = true;
++  pending_retry_reply_ = std::move(completion);
+   const int entry_id =
+       web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID();
+   // Grant the failed destination; OnRouteReady still reloads the original URL.
+   proxy_retry_handler_.Run(ticket->failed_url, base::BindOnce(
+       &AccessNavigationRetryTabHelper::OnProxyPrepared, weak_factory_.GetWeakPtr(),
+-      *ticket, entry_id, std::move(completion)));
++      *ticket, entry_id));
+   return true;
+ }
+ void AccessNavigationRetryTabHelper::OnProxyPrepared(
+-    AccessNavigationRetryTicket ticket, int error_entry_id,
+-    base::OnceCallback<void(bool)> completion, bool ready) {
+-  proxy_preparation_pending_ = false;
++    AccessNavigationRetryTicket ticket, int error_entry_id, bool ready) {
++  // Loading the original URL can synchronously start another navigation.
++  auto reply = std::move(pending_retry_reply_);
+   const auto current = FailureForRetry();
+   const bool retry = ready && current && *current == ticket &&
+       web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID() ==
+           error_entry_id;
+   if (retry) OnRouteReady(ticket, error_entry_id);
+-  std::move(completion).Run(retry);
++  std::move(reply).Run(retry);
++}
++
++void AccessNavigationRetryTabHelper::ResetForNavigation(int64_t navigation_id) {
++  weak_factory_.InvalidateWeakPtrs();
++  state_.BeginNavigation(navigation_id);
++  // Stop can leave the same error document and its Mojo reply pipe alive.
++  if (pending_retry_reply_) {
++    std::move(pending_retry_reply_).Run(false);
++  }
+ }
+ 
+ void AccessNavigationRetryTabHelper::DidStartNavigation(
+     content::NavigationHandle* navigation) {
+   if (navigation->IsInPrimaryMainFrame()) {
+     VLOG(1) << "Aegis proxy retry start: id=" << navigation->GetNavigationId();
+-    proxy_preparation_pending_ = false;
+-    weak_factory_.InvalidateWeakPtrs();
+-    state_.BeginNavigation(navigation->GetNavigationId());
++    ResetForNavigation(navigation->GetNavigationId());
+   }
+ }
+ 
+@@ -134,9 +143,7 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
+ }
+ 
+ void AccessNavigationRetryTabHelper::NavigationStopped() {
+-  proxy_preparation_pending_ = false;
+-  weak_factory_.InvalidateWeakPtrs();
+-  state_.BeginNavigation(0);
++  ResetForNavigation(0);
+ }
+ 
+ void AccessNavigationRetryTabHelper::OnRouteReady(
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+index 7b5555af62af6e6e4b14381081381fe0a58a3eb4..38c041fc45501d5377cb1b3d412c86f04c1d7569 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+@@ -39,11 +39,12 @@ class AccessNavigationRetryTabHelper
+   explicit AccessNavigationRetryTabHelper(content::WebContents* contents);
+   void OnRouteReady(AccessNavigationRetryTicket ticket, int error_entry_id);
+   void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
+-      base::OnceCallback<void(bool)> completion, bool ready);
++                       bool ready);
++  void ResetForNavigation(int64_t navigation_id);
+ 
+   AccessNavigationRetryState state_;
+   ProxyRetryHandler proxy_retry_handler_;
+-  bool proxy_preparation_pending_ = false;
++  base::OnceCallback<void(bool)> pending_retry_reply_;
+   WEB_CONTENTS_USER_DATA_KEY_DECL();
+   base::WeakPtrFactory<AccessNavigationRetryTabHelper> weak_factory_{this};
+ };
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+index e8d4805d4de09da5e1e945eeb6e5fb83bb7bbc01..7e86744d7fe33a7031f5569b035344e881b69cca 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+@@ -206,6 +206,28 @@ TEST_F(AccessNavigationRetryTabHelperTest, StopRevokesPendingRouteReady) {
+   EXPECT_FALSE(controller().GetPendingEntry());
+ }
+ 
++TEST_F(AccessNavigationRetryTabHelperTest,
++       StopAnswersRetainedErrorPageBeforeLateReady) {
++  const GURL failed("https://failed.example/stop");
++  Fail(failed);
++  base::OnceCallback<void(bool)> prepared;
++  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
++      [&](const GURL&, base::OnceCallback<void(bool)> callback) {
++        prepared = std::move(callback);
++      }));
++  base::test::TestFuture<bool> reply;
++  ASSERT_TRUE(helper()->RequestProxyRetry(reply.GetCallback()));
++  ASSERT_TRUE(prepared);
++  web_contents()->Stop();
++  const bool replied_on_stop = reply.IsReady();
++  std::move(prepared).Run(true);
++  EXPECT_TRUE(replied_on_stop);
++  ASSERT_TRUE(reply.IsReady());
++  EXPECT_FALSE(reply.Get());
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed);
++}
++
+ TEST_F(AccessNavigationRetryTabHelperTest, PendingNavigationRevokesLateReady) {
+   Fail(GURL("https://failed.example/path"));
+   auto ready = helper()->CaptureRouteReadyCallback();
+@@ -306,6 +328,8 @@ TEST_F(AccessNavigationRetryTabHelperTest, ErrorPageRequestCannotRetryNewNavigat
+   const GURL other("https://other.example/");
+   content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), other);
+   std::move(prepared).Run(true);
++  ASSERT_TRUE(result.IsReady());
++  EXPECT_FALSE(result.Get());
+   EXPECT_FALSE(controller().GetPendingEntry());
+   EXPECT_EQ(web_contents()->GetLastCommittedURL(), other);
+ }
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 673732c17605555f718d482c75f6e92e4ece28f0..41b96b63bdbca4e4c1a065916499dd09ef860a01 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -939,7 +939,11 @@ TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOthe
+   const GURL replacement("https://other.example/unchanged");
+   content::NavigationSimulator::NavigateAndCommitFromBrowser(other.get(), replacement);
+   DeleteContents();
++  const bool replied_on_close = completed_.IsReady();
+   DrainHeldRetry();
++  EXPECT_TRUE(replied_on_close);
++  ASSERT_TRUE(completed_.IsReady());
++  EXPECT_FALSE(completed_.Get());
+   EXPECT_FALSE(other->GetController().GetPendingEntry());
+   EXPECT_EQ(other->GetLastCommittedURL(), replacement);
+ }
+@@ -947,8 +951,12 @@ TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOthe
+ TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry) {
+   BeginHeldRetry();
+   web_contents()->Stop();
++  const bool replied_on_stop = completed_.IsReady();
+   EXPECT_FALSE(helper()->FailureForRetry());
+   DrainHeldRetry();
++  EXPECT_TRUE(replied_on_stop);
++  ASSERT_TRUE(completed_.IsReady());
++  EXPECT_FALSE(completed_.Get());
+   EXPECT_FALSE(controller().GetPendingEntry());
+   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
+ }
+diff --git a/components/aegis_access/access_http_route_execution_unittest.cc b/components/aegis_access/access_http_route_execution_unittest.cc
+index fb765d4193016de40977adb76c243ab84d899375..341e35f81efd00f4df4a498f4f7b52ec2803ecbf 100644
+--- a/components/aegis_access/access_http_route_execution_unittest.cc
++++ b/components/aegis_access/access_http_route_execution_unittest.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/functional/bind.h"
+ #include "base/test/task_environment.h"
++#include "net/base/host_port_pair.h"
+ #include "net/base/isolation_info.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+@@ -14,20 +15,24 @@
+ #include "net/http/access_proxy_route.h"
+ #include "net/http/http_network_transaction.h"
+ #include "net/http/http_response_info.h"
++#include "net/http/http_server_properties.h"
+ #include "net/http/http_status_code.h"
+ #include "net/http/http_transaction_factory.h"
+ #include "net/http/http_transaction_test_util.h"
++#include "net/http/transport_security_state.h"
+ #include "net/proxy_resolution/configured_proxy_resolution_service.h"
++#include "net/ssl/ssl_info.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+ #include "net/test/embedded_test_server/http_request.h"
+ #include "net/test/embedded_test_server/http_response.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "net/url_request/url_request.h"
+-#include "net/url_request/url_request_test_util.h"
+ #include "net/url_request/url_request_context.h"
+-#include "url/origin.h"
+ #include "net/url_request/url_request_context_builder.h"
++#include "net/url_request/url_request_test_util.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "url/origin.h"
++#include "url/scheme_host_port.h"
+ 
+ namespace aegis_access {
+ namespace {
+@@ -150,6 +155,63 @@ TEST_F(AccessHttpRouteExecutionTest, NativeProxyConfigurationRemainsUnchanged) {
+   EXPECT_EQ(hits.load(), 1);
+ }
+ 
++TEST_F(AccessHttpRouteExecutionTest, ManagedHttpsKeepsHstsAndIsolatesAltSvc) {
++  constexpr char kHost[] = "secure-route.test";
++  net::EmbeddedTestServer origin(net::EmbeddedTestServer::TYPE_HTTPS);
++  origin.SetCertHostnames({kHost});
++  origin.RegisterRequestHandler(base::BindRepeating(
++      [](const net::test_server::HttpRequest&)
++          -> std::unique_ptr<net::test_server::HttpResponse> {
++        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++        response->set_content("secure response");
++        response->AddCustomHeader("Strict-Transport-Security", "max-age=3600");
++        response->AddCustomHeader("Alt-Svc", "h2=\":443\"");
++        return response;
++      }));
++  ASSERT_TRUE(origin.Start());
++  const GURL url = origin.GetURL(kHost, "/policy");
++  net::EmbeddedTestServer proxy;
++  proxy.EnableConnectProxy({net::HostPortPair::FromURL(url)});
++  ASSERT_TRUE(proxy.Start());
++
++  // Both requests use the same local TLS server and CONNECT proxy. Only the
++  // explicitly managed request must suppress the native Alt-Svc update.
++  for (bool managed : {false, true}) {
++    SCOPED_TRACE(managed ? "managed" : "native");
++    auto context = Context(
++        net::ConfiguredProxyResolutionService::CreateFixedFromPacResultForTest(
++            "PROXY " + proxy.host_port_pair().ToString(),
++            TRAFFIC_ANNOTATION_FOR_TESTS));
++    net::TransportSecurityState::STSState sts;
++    EXPECT_FALSE(
++        context->transport_security_state()->GetDynamicSTSState(kHost, &sts));
++    net::TestDelegate delegate;
++    auto request = context->CreateRequest(url, net::DEFAULT_PRIORITY, &delegate,
++                                          TRAFFIC_ANNOTATION_FOR_TESTS,
++                                          net::handles::kInvalidNetworkHandle);
++    request->set_isolation_info(net::IsolationInfo::CreateForInternalRequest(
++        url::Origin::Create(url)));
++    if (managed) {
++      auto route = Route(proxy);
++      ASSERT_TRUE(route);
++      request->SetAccessProxyRoute(std::move(route));
++    }
++    request->Start();
++    delegate.RunUntilComplete();
++    ASSERT_EQ(delegate.request_status(), net::OK);
++    ASSERT_EQ(delegate.data_received(), "secure response");
++    EXPECT_TRUE(request->ssl_info().is_valid());
++    EXPECT_TRUE(
++        context->transport_security_state()->GetDynamicSTSState(kHost, &sts));
++    EXPECT_EQ(context->http_server_properties()
++                  ->GetAlternativeServiceInfos(
++                      url::SchemeHostPort(url),
++                      request->isolation_info().network_anonymization_key())
++                  .empty(),
++              managed);
++  }
++}
++
+ TEST_F(AccessHttpRouteExecutionTest, FailedManagedRouteNeverFallsBackToOrigin) {
+   std::atomic<int> origin_hits{0};
+   net::EmbeddedTestServer origin;
+diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
+index c54489d9c4f95784aa0962c6b40d9dba23ed82de..c325ec4f16ebc516746984e59e0d0a5c1a743306 100644
+--- a/net/http/http_network_transaction.cc
++++ b/net/http/http_network_transaction.cc
+@@ -2615,14 +2615,11 @@ void HttpNetworkTransaction::RecordStreamRequestResult(int result) {
+ }
+ 
+ void HttpNetworkTransaction::ProcessAltSvcHeader() {
+-  // Managed responses must not update the native session's alternative routes.
+-  if (access_proxy_route_) {
+-    return;
+-  }
+-
+   if (IsSecureRequest()) {
+     stream_->GetSSLInfo(&response_.ssl_info);
+-    if (response_.ssl_info.is_valid() &&
++    // Managed HTTPS still needs TLS metadata for HSTS and other consumers.
++    // Only native responses may update the session's alternative services.
++    if (!access_proxy_route_ && response_.ssl_info.is_valid() &&
+         !IsCertStatusError(response_.ssl_info.cert_status)) {
+       session_->http_stream_factory()->ProcessAlternativeServices(
+           session_, network_anonymization_key_, response_.headers.get(),

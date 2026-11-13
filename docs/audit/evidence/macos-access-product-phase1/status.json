@@ -1,0 +1,10 @@
+{
+  "kind": "macos-access-product-phase1-evidence-status",
+  "schemaVersion": 1,
+  "status": "NOT_RUN",
+  "reason": "Pack scaffold and session/route fixture landed; awaiting same-candidate launchable macOS artifacts for B4.",
+  "exitCriteria": ["pmac1", "pmac2", "pmac3", "pmac5", "pmac6"],
+  "excludedFromExitClaim": ["pmac4"],
+  "forbidDirectAsAccessSuccess": true,
+  "updated": "2026-11-08"
+}

@@ -34,9 +34,10 @@ def GetConfigurationForBuild(defines):
         'webview_name': 'Chromium WebView',
         'win_config': {
             'win': {
-                'reg_mandatory_key_name': 'Software\\Policies\\Aegis Browser',
+                # The registry identity stays stable when display names change.
+                'reg_mandatory_key_name': 'Software\\Policies\\GCSA Aegis',
                 'reg_recommended_key_name':
-                'Software\\Policies\\Aegis Browser\\Recommended',
+                'Software\\Policies\\GCSA Aegis\\Recommended',
                 'mandatory_category_path': ['chromium'],
                 'recommended_category_path': ['chromium_recommended'],
                 'category_path_strings': {

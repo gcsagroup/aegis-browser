@@ -1,0 +1,112 @@
+From 5ae4a6b0dcc7ab14a555744c2123f25d74326904 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 12 Nov 2026 03:40:01 +0800
+Subject: [PATCH] fix(access): hide proxy retry after a redirected form
+ submission
+
+---
+ chrome/browser/chrome_content_browser_client.cc | 11 +++++++++++
+ chrome/renderer/net/net_error_helper.cc         | 16 +++++++++++-----
+ chrome/renderer/net/net_error_helper_core.cc    |  9 +++++++--
+ components/error_page/common/localized_error.h  |  3 +++
+ 4 files changed, 32 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 95c4b4a0d007500fb47474159b044b2b2d4b6b9a..1ed82707d43b5dcad2ebe3ab9734b11ab2efb720 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -8840,6 +8840,17 @@ ChromeContentBrowserClient::GetAlternativeErrorPageOverrideInfo(
+   }
+ #endif
+ 
++#if BUILDFLAG(IS_MAC)
++  // The renderer builds the error document from the final request method.
++  // The browser retry ticket is bound to the original navigation method.
++  if (navigation_handle.IsInPrimaryMainFrame() && !navigation_handle.IsPost() &&
++      navigation_handle.GetRequestMethod() != "GET") {
++    auto info = content::mojom::AlternativeErrorPageOverrideInfo::New();
++    info->alternative_error_page_params.Set(error_page::kSuppressAegisProxyRetry,
++                                            true);
++    return info;
++  }
++#endif
+   return nullptr;
+ }
+ 
+diff --git a/chrome/renderer/net/net_error_helper.cc b/chrome/renderer/net/net_error_helper.cc
+index e8b0f228cea36ab757ab65ba7c6e68d90bdf6f0b..ca3af7659c36a5dcad5f6acdcd3c7a3fb5a86bed 100644
+--- a/chrome/renderer/net/net_error_helper.cc
++++ b/chrome/renderer/net/net_error_helper.cc
+@@ -75,9 +75,13 @@ using error_page::LocalizedError;
+ namespace {
+ 
+ void AddAegisProxyRetryStrings(const error_page::Error& error, bool post,
+-                              bool main_frame, base::DictValue& strings) {
++                              bool main_frame, const base::DictValue& params,
++                              base::DictValue& strings) {
+ #if BUILDFLAG(IS_MAC)
+-  if (!main_frame || post || !error.url().SchemeIsHTTPOrHTTPS()) return;
++  if (!main_frame || post || !error.url().SchemeIsHTTPOrHTTPS() ||
++      params.FindBool(error_page::kSuppressAegisProxyRetry).value_or(false)) {
++    return;
++  }
+   bool eligible = error.domain() == error_page::Error::kDnsProbeErrorDomain;
+   if (error.domain() == error_page::Error::kNetErrorDomain) {
+     switch (error.reason()) {
+@@ -253,9 +257,10 @@ LocalizedError::PageState NetErrorHelper::GenerateLocalizedErrorPage(
+         IsRunningInForcedAppMode(), RenderThread::Get()->GetLocale(),
+         IsExtensionExtendedErrorCode(error.extended_reason()),
+         &error_page_params_);
++    AddAegisProxyRetryStrings(error, is_failed_post,
++                             render_frame()->IsMainFrame(), error_page_params_,
++                             page_state.strings);
+   }
+-  AddAegisProxyRetryStrings(error, is_failed_post,
+-                            render_frame()->IsMainFrame(), page_state.strings);
+   std::string template_html =
+       ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
+           resource_id);
+@@ -290,7 +295,8 @@ LocalizedError::PageState NetErrorHelper::UpdateErrorPage(
+       &error_page_params_);
+ 
+   AddAegisProxyRetryStrings(error, is_failed_post,
+-                            render_frame()->IsMainFrame(), page_state.strings);
++                            render_frame()->IsMainFrame(), error_page_params_,
++                            page_state.strings);
+   std::string json = base::WriteJson(page_state.strings).value_or("");
+ 
+   std::string js = "if (window.updateForDnsProbe) "
+diff --git a/chrome/renderer/net/net_error_helper_core.cc b/chrome/renderer/net/net_error_helper_core.cc
+index 3a173c4b3a13b46282c592bd56096070532f0a69..5e1dbd74c5c748483b20f626ce8d8dcce3562882 100644
+--- a/chrome/renderer/net/net_error_helper_core.cc
++++ b/chrome/renderer/net/net_error_helper_core.cc
+@@ -203,8 +203,13 @@ void NetErrorHelperCore::PrepareErrorPageForMainFrame(
+   std::string error_param;
+   error_page::Error error = pending_error_page_info->error;
+ 
+-  if (!alternative_error_page_info &&
+-      IsNetDnsError(pending_error_page_info->error)) {
++  // A retry-button hint on the default error page doesn't replace DNS probes.
++  const bool default_error_page =
++      !alternative_error_page_info ||
++      alternative_error_page_info->alternative_error_page_params
++          .FindBool(error_page::kSuppressAegisProxyRetry)
++          .value_or(false);
++  if (default_error_page && IsNetDnsError(pending_error_page_info->error)) {
+     // The last probe status needs to be reset if this is a DNS error.  This
+     // means that if a DNS error page is committed but has not yet finished
+     // loading, a DNS probe status scheduled to be sent to it may be thrown
+diff --git a/components/error_page/common/localized_error.h b/components/error_page/common/localized_error.h
+index 7c1d346b6ccaf65a1028eab36cf4a0518b878635..89c23be566601a0d6c87600b3554a9eadd529de4 100644
+--- a/components/error_page/common/localized_error.h
++++ b/components/error_page/common/localized_error.h
+@@ -16,6 +16,9 @@ namespace error_page {
+ // If this property set to true, override the default error page.
+ static constexpr const char kOverrideErrorPage[] = "override_error_page";
+ 
++// Browser-provided display hint for a non-GET navigation redirected to GET.
++inline constexpr char kSuppressAegisProxyRetry[] = "suppress_aegis_proxy_retry";
++
+ // Set to true when the device may be in a portal state. Will be used to show a
+ // suggestion in the error page where appropriate.
+ static constexpr const char kIsPortalStateKey[] = "is_portal_state";

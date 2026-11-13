@@ -1,0 +1,661 @@
+From e5d6bd2a87ff4c827713509f2cc81a0afe2dc6ee Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 23:52:12 +0800
+Subject: [PATCH] fix(access): coordinate request lifecycle and private
+ publication
+
+---
+ .../aegis/access/access_async_rule_store.cc   |  7 ++
+ .../aegis/access/access_async_rule_store.h    |  1 +
+ .../access_network_context_transport.cc       |  9 +++
+ .../access/access_network_context_transport.h |  2 +
+ .../access_private_publication_unittest.cc    | 31 ++++++++
+ .../access_proxying_url_loader_factory.cc     | 73 ++++++++++++++++++-
+ .../access_proxying_url_loader_factory.h      | 16 ++++
+ .../browser/aegis/access/access_rule_store.cc |  2 +
+ .../browser/aegis/access/access_rule_store.h  |  1 +
+ .../access/access_service_coordinator.cc      |  8 +-
+ .../aegis/access/access_service_coordinator.h |  1 +
+ .../access_site_proxy_product_unittest.cc     | 23 ++++++
+ .../access_network_url_loader_unittest.cc     | 26 ++++++-
+ .../access_private_context_client_unittest.cc | 26 +++++++
+ .../access_private_factory_unittest.cc        | 10 +++
+ .../aegis/access_network_context_state.cc     |  7 +-
+ .../access_private_url_loader_factory.cc      | 23 +++++-
+ .../aegis/access_private_url_loader_factory.h |  2 +
+ .../network/cors/cors_url_loader_factory.cc   |  5 ++
+ services/network/url_loader.cc                |  6 +-
+ 20 files changed, 268 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_async_rule_store.cc b/chrome/browser/aegis/access/access_async_rule_store.cc
+index 93ac8c7afff4e27716af02a58c9b079c0d2f043a..ae016933c5d418b30497d02392fb01c21da10026 100644
+--- a/chrome/browser/aegis/access/access_async_rule_store.cc
++++ b/chrome/browser/aegis/access/access_async_rule_store.cc
+@@ -71,6 +71,9 @@ class AccessAsyncRuleStore::Worker {
+   StoreResult<StoredPolicySnapshot> ReadCommitted(const std::string& partition) {
+     return store_.ReadCommittedSnapshot(partition);
+   }
++  void SetFailurePointForTesting(AccessRuleStore::FailurePointForTesting point) {
++    store_.SetFailurePointForTesting(point);
++  }
+  private:
+   AsyncAccessStoreRestoration ReserveCommitted(const std::string& partition) {
+     auto publication = store_.ReserveCommittedPolicyForPublication(partition);
+@@ -115,4 +118,8 @@ void AccessAsyncRuleStore::ReadCommitted(std::string partition,
+   worker_.AsyncCall(&Worker::ReadCommitted).WithArgs(std::move(partition))
+       .Then(std::move(completion));
+ }
++void AccessAsyncRuleStore::SetFailurePointForTesting(
++    AccessRuleStore::FailurePointForTesting point) {
++  worker_.AsyncCall(&Worker::SetFailurePointForTesting).WithArgs(point);
++}
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_async_rule_store.h b/chrome/browser/aegis/access/access_async_rule_store.h
+index 1b9c6cf254374da40f7a45f51a60a22222138a43..c1214faed94e07034e8f4f2903c2f8f731991f15 100644
+--- a/chrome/browser/aegis/access/access_async_rule_store.h
++++ b/chrome/browser/aegis/access/access_async_rule_store.h
+@@ -39,6 +39,7 @@ class AccessAsyncRuleStore {
+       base::OnceCallback<void(AsyncAccessStoreRestoration)> completion);
+   void ReadCommitted(std::string partition,
+       base::OnceCallback<void(StoreResult<StoredPolicySnapshot>)> completion);
++  void SetFailurePointForTesting(AccessRuleStore::FailurePointForTesting point);
+  private:
+   class Worker;
+   base::SequenceBound<Worker> worker_;
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index af523b1b641ac60b7f639943876bcba2db4c0fbe..10e519bdcabe94f55f69ed3ccf217986cd22b4dd 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -273,6 +273,15 @@ bool AccessNetworkContextTransport::HasReadyPrivateContext(
+           entry.second.applied_revision == state.private_revision; });
+ }
+ 
++bool AccessNetworkContextTransport::HasCurrentPrivatePolicy(
++    const aegis_access::OwnershipKey& owner,
++    const aegis_access::GenerationTuple& common) const {
++  if (!HasReadyPrivateContext(owner)) return false;
++  const auto& publication =
++      partitions_.at(owner.storage_partition_token).private_publication;
++  return publication && publication->common == common;
++}
++
+ void AccessNetworkContextTransport::BindPrivateContext(
+     const aegis_access::OwnershipKey& owner, network::mojom::NetworkContext* context,
+     base::OnceCallback<void(PrivateContext)> completion) {
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 4ee20afffcd2b42413cd5421cf9e639c63b81221..fecad03365d144369a405cf9de562e4bd02f92ea 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -107,6 +107,8 @@ class AccessNetworkContextTransport
+   std::vector<AccessPrivateEndpoint> PrivateEndpoints(
+       const aegis_access::OwnershipKey& owner) const;
+   bool HasReadyPrivateContext(const aegis_access::OwnershipKey& owner) const;
++  bool HasCurrentPrivatePolicy(const aegis_access::OwnershipKey& owner,
++      const aegis_access::GenerationTuple& common) const;
+   using PrivateContext = std::shared_ptr<AccessPrivateContextClient>;
+   void BindPrivateContext(const aegis_access::OwnershipKey& owner,
+       network::mojom::NetworkContext* context,
+diff --git a/chrome/browser/aegis/access/access_private_publication_unittest.cc b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+index 56ae9657a16b94a3d3994cdbc54f7d2e5df97e81..9c0df1fb1ed8829bb59d5d5de8c5cb1e0b2d57a7 100644
+--- a/chrome/browser/aegis/access/access_private_publication_unittest.cc
++++ b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+@@ -107,6 +107,37 @@ class AccessPrivatePublicationTest : public testing::Test {
+   aegis_access::OwnershipKey owner_;
+ };
+ 
++TEST_F(AccessPrivatePublicationTest, ChangedCommonTupleRequiresFreshPrivateAck) {
++  HeldPrivateContext context;
++  auto client = Bind(context);
++  ASSERT_TRUE(client);
++  const auto policy = Policy();
++  const auto old_common = Common();
++  base::test::TestFuture<bool> first;
++  transport_->PublishPrivatePolicy(policy, old_common, first.GetCallback());
++  environment_.RunUntilIdle();
++  context.Acknowledge();
++  ASSERT_TRUE(first.Get());
++  EXPECT_TRUE(transport_->HasCurrentPrivatePolicy(owner_, old_common));
++  transport_->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_WIFI);
++  auto new_common = old_common;
++  new_common.network_epoch = transport_->network_epoch();
++  EXPECT_NE(old_common.network_epoch, new_common.network_epoch);
++  EXPECT_FALSE(transport_->HasCurrentPrivatePolicy(owner_, new_common));
++  base::test::TestFuture<bool> changed;
++  transport_->PublishPrivatePolicy(policy, new_common, changed.GetCallback());
++  environment_.RunUntilIdle();
++  EXPECT_FALSE(changed.IsReady());
++  EXPECT_FALSE(transport_->HasCurrentPrivatePolicy(owner_, new_common));
++  ASSERT_TRUE(context.snapshot);
++  EXPECT_EQ(context.snapshot->common_generations->network_epoch,
++            new_common.network_epoch);
++  context.Acknowledge();
++  ASSERT_TRUE(changed.Get());
++  EXPECT_TRUE(transport_->HasCurrentPrivatePolicy(owner_, new_common));
++  EXPECT_FALSE(transport_->HasCurrentPrivatePolicy(owner_, old_common));
++}
++
+ TEST_F(AccessPrivatePublicationTest, FactoriesShareOneContextAndExactPublication) {
+   HeldPrivateContext context;
+   auto first = Bind(context);
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index bdc20b60889d906e72c95913ef4b45cdc67837be..f3be9886b99dab5dcda2cfd4a15b8f8b6da9cf3a 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -937,6 +937,17 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+                                              : RequestDisposition::kPreserveNative;
+   }
+ 
++  if (private_target_factory_.is_bound()) {
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    const auto common =
++        runtime->CaptureCommonGenerationTupleOnUiThread(metadata.owner);
++    if (!transport || !common ||
++        !transport->HasCurrentPrivatePolicy(metadata.owner, *common)) {
++      *net_error = net::ERR_NETWORK_CHANGED;
++      return RequestDisposition::kBlock;
++    }
++  }
++
+   aegis_access::RequestPolicyContextResult context_result =
+       aegis_access::CanonicalizeBrowserOwnedRequest(metadata, request_url);
+   if (!context_result.context.has_value()) {
+@@ -997,6 +1008,65 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
+     return;
+   }
+ 
++  if (private_target_factory_.is_bound()) {
++    auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_)
++                                 : nullptr;
++    const auto common = runtime
++        ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
++        : std::nullopt;
++    if (!transport || !policy || !common) {
++      BlockRequest(std::move(loader_receiver), std::move(client),
++                   net::ERR_NETWORK_CHANGED);
++      return;
++    }
++    // An open document keeps its factory across network/identity/config
++    // changes. Publish the new tuple and wait for the exact ACK before
++    // stamping either native or proxy requests with that tuple.
++    ++pending_starts_;
++    transport->PublishPrivatePolicy(*policy, *common, base::BindOnce(
++        &AccessProxyingURLLoaderFactory::OnRequestPolicyReady,
++        weak_factory_.GetWeakPtr(), std::move(loader_receiver), request_id,
++        options, request, std::move(client), traffic_annotation, *common));
++    return;
++  }
++  StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
++                         std::move(client), traffic_annotation);
++}
++
++void AccessProxyingURLLoaderFactory::OnRequestPolicyReady(
++    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++    int32_t request_id, uint32_t options, network::ResourceRequest request,
++    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++    net::MutableNetworkTrafficAnnotationTag traffic_annotation,
++    aegis_access::GenerationTuple expected, bool accepted) {
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto current = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
++      : std::nullopt;
++  if (!accepted || !current || *current != expected ||
++      !private_target_factory_.is_bound()) {
++    BlockRequest(std::move(loader_receiver), std::move(client),
++                 net::ERR_NETWORK_CHANGED);
++  } else {
++    StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
++                           std::move(client), traffic_annotation);
++  }
++  // Keep the factory alive while StartEvaluatedRequest can remove a failed
++  // tracked request, including when its public factory receiver has closed.
++  CHECK_GT(pending_starts_, 0u);
++  --pending_starts_;
++  MaybeDestroySelf();
++}
++
++void AccessProxyingURLLoaderFactory::StartEvaluatedRequest(
++    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++    int32_t request_id, uint32_t options,
++    const network::ResourceRequest& request,
++    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
++
+   int net_error = net::ERR_BLOCKED_BY_CLIENT;
+   aegis_access::RequestOwnershipRecord ownership_record;
+   const RequestDisposition disposition =
+@@ -1162,7 +1232,8 @@ void AccessProxyingURLLoaderFactory::OnProxyBindingError() {
+ 
+ void AccessProxyingURLLoaderFactory::MaybeDestroySelf() {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  if (!proxy_receivers_.empty() || !requests_.empty() || !on_disconnect_) {
++  if (!proxy_receivers_.empty() || !requests_.empty() || pending_starts_ ||
++      !on_disconnect_) {
+     return;
+   }
+   std::move(on_disconnect_).Run(this);
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index a094cf5e4f6c283924dc3004e82a5e4a1b1597a2..6cffceff8e7c365c80549c8468acfddc7f9d547c 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -12,6 +12,7 @@
+ #include "base/containers/unique_ptr_adapters.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "components/aegis_access/request_policy_context.h"
+ #include "content/public/browser/frame_tree_node_id.h"
+@@ -139,6 +140,19 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+     kBlock,
+   };
+ 
++  void OnRequestPolicyReady(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++      int32_t request_id, uint32_t options, network::ResourceRequest request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      net::MutableNetworkTrafficAnnotationTag traffic_annotation,
++      aegis_access::GenerationTuple expected, bool accepted);
++  void StartEvaluatedRequest(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++      int32_t request_id, uint32_t options,
++      const network::ResourceRequest& request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
++
+   RequestDisposition EvaluateRequest(
+       const network::ResourceRequest& request,
+       int* net_error,
+@@ -206,6 +220,8 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+   mojo::Remote<network::mojom::AegisAccessURLLoaderFactory> private_target_factory_;
+   std::shared_ptr<AccessPrivateContextClient> private_context_;
+   DisconnectCallback on_disconnect_;
++  size_t pending_starts_ = 0;
++  base::WeakPtrFactory<AccessProxyingURLLoaderFactory> weak_factory_{this};
+ };
+ 
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index d5191d4ae4ce9cecfb0eb0746e328fbf0a469310..323780b262dac8d07913cc45f0007f2fd69b825c 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -1480,6 +1480,8 @@ StoreResult<StoredPolicySnapshot>
+ AccessRuleStore::BuildPreparedCandidateSnapshot(
+     const PendingMutationRecord& expected) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (ShouldFail(FailurePointForTesting::kBuildPreparedCandidateBeforeRead))
++    return SnapshotError(StoreStatus::kIoError, "injected_candidate_read_failure");
+   if (!is_open_) {
+     return SnapshotError(terminal_status_, "store_not_open");
+   }
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+index 6f6deed05557bd88d47f798803d70c8279798a13..43648a6cff845d6a8af0dd3cb93d9f3a34402c98 100644
+--- a/chrome/browser/aegis/access/access_rule_store.h
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -230,6 +230,7 @@ class AccessRuleStore {
+     kPrepareAfterCounterUpdate,
+     kPrepareBeforeJournalInsert,
+     kPrepareAfterJournalInsert,
++    kBuildPreparedCandidateBeforeRead,
+     kCommitAfterRuleDelete,
+     kCommitAfterGroupDelete,
+     kCommitAfterGroupInsert,
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index 19a0ca409c06383b21f7363e92430e94ff684e7e..608071c970b524ff242ee43c8fd0476f52c994d0 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -256,6 +256,12 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
+ void AccessServiceCoordinator::OnAsyncPrepared(
+     std::unique_ptr<MutationTransaction> transaction,
+     AsyncAccessStorePrepared result) {
++  // PREPARED is already durable even if construction of its full candidate
++  // fails. Keep its identity so FailTransaction supersedes the journal entry.
++  if (result.pending && result.pending->phase == MutationPhase::kPrepared) {
++    transaction->pending = *result.pending;
++    transaction->previous = std::move(result.previous);
++  }
+   if (result.status != StoreStatus::kValid || !result.pending) {
+     FailTransaction(std::move(transaction),
+         Result(AccessMutationTransactionStatus::kPrepareFailed, result.status));
+@@ -267,8 +273,6 @@ void AccessServiceCoordinator::OnAsyncPrepared(
+                result.pending->committed_policy_generation));
+     return;
+   }
+-  transaction->pending = std::move(*result.pending);
+-  transaction->previous = std::move(result.previous);
+   if (!result.candidate) {
+     FailTransaction(std::move(transaction),
+         Result(AccessMutationTransactionStatus::kCandidateBuildFailed, result.status));
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index ec2e4930a6031d86d95e4b0d862c8f05dd54705b..a2bd74173dd3ca2ba187a06d719ef1c17d39f60b 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -86,6 +86,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+       base::OnceCallback<void(AccessMutationTransactionResult)> completion);
+ 
+  private:
++  friend class AccessServiceCoordinatorTestPeer;
+   explicit AccessServiceCoordinator(Profile* profile);
+   struct MutationTransaction;
+   void OnStoreInitialized(OwnershipKey owner, AsyncAccessStoreRestoration result);
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index ff1fa59938cedd3c8d3f2f6bffa1ea2c041330c1..d2e2a5757875c295532d0fc413d25bd3ff8126c2 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -1,6 +1,7 @@
+ // Copyright 2026 GCSA
+ 
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
++#include "chrome/browser/aegis/access/access_async_rule_store.h"
+ 
+ #include "base/command_line.h"
+ #include "base/files/scoped_temp_dir.h"
+@@ -22,6 +23,14 @@
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
++class AccessServiceCoordinatorTestPeer {
++ public:
++  static void SetFailure(AccessServiceCoordinator* coordinator,
++                        AccessRuleStore::FailurePointForTesting point) {
++    CHECK(coordinator->async_store_);
++    coordinator->async_store_->SetFailurePointForTesting(point);
++  }
++};
+ namespace {
+ 
+ // Real Mojo ACK with an explicit hold at the product PREPARED boundary. The
+@@ -155,6 +164,20 @@ class AccessSiteProxyProductTest : public testing::Test {
+   OwnershipKey owner_;
+ };
+ 
++TEST_F(AccessSiteProxyProductTest, CandidateReadFailureRecoversPreparedWithoutRestart) {
++  AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
++      AccessRuleStore::FailurePointForTesting::kBuildPreparedCandidateBeforeRead);
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
++  WaitFor(AccessSiteConnectionState::kUnavailable);
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
++  AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
++      AccessRuleStore::FailurePointForTesting::kNone);
++  // The next operation must prepare and commit in the same Profile/process.
++  // An orphaned durable PREPARED would instead report pending_mutation_exists.
++  Enable();
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
++}
++
+ TEST_F(AccessSiteProxyProductTest, OnOffOnUsesRealCoreAndCommittedRevision) {
+   uint64_t previous = 0;
+   for (bool enabled : {true, false, true}) {
+diff --git a/components/aegis_access/access_network_url_loader_unittest.cc b/components/aegis_access/access_network_url_loader_unittest.cc
+index 0f86bd685b130141677bc0328432c5029de80e11..3996f2739fc1e2abd8750c9cff1f820ccc011f63 100644
+--- a/components/aegis_access/access_network_url_loader_unittest.cc
++++ b/components/aegis_access/access_network_url_loader_unittest.cc
+@@ -4,6 +4,7 @@
+ #include "base/test/bind.h"
+ #include "base/test/task_environment.h"
+ #include "mojo/core/embedder/embedder.h"
++#include "net/base/load_flags.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+ #include "net/test/embedded_test_server/http_response.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+@@ -88,10 +89,12 @@ class AccessNetworkURLLoaderTest : public testing::Test {
+     return AccessRequestRouteState::Create(registry_.GetWeakPtr(), metadata,
+                                            url, "GET", Expected(proxy));
+   }
+-  void Start(const GURL& url, scoped_refptr<AccessRequestRouteState> state) {
++  void Start(const GURL& url, scoped_refptr<AccessRequestRouteState> state,
++             int flags = 0) {
+     ResourceRequest request;
+     request.url = url;
+     request.method = "GET";
++    request.load_flags = flags;
+     loader_.reset(new URLLoader(context_, base::BindLambdaForTesting(
+         [&](URLLoader*) { loader_.reset(); }), remote_.BindNewPipeAndPassReceiver(),
+         0, request, client_.CreateRemote(), {}, TRAFFIC_ANNOTATION_FOR_TESTS,
+@@ -113,6 +116,27 @@ class AccessNetworkURLLoaderTest : public testing::Test {
+   mojo::Remote<mojom::URLLoader> remote_;
+   std::unique_ptr<URLLoader> loader_;
+ };
++TEST_F(AccessNetworkURLLoaderTest, ManagedRouteCannotAdvertiseNativeDictionary) {
++  Install(true);
++  const auto url = origin_.GetURL("/final");
++  Start(url, State(url, true), net::LOAD_CAN_USE_SHARED_DICTIONARY);
++  ASSERT_EQ(net_context_->url_requests()->size(), 1u);
++  EXPECT_FALSE((*net_context_->url_requests()->begin())->load_flags() &
++               net::LOAD_CAN_USE_SHARED_DICTIONARY);
++  client_.RunUntilComplete();
++  EXPECT_EQ(client_.completion_status().error_code, net::OK);
++  EXPECT_EQ(proxy_hits_, 1);
++}
++TEST_F(AccessNetworkURLLoaderTest, OrdinaryNativeLoaderRetainsDictionaryCapability) {
++  const auto url = origin_.GetURL("/final");
++  Start(url, nullptr, net::LOAD_CAN_USE_SHARED_DICTIONARY);
++  ASSERT_EQ(net_context_->url_requests()->size(), 1u);
++  EXPECT_TRUE((*net_context_->url_requests()->begin())->load_flags() &
++              net::LOAD_CAN_USE_SHARED_DICTIONARY);
++  client_.RunUntilComplete();
++  EXPECT_EQ(client_.completion_status().error_code, net::OK);
++  EXPECT_EQ(origin_hits_, 1);
++}
+ TEST_F(AccessNetworkURLLoaderTest, ManagedRequestUsesPrivateRoute) {
+   Install(true);
+   const auto url = origin_.GetURL("/final");
+diff --git a/components/aegis_access/access_private_context_client_unittest.cc b/components/aegis_access/access_private_context_client_unittest.cc
+index 53df8aedf8e4b8748a63ad3c1c3347db19ba3012..b34a57a090477b7372e880e65b45df87428db832 100644
+--- a/components/aegis_access/access_private_context_client_unittest.cc
++++ b/components/aegis_access/access_private_context_client_unittest.cc
+@@ -581,6 +581,32 @@ TEST_F(AccessPrivateContextClientTest, ResetFactoriesRevokesAlreadyIssuedPrivate
+   factory_remote_.FlushForTesting();
+   EXPECT_FALSE(factory_remote_.is_connected());
+ }
++TEST_F(AccessPrivateContextClientTest, ResetPreservesExemptServiceWorkerFactory) {
++  auto params = mojom::URLLoaderFactoryParams::New();
++  params->process_id = OriginatingProcessId::FromUnsafeValue(42);
++  params->ignore_factory_reset = true;
++  params->request_initiator_origin_lock = initiator_;
++  params->isolation_info = net::IsolationInfo::CreateForInternalRequest(initiator_);
++  auto binding = mojom::AegisAccessFactoryBinding::New();
++  binding->owner = Snapshot()->owner.Clone();
++  binding->incarnation = incarnation_;
++  binding->attribution = mojom::AegisAccessAttribution::kProfileOnly;
++  mojo::Remote<mojom::AegisAccessURLLoaderFactory> exempt;
++  ASSERT_TRUE(CreateFactory(std::move(params), nullptr, std::move(binding),
++                            exempt.BindNewPipeAndPassReceiver()));
++  context_remote_->ResetURLLoaderFactories();
++  context_remote_.FlushForTesting();
++  exempt.FlushForTesting();
++  factory_remote_.FlushForTesting();
++  EXPECT_TRUE(exempt.is_connected());
++  EXPECT_FALSE(factory_remote_.is_connected());
++  factory_remote_.reset();
++  factory_remote_.Bind(exempt.Unbind());
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(actual_, 1);
++}
+ TEST_F(AccessPrivateContextClientTest, RetainedPrivateContextUsesExactOriginalContext) {
+   mojo::Remote<mojom::AegisAccessContext> capability;
+   base::test::TestFuture<std::string> future;
+diff --git a/components/aegis_access/access_private_factory_unittest.cc b/components/aegis_access/access_private_factory_unittest.cc
+index fe037aad0b88a401723efe84cc5a619d91c1a7f1..6afd84f336de96839aa7e0d7ee5b83b847ddd3b9 100644
+--- a/components/aegis_access/access_private_factory_unittest.cc
++++ b/components/aegis_access/access_private_factory_unittest.cc
+@@ -144,6 +144,16 @@ TEST_F(AccessPrivateFactoryTest, PreflightAndActualUseSameRegisteredProxy) {
+   EXPECT_EQ(preflights_, 1);
+   EXPECT_EQ(actual_, 1);
+ }
++TEST_F(AccessPrivateFactoryTest, SuccessfulTerminalEventsSurviveControlPipeClosure) {
++  for (int i = 0; i < 20; ++i) {
++    SCOPED_TRACE(i);
++    Start(false, false, "", false, i % 2 == 0);
++    client_->RunUntilComplete();
++    EXPECT_EQ(client_->completion_status().error_code, net::OK);
++    environment_.RunUntilIdle();
++  }
++  EXPECT_EQ(actual_, 20);
++}
+ TEST_F(AccessPrivateFactoryTest, CorsFailureDoesNotSendActualRequest) {
+   allow_cors_ = false;
+   Start();
+diff --git a/services/network/aegis/access_network_context_state.cc b/services/network/aegis/access_network_context_state.cc
+index 5684552d948a74cce349692c58160fe28d4213fd..bc56c3279796768f7157597c6a4be209ce8afd62 100644
+--- a/services/network/aegis/access_network_context_state.cc
++++ b/services/network/aegis/access_network_context_state.cc
+@@ -31,8 +31,11 @@ AccessNetworkContextState::~AccessNetworkContextState() {
+   factories_.clear();
+ }
+ void AccessNetworkContextState::ResetFactories() {
+-  // Drop issued capabilities and their requests while Context dependencies live.
+-  factories_.clear();
++  // Match NetworkContext's original factory contract, including extension
++  // service-worker factories that must survive webRequest-triggered resets.
++  std::erase_if(factories_, [](const auto& factory) {
++    return !factory->ignore_factory_reset();
++  });
+ }
+ bool AccessNetworkContextState::Install(
+     const mojom::AegisAccessSnapshot& snapshot) {
+diff --git a/services/network/aegis/access_private_url_loader_factory.cc b/services/network/aegis/access_private_url_loader_factory.cc
+index d869ebcd0ba5b11d5dfd7325ef0b60a999fe9ffc..515931824e7162a13372b81794e4bc2b85c58266 100644
+--- a/services/network/aegis/access_private_url_loader_factory.cc
++++ b/services/network/aegis/access_private_url_loader_factory.cc
+@@ -3,6 +3,8 @@
+ 
+ #include "base/check.h"
+ #include "base/functional/bind.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "services/network/cors/cors_url_loader_factory.h"
+@@ -56,11 +58,14 @@ class AccessPrivateURLLoaderFactory::Request final
+   mojo::PendingReceiver<mojom::URLLoader> BindInner() {
+     auto receiver = inner_.BindNewPipeAndPassReceiver();
+     inner_.set_disconnect_handler(
+-        base::BindOnce(&Request::Cancel, base::Unretained(this)));
++        base::BindOnce(&Request::OnInnerDisconnected, base::Unretained(this)));
+     return receiver;
+   }
+   mojo::PendingRemote<mojom::URLLoaderClient> BindClient() {
+-    return client_receiver_.BindNewPipeAndPassRemote();
++    auto client = client_receiver_.BindNewPipeAndPassRemote();
++    client_receiver_.set_disconnect_handler(
++        base::BindOnce(&Request::Cancel, base::Unretained(this)));
++    return client;
+   }
+   void FollowRedirect(HttpRequestHeadersUpdateParams,
+                       const std::optional<GURL>&) override {
+@@ -69,7 +74,7 @@ class AccessPrivateURLLoaderFactory::Request final
+   void FollowRedirectWithRoute(HttpRequestHeadersUpdateParams headers,
+       const std::optional<GURL>& new_url,
+       mojom::AegisAccessRequestEnvelopePtr envelope) override {
+-    if (!pending_redirect_ || !envelope || !envelope->generations ||
++    if (!inner_.is_bound() || !pending_redirect_ || !envelope || !envelope->generations ||
+         envelope->request_token != token_ ||
+         envelope->incarnation != incarnation_ ||
+         envelope->target != new_url.value_or(pending_redirect_->new_url) ||
+@@ -83,7 +88,7 @@ class AccessPrivateURLLoaderFactory::Request final
+     inner_->FollowRedirect(std::move(headers), new_url);
+   }
+   void SetPriority(net::RequestPriority priority, int32_t value) override {
+-    inner_->SetPriority(priority, value);
++    if (inner_.is_bound()) inner_->SetPriority(priority, value);
+   }
+   void OnReceiveEarlyHints(mojom::EarlyHintsPtr hints) override {
+     client_->OnReceiveEarlyHints(std::move(hints));
+@@ -113,6 +118,14 @@ class AccessPrivateURLLoaderFactory::Request final
+     Finish(status);
+   }
+  private:
++  void OnInnerDisconnected() {
++    // The control pipe can close before a queued OnComplete on the separate
++    // client pipe. Preserve that terminal status instead of synthesizing an
++    // abort. A broken producer that leaves its client pipe open is bounded.
++    inner_.reset();
++    completion_watchdog_.Start(FROM_HERE, base::Seconds(5),
++        base::BindOnce(&Request::Cancel, base::Unretained(this)));
++  }
+   void Cancel() { Finish(URLLoaderCompletionStatus(net::ERR_ABORTED)); }
+   void Finish(const URLLoaderCompletionStatus& status) {
+     client_->OnComplete(status);
+@@ -128,6 +141,7 @@ class AccessPrivateURLLoaderFactory::Request final
+   mojo::Receiver<mojom::AegisAccessURLLoaderControl> control_receiver_;
+   mojo::Receiver<mojom::URLLoaderClient> client_receiver_{this};
+   std::optional<net::RedirectInfo> pending_redirect_;
++  base::OneShotTimer completion_watchdog_;
+   base::OnceClosure remove_;
+ };
+ 
+@@ -140,6 +154,7 @@ AccessPrivateURLLoaderFactory::AccessPrivateURLLoaderFactory(
+     mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory> receiver,
+     base::OnceCallback<void(AccessPrivateURLLoaderFactory*)> on_destroy)
+     : registry_(std::move(registry)), binding_(std::move(binding)),
++      ignore_factory_reset_(params->ignore_factory_reset),
+       incarnation_(std::move(incarnation)), on_destroy_(std::move(on_destroy)),
+       cors_factory_(std::make_unique<cors::CorsURLLoaderFactory>(context,
+           std::move(params), std::move(scheduler), origin_access_list, this)) {
+diff --git a/services/network/aegis/access_private_url_loader_factory.h b/services/network/aegis/access_private_url_loader_factory.h
+index 0dada53af47cb98fed6baa37bb55ff40dd1c8b80..9f6fc2dc465d5c9543eaea16f6f2b9f7c93e44e6 100644
+--- a/services/network/aegis/access_private_url_loader_factory.h
++++ b/services/network/aegis/access_private_url_loader_factory.h
+@@ -50,6 +50,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) AccessPrivateURLLoaderFactory final
+       override;
+   bool HasAdditionalReferences() const override;
+   void DestroyURLLoaderFactory(cors::CorsURLLoaderFactory* factory) override;
++  bool ignore_factory_reset() const { return ignore_factory_reset_; }
+ 
+  private:
+   class Request;
+@@ -57,6 +58,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) AccessPrivateURLLoaderFactory final
+   void OnDisconnect();
+   const base::WeakPtr<AccessRouteRegistry> registry_;
+   const aegis_access::BrowserOwnedRequestMetadata binding_;
++  const bool ignore_factory_reset_;
+   const std::string incarnation_;
+   base::OnceCallback<void(AccessPrivateURLLoaderFactory*)> on_destroy_;
+   std::unique_ptr<cors::CorsURLLoaderFactory> cors_factory_;
+diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
+index cb6ee097f22185cf92cc7e139f4e8fcd1b1982dd..3220d4dbf23e77972c2feb0783bdf76b5428c50b 100644
+--- a/services/network/cors/cors_url_loader_factory.cc
++++ b/services/network/cors/cors_url_loader_factory.cc
+@@ -542,6 +542,11 @@ void CorsURLLoaderFactory::CreateLoaderAndStartWithAccessRoute(
+ 
+     std::unique_ptr<mojom::URLLoaderFactory> private_factory;
+     if (access_route_state) {
++      // SharedDictionaryIsolationKey has no Access route identity. Neither
++      // advertise native dictionaries nor store managed response dictionaries
++      // in this shared native storage.
++      shared_dictionary_storage.reset();
++      resource_request.shared_dictionary_writer_enabled = false;
+       private_factory = std::make_unique<AccessRouteBoundURLLoaderFactory>(
+           network_loader_factory_.get(), access_route_state);
+     }
+diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
+index 0568bfc920023608f4dec26c50bc49e877c3ee11..68d7b6632088a4afcd7a16ea27be73d99b98e8df 100644
+--- a/services/network/url_loader.cc
++++ b/services/network/url_loader.cc
+@@ -566,6 +566,10 @@ URLLoader::URLLoader(
+ 
+ void URLLoader::SetUpUrlRequestCallbacks(
+     SharedDictionaryManager* shared_dictionary_manager) {
++  if (access_route_state_) {
++    url_request_->SetLoadFlags(url_request_->load_flags() &
++                              ~net::LOAD_CAN_USE_SHARED_DICTIONARY);
++  }
+   url_request_->SetRequestHeadersCallback(base::BindRepeating(
+       &URLLoader::SetRawRequestHeadersAndNotify, base::Unretained(this)));
+   if (shared_dictionary_checker_) {
+@@ -581,7 +585,7 @@ void URLLoader::SetUpUrlRequestCallbacks(
+   url_request_->SetEarlyResponseHeadersCallback(base::BindRepeating(
+       &URLLoader::NotifyEarlyResponse, base::Unretained(this)));
+ 
+-  if (shared_dictionary_manager) {
++  if (shared_dictionary_manager && !access_route_state_) {
+     url_request_->SetSharedDictionaryGetter(
+         shared_dictionary_manager->MaybeCreateSharedDictionaryGetter(
+             url_request_->load_flags(), request_destination_));
+-- 
+2.54.0 (Apple Git-157)
+

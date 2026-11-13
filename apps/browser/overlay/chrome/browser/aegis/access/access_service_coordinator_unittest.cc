@@ -1,13 +1,16 @@
 // Copyright 2026 GCSA
 
 #include "chrome/browser/aegis/access/access_service_coordinator.h"
+#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 
 #include <memory>
 #include <optional>
 
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/test_future.h"
+#include "base/threading/thread_restrictions.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 #include "chrome/browser/aegis/access/access_published_request_runtime.h"
 #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
@@ -75,6 +78,82 @@ TEST_F(AccessServiceCoordinatorTest, ProfilesNeverShareCoordinatorState) {
   EXPECT_NE(first, second);
   EXPECT_EQ(first->state_generation(), 0u);
   EXPECT_EQ(second->state_generation(), 0u);
+}
+
+TEST_F(AccessServiceCoordinatorTest, ProductStartupRestoresOnBackgroundSequence) {
+  auto profile = TestingProfile::Builder().Build();
+  network::mojom::NetworkContextParams params;
+  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
+  const auto owner = *AccessNetworkContextTransport::Get(profile.get())->OwnerForPartition(
+      ChannelNamespace::kDev, {});
+  auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile.get());
+  base::ScopedDisallowBlocking disallow_ui_io;
+  base::test::TestFuture<bool> restored;
+  coordinator->InitializeForProfile(owner, restored.GetCallback());
+  ASSERT_TRUE(restored.Get());
+  ASSERT_TRUE(coordinator->has_retained_store());
+  EXPECT_TRUE(coordinator->ReadCommittedSnapshot(owner.storage_partition_token).value);
+  auto* runtime = AccessPublishedRequestRuntime::Get(profile.get());
+  ASSERT_TRUE(runtime);
+  const auto* policy = runtime->GetPublishedPolicySnapshot(owner);
+  ASSERT_TRUE(policy);
+  EXPECT_GT(policy->policy_generation, 0u);
+  EXPECT_TRUE(policy->rules.empty());
+}
+
+TEST_F(AccessServiceCoordinatorTest,
+       UnavailableProfileStoreCannotBecomeEmptyDirectPolicy) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  // A directory at the SQLite file path deterministically fails Open without
+  // changing filesystem permissions or depending on the executing user's UID.
+  ASSERT_TRUE(base::CreateDirectory(directory.GetPath().AppendASCII("access.db")));
+  auto profile = TestingProfile::Builder().SetPath(directory.GetPath()).Build();
+  network::mojom::NetworkContextParams params;
+  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
+  const auto owner = *AccessNetworkContextTransport::Get(profile.get())->OwnerForPartition(
+      ChannelNamespace::kDev, {});
+  auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile.get());
+  for (int attempt = 0; attempt != 2; ++attempt) {
+    base::test::TestFuture<bool> restored;
+    coordinator->InitializeForProfile(owner, restored.GetCallback());
+    EXPECT_FALSE(restored.Get());
+    EXPECT_FALSE(coordinator->CanDispatch(owner));
+    EXPECT_FALSE(coordinator->ReadCommittedSnapshot(owner.storage_partition_token).value);
+    EXPECT_FALSE(AccessPublishedRequestRuntime::Get(profile.get())
+                     ->GetPublishedPolicySnapshot(owner));
+  }
+  EXPECT_TRUE(base::DirectoryExists(directory.GetPath().AppendASCII("access.db")));
+}
+
+TEST_F(AccessServiceCoordinatorTest, ProductStartupReservationSurvivesOrdinaryProfileRestart) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  uint64_t first_generation = 0;
+  std::string first_owner;
+  for (int lifetime = 0; lifetime < 2; ++lifetime) {
+    auto profile = TestingProfile::Builder().SetPath(directory.GetPath()).Build();
+    network::mojom::NetworkContextParams params;
+    ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
+    const auto owner = *AccessNetworkContextTransport::Get(profile.get())->OwnerForPartition(
+        ChannelNamespace::kDev, {});
+    auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile.get());
+    base::test::TestFuture<bool> restored;
+    coordinator->InitializeForProfile(owner, restored.GetCallback());
+    ASSERT_TRUE(restored.Get());
+    const auto* policy = AccessPublishedRequestRuntime::Get(profile.get())->GetPublishedPolicySnapshot(owner);
+    ASSERT_TRUE(policy);
+    if (lifetime == 0) {
+      first_generation = policy->policy_generation;
+      first_owner = owner.profile_token;
+    } else {
+      EXPECT_GT(policy->policy_generation, first_generation);
+      EXPECT_NE(owner.profile_token, first_owner);
+      EXPECT_EQ(policy->owner, owner);
+    }
+    profile.reset();
+    task_environment_.RunUntilIdle();
+  }
 }
 
 // Holds the real Mojo reply across the PREPARED observation point.

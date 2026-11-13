@@ -1,0 +1,198 @@
+From 22f28d2ac559a1062e54d2434c32e45486f78070 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 02:32:44 +0800
+Subject: [PATCH] test(access): validate website CORS and legacy migration
+ boundaries
+
+---
+ .../browser/aegis/access/access_rule_store.cc | 15 +++++
+ .../access/access_rule_store_unittest.cc      | 32 +++++++++--
+ .../access_private_factory_unittest.cc        | 55 ++++++++++++++++++-
+ 3 files changed, 97 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 5b83b815723255bc3583370deebb4f171b58ad8b..d75362caea1078acc6c915e996b22b78d5c22fab 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -752,6 +752,21 @@ StoreStatus AccessRuleStore::Open() {
+   if (stored_version == 1) {
+     // All existing groups and journal images remain exact-host grants. Only
+     // a subsequent explicit website toggle creates the wider typed scope.
++    sql::Statement legacy_rules(database_.GetUniqueStatement(
++        "SELECT 1 FROM access_rules WHERE scope NOT IN (?,?) OR "
++        "(site_toggle_id<>'' AND scope<>?) LIMIT 1"));
++    legacy_rules.BindInt(0, static_cast<int>(PolicyScope::kSite));
++    legacy_rules.BindInt(1, static_cast<int>(PolicyScope::kProfile));
++    legacy_rules.BindInt(2, static_cast<int>(PolicyScope::kSite));
++    if (legacy_rules.Step()) {
++      terminal_status_ = StoreStatus::kCorrupt;
++      return terminal_status_;
++    }
++    if (!legacy_rules.Succeeded()) {
++      terminal_status_ = StoreStatus::kIoError;
++      return terminal_status_;
++    }
++    legacy_rules.Reset(true);
+     if (!database_.Execute("ALTER TABLE access_site_groups ADD COLUMN "
+           "website_context INTEGER NOT NULL DEFAULT 0 CHECK(website_context IN (0,1))") ||
+         !database_.Execute("ALTER TABLE access_mutation_journal ADD COLUMN "
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index d843bd37d2e1e48092a882e6c2e698d7e9d90c14..11288fb5ca5fd6eca3beecc9be779dc43d1ed8a9 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -1519,7 +1519,7 @@ SiteGroupMutationRequest BubbleWebsiteFixture(std::string operation,
+     std::string host, bool website, AccessMode mode = AccessMode::kProxy,
+     uint64_t revision = 0) {
+   auto request = Mutation(std::move(operation), mode, revision, Owner(), host);
+-  const auto site = net::SchemefulSite(GURL("https://" + host)).GetURL().host();
++  const std::string site(net::SchemefulSite(GURL("https://" + host)).GetURL().host());
+   const std::string id = (website ? "bubble-site:" : "bubble:") + host;
+   request.candidate_group.site_toggle_id = id;
+   request.candidate_group.website_context = website;
+@@ -1580,7 +1580,7 @@ TEST(AccessRuleStoreTest, WebsiteAliasDeletionRollsBackWithTheWholeMutation) {
+   AccessRuleStoreTestPeer::FailAt(&store, AccessRuleStore::FailurePointForTesting::kCommitAfterRuleDelete);
+   EXPECT_EQ(store.CommitPreparedMutation(pending).status, StoreStatus::kIoError);
+   AccessRuleStoreTestPeer::FailAt(&store, AccessRuleStore::FailurePointForTesting::kNone);
+-  ASSERT_EQ(store.SupersedePreparedMutation(pending.operation_id, pending.operation_sequence), StoreStatus::kValid);
++  ASSERT_EQ(store.SupersedePreparedMutation(pending.operation_id, pending.request_fingerprint), StoreStatus::kValid);
+   const auto after = store.ReadCommittedSnapshot("partition-A");
+   ASSERT_TRUE(after.value);
+   EXPECT_EQ(after.value->site_groups, before.value->site_groups);
+@@ -1592,7 +1592,7 @@ TEST(AccessRuleStoreTest, WebsiteAndLegacyPendingMutationsCannotCross) {
+   const auto legacy = Prepare(&store, BubbleWebsiteFixture("legacy-pending", "www.example.com", false));
+   EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("website-conflict", "example.com", true)).status,
+             StoreStatus::kRecoveryRequired);
+-  ASSERT_EQ(store.SupersedePreparedMutation(legacy.operation_id, legacy.operation_sequence), StoreStatus::kValid);
++  ASSERT_EQ(store.SupersedePreparedMutation(legacy.operation_id, legacy.request_fingerprint), StoreStatus::kValid);
+   const auto website = Prepare(&store, BubbleWebsiteFixture("website-pending", "example.com", true));
+   EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("legacy-conflict", "www.example.com", false)).status,
+             StoreStatus::kRecoveryRequired);
+@@ -1628,7 +1628,7 @@ TEST(AccessRuleStoreTest, LegacySchemaMigrationPreservesExactGrantAndPreparedJou
+   EXPECT_EQ(recovery.value->pending[0].before_image, pending.before_image);
+   EXPECT_EQ(recovery.value->pending[0].after_image, pending.after_image);
+   EXPECT_FALSE(recovery.value->pending[0].candidate.group.website_context);
+-  ASSERT_EQ(migrated.SupersedePreparedMutation(pending.operation_id, pending.operation_sequence), StoreStatus::kValid);
++  ASSERT_EQ(migrated.SupersedePreparedMutation(pending.operation_id, pending.request_fingerprint), StoreStatus::kValid);
+   const auto restored = migrated.ReadCommittedSnapshot("partition-A");
+   ASSERT_TRUE(restored.value);
+   ASSERT_EQ(restored.value->site_groups.size(), 1u);
+@@ -1637,5 +1637,29 @@ TEST(AccessRuleStoreTest, LegacySchemaMigrationPreservesExactGrantAndPreparedJou
+   EXPECT_EQ(restored.value->site_groups[0].members[0].policy.scope, PolicyScope::kSite);
+ }
+ 
++TEST(AccessRuleStoreTest, LegacySchemaCannotReinterpretUnknownOrdinalAsWebsiteGrant) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto binding = AccessRuleStoreTestPeer::Persistent(directory.GetPath());
++  AccessRuleStore store(binding);
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  auto independent = IndependentRule("future-scope", AccessMode::kProxy,
++      "example.com", "https://example.com", AllSchemes(),
++      {PortScope::kAllBrowserPermitted, {}}, 1);
++  ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, independent), StoreStatus::kValid);
++  AccessRuleStoreTestPeer::Close(&store);
++  {
++    sql::Database legacy("AegisAccess");
++    ASSERT_TRUE(legacy.Open(binding.database_path()));
++    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_site_groups DROP COLUMN website_context"));
++    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_mutation_journal DROP COLUMN website_context"));
++    ASSERT_TRUE(legacy.Execute("UPDATE access_store_identity SET schema_version=1"));
++    ASSERT_TRUE(legacy.Execute("UPDATE meta SET value=1 WHERE key IN ('version','last_compatible_version')"));
++    ASSERT_TRUE(legacy.Execute("UPDATE access_rules SET scope=4 WHERE rule_id='future-scope'"));
++  }
++  AccessRuleStore migrated(binding);
++  EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/components/aegis_access/access_private_factory_unittest.cc b/components/aegis_access/access_private_factory_unittest.cc
+index 6afd84f336de96839aa7e0d7ee5b83b847ddd3b9..efbb14db3a5cad8995d96dc06f3dda379074fde5 100644
+--- a/components/aegis_access/access_private_factory_unittest.cc
++++ b/components/aegis_access/access_private_factory_unittest.cc
+@@ -85,6 +85,32 @@ class AccessPrivateFactoryTest : public testing::Test {
+     }
+     return response;
+   }
++  void UseWebsiteFactory(bool matching_top_site = true) {
++    owner_.reset();
++    factory_remote_.reset();
++    auto params = mojom::URLLoaderFactoryParams::New();
++    params->process_id = OriginatingProcessId::FromUnsafeValue(42);
++    params->is_trusted = false;
++    params->request_initiator_origin_lock = initiator_;
++    params->isolation_info = net::IsolationInfo::CreateForInternalRequest(initiator_);
++    BrowserOwnedRequestMetadata binding{"", key_, RequestAttributionKind::kDocument,
++        "website-document", {}, matching_top_site ? net::SchemefulSite(initiator_)
++            : net::SchemefulSite(GURL("http://unrelated.test/"))};
++    owner_ = std::make_unique<AccessPrivateURLLoaderFactory>(context_.get(),
++        std::move(params), nullptr, &origin_access_list_, registry_.GetWeakPtr(),
++        binding, "incarnation", factory_remote_.BindNewPipeAndPassReceiver(), base::DoNothing());
++    AccessPolicyRule rule{"website", key_, PolicyScope::kWebsite, "http://127.0.0.1",
++        "127.0.0.1", false, {RequestScheme::kHttp}, {PortScope::kAllBrowserPermitted, {}},
++        AccessMode::kProxy, "group", ProtectionOverride::kNone, 1, 2};
++    net::AccessRouteIsolationKey isolation{0, "profile", "partition", "group",
++        "registration", "incarnation", 2, 1, 1, 1, 1};
++    auto route = net::AccessProxyRoute::Create(isolation, net::ProxyChain(
++        net::ProxyServer::FromSchemeHostAndPort(net::ProxyServer::SCHEME_HTTP,
++                                               "127.0.0.1", server_.port())));
++    ASSERT_TRUE(registry_.Install(2, {{key_, 2, {rule}}, {2, 1, 0, 1, 1},
++                                     {{"group", route}}}));
++    policy_generation_ = 2;
++  }
+   void Start(bool wrong_initiator = false, bool fake_trusted = false,
+              std::string token = "", bool wrong_target = false,
+              bool native_start = false) {
+@@ -107,7 +133,7 @@ class AccessPrivateFactoryTest : public testing::Test {
+     envelope->incarnation = "incarnation";
+     envelope->target = wrong_target ? GURL("http://other.test/") : request.url;
+     envelope->method = request.method;
+-    envelope->generations = mojom::AegisAccessGenerations::New(1,1,
++    envelope->generations = mojom::AegisAccessGenerations::New(policy_generation_,1,
+         native_start ? 0 : 1,1,1);
+     envelope->registration_id = native_start ? "" : "registration";
+     auto routed = mojom::AegisAccessRoutedRequest::New(request, std::move(envelope));
+@@ -133,6 +159,7 @@ class AccessPrivateFactoryTest : public testing::Test {
+   mojo::Remote<mojom::AegisAccessURLLoaderFactory> factory_remote_;
+   mojo::Remote<mojom::AegisAccessURLLoaderControl> control_;
+   int request_sequence_ = 0;
++  uint64_t policy_generation_ = 1;
+   std::unique_ptr<AccessPrivateURLLoaderFactory> owner_;
+   mojo::Remote<mojom::URLLoader> loader_;
+   std::unique_ptr<TestURLLoaderClient> client_;
+@@ -144,6 +171,32 @@ TEST_F(AccessPrivateFactoryTest, PreflightAndActualUseSameRegisteredProxy) {
+   EXPECT_EQ(preflights_, 1);
+   EXPECT_EQ(actual_, 1);
+ }
++TEST_F(AccessPrivateFactoryTest, WebsiteResourcePreflightAndActualRetainCors) {
++  UseWebsiteFactory();
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(preflights_, 1);
++  EXPECT_EQ(actual_, 1);
++}
++TEST_F(AccessPrivateFactoryTest, WebsitePermissionDoesNotBypassFailedCorsPreflight) {
++  UseWebsiteFactory();
++  allow_cors_ = false;
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_TRUE(client_->completion_status().cors_error_status);
++  EXPECT_EQ(preflights_, 1);
++  EXPECT_EQ(actual_, 0);
++}
++TEST_F(AccessPrivateFactoryTest, WebsitePermissionCannotCrossFactoryTopSite) {
++  UseWebsiteFactory(false);
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(preflights_, 0);
++  EXPECT_EQ(actual_, 0);
++}
+ TEST_F(AccessPrivateFactoryTest, SuccessfulTerminalEventsSurviveControlPipeClosure) {
+   for (int i = 0; i < 20; ++i) {
+     SCOPED_TRACE(i);
+-- 
+2.54.0 (Apple Git-157)
+

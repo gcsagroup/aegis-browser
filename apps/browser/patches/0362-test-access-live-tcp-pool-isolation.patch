@@ -1,0 +1,120 @@
+From 9d913afecbf62e22c159f846481cf5f1b3250c49 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 05:54:01 +0800
+Subject: [PATCH] test(access): verify live TCP connection reuse isolation
+
+---
+ .../access_route_pool_isolation_unittest.cc   | 82 +++++++++++++++++++
+ 1 file changed, 82 insertions(+)
+
+diff --git a/components/aegis_access/access_route_pool_isolation_unittest.cc b/components/aegis_access/access_route_pool_isolation_unittest.cc
+index d466aaa838f576a047a5d14667fe74e9cd7ffa78..dd3e977f9778686ae1226cfedd39f5372671a2dd 100644
+--- a/components/aegis_access/access_route_pool_isolation_unittest.cc
++++ b/components/aegis_access/access_route_pool_isolation_unittest.cc
+@@ -4,15 +4,30 @@
+ #include <set>
+ #include <utility>
+ 
++#include "base/test/task_environment.h"
++#include "base/test/test_future.h"
+ #include "net/base/access_route_isolation_key.h"
+ #include "net/base/host_port_pair.h"
++#include "net/base/ip_address.h"
++#include "net/base/ip_endpoint.h"
++#include "net/base/net_errors.h"
+ #include "net/base/network_anonymization_key.h"
++#include "net/base/network_change_notifier.h"
+ #include "net/base/privacy_mode.h"
+ #include "net/base/proxy_chain.h"
+ #include "net/base/session_usage.h"
++#include "net/http/http_network_session.h"
++#include "net/http/http_transaction_factory.h"
++#include "net/log/net_log_source.h"
++#include "net/log/net_log_with_source.h"
++#include "net/socket/client_socket_handle.h"
+ #include "net/socket/client_socket_pool.h"
+ #include "net/socket/socket_tag.h"
++#include "net/socket/stream_socket.h"
++#include "net/socket/tcp_server_socket.h"
+ #include "net/spdy/spdy_session_key.h"
++#include "net/url_request/url_request_context.h"
++#include "net/url_request/url_request_context_builder.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/scheme_host_port.h"
+ 
+@@ -111,5 +126,72 @@ TEST(AccessRoutePoolIsolationTest, CoalescingCannotCrossRouteIdentity) {
+                    .is_potentially_aliasable);
+ }
+ 
++TEST(AccessRoutePoolIsolationTest, LiveTcpPoolReusesOnlyTheSameRoute) {
++  base::test::TaskEnvironment tasks(
++      base::test::TaskEnvironment::MainThreadType::IO);
++  auto notifier = net::NetworkChangeNotifier::CreateMockIfNeeded();
++  auto context = net::URLRequestContextBuilder().Build();
++  auto* pool = context->http_transaction_factory()->GetSession()->GetSocketPool(
++      net::HttpNetworkSession::SocketPoolType::kNormal,
++      net::ProxyChain::Direct());
++  ASSERT_TRUE(pool);
++  net::TCPServerSocket listener(nullptr, net::NetLogSource());
++  ASSERT_EQ(listener.Listen(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0),
++                            8, std::nullopt), net::OK);
++  net::IPEndPoint bound;
++  ASSERT_EQ(listener.GetLocalAddress(&bound), net::OK);
++
++  const auto acquire = [&](std::optional<net::AccessRouteIsolationKey> route)
++      -> std::optional<uint32_t> {
++    net::ClientSocketPool::GroupId group(
++        url::SchemeHostPort("http", "127.0.0.1", bound.port()),
++        net::PRIVACY_MODE_DISABLED, net::NetworkAnonymizationKey(),
++        net::SecureDnsPolicy::kAllow, false,
++        net::handles::kInvalidNetworkHandle, std::move(route));
++    net::ClientSocketHandle handle;
++    base::test::TestFuture<int> completion;
++    int result = handle.Init(
++        group, net::ClientSocketPool::SocketParams::CreateForHttpForTesting(),
++        std::nullopt, net::DEFAULT_PRIORITY, net::SocketTag(),
++        net::ClientSocketPool::RespectLimits::ENABLED, completion.GetCallback(),
++        {}, pool, net::NetLogWithSource());
++    if (result == net::ERR_IO_PENDING) {
++      result = completion.Get();
++    }
++    EXPECT_EQ(result, net::OK);
++    if (result != net::OK || !handle.socket()) {
++      return std::nullopt;
++    }
++    const uint32_t identity = handle.socket()->NetLog().source().id;
++    handle.Reset();
++    tasks.RunUntilIdle();
++    return identity;
++  };
++
++  const auto key = Key();
++  const auto first = acquire(key);
++  ASSERT_TRUE(first);
++  EXPECT_NE(*first, 0u);
++  EXPECT_EQ(first, acquire(key));
++  auto changed = key;
++  changed.registration = "same-address-new-registration";
++  const auto replacement = acquire(changed);
++  ASSERT_TRUE(replacement);
++  EXPECT_NE(first, replacement);
++  changed = key;
++  ++changed.network_epoch;
++  const auto next_network = acquire(changed);
++  ASSERT_TRUE(next_network);
++  EXPECT_NE(first, next_network);
++  EXPECT_NE(replacement, next_network);
++  const auto native = acquire(std::nullopt);
++  ASSERT_TRUE(native);
++  EXPECT_NE(first, native);
++  EXPECT_NE(replacement, native);
++  EXPECT_NE(next_network, native);
++  EXPECT_EQ(native, acquire(std::nullopt));
++  EXPECT_EQ(first, acquire(key));
++}
++
+ }  // namespace
+ }  // namespace aegis_access
+-- 
+2.54.0 (Apple Git-157)
+

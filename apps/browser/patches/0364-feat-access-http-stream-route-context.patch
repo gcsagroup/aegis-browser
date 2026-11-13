@@ -1,0 +1,240 @@
+From 7f8ba4599cf346c2f61b785fd9bc003f15ef8f6d Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 06:29:41 +0800
+Subject: [PATCH] feat(access): retain route context through HTTP stream
+ requests
+
+---
+ components/aegis_access/BUILD.gn              | 11 +++
+ .../access_route_request_context_unittest.cc  | 87 +++++++++++++++++++
+ net/http/http_request_info.cc                 |  2 +
+ net/http/http_request_info.h                  |  6 ++
+ net/http/http_stream_factory.cc               | 12 ++-
+ net/http/http_stream_factory.h                |  1 +
+ 6 files changed, 117 insertions(+), 2 deletions(-)
+ create mode 100644 components/aegis_access/access_route_request_context_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 38e127012d18cde98ca2c798032cbc7e73164dc8..52601a89ff1c264adf6fd5ac699e4e96ea54919b 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -242,6 +242,17 @@ test("request_dispatch_gate_unittests") {
+   deps += [ ":request_ownership_registry_test_support" ]
+ }
+ 
++test("access_route_request_context_unittests") {
++  sources = [ "access_route_request_context_unittest.cc" ]
++  deps = [
++    "//base",
++    "//base/test:run_all_unittests",
++    "//net",
++    "//testing/gtest",
++    "//url",
++  ]
++}
++
+ test("access_proxy_route_context_unittests") {
+   sources = [ "access_proxy_route_context_unittest.cc" ]
+   deps = [
+diff --git a/components/aegis_access/access_route_request_context_unittest.cc b/components/aegis_access/access_route_request_context_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..781eae172fafbf9bf3f49b85518bf0bec1b25dac
+--- /dev/null
++++ b/components/aegis_access/access_route_request_context_unittest.cc
+@@ -0,0 +1,87 @@
++// Copyright 2026 GCSA
++
++#include "net/http/access_proxy_route.h"
++#include "net/http/http_request_info.h"
++#include "net/http/http_stream_factory.h"
++
++#include <utility>
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access {
++namespace {
++
++scoped_refptr<net::AccessProxyRoute> Route(uint64_t generation = 1) {
++  return net::AccessProxyRoute::Create(
++      {.channel = 0,
++       .profile = "profile",
++       .partition = "partition",
++       .group = "group",
++       .registration = "registration",
++       .incarnation = "incarnation",
++       .policy_generation = 1,
++       .identity_generation = 1,
++       .selection_generation = generation,
++       .network_epoch = 1,
++       .base_proxy_config_generation = 1},
++      net::ProxyChain::FromSchemeHostAndPort(
++          net::ProxyServer::SCHEME_HTTP, "127.0.0.1", 8080));
++}
++
++TEST(AccessRouteRequestContextTest, CopiesKeepOriginalRouteAlive) {
++  net::HttpRequestInfo request;
++  request.url = GURL("https://example.test/resource");
++  request.access_proxy_route = Route();
++  ASSERT_TRUE(request.access_proxy_route);
++  auto original = request.access_proxy_route;
++  net::HttpRequestInfo copy(request);
++  net::HttpRequestInfo assigned;
++  assigned = request;
++  net::HttpRequestInfo moved(std::move(copy));
++  net::HttpStreamFactory::StreamRequestInfo stream(request);
++  net::HttpStreamFactory::StreamRequestInfo stream_copy(stream);
++  request.access_proxy_route = Route(2);
++  EXPECT_EQ(assigned.access_proxy_route, original);
++  EXPECT_EQ(moved.access_proxy_route, original);
++  EXPECT_EQ(stream.access_proxy_route, original);
++  EXPECT_EQ(stream_copy.access_proxy_route, original);
++  EXPECT_NE(request.access_proxy_route, original);
++}
++
++TEST(AccessRouteRequestContextTest, NativeRequestHasNoRouteIdentity) {
++  net::HttpRequestInfo request;
++  request.url = GURL("https://example.test/resource");
++  net::HttpStreamFactory::StreamRequestInfo stream(request);
++  EXPECT_FALSE(request.access_proxy_route);
++  EXPECT_FALSE(stream.access_proxy_route);
++  EXPECT_FALSE(net::HttpStreamFactory::GetSpdySessionKey(
++                   net::ProxyChain::Direct(), stream).access_route_key());
++}
++
++TEST(AccessRouteRequestContextTest, Http2KeysFollowInstalledRouteGeneration) {
++  net::HttpRequestInfo request;
++  request.url = GURL("https://example.test/resource");
++  request.access_proxy_route = Route();
++  ASSERT_TRUE(request.access_proxy_route);
++  const auto chain = request.access_proxy_route->proxy_chain();
++  const auto first = net::HttpStreamFactory::GetSpdySessionKey(
++      chain, net::HttpStreamFactory::StreamRequestInfo(request));
++  ASSERT_TRUE(first.access_route_key());
++  EXPECT_EQ(*first.access_route_key(), request.access_proxy_route->isolation_key());
++  const auto same = net::HttpStreamFactory::GetSpdySessionKey(
++      chain, net::HttpStreamFactory::StreamRequestInfo(request));
++  EXPECT_EQ(first, same);
++  request.access_proxy_route = Route(2);
++  const auto next = net::HttpStreamFactory::GetSpdySessionKey(
++      chain, net::HttpStreamFactory::StreamRequestInfo(request));
++  EXPECT_NE(first, next);
++  EXPECT_FALSE(first.CompareForAliasing(next).is_potentially_aliasable);
++  request.access_proxy_route = nullptr;
++  const auto native = net::HttpStreamFactory::GetSpdySessionKey(
++      chain, net::HttpStreamFactory::StreamRequestInfo(request));
++  EXPECT_NE(first, native);
++  EXPECT_FALSE(first.CompareForAliasing(native).is_potentially_aliasable);
++}
++
++}  // namespace
++}  // namespace aegis_access
+diff --git a/net/http/http_request_info.cc b/net/http/http_request_info.cc
+index c9585688fb991e06a7fceaf8173b875b167fdc5d..766e25141b40cf8321fec9184e7fcc8a21055962 100644
+--- a/net/http/http_request_info.cc
++++ b/net/http/http_request_info.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "net/http/http_request_info.h"
++
++#include "net/http/access_proxy_route.h"
+ #include "net/base/network_anonymization_key.h"
+ #include "net/base/network_isolation_key.h"
+ #include "net/dns/public/secure_dns_policy.h"
+diff --git a/net/http/http_request_info.h b/net/http/http_request_info.h
+index f611ce56c45c4ae3991babfb0da41582c2005198..36fbf3395726ec2062241c7afa500e2d9d0bcb8b 100644
+--- a/net/http/http_request_info.h
++++ b/net/http/http_request_info.h
+@@ -10,6 +10,7 @@
+ 
+ #include "base/functional/callback_forward.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/scoped_refptr.h"
+ #include "net/base/idempotency.h"
+ #include "net/base/net_export.h"
+ #include "net/base/network_anonymization_key.h"
+@@ -29,6 +30,7 @@
+ 
+ namespace net {
+ 
++class AccessProxyRoute;
+ class UploadDataStream;
+ 
+ struct NET_EXPORT HttpRequestInfo {
+@@ -43,6 +45,10 @@ struct NET_EXPORT HttpRequestInfo {
+ 
+   bool IsConsistent() const;
+ 
++  // Browser-private, authorized route for this hop. Absence retains native
++  // networking. Failed route validation must abort, never clear this to native.
++  scoped_refptr<AccessProxyRoute> access_proxy_route;
++
+   // The requested URL.
+   GURL url;
+ 
+diff --git a/net/http/http_stream_factory.cc b/net/http/http_stream_factory.cc
+index 9d407183aa0db015ee873188622d54b9cd01c4b0..6205b15d4ff4fd119658ab3b8fcd1c3a0a068b22 100644
+--- a/net/http/http_stream_factory.cc
++++ b/net/http/http_stream_factory.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "net/http/http_stream_factory.h"
+ 
++#include "net/http/access_proxy_route.h"
++
+ #include <cstddef>
+ #include <tuple>
+ #include <utility>
+@@ -52,6 +54,10 @@ const char kAlternativeServiceHeader[] = "Alt-Svc";
+ SpdySessionKey HttpStreamFactory::GetSpdySessionKey(
+     const ProxyChain& proxy_chain,
+     const StreamRequestInfo& request_info) {
++  const std::optional<AccessRouteIsolationKey> route_key =
++      request_info.access_proxy_route
++          ? std::make_optional(request_info.access_proxy_route->isolation_key())
++          : std::nullopt;
+   // In the case that we'll be sending a GET request to the proxy, look for an
+   // HTTP/2 proxy session *to* the proxy, instead of to the origin server. The
+   // way HTTP over HTTPS proxies work is that the ConnectJob makes a SpdyProxy,
+@@ -74,14 +80,15 @@ SpdySessionKey HttpStreamFactory::GetSpdySessionKey(
+         last_proxy_host_port_pair, PRIVACY_MODE_DISABLED,
+         last_proxy_partial_chain, SessionUsage::kProxy, request_info.socket_tag,
+         request_info.network_anonymization_key, request_info.secure_dns_policy,
+-        /*disable_cert_network_fetches=*/true, request_info.target_network);
++        /*disable_cert_network_fetches=*/true, request_info.target_network,
++        route_key);
+   }
+   return SpdySessionKey(
+       HostPortPair::FromURL(request_info.url), request_info.privacy_mode,
+       proxy_chain, SessionUsage::kDestination, request_info.socket_tag,
+       request_info.network_anonymization_key, request_info.secure_dns_policy,
+       request_info.load_flags & LOAD_DISABLE_CERT_NETWORK_FETCHES,
+-      request_info.target_network);
++      request_info.target_network, route_key);
+ }
+ 
+ // static
+@@ -98,6 +105,7 @@ HttpStreamFactory::StreamRequestInfo::StreamRequestInfo() = default;
+ HttpStreamFactory::StreamRequestInfo::StreamRequestInfo(
+     const HttpRequestInfo& http_request_info)
+     : url(RemoveCredentialsFromUrl(http_request_info.url)),
++      access_proxy_route(http_request_info.access_proxy_route),
+       method(http_request_info.method),
+       network_anonymization_key(http_request_info.network_anonymization_key),
+       traffic_annotation(http_request_info.traffic_annotation),
+diff --git a/net/http/http_stream_factory.h b/net/http/http_stream_factory.h
+index 3f70b0242367a5795bfe031364354e2e9ced6d2b..7ba9a3738af131050d12322690ac2167057c0a8d 100644
+--- a/net/http/http_stream_factory.h
++++ b/net/http/http_stream_factory.h
+@@ -94,6 +94,7 @@ class NET_EXPORT HttpStreamFactory {
+     // information when logging.
+     GURL url;
+ 
++    scoped_refptr<AccessProxyRoute> access_proxy_route;
+     std::string method;
+     NetworkAnonymizationKey network_anonymization_key;
+     MutableNetworkTrafficAnnotationTag traffic_annotation;
+-- 
+2.54.0 (Apple Git-157)
+

@@ -143,7 +143,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
     expected_output = self.NEWLINE.join([
         'Windows Registry Editor Version 5.00', '',
-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser]',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
         '"StringPolicy"="hello, world! \\\" \\\\"'
     ])
     self.CompareOutputs(output, expected_output)
@@ -169,7 +169,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
     expected_output = self.NEWLINE.join([
         'Windows Registry Editor Version 5.00', '',
-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser]',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
         '"IntPolicy"=dword:0000001a'
     ])
     self.CompareOutputs(output, expected_output)
@@ -255,7 +255,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
     expected_output = self.NEWLINE.join([
         'Windows Registry Editor Version 5.00', '',
-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser\\ListPolicy]',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
         '"1"="foo"', '"2"="bar"'
     ])
     self.CompareOutputs(output, expected_output)
@@ -285,7 +285,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
     expected_output = self.NEWLINE.join([
         'Windows Registry Editor Version 5.00', '',
-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser\\ListPolicy]',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
         '"1"="foo"', '"2"="bar"'
     ])
     self.CompareOutputs(output, expected_output)
@@ -321,7 +321,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
     expected_output = self.NEWLINE.join([
         'Windows Registry Editor Version 5.00', '',
-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser]',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
         '"DictionaryPolicy"="{\\"bool\\": true, '
         '\\"dict\\": {\\"a\\": 1, \\"b\\": 2}, \\"int\\": 10, '
         '\\"list\\": [1, 2, 3], \\"string\\": \\"abc\\"}"'
@@ -353,7 +353,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
     expected_output = self.NEWLINE.join([
         'Windows Registry Editor Version 5.00', '',
-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser]',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
         '"ExternalPolicy"="{\\"hash\\": \\"deadbeef\\", '
         '\\"url\\": \\"https://example.com/avatar.jpg\\"}"'
     ])
@@ -419,8 +419,8 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
     expected_output = self.NEWLINE.join([
         'Windows Registry Editor Version 5.00', '',
-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser]', '"Policy2"="c"',
-        '', '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Aegis Browser\\Policy1]',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]', '"Policy2"="c"',
+        '', '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\Policy1]',
         '"1"="a"', '"2"="b"'
     ])
     self.CompareOutputs(output, expected_output)

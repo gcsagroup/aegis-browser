@@ -1,0 +1,248 @@
+From 461e49dc88f522e095497d29fe8ffdc213598aa8 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 06:34:34 +0800
+Subject: [PATCH] fix(access): keep private routing off legacy config and test
+ pending aborts
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   1 +
+ .../access_network_context_transport.cc       |  12 +-
+ .../access/access_network_context_transport.h |   3 +
+ .../access_site_proxy_product_unittest.cc     | 127 ++++++++++++++++++
+ 4 files changed, 141 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 6c65bcaac716f90381f1382dd7af5c8137c39877..b8bd372d001b0bde4eb845170f2677cff59189bc 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -476,6 +476,7 @@ test("access_service_coordinator_unittests") {
+     ":access_navigation_retry_tab_helper",
+     ":access_network_context_transport",
+     ":access_proxy_selection_generation_source",
++    ":access_proxying_url_loader_factory",
+     ":access_published_request_runtime",
+     ":access_service_coordinator",
+     ":access_site_proxy_bubble",
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 2ddfff6c8dd342690999171cb1256d735cfe8a7b..c5deb87bc16b22d6be1dffb2b6a2f96ef31f48c1 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -306,6 +306,13 @@ void AccessNetworkContextTransport::BindPrivateContext(
+     std::move(completion).Run(nullptr);
+     return;
+   }
++  auto& state = partitions_.at(owner.storage_partition_token);
++  if (!state.private_routing) {
++    state.private_routing = true;
++    // Clear any earlier legacy selection before the private capability can
++    // become usable. Subsequent Context creation also starts with empty config.
++    Broadcast(state);
++  }
+   auto client = std::make_shared<AccessPrivateContextClient>(owner);
+   client->Initialize(context, base::BindOnce(
+       [](base::WeakPtr<AccessNetworkContextTransport> self,
+@@ -566,7 +573,7 @@ bool AccessNetworkContextTransport::ReplaceSelection(
+     const AccessTransportSelection& expected,
+     const AccessTransportSelection& replacement) {
+   const bool private_context = OwnsConfiguredPartition(owner) &&
+-      !partitions_.at(owner.storage_partition_token).private_contexts.empty();
++      partitions_.at(owner.storage_partition_token).private_routing;
+   if (CurrentSelection(owner) != expected ||
+       (replacement.endpoint && replacement.endpoint->owner != owner) ||
+       (!replacement.exact_hosts.empty() &&
+@@ -760,7 +767,8 @@ bool AccessNetworkContextTransport::IsEndpointCurrentForPartition(
+ network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(
+     const PartitionState& state) const {
+   auto config = network::mojom::CustomProxyConfig::New();
+-  if (!state.endpoint.has_value() || state.exact_hosts.empty()) {
++  if (state.private_routing || !state.endpoint.has_value() ||
++      state.exact_hosts.empty()) {
+     return config;
+   }
+ 
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 59e3b5c32b02da25e6adbbaaef9c60640d227753..02fe9f1073af93775a9f8844671131bb7765131c 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -180,6 +180,9 @@ class AccessNetworkContextTransport
+     bool publishing = false;
+   };
+   struct PartitionState {
++    // A partition that uses trusted per-request routing must never reinstall
++    // destination-host-global proxying, including while its Context reconnects.
++    bool private_routing = false;
+     std::map<std::string, AccessPrivateEndpoint> private_endpoints;
+     std::map<std::string, uint64_t> private_unavailable_generations;
+     std::map<std::string, PrivateContextEntry> private_contexts;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 7b6ef259af9d0ba562bc0ba1c5ce0c65ad837a43..d7aa44ddd46bffefb39de0b541de3282d9ccc574 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
++#include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
+ 
+ #include "base/command_line.h"
+ #include "base/files/scoped_temp_dir.h"
+@@ -27,8 +28,11 @@
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/navigation_simulator.h"
+ #include "net/base/net_errors.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
++#include "services/network/public/cpp/url_loader_completion_status.h"
+ #include "services/network/test/test_network_context.h"
++#include "services/network/test/test_url_loader_client.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
+@@ -54,8 +58,76 @@ class AccessServiceCoordinatorTestPeer {
+     coordinator->async_store_->SetFailurePointForTesting(point);
+   }
+ };
++class AccessNetworkContextTransportTestPeer {
++ public:
++  static void AdvanceNetwork(AccessNetworkContextTransport* transport) {
++    transport->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_WIFI);
++  }
++};
+ namespace {
+ 
++class CountingPrivateFactory final
++    : public network::mojom::AegisAccessURLLoaderFactory {
++ public:
++  mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> Bind() {
++    mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> remote;
++    Clone(remote.InitWithNewPipeAndPassReceiver());
++    return remote;
++  }
++  void Clone(mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderFactory>
++                 receiver) override {
++    receivers_.Add(this, std::move(receiver));
++  }
++  void CreateLoaderAndStartWithRoute(
++      mojo::PendingReceiver<network::mojom::URLLoader>,
++      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl>,
++      int32_t, uint32_t, network::mojom::AegisAccessRoutedRequestPtr request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag&) override {
++    ++starts;
++    method = request->request.method;
++    mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
++        ->OnComplete(network::URLLoaderCompletionStatus(net::OK));
++  }
++  int starts = 0;
++  std::string method;
++
++ private:
++  mojo::ReceiverSet<network::mojom::AegisAccessURLLoaderFactory> receivers_;
++};
++
++// Real public/private Mojo pipes through the production Browser wrapper. The
++// controlled target counts attempted dispatch, without sending business bytes.
++struct HeldBrowserRequest {
++  HeldBrowserRequest(Profile* profile, content::FrameTreeNodeId frame,
++      const OwnershipKey& owner,
++      std::shared_ptr<AccessPrivateContextClient> context) {
++    wrapper = std::make_unique<AccessProxyingURLLoaderFactory>(
++        profile, frame, std::nullopt, std::nullopt, nullptr, owner, std::nullopt,
++        factory.BindNewPipeAndPassReceiver(),
++        mojo::PendingRemote<network::mojom::URLLoaderFactory>(), std::nullopt,
++        base::BindOnce([](HeldBrowserRequest* self,
++                          AccessProxyingURLLoaderFactory*) {
++          self->wrapper.reset();
++        }, base::Unretained(this)), target.Bind(), std::move(context));
++  }
++  void StartPost() {
++    network::ResourceRequest request;
++    request.url = GURL("https://resource.example/late-post?q=original");
++    request.method = "POST";
++    mojo::PendingRemote<network::mojom::URLLoaderClient> client_remote;
++    client_receiver.Bind(client_remote.InitWithNewPipeAndPassReceiver());
++    factory->CreateLoaderAndStart(loader.BindNewPipeAndPassReceiver(), 1, 0,
++        request, std::move(client_remote), TRAFFIC_ANNOTATION_FOR_TESTS);
++  }
++  CountingPrivateFactory target;
++  mojo::Remote<network::mojom::URLLoaderFactory> factory;
++  network::TestURLLoaderClient client;
++  mojo::Receiver<network::mojom::URLLoaderClient> client_receiver{&client};
++  mojo::Remote<network::mojom::URLLoader> loader;
++  std::unique_ptr<AccessProxyingURLLoaderFactory> wrapper;
++};
++
+ // Real Mojo ACK with an explicit hold at the product PREPARED boundary. The
+ // core is not mocked: these tests require the authorized local DEV inputs.
+ class ProductAckContext final : public network::TestNetworkContext,
+@@ -520,6 +592,20 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+     EXPECT_NE(bubble_->SnapshotForCommittedUrl(failed_).connection,
+               AccessSiteConnectionState::kConnecting);
+   }
++  std::unique_ptr<HeldBrowserRequest> StartPostWaitingForAck() {
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
++    auto client = bound.Take();
++    EXPECT_TRUE(client);
++    auto request = std::make_unique<HeldBrowserRequest>(
++        profile(), main_rfh()->GetFrameTreeNodeId(), owner_, std::move(client));
++    AccessNetworkContextTransportTestPeer::AdvanceNetwork(transport_);
++    context_.hold_next = true;
++    request->StartPost();
++    EXPECT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++    EXPECT_EQ(request->target.starts, 0);
++    return request;
++  }
+   base::ScopedTempDir directory_;
+   ProductAckContext context_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+@@ -596,5 +682,46 @@ TEST_F(AccessRetryNavigationProductTest,
+   EXPECT_FALSE(controller().GetPendingEntry());
+ }
+ 
++TEST_F(AccessRetryNavigationProductTest,
++       CancelledLoaderBeforePrivateAckNeverSendsPost) {
++  auto request = StartPostWaitingForAck();
++  request->loader.reset();
++  // Release immediately: dispatch must also notice a closed peer before the
++  // queued disconnect notification runs.
++  context_.Reply(true);
++  task_environment()->RunUntilIdle();
++  EXPECT_EQ(request->target.starts, 0);
++}
++
++TEST_F(AccessRetryNavigationProductTest,
++       CancelledClientBeforePrivateAckNeverSendsPost) {
++  auto request = StartPostWaitingForAck();
++  request->client_receiver.reset();
++  context_.Reply(true);
++  task_environment()->RunUntilIdle();
++  EXPECT_EQ(request->target.starts, 0);
++}
++
++TEST_F(AccessRetryNavigationProductTest,
++       LivePostWaitsForPrivateAckThenSendsOnce) {
++  auto request = StartPostWaitingForAck();
++  context_.Reply(true);
++  task_environment()->RunUntilIdle();
++  EXPECT_EQ(request->target.starts, 1);
++  EXPECT_EQ(request->target.method, "POST");
++}
++
++TEST_F(AccessRetryNavigationProductTest,
++       CancelledPendingRequestReleasesFactoryBeforeAck) {
++  auto request = StartPostWaitingForAck();
++  request->factory.reset();
++  request->loader.reset();
++  task_environment()->RunUntilIdle();
++  EXPECT_FALSE(request->wrapper);
++  context_.Reply(true);
++  task_environment()->RunUntilIdle();
++  EXPECT_EQ(request->target.starts, 0);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

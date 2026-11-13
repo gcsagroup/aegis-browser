@@ -2,26 +2,31 @@ import SwiftUI
 
 @MainActor
 final class AppLanguageSettings: ObservableObject {
-    @Published private(set) var family: AegisLanguageFamily?
+    @Published private(set) var choice: AegisLanguageChoice?
+    var family: AegisLanguageFamily? { choice?.family }
     @Published private(set) var snapshot: AegisLocalizationSnapshot
     @Published private(set) var revision = 0
     private let store: AegisLanguagePreferenceStore
 
     init(store: AegisLanguagePreferenceStore = .runtime) {
         self.store = store
-        family = store.family
+        choice = store.choice
         snapshot = AegisLocalization.snapshot(store: store)
     }
 
     func select(_ family: AegisLanguageFamily?) {
-        store.setFamily(family)
+        selectChoice(family.map(AegisLanguageChoice.family))
+    }
+
+    func selectChoice(_ choice: AegisLanguageChoice?) {
+        store.setChoice(choice)
         refresh()
     }
 
     func refresh() {
         let next = AegisLocalization.snapshot(store: store)
-        if family != store.family || snapshot != next {
-            family = store.family
+        if choice != store.choice || snapshot != next {
+            choice = store.choice
             snapshot = next
             revision &+= 1
         }

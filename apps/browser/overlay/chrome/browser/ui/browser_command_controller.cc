@@ -155,6 +155,7 @@
 #endif
 
 #if BUILDFLAG(IS_MAC)
+#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
 #include "chrome/browser/ui/browser_commands_mac.h"
 #endif
 
@@ -2648,8 +2649,18 @@ void BrowserCommandController::UpdateReloadStopState(bool is_loading,
     return;
   }
 
-  window()->UpdateReloadStopState(is_loading, force);
-  command_updater_->UpdateCommandEnabled(IDC_STOP, is_loading);
+  bool can_stop = is_loading;
+#if BUILDFLAG(IS_MAC)
+  // Proxy preparation belongs to the committed error document. There is no
+  // provisional navigation until the route has been verified.
+  if (auto* contents = browser_->tab_strip_model()->GetActiveWebContents()) {
+    auto* retry =
+        aegis::access::AccessNavigationRetryTabHelper::FromWebContents(contents);
+    can_stop |= retry && retry->IsPreparingProxyRetry();
+  }
+#endif
+  window()->UpdateReloadStopState(can_stop, force);
+  command_updater_->UpdateCommandEnabled(IDC_STOP, can_stop);
   UpdateCloseFindOrStop();
 }
 
