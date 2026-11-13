@@ -104,8 +104,8 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"''')
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"''')
     self.CompareOutputs(output, expected_output)
 
   def testVersionAnnotation(self):
@@ -137,8 +137,8 @@ chromium_recommended="GCSA Aegis - Recommended"''')
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"''')
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"''')
     self.CompareOutputs(output, expected_output)
 
   def testMainPolicy(self):
@@ -327,8 +327,8 @@ With a newline.""",
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 StringPolicy_Policy="Caption of policy."
 StringPolicy_Explain="Description of group.\\nWith a newline.\\n\\n\
 Reference: \
@@ -395,8 +395,8 @@ StringPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 IntPolicy_Policy="Caption of policy."
 IntPolicy_Explain="Description of policy.\\n\\n\
 Reference: \
@@ -464,8 +464,8 @@ IntPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 IntPolicy_Policy="Caption of policy."
 IntPolicy_Explain="Description of policy.\\n\\n\
 Reference: \
@@ -534,8 +534,8 @@ IntPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 IntPolicy_Policy="Caption of policy."
 IntPolicy_Explain="Description of policy.\\n\\n\
 Reference: \
@@ -784,8 +784,8 @@ With a newline.""",
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 ListPolicy_Policy="Caption of list policy."
 ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
 Reference: \
@@ -860,8 +860,8 @@ With a newline.""",
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 ListPolicy_Policy="Caption of list policy."
 ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
 Reference: \
@@ -928,8 +928,8 @@ ListPolicy_Part="Label of list policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 DictionaryPolicy_Policy="Caption of policy."
 DictionaryPolicy_Explain="Description of group.\\n\\n\
 Reference: \
@@ -996,8 +996,8 @@ DictionaryPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 ExternalPolicy_Policy="Caption of policy."
 ExternalPolicy_Explain="Description of group.\\n\\n\
 Reference: \
@@ -1047,8 +1047,8 @@ ExternalPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 ''')
     self.CompareOutputs(output, expected_output)
 
@@ -1200,8 +1200,8 @@ With a newline."""
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 Group1_Category="Caption of group."
 Policy1_Policy="Caption of policy1."
 Policy1_Explain="Description of policy1.\\nWith a newline.\\n\\n\
@@ -1379,8 +1379,8 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 DeprecatedPolicies_Category="Deprecated policies"
 Policy1_Policy="Caption of policy1."
 Policy1_Explain="This policy is deprecated. blah blah blah\\n\\n"
@@ -1455,8 +1455,8 @@ Policy1_Part="Caption of policy1."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
-chromium_recommended="GCSA Aegis - Recommended"
+chromium="Aegis Browser"
+chromium_recommended="Aegis Browser - Recommended"
 RemovedPolicies_Category="Removed policies"
 Policy1_Policy="Caption of policy1."
 Policy1_Explain="This policy is removed. blah blah blah\\n\\n"

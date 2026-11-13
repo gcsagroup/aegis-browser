@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Package a distributable GCSA-aegis Mac .app (+ zip/dmg).
 #
-# Expects a non-component build (self-contained GCSA Aegis.app).
+# Expects a non-component build (self-contained Aegis Browser.app).
 # Dev component builds are refused unless ALLOW_COMPONENT_PACKAGE=1.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"

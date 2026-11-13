@@ -137,7 +137,7 @@ function printUsage() {
   node apps/browser/scripts/verify-fingerprint-runtime.mjs [选项]
 
 选项：
-  --chromium PATH     GCSA Aegis.app 或浏览器可执行文件
+  --chromium PATH     Aegis Browser.app 或浏览器可执行文件
                       默认：${defaultChromiumPath()}
   --timeout-ms N      单步超时，默认 ${DEFAULT_TIMEOUT_MS}
   --headed            使用可见窗口；默认 --headless=new
@@ -648,7 +648,7 @@ async function collectBrowserEvidence(chromiumExecutable) {
     process.platform === 'darwin' &&
     basename(appPath).endsWith('.app') &&
     basename(dirname(chromiumExecutable)) === 'MacOS';
-  assert(isMacApp, '正式指纹验证要求 macOS GCSA Aegis.app 产物');
+  assert(isMacApp, '正式指纹验证要求 macOS Aegis Browser.app 产物');
 
   const infoPlistPath = join(appPath, 'Contents', 'Info.plist');
   const executableName = await macAppExecutableName(appPath);
@@ -726,7 +726,7 @@ async function collectBrowserEvidence(chromiumExecutable) {
         bundleShortVersion &&
         bundleVersion,
     ),
-    'GCSA Aegis.app 或可执行文件版本身份不完整',
+    'Aegis Browser.app 或可执行文件版本身份不完整',
   );
   const outputDir = dirname(appPath);
   const codeSignature = await collectCodeSignatureEvidence(appPath);

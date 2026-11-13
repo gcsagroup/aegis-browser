@@ -103,7 +103,7 @@ function printUsage() {
   node apps/browser/scripts/verify-cdp-runtime.mjs [选项]
 
 选项：
-  --chromium PATH   GCSA Aegis.app 或浏览器可执行文件路径
+  --chromium PATH   Aegis Browser.app 或浏览器可执行文件路径
                     默认：${DEFAULT_CHROMIUM}
   --timeout-ms N    单步超时，默认 ${DEFAULT_TIMEOUT_MS}
   --headed          使用可见窗口；默认使用 --headless=new

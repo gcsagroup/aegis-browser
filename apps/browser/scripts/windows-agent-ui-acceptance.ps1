@@ -421,8 +421,8 @@ $desktopBounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
 Assert-Condition ($desktopBounds.Width -gt 0 -and $desktopBounds.Height -gt 0) `
     'The interactive Windows session has no usable display'
 $chromeVersionInfo = (Get-Item -LiteralPath $ChromePath).VersionInfo
-Assert-Condition ($chromeVersionInfo.ProductName -eq 'GCSA Aegis') `
-    "Expected GCSA Aegis product metadata, got '$($chromeVersionInfo.ProductName)'"
+Assert-Condition ($chromeVersionInfo.ProductName -eq 'Aegis Browser') `
+    "Expected Aegis Browser product metadata, got '$($chromeVersionInfo.ProductName)'"
 $actualChromiumCommit = (& git.exe -C $SourceRoot rev-parse HEAD).Trim()
 $actualChromiumTree = (& git.exe -C $SourceRoot rev-parse 'HEAD^{tree}').Trim()
 Assert-Condition ($LASTEXITCODE -eq 0) 'Could not read Chromium source identity'
@@ -582,11 +582,11 @@ try {
       }
     }
     return $null
-  } 'the GCSA Aegis main window'
+  } 'the Aegis Browser main window'
   $script:BrowserWindow = $browserWindow
   $windowTitle = [string]$browserWindow.Current.Name
-  Assert-Condition ($windowTitle -match 'GCSA Aegis') `
-      "Expected a GCSA Aegis branded window, got '$windowTitle'"
+  Assert-Condition ($windowTitle -match 'Aegis Browser') `
+      "Expected an Aegis Browser branded window, got '$windowTitle'"
   $checks.Add([ordered]@{
       name = 'branded_window_title'
       ok = $true

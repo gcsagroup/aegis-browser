@@ -1,0 +1,833 @@
+From 582890cd790614f0e34e73b8f081e3ae74fb9cad Mon Sep 17 00:00:00 2001
+From: Aegis maintenance <maintenance@example.invalid>
+Date: Fri, 13 Nov 2026 16:02:09 +0800
+Subject: [PATCH] fix: align product display names and retain stable policy
+ identity
+
+---
+ chrome/app/chromium_strings.grd               | 120 +++++++++---------
+ chrome/app/theme/gcsa_aegis/BRANDING          |   8 +-
+ .../template_writers/writer_configuration.py  |   7 +-
+ .../writers/adm_writer_unittest.py            |  56 ++++----
+ .../writers/plist_strings_writer_unittest.py  |  30 ++---
+ .../writers/plist_writer_unittest.py          |  22 ++--
+ 6 files changed, 122 insertions(+), 121 deletions(-)
+
+diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
+index b7f56284d8791ab7fe69a9b2fc4c6603bb0a83ab..13ce4d1259b5d0d9c28b8da5ffb3c458d77ae02d 100644
+--- a/chrome/app/chromium_strings.grd
++++ b/chrome/app/chromium_strings.grd
+@@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         </then>
+         <else>
+           <message name="IDS_PRODUCT_NAME" desc="The Chrome application name" translateable="false">
+-            GCSA Aegis
++            Aegis Browser
+           </message>
+           <message name="IDS_SHORT_PRODUCT_NAME" desc="The Chrome application short name." translateable="false">
+-            GCSA Aegis
++            Aegis Browser
+           </message>
+         </else>
+       </if>
+@@ -312,15 +312,15 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         <message name="IDS_SHORTCUT_NAME_DEV" desc="Unused in Chromium builds" translateable="false">
+         </message>
+         <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
+-          GCSA Aegis is a web browser with built-in privacy, phishing protection, and an AI Agent that works for the user.
++          Aegis Browser is a web browser with built-in privacy, phishing protection, and an AI Agent that works for the user.
+         </message>
+         <message name="IDS_WELCOME_TO_CHROME" desc="Welcoming text announced via screen readers the first time Chrome is launched at the conclusion of installation.">
+-          Welcome to GCSA Aegis; new browser window opened
++          Welcome to Aegis Browser; new browser window opened
+         </message>
+       </if>
+       <if expr="is_macosx or is_linux">
+         <message name="IDS_FIRST_RUN_DIALOG_WINDOW_TITLE" desc="Window title of First Run dialog on Mac and Linux, displayed in title bar">
+-          Welcome to GCSA Aegis
++          Welcome to Aegis Browser
+         </message>
+       </if>
+       <if expr="is_linux">
+@@ -349,7 +349,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         </message>
+       </if>
+       <message name="IDS_PRODUCT_LOGO_ENTERPRISE_ALT_TEXT" desc="Alt text for the Chromium Enterprise logo image." formatter_data="android_java">
+-        GCSA Aegis logo
++        Aegis Browser logo
+       </message>
+       <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_IDENTITY_DISC_WITH_NAME_AND_EMAIL_AI_TIER" desc="The content description for a toolbar button displaying user profile picture when the user has an AI subscription. Tapping on this button navigates to Settings page" formatter_data="android_java">
+         Signed in as <ph name="USER_NAME">%1$s<ex>Peter Parker</ex></ph>, <ph name="USER_EMAIL">%2$s<ex>peter.parker@gmail.com</ex></ph>, membership. Open the account menu
+@@ -364,7 +364,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+       </if>
+       <if expr="not is_macosx and not is_chromeos">
+         <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
+-          Task Manager - GCSA Aegis
++          Task Manager - Aegis Browser
+         </message>
+       </if>
+       <message name="IDS_TASK_MANAGER_SEARCH_PLACEHOLDER" desc="The placeholder text for the Search bar in the Task Manager window">
+@@ -402,14 +402,14 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+       </message>
+       <if expr="not is_android">
+         <message name="IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_TOO_MANY_BOOKMARKS_BODY" desc="Body of the signout confirmation dialog when the user has too many bookmarks.">
+-        You reached GCSA Aegis’s limit of <ph name="BOOKMARK_LIMIT">$1<ex>100,000</ex></ph> bookmarks, so some of your bookmarks haven’t been saved in your Google Account yet.
++        You reached Aegis Browser’s limit of <ph name="BOOKMARK_LIMIT">$1<ex>100,000</ex></ph> bookmarks, so some of your bookmarks haven’t been saved in your Google Account yet.
+ 
+ New bookmarks can’t be saved in your account until you delete some. If you sign out now, unsaved bookmarks will be deleted.
+         </message>
+       </if>
+       <if expr="is_android">
+         <message name="IDS_CHROME_SIGNOUT_CONFIRMATION_PROMPT_TOO_MANY_BOOKMARKS_BODY" desc="Body of the signout confirmation dialog when the user has too many bookmarks." formatter_data="android_java">
+-        You reached GCSA Aegis’s limit of <ph name="BOOKMARK_LIMIT">%1$s<ex>100,000</ex></ph> bookmarks, so some of your bookmarks haven’t been saved in your Google Account yet.
++        You reached Aegis Browser’s limit of <ph name="BOOKMARK_LIMIT">%1$s<ex>100,000</ex></ph> bookmarks, so some of your bookmarks haven’t been saved in your Google Account yet.
+ 
+ New bookmarks can’t be saved in your account until you delete some. If you sign out now, unsaved bookmarks will be deleted.
+         </message>
+@@ -452,7 +452,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+           </then>
+           <else>
+             <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
+-              <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - GCSA Aegis
++              <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Aegis Browser
+             </message>
+           </else>
+         </if>
+@@ -466,7 +466,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+       <if expr="not is_chromeos and not is_macosx">
+         <!-- Captive Portal Browser Window Title Format -->
+         <message name="IDS_CAPTIVE_PORTAL_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in captive portal popup windows">
+-          <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Network Sign-in - GCSA Aegis
++          <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Network Sign-in - Aegis Browser
+         </message>
+       </if>
+       <if expr="is_chromeos">
+@@ -491,7 +491,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+         </then>
+         <else>
+           <message name="IDS_ACCESSIBLE_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window">
+-            <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - GCSA Aegis
++            <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Aegis Browser
+           </message>
+         </else>
+       </if>
+@@ -576,18 +576,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+         </message>
+       </if>
+       <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu." translateable="false">
+-        GCSA Aegis
++        Aegis Browser
+       </message>
+       <!-- Hung Browser Detector -->
+       <if expr="is_win">
+         <message name="IDS_BROWSER_HUNGBROWSER_MESSAGE" desc="Content of the dialog box shown when the browser is hung">
+-          GCSA Aegis is unresponsive. Relaunch now?
++          Aegis Browser is unresponsive. Relaunch now?
+         </message>
+       </if>
+       <!-- General app failure messages -->
+       <if expr="not is_chromeos and not is_android">
+         <message name="IDS_COULDNT_STARTUP_PROFILE_ERROR" desc="Error displayed when Chrome cannot start because profiles were not opened correctly.">
+-          Cannot start GCSA Aegis because something went wrong when opening your profile. Try to restart GCSA Aegis.
++          Cannot start Aegis Browser because something went wrong when opening your profile. Try to restart Aegis Browser.
+         </message>
+       </if>
+       <!-- Sharing messages -->
+@@ -597,13 +597,13 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+       <!-- Windows 卸载文案由 GRIT 展开品牌占位符，译文只决定其位置。 -->
+       <if expr="is_win">
+         <message name="IDS_UNINSTALL_CLOSE_APP" desc="Message to user when uninstall detects other app instance running">
+-          Please close all <ph name="PRODUCT_NAME">GCSA Aegis</ph> windows and try again.
++          Please close all <ph name="PRODUCT_NAME">Aegis Browser</ph> windows and try again.
+         </message>
+         <message name="IDS_UNINSTALL_VERIFY" desc="Message to confirm user wants to uninstall">
+-          Are you sure you want to uninstall <ph name="PRODUCT_NAME">GCSA Aegis</ph>?
++          Are you sure you want to uninstall <ph name="PRODUCT_NAME">Aegis Browser</ph>?
+         </message>
+         <message name="IDS_UNINSTALL_CHROME" desc="Title of the Windows browser uninstall dialog.">
+-          Uninstall <ph name="PRODUCT_NAME">GCSA Aegis</ph>
++          Uninstall <ph name="PRODUCT_NAME">Aegis Browser</ph>
+         </message>
+       </if>
+       <!-- Default Browser messages -->
+@@ -684,10 +684,10 @@ Chromium is unable to recover your settings.
+ 
+       <!-- Password manager onboarding strings -->
+       <message name="IDS_PASSWORD_MANAGER_ONBOARDING_DETAILS_C" desc="The explanation text that is shown below the title in the password manager onboarding dialog.">
+-        GCSA Aegis lets you know if your passwords are ever compromised
++        Aegis Browser lets you know if your passwords are ever compromised
+       </message>
+       <message name="IDS_PASSWORD_MANAGER_TITLE_BRAND" desc="The product name used in the title of the password bubble." translateable="false">
+-        GCSA Aegis
++        Aegis Browser
+       </message>
+       <message name="IDS_PASSWORD_MANAGER_BRAND_NAME" desc="This string is used both as a standalone label and injected into sentences. Please translate this as a standalone noun in the Nominative case to ensure it looks correct in titles. Sentence structures surrounding it may read slightly awkwardly.">
+         Password Manager
+@@ -766,10 +766,10 @@ Chromium is unable to recover your settings.
+       </if>
+       <if expr="not is_android">
+         <message name="IDS_PASSWORD_MANAGER_IMPORT_DIALOG_TITLE" desc="The title of the file selection dialog for importing passwords">
+-          Import Passwords To GCSA Aegis
++          Import Passwords To Aegis Browser
+         </message>
+         <message name="IDS_PASSWORD_MANAGER_EXPORT_DIALOG_TITLE" desc="The title of the file selection dialog for exporting passwords">
+-          Export Passwords From GCSA Aegis
++          Export Passwords From Aegis Browser
+         </message>
+       </if>
+       <!-- Options Dialog -->
+@@ -1093,7 +1093,7 @@ Chromium is unable to recover your settings.
+         Allow extension to show access requests in the Chromium toolbar
+       </message>
+       <message name="IDS_EXTENSIONS_INCOGNITO_WARNING" desc="Warns the user that Chromium cannot prevent extensions from recording history in Incognito mode. Displayed in extensions management UI after an extension is selected to be run in Incognito mode.">
+-        Warning: GCSA Aegis cannot prevent extensions from recording your browsing history. To disable this extension in Incognito mode, unselect this option.
++        Warning: Aegis Browser cannot prevent extensions from recording your browsing history. To disable this extension in Incognito mode, unselect this option.
+       </message>
+       <message name="IDS_EXTENSIONS_UNINSTALL" desc="The label for a control that triggers an extension uninstall.">
+         Remove from Chromium
+@@ -1121,19 +1121,19 @@ Chromium is unable to recover your settings.
+ 
+       <!-- Main Chrome menu -->
+       <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
+-        Customize and control GCSA Aegis
++        Customize and control Aegis Browser
+       </message>
+ 
+       <message name="IDS_APPMENU_TOOLTIP_UPDATE_AVAILABLE" desc="The tooltip to show for the browser menu when an update is available">
+-        Customize and control GCSA Aegis. Update is available.
++        Customize and control Aegis Browser. Update is available.
+       </message>
+ 
+       <message name="IDS_APPMENU_TOOLTIP_ALERT" desc="The tooltip to show for the browser menu when a non-update alert is displayed">
+-        Customize and control GCSA Aegis. Something needs your attention - click for details.
++        Customize and control Aegis Browser. Something needs your attention - click for details.
+       </message>
+ 
+       <message name="IDS_OPEN_IN_CHROME" desc="The text label of the Open in Chrome menu item for the Hosted App app menu">
+-        &amp;Open in GCSA Aegis
++        &amp;Open in Aegis Browser
+       </message>
+ 
+       <if expr="use_titlecase and not is_chromeos">
+@@ -1145,12 +1145,12 @@ Chromium is unable to recover your settings.
+           </then>
+           <else>
+             <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
+-              About &amp;GCSA Aegis
++              About &amp;Aegis Browser
+             </message>
+           </else>
+         </if>
+         <message name="IDS_RELAUNCH_TO_UPDATE" desc="In Title Case: The text label of the relaunch to update Chrome menu item">
+-          Relaunch to Update &amp;GCSA Aegis
++          Relaunch to Update &amp;Aegis Browser
+         </message>
+       </if>
+       <if expr="not use_titlecase and not is_chromeos">
+@@ -1162,12 +1162,12 @@ Chromium is unable to recover your settings.
+           </then>
+           <else>
+             <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
+-              About &amp;GCSA Aegis
++              About &amp;Aegis Browser
+             </message>
+           </else>
+         </if>
+         <message name="IDS_RELAUNCH_TO_UPDATE" desc="The text label of the relaunch to update Chrome menu item">
+-          Relaunch to update &amp;GCSA Aegis
++          Relaunch to update &amp;Aegis Browser
+         </message>
+       </if>
+       <if expr="is_chromeos">
+@@ -1181,13 +1181,13 @@ Chromium is unable to recover your settings.
+ 
+       <if expr="is_macosx">
+         <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome." translateable="false">
+-          GCSA Aegis
++          Aegis Browser
+         </message>
+         <message name="IDS_HELPER_NAME" desc="The helper application's name.  Should contain the Chrome application name (IDS_PRODUCT_NAME). Example: Google Chrome Helper.">
+-          GCSA Aegis Helper
++          Aegis Browser Helper
+         </message>
+         <message name="IDS_SHORT_HELPER_NAME" desc="The helper application's short name, used for the Mac's application menu, activity monitor, etc. Example: Chrome Helper, not Google Chrome Helper.">
+-          GCSA Aegis Helper
++          Aegis Browser Helper
+         </message>
+       </if>
+ 
+@@ -1316,7 +1316,7 @@ Chromium is unable to recover your settings.
+ 
+       <!-- NTP strings -->
+       <message name="IDS_NTP_CUSTOMIZE_TOOLBAR_CATEGORY_YOUR_CHROME" desc="The label for the category of actions that involve your Chrome data, such as opening the password manager or clearing browsing data.">
+-        Your GCSA Aegis
++        Your Aegis Browser
+       </message>
+       <if expr="_is_chrome_for_testing_branded">
+         <then>
+@@ -1331,22 +1331,22 @@ Chromium is unable to recover your settings.
+         </else>
+       </if>
+       <message name="IDS_NTP_MODULES_SETUP_LIST_TITLE" desc="Title shown at the top of the Setup List card.">
+-        Make GCSA Aegis Yours
++        Make Aegis Browser Yours
+       </message>
+       <message name="IDS_NTP_CUSTOMIZE_CHROME_RESET_TO_CLASSIC_CHROME_LABEL" desc="The label for the button for resetting theme back to default chrome in the New Tab Page customize chrome side panel.">
+-        Reset to Default GCSA Aegis
++        Reset to Default Aegis Browser
+       </message>
+ 
+       <!-- New Tab Page browser feature promotions. -->
+       <if expr="not is_android">
+         <message name="IDS_NTP_CUSTOMIZATION_PROMO" desc="The text shown in the body of the New Tab Page browser customization promotion">
+-          Customize GCSA Aegis to give your browser a new look
++          Customize Aegis Browser to give your browser a new look
+         </message>
+         <message name="IDS_NTP_MOBILE_PROMO_TITLE" desc="Title of the NTP promo that promotes the browser on mobile.">
+-          Get GCSA Aegis on your phone
++          Get Aegis Browser on your phone
+         </message>
+         <message name="IDS_NTP_MOBILE_PROMO_PASSWORDS_TITLE" desc="Title of the NTP promo that promotes the browser on mobile for passwords.">
+-          Get the GCSA Aegis app to save passwords on the go
++          Get the Aegis Browser app to save passwords on the go
+         </message>
+       </if>
+ 
+@@ -1455,7 +1455,7 @@ Chromium is unable to recover your settings.
+           To get your passwords and more on all your devices, sign in to Chromium
+         </message>
+         <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE_WITH_BOOKMARKS" desc="Subtitle of the Chromium Signin Bubble intercept that is shown when a signed out user signs in on the web with it's first account.">
+-          To get your passwords, bookmarks, and more on all your devices, sign in to GCSA Aegis
++          To get your passwords, bookmarks, and more on all your devices, sign in to Aegis Browser
+         </message>
+         <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE_SUPERVISED" desc="This string is the body of a promotion about signing in to Chromium with the user's Google Account. It explains the overarching user benefit of signing in: Kids of a certain age are motivated to get their parents’ help staying safer online, so the tone should be motivating. We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account.">
+           To stay safer online with your parent’s choices, sign in to Chromium
+@@ -1565,45 +1565,45 @@ Chromium is unable to recover your settings.
+ 
+       <!-- Profile Menu -->
+       <message name="IDS_PROFILE_MENU_SIGNIN_PROMO_BUTTON" meaning="Button" desc="Text for the button in the sign-in promo in the profile menu when the used is signed out.">
+-        Sign in to GCSA Aegis
++        Sign in to Aegis Browser
+       </message>
+       <message name="IDS_PROFILE_MENU_PLACEHOLDER_PROFILE_NAME" desc="Placeholder profile name, used when the user did not enter a name for their profile.">
+-        Your GCSA Aegis
++        Your Aegis Browser
+       </message>
+       <if expr="not use_titlecase">
+         <message name="IDS_PROFILE_MENU_SIGN_OUT_WHEN_SIGNIN_PENDING" desc="The text label of the Sign out of Chromium button in the Profile Menu when the user is in sign in pending state.">
+-          Remove account from GCSA Aegis
++          Remove account from Aegis Browser
+         </message>
+         <message name="IDS_PROFILE_MENU_PROFILES_LIST_TITLE" desc="Title in the profile menu for the list of 'other Chromium profiles'.">
+-          Other GCSA Aegis profiles
++          Other Aegis Browser profiles
+         </message>
+         <message name="IDS_PROFILE_MENU_MANAGE_PROFILES" desc="The text label of the Manage Chromium Profiles item in the Profile Menu.">
+-          Manage GCSA Aegis profiles
++          Manage Aegis Browser profiles
+         </message>
+         <message name="IDS_PROFILE_MENU_SIGN_OUT"
+           desc="The text label of the Sign out of Chromium button in the Profile Menu.">
+-          Sign out of GCSA Aegis
++          Sign out of Aegis Browser
+         </message>
+         <message name="IDS_PROFILE_MENU_ADD_PROFILE" desc="The text label of the add new profile item in the profile menu.">
+-          Add GCSA Aegis profile
++          Add Aegis Browser profile
+         </message>
+       </if>
+       <if expr="use_titlecase">
+         <message name="IDS_PROFILE_MENU_SIGN_OUT_WHEN_SIGNIN_PENDING" desc="The text label of the Sign out of Chromium button in the Profile Menu when the user is in sign in pending state.">
+-          Remove Account from GCSA Aegis
++          Remove Account from Aegis Browser
+         </message>
+         <message name="IDS_PROFILE_MENU_PROFILES_LIST_TITLE" desc="Title in the profile menu for the list of 'other Chromium profiles'.">
+-          Other GCSA Aegis Profiles
++          Other Aegis Browser Profiles
+         </message>
+         <message name="IDS_PROFILE_MENU_MANAGE_PROFILES" desc="The text label of the Manage Chromium Profiles item in the Profile Menu.">
+-          Manage GCSA Aegis Profiles
++          Manage Aegis Browser Profiles
+         </message>
+         <message name="IDS_PROFILE_MENU_SIGN_OUT"
+           desc="The text label of the Sign out of Chromium button in the Profile Menu.">
+-          Sign Out of GCSA Aegis
++          Sign Out of Aegis Browser
+         </message>
+         <message name="IDS_PROFILE_MENU_ADD_PROFILE" desc="The text label of the add new profile item in the profile menu.">
+-          Add GCSA Aegis Profile
++          Add Aegis Browser Profile
+         </message>
+       </if>
+ 
+@@ -1720,7 +1720,7 @@ Chromium is unable to recover your settings.
+       <if expr="not is_android">
+         <!-- Password Manager Tutorial Strings -->
+         <message name="IDS_TUTORIAL_PASSWORD_MANAGER_OPEN_APP_MENU" desc="The description of the 'open add menu' step in password manager tutorial">
+-          Click the GCSA Aegis menu
++          Click the Aegis Browser menu
+         </message>
+         <message name="IDS_TUTORIAL_PASSWORD_MANAGER_CLICK_PASSWORD_MANAGER" desc="The description of the 'click password manager' step in password manager tutorial">
+           Click “Password Manager”
+@@ -2702,7 +2702,7 @@ Chromium is unable to recover your settings.
+           <ph name="SHORTCUT">$1<ex>CTRL+SHIFT+M</ex></ph> can switch between Chromium profiles
+         </message>
+         <message name="IDS_PASSWORD_MANAGER_IPH_BODY_WEB_APP_PROFILE_SWITCH" desc="Body of the in Product Help for profile switching shown in the password manager web app.">
+-          You can switch to see passwords from another GCSA Aegis profile
++          You can switch to see passwords from another Aegis Browser profile
+         </message>
+ 
+         <!-- Web Signout Intercept IPH -->
+@@ -2718,7 +2718,7 @@ Chromium is unable to recover your settings.
+           Stay safe with Password Manager
+         </message>
+         <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_SUBTITLE" desc="Description for the Password Manager page in the Feature Showcase.">
+-          Built into GCSA Aegis to help you create, save, and autofill strong passwords. Add the shortcut for easy access.
++          Built into Aegis Browser to help you create, save, and autofill strong passwords. Add the shortcut for easy access.
+         </message>
+ 
+         <!-- Feature Showcase - Lens -->
+@@ -3328,10 +3328,10 @@ Chromium is unable to recover your settings.
+ 
+       <!-- UNO Promo strings for bookmarks -->
+       <message name="IDS_BOOKMARK_INSTALLED_PROMO_EXPLICIT_SIGNIN_MESSAGE" desc="Text of the promo displayed at the bottom of the bookmark bubble asking the user to enable UNO.">
+-        To get this bookmark and more on all your devices, sign in to GCSA Aegis
++        To get this bookmark and more on all your devices, sign in to Aegis Browser
+       </message>
+       <message name="IDS_BOOKMARK_INSTALLED_BUBBLE_PROMO_EXPLICIT_SIGNIN_MESSAGE" desc="Text of the promo displayed after the bookmark bubble asking the user to enable UNO.">
+-        To get your bookmarks and more on all your devices, sign in to GCSA Aegis. This bookmark will be saved in your Google Account after you sign in.
++        To get your bookmarks and more on all your devices, sign in to Aegis Browser. This bookmark will be saved in your Google Account after you sign in.
+       </message>
+ 
+       <!-- Dice Migration strings -->
+@@ -3346,12 +3346,12 @@ Chromium is unable to recover your settings.
+       <if expr="not is_android">
+         <if expr="use_titlecase">
+           <message name="IDS_PROFILE_MENU_ACCOUNT_SETTINGS_BUTTON" desc="Button in the avatar menu bubble view for opening Chrome account settings.">
+-            Your Account in GCSA Aegis
++            Your Account in Aegis Browser
+           </message>
+         </if>
+         <if expr="not use_titlecase">
+           <message name="IDS_PROFILE_MENU_ACCOUNT_SETTINGS_BUTTON" desc="Button in the avatar menu bubble view for opening Chrome account settings.">
+-            Your account in GCSA Aegis
++            Your account in Aegis Browser
+           </message>
+         </if>
+       </if>
+diff --git a/chrome/app/theme/gcsa_aegis/BRANDING b/chrome/app/theme/gcsa_aegis/BRANDING
+index dfebe2211b3594ef813399d73355509976c0140e..b2f88bfff9d526a024c39fdddf232947d79acf29 100644
+--- a/chrome/app/theme/gcsa_aegis/BRANDING
++++ b/chrome/app/theme/gcsa_aegis/BRANDING
+@@ -1,9 +1,9 @@
+ COMPANY_FULLNAME=GCSA
+ COMPANY_SHORTNAME=GCSA
+-PRODUCT_FULLNAME=GCSA Aegis
+-PRODUCT_SHORTNAME=GCSA Aegis
+-PRODUCT_INSTALLER_FULLNAME=GCSA Aegis Installer
+-PRODUCT_INSTALLER_SHORTNAME=GCSA Aegis Installer
++PRODUCT_FULLNAME=Aegis Browser
++PRODUCT_SHORTNAME=Aegis Browser
++PRODUCT_INSTALLER_FULLNAME=Aegis Browser Installer
++PRODUCT_INSTALLER_SHORTNAME=Aegis Browser Installer
+ COPYRIGHT=Copyright @LASTCHANGE_YEAR@ GCSA. All rights reserved.
+ MAC_BUNDLE_ID=app.gcsa.aegis
+ MAC_CREATOR_CODE=Cr24
+diff --git a/components/policy/tools/template_writers/writer_configuration.py b/components/policy/tools/template_writers/writer_configuration.py
+index 48541df6adb829fd4d0b239e625a724f69b075a4..d6fcb68c44fc8d9998da16d36ee162a58a8ab998 100755
+--- a/components/policy/tools/template_writers/writer_configuration.py
++++ b/components/policy/tools/template_writers/writer_configuration.py
+@@ -27,21 +27,22 @@ def GetConfigurationForBuild(defines):
+   if '_chromium' in defines:
+     config = {
+         'build': 'chromium',
+-        'app_name': 'GCSA Aegis',
++        'app_name': 'Aegis Browser',
+         'doc_url': 'https://chromeenterprise.google/policies/',
+         'frame_name': 'Chromium Frame',
+         'os_name': 'ChromiumOS',
+         'webview_name': 'Chromium WebView',
+         'win_config': {
+             'win': {
++                # The registry identity stays stable when display names change.
+                 'reg_mandatory_key_name': 'Software\\Policies\\GCSA Aegis',
+                 'reg_recommended_key_name':
+                 'Software\\Policies\\GCSA Aegis\\Recommended',
+                 'mandatory_category_path': ['chromium'],
+                 'recommended_category_path': ['chromium_recommended'],
+                 'category_path_strings': {
+-                    'chromium': 'GCSA Aegis',
+-                    'chromium_recommended': 'GCSA Aegis - {doc_recommended}',
++                    'chromium': 'Aegis Browser',
++                    'chromium_recommended': 'Aegis Browser - {doc_recommended}',
+                 },
+                 'namespace': 'GCSA.Policies.Aegis',
+             },
+diff --git a/components/policy/tools/template_writers/writers/adm_writer_unittest.py b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
+index 14ac76d212b45534eb0fbda6d441608a44e54e0e..b63002663283fc315d141371ce86222a9fc58837 100755
+--- a/components/policy/tools/template_writers/writers/adm_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
+@@ -104,8 +104,8 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"''')
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"''')
+     self.CompareOutputs(output, expected_output)
+ 
+   def testVersionAnnotation(self):
+@@ -137,8 +137,8 @@ chromium_recommended="GCSA Aegis - Recommended"''')
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"''')
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"''')
+     self.CompareOutputs(output, expected_output)
+ 
+   def testMainPolicy(self):
+@@ -327,8 +327,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ StringPolicy_Policy="Caption of policy."
+ StringPolicy_Explain="Description of group.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -395,8 +395,8 @@ StringPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -464,8 +464,8 @@ IntPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -534,8 +534,8 @@ IntPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -784,8 +784,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ListPolicy_Policy="Caption of list policy."
+ ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -860,8 +860,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ListPolicy_Policy="Caption of list policy."
+ ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -928,8 +928,8 @@ ListPolicy_Part="Label of list policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ DictionaryPolicy_Policy="Caption of policy."
+ DictionaryPolicy_Explain="Description of group.\\n\\n\
+ Reference: \
+@@ -996,8 +996,8 @@ DictionaryPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ExternalPolicy_Policy="Caption of policy."
+ ExternalPolicy_Explain="Description of group.\\n\\n\
+ Reference: \
+@@ -1047,8 +1047,8 @@ ExternalPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ ''')
+     self.CompareOutputs(output, expected_output)
+ 
+@@ -1200,8 +1200,8 @@ With a newline."""
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ Group1_Category="Caption of group."
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="Description of policy1.\\nWith a newline.\\n\\n\
+@@ -1379,8 +1379,8 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ DeprecatedPolicies_Category="Deprecated policies"
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="This policy is deprecated. blah blah blah\\n\\n"
+@@ -1455,8 +1455,8 @@ Policy1_Part="Caption of policy1."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="GCSA Aegis"
+-chromium_recommended="GCSA Aegis - Recommended"
++chromium="Aegis Browser"
++chromium_recommended="Aegis Browser - Recommended"
+ RemovedPolicies_Category="Removed policies"
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="This policy is removed. blah blah blah\\n\\n"
+diff --git a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
+index 01faff6fd3836a56c8de69290427a298150e9235..fc5ffb295db371a444ca18443bfc4f0071cbfe6c 100755
+--- a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
+@@ -26,7 +26,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'GCSA Aegis preferen"ces',
++            'text': 'Aegis Browser preferen"ces',
+             'desc': 'blah'
+           }
+         }
+@@ -35,8 +35,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";')
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Aegis Browser preferen\\"ces";')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+   def testEmptyVersion(self):
+@@ -48,7 +48,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'GCSA Aegis preferen"ces',
++            'text': 'Aegis Browser preferen"ces',
+             'desc': 'blah'
+           }
+         }
+@@ -60,8 +60,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+             'version': '39.0.0.0'
+         }, 'plist_strings')
+     expected_output = ('/* chromium version: 39.0.0.0 */\n'
+-                       'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";')
++                       'Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Aegis Browser preferen\\"ces";')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+   def testMainPolicy(self):
+@@ -131,7 +131,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of GCSA Aegis',
++            'text': 'Preferences of Aegis Browser',
+             'desc': 'blah'
+           }
+         }
+@@ -140,8 +140,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
+                        'StringPolicy.pfm_title = "Caption of policy.";\n'
+                        'StringPolicy.pfm_description = '
+                        '"Description of policy.\\nWith a newline.";')
+@@ -176,7 +176,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of GCSA Aegis',
++            'text': 'Preferences of Aegis Browser',
+             'desc': 'blah'
+           }
+         }
+@@ -185,8 +185,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
+                        'ListPolicy.pfm_title = "Caption of policy.";\n'
+                        'ListPolicy.pfm_description = '
+                        '"Description of policy.\\nWith a newline.";')
+@@ -233,7 +233,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of GCSA Aegis',
++            'text': 'Preferences of Aegis Browser',
+             'desc': 'blah'
+           }
+         }
+@@ -242,8 +242,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
+-                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
++    expected_output = ('Aegis_Browser.pfm_title = "Aegis Browser";\n'
++                       'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
+                        'EnumPolicy.pfm_title = "Caption of policy.";\n'
+                        'EnumPolicy.pfm_description = '
+                        '"one - Option1\\ntwo - Option2\\n'
+diff --git a/components/policy/tools/template_writers/writers/plist_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
+index a3f0626c5d94c905231c3ce4898cf515b3829817..c70c60598b65f456d278b13ccc88f4129d4bdaec 100755
+--- a/components/policy/tools/template_writers/writers/plist_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
+@@ -99,7 +99,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+-    expected_output = self._GetExpectedOutputs('GCSA_Aegis', 'com.example.Test',
++    expected_output = self._GetExpectedOutputs('Aegis_Browser', 'com.example.Test',
+                                                '<array/>')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+@@ -120,7 +120,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+             'version': '39.0.0.0'
+         }, 'plist')
+     expected_output = self._GetExpectedOutputsWithVersion(
+-        'GCSA_Aegis', 'com.example.Test', '<array/>',
++        'Aegis_Browser', 'com.example.Test', '<array/>',
+         'chromium version: 39.0.0.0')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+@@ -153,7 +153,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -203,7 +203,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -255,7 +255,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -302,7 +302,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>StringPolicy</string>
+@@ -353,7 +353,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ListPolicy</string>
+@@ -416,7 +416,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ListPolicy</string>
+@@ -470,7 +470,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>IntPolicy</string>
+@@ -629,7 +629,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>DictionaryPolicy</string>
+@@ -676,7 +676,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'GCSA_Aegis', 'com.example.Test', '''<array>
++        'Aegis_Browser', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ExternalPolicy</string>
+-- 
+2.54.0 (Apple Git-157)
+

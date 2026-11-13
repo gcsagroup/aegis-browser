@@ -270,7 +270,7 @@ function printUsage() {
       '  --help                       显示帮助',
       '',
       '真实研究选项：',
-      '  --app PATH                   被测 GCSA Aegis.app',
+      '  --app PATH                   被测 Aegis Browser.app',
       '  --binary PATH                被测可执行文件；与 --app 二选一',
       '  --report PATH                JSON 报告；必须不存在，拒绝覆盖',
       '  --hmac-key-file PATH         恰好 32 字节且权限不宽于 0600 的批次密钥',

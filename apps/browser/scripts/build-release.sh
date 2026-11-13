@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a self-contained (non-component) GCSA Aegis.app for distribution.
+# Build a self-contained (non-component) Aegis Browser.app for distribution.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 

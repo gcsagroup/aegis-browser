@@ -9,10 +9,10 @@ import sys
 # 按窗口标题、确认正文、关闭浏览器提示的顺序比对，捕获中文回退到英文的情况。
 MESSAGES = ("IDS_UNINSTALL_CHROME", "IDS_UNINSTALL_VERIFY", "IDS_UNINSTALL_CLOSE_APP")
 EXPECTED = {
-    "en-US": ("Uninstall GCSA Aegis", "Are you sure you want to uninstall GCSA Aegis?",
-              "Please close all GCSA Aegis windows and try again."),
-    "zh-CN": ("卸载 GCSA Aegis", "确定要卸载 GCSA Aegis 吗？", "请关闭所有 GCSA Aegis 窗口并重试。"),
-    "zh-TW": ("解除安裝 GCSA Aegis", "你確定要解除安裝 GCSA Aegis 嗎？", "請關閉所有 GCSA Aegis 視窗，然後再試一次。"),
+    "en-US": ("Uninstall Aegis Browser", "Are you sure you want to uninstall Aegis Browser?",
+              "Please close all Aegis Browser windows and try again."),
+    "zh-CN": ("卸载 Aegis Browser", "确定要卸载 Aegis Browser 吗？", "请关闭所有 Aegis Browser 窗口并重试。"),
+    "zh-TW": ("解除安裝 Aegis Browser", "你確定要解除安裝 Aegis Browser 嗎？", "請關閉所有 Aegis Browser 視窗，然後再試一次。"),
 }
 
 

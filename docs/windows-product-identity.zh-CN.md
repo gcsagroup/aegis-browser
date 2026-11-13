@@ -2,6 +2,8 @@
 
 从 086 内部候选起，Aegis 使用独立的安装目录、用户资料和系统注册身份，避免覆盖原版 Chromium。以下标识属于长期产品身份，不能随版本号、构建时间或机器变化。
 
+产品显示名称采用 **Aegis Browser**。本次显示名更新保留以下 Windows 安装、资料与策略身份，继续读取已有用户资料和管理策略。
+
 - 用户级安装：`%LOCALAPPDATA%\GCSA Aegis\Application\chrome.exe`。
 - 系统级安装：`%PROGRAMFILES%\GCSA Aegis\Application\chrome.exe`，实际位置遵循 Windows 安装模式。
 - 默认资料：`%LOCALAPPDATA%\GCSA Aegis\User Data`。
