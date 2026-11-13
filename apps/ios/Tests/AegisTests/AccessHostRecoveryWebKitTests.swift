@@ -353,14 +353,11 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
             intent: .on
         ))
         let before = store.proxyConfigurations.count
+        // A health failure belongs to the published entry's generation.
+        var failed = try XCTUnwrap(publisher.currentEndpoint)
+        failed.state = .failed
         coordinator.registry.setEndpoint(
-            AccessManagedProxyEndpoint(
-                identity: "entry-failed",
-                generation: 9,
-                loopbackHost: "127.0.0.1",
-                port: 18_242,
-                state: .failed
-            ),
+            failed,
             scopeID: "ordinary",
             host: host,
             isPrivate: false
@@ -368,17 +365,18 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         let nonce = UUID().uuidString
         let nextURL = URL(string: "http://example.invalid/again?n=\(nonce)")!
         tab.load(URLRequest(url: nextURL))
-        // A failed health state retains the existing proxy route. WebKit may
-        // still send through that proxy or report its failure; neither result
-        // may replace this store or enable DIRECT fallback.
+        // A failed health state retains the existing proxy route while the
+        // still-healthy publisher restores readiness for the same entry.
         XCTAssertEqual(tab.requestedURL, nextURL)
         XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertEqual(store.proxyConfigurations.count, before)
         XCTAssertFalse(store.proxyConfigurations.isEmpty)
         XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
-        try await waitUntil({
-            opener.transcript.contains("GET /again?n=\(nonce)") || !tab.isLoading
-        }, message: opener.transcript)
+        try await waitUntil(seconds: 10, {
+            // A new WebView needs a window before the deferred load can run.
+            attach(tab.webView, to: window)
+            return opener.transcript.contains("GET /again?n=\(nonce)")
+        }, message: "proxy=\(opener.transcript) loading=\(tab.isLoading) error=\(tab.loadingError ?? "none")")
         XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
     }
