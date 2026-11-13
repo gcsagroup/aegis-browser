@@ -61,6 +61,7 @@ test('SIMULATOR_PASS without native artifacts is rejected', async () => {
       verdict: 'SIMULATOR_PASS',
       artifacts: [],
     }));
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
     await writeFile(join(root, 'manifest.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'ios-access-product-phase1-evidence',
@@ -98,6 +99,7 @@ test('device PASS status is rejected as out of scope', async () => {
       verdict: 'PASS',
       artifacts: [{path: 'artifacts/on.log', sha256: digest('x')}],
     }));
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
     await writeFile(join(root, 'artifacts/on.log'), 'x');
     await writeFile(join(root, 'manifest.json'), JSON.stringify({
       schemaVersion: 1,
@@ -131,10 +133,13 @@ test('filled same-candidate Simulator pack with UI captures validates', async ()
     const runId = 'ios-run-1';
     const bytes = 'synthetic-log-line aegis-ios-p1\n';
     const relative = 'artifacts/on.log';
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
     await writeFile(join(root, relative), bytes);
     const onUi = 'artifacts/ui-on.png';
     const offUi = 'artifacts/ui-off.png';
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
     await writeFile(join(root, onUi), 'on-ui');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
     await writeFile(join(root, offUi), 'off-ui');
     const logDigest = digest(bytes);
     const steps = ['on', 'load', 'fault', 'recovery', 'off'].map((name, index) => ({
@@ -194,11 +199,14 @@ for (const linkKind of ['file', 'directory']) {
   test(`artifact ${linkKind} symlink cannot escape the evidence pack`, async () => {
     await withCopy(async outside => {
       const bytes = 'external evidence must not be accepted';
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
       await writeFile(join(outside, 'outside.log'), bytes);
       await withCopy(async root => {
         const linkPath = join(root, 'artifacts', 'external');
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
         await symlink(linkKind === 'file' ? join(outside, 'outside.log') : outside,
             linkPath, linkKind === 'file' ? 'file' : 'dir');
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
         const manifest = JSON.parse(await readFile(
             join(root, 'manifest.template.json'), 'utf8'));
         const sourceSha = 'd'.repeat(40);
@@ -211,6 +219,7 @@ for (const linkKind of ['file', 'directory']) {
             sha256: digest(bytes),
           }];
         });
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
         await writeFile(join(root, 'manifest.json'), JSON.stringify(manifest));
         await assert.rejects(() => validatePhase1EvidencePack(root, {repoRoot}),
             /artifact path escapes pack/);

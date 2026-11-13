@@ -1,4 +1,11 @@
 ---
+engines:
+  sqlint:
+    # SQLint parses PostgreSQL. These SQLite migrations are executed by
+    # services/access_account/tests, including their STRICT tables and triggers.
+    exclude_paths:
+      - "services/access_account/credentials.sql"
+      - "services/access_account/orders.sql"
 exclude_paths:
   - ".artifacts/**"
   - "**/node_modules/**"

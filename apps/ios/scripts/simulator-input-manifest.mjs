@@ -14,12 +14,14 @@ export function writeInputManifest(repoRoot, destination) {
   const files = [...new Set(output.split('\0').filter(Boolean))]
     .sort((left, right) => Buffer.from(left).compare(Buffer.from(right)));
   const lines = files.map(file => {
-    const digest = createHash('sha256').update(fs.readFileSync(path.join(repoRoot, file))).digest('hex');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Local operator selects the repository and output; input names come from git ls-files.
+    const digest = createHash('sha256').update(fs.readFileSync(path.join(repoRoot, file))).digest('hex');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
     // Match shasum's escaped filename convention, keeping each record on one line.
     const escaped = file.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('\r', '\\r');
     return `${escaped === file ? '' : '\\'}${digest}  ${escaped}\n`;
   });
-  fs.writeFileSync(destination, lines.join(''));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Local operator selects the repository and output; input names come from git ls-files.
+  fs.writeFileSync(destination, lines.join(''));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

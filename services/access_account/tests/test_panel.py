@@ -265,7 +265,8 @@ class PanelEntitlementTest(unittest.TestCase):
         self.mock.status = 503
         self.assertEqual(self.read(), FAILURE)
         self.mock.status = 200
-        self.server.panel.token = "wrong-fixture-token"
+        # Synthetic credentials used only by the local test fixture.
+        self.server.panel.token = "wrong-fixture-token"  # nosec B105
         self.assertEqual(self.read(), FAILURE)
 
     def test_alpha_preserves_session_and_plan_recheck(self):

@@ -198,7 +198,7 @@ function main() {
     deviceLabel: args["device-label"],
     gitSha: args["git-sha"] ?? "<unknown>",
     gitTreeState: args["git-tree-state"] ?? "<unknown>",
-    buildNumber: args["build-number"] ?? "<unknown>",
+    buildNumber: args["build-number"] ?? "unknown",
     inputManifestSha256: args["input-manifest-sha256"] ?? "<unknown>",
     runtimeId: args["runtime-id"] ?? "<unknown>",
     deviceName: args["device-name"] ?? "<unknown>",

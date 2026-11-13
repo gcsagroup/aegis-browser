@@ -22,11 +22,12 @@ Unavailable = store.Unavailable
 MAX_TTL_MS = 300_000
 MAX_SOURCE_AGE_MS = 15_000
 _BINDING = ('id', 'plan_id', 'period_id', 'period_start', 'period_end', 'panel_client')
+# Query composition uses a source constant; account values remain bound parameters.
 _LOOKUP = f"""
     SELECT account.*, COALESCE(version.version, 0) AS authority_version
     FROM ({store.CURRENT_ACCOUNT_SQL}) AS account
     LEFT JOIN node_authority_versions AS version ON version.account_id = account.id
-"""
+"""  # nosec B608
 _TOKEN = re.compile(r'[A-Za-z0-9_-]{1,256}', re.ASCII)
 
 
@@ -103,6 +104,8 @@ def _uuid(value):
 
 
 def _account(db, digest, now):
+    # Query composition uses a source constant; account values remain bound parameters.
+    # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
     return db.execute(_LOOKUP, (digest, now)).fetchone()
 
 

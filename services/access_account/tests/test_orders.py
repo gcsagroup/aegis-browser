@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 import socket
 import sqlite3
-import subprocess
+# Local tooling uses argument arrays with the shell disabled.
+import subprocess  # nosec B404
 import sys
 from tempfile import TemporaryDirectory
 import threading
@@ -39,7 +40,8 @@ class OrderFixture:
         terms.update(changes)
         orders.record(self.path, **terms)
 
-    def redeem(self, order_id='one', token='A'):
+    # Synthetic credentials used only by the local test fixture.
+    def redeem(self, order_id='one', token='A'):  # nosec B107
         return orders.redeem(self.path, token, order_id, lambda: NOW)
 
     def current(self):
@@ -221,7 +223,9 @@ class OrderTest(OrderFixture, unittest.TestCase):
         # New interpreter, new SQLite connection, same durable receipt.
         code = ('from services.access_account.orders import redeem; import sys; '
                 f'print(redeem(sys.argv[1], "A", "one", lambda: {NOW + 1}))')
-        result = subprocess.run([sys.executable, '-c', code, str(self.path)],
+        # Fixed local test program and fixture arguments; shell execution is disabled.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        result = subprocess.run([sys.executable, '-c', code, str(self.path)],  # nosec B603
                                 capture_output=True, text=True, check=True)
         self.assertIn(str(NOW), result.stdout)
         self.assertEqual(self.current()['quotaBytes'], '1000')
@@ -247,7 +251,9 @@ def crash_connection(path):
 orders.connect = crash_connection
 orders.redeem(sys.argv[1], 'A', 'one', lambda: 1800000000000)
 """
-        result = subprocess.run([sys.executable, '-c', code, str(self.path)], check=False)
+        # Fixed local test program and fixture arguments; shell execution is disabled.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        result = subprocess.run([sys.executable, '-c', code, str(self.path)], check=False)  # nosec B603
         self.assertEqual(result.returncode, 23)
         self.assertEqual(self.current()['status'], 'not_subscribed')
         self.assertEqual(self.sql('SELECT * FROM sandbox_grants'), [])
@@ -278,11 +284,15 @@ orders.redeem(sys.argv[1], 'A', 'one', lambda: 1800000000000)
                    '--account-id', 'A', '--plan-id', 'sandbox', '--period-id', 'period-A',
                    '--panel-client', 'sandbox-A', '--quota-bytes', '1000',
                    '--duration-ms', '10000', '--paid']
-        subprocess.run(command[:-1], check=True, capture_output=True)
+        # Fixed local test program and fixture arguments; shell execution is disabled.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        subprocess.run(command[:-1], check=True, capture_output=True)  # nosec B603
         with self.assertRaises(orders.Rejected):
             self.redeem('cli')
         for notification in (command, command, command[:-1]):
-            subprocess.run(notification, check=True, capture_output=True)
+            # Fixed local test program and fixture arguments; shell execution is disabled.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            subprocess.run(notification, check=True, capture_output=True)  # nosec B603
         self.redeem('cli')
         self.assertEqual(self.current()['quotaBytes'], '1000')
         for changes in (dict(quota_bytes=0), dict(duration_ms=-1), dict(account_id='missing')):
@@ -301,7 +311,8 @@ class OrderHTTPTest(OrderFixture, unittest.TestCase):
         self.addCleanup(server.shutdown)
         return server
 
-    def request(self, server, method='POST', token='A', body=None, path='/v1/me/orders/redeem'):
+    # Synthetic credentials used only by the local test fixture.
+    def request(self, server, method='POST', token='A', body=None, path='/v1/me/orders/redeem'):  # nosec B107
         with closing(http.client.HTTPConnection(*server.server_address, timeout=10)) as conn:
             headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token}
             conn.request(method, path, body=body if body is not None else '{"orderId":"one"}',

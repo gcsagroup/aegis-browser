@@ -13,8 +13,10 @@ const resourcePath = 'apps/browser/overlay/chrome/browser/resources/aegis/enhanc
 
 function write(root, relative, content) {
   const destination = path.join(root, relative);
-  fs.mkdirSync(path.dirname(destination), {recursive: true});
-  fs.writeFileSync(destination, content);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  fs.mkdirSync(path.dirname(destination), {recursive: true});  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  fs.writeFileSync(destination, content);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 }
 
 function git(root, args) {
@@ -32,7 +34,8 @@ function createFixture(t) {
   write(root, resourcePath, '// Shared browser resource.\n');
   write(root, 'packages/core/src/tracker/builtin-rules.ts', 'export const hosts = [];\n');
   for (const name of ['run-simulator-tests.sh', 'simulator-input-manifest.mjs', 'summarize-xccov.mjs']) {
-    fs.mkdirSync(path.join(root, 'apps/ios/scripts'), {recursive: true});
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+    fs.mkdirSync(path.join(root, 'apps/ios/scripts'), {recursive: true});  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
     fs.copyFileSync(path.join(scripts, name), path.join(root, 'apps/ios/scripts', name));
   }
   for (const name of ['verify-fixtures.mjs', 'generate-tracker-rules.mjs', 'test-summarize-xccov.mjs']) {
@@ -119,10 +122,12 @@ if (tool === 'python3') {
 
 function runFixture(fixture, overrides = {}, mode = '--execute') {
   const bin = path.join(fixture.sandbox, 'bin');
-  fs.mkdirSync(bin);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  fs.mkdirSync(bin);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   for (const tool of ['python3', 'xcodegen', 'xcodebuild', 'xcrun']) {
     const destination = path.join(bin, tool);
-    fs.writeFileSync(destination, toolFixture, {mode: 0o755});
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+    fs.writeFileSync(destination, toolFixture, {mode: 0o755});  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   }
   const report = path.join(fixture.sandbox, 'report');
   const result = spawnSync('bash', [path.join(fixture.root, 'apps/ios/scripts/run-simulator-tests.sh'),
@@ -141,7 +146,8 @@ function runFixture(fixture, overrides = {}, mode = '--execute') {
 }
 
 function digest(file) {
-  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 }
 
 test('manifest includes shared and new inputs, deduplicates staged additions and escapes filenames', t => {
@@ -154,15 +160,17 @@ test('manifest includes shared and new inputs, deduplicates staged additions and
   write(root, 'packages/core/cache.ignored', 'ignored');
   write(root, 'unrelated.txt', 'outside input scope');
   writeInputManifest(root, manifest);
-  const text = fs.readFileSync(manifest, 'utf8');
-  assert.match(text, new RegExp(digest(path.join(root, vectorPath))));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  const text = fs.readFileSync(manifest, 'utf8');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+  assert.ok(text.includes(digest(path.join(root, vectorPath))));
   assert.match(text, /packages\/core\/src\/tracker\/builtin-rules.ts/);
   assert.ok(text.includes(resourcePath));
   assert.equal(text.match(/packages\/core\/new.txt/g).length, 1);
   assert.ok(text.includes('apps/ios/new\\nfile.swift'));
   assert.ok(!text.includes('cache.ignored') && !text.includes('unrelated.txt'));
   const before = digest(manifest);
-  fs.appendFileSync(path.join(root, vectorPath), ' ');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  fs.appendFileSync(path.join(root, vectorPath), ' ');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   writeInputManifest(root, manifest);
   assert.notEqual(digest(manifest), before);
 });
@@ -171,7 +179,8 @@ test('runner distinguishes clean source from generated inputs and binds coverage
   const fixture = createFixture(t);
   const result = runFixture(fixture);
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  const metadata = fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  const metadata = fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   assert.match(metadata, /^source_git_tree_state=clean$/m);
   assert.match(metadata, /^git_tree_state=dirty$/m);
   assert.match(metadata, /^build_number=35$/m);
@@ -181,9 +190,10 @@ test('runner distinguishes clean source from generated inputs and binds coverage
   const after = path.join(result.report, 'ios-input-sha256-after.txt');
   assert.notEqual(digest(source), digest(before));
   assert.equal(digest(before), digest(after));
-  assert.match(metadata, new RegExp(`^source_input_manifest_sha256=${digest(source)}$`, 'm'));
-  assert.match(metadata, new RegExp(`^input_manifest_sha256=${digest(before)}$`, 'm'));
-  const coverage = JSON.parse(fs.readFileSync(path.join(result.report, 'iPhone-swift-coverage.json'), 'utf8'));
+  assert.ok(metadata.split('\n').includes(`source_input_manifest_sha256=${digest(source)}`));
+  assert.ok(metadata.split('\n').includes(`input_manifest_sha256=${digest(before)}`));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  const coverage = JSON.parse(fs.readFileSync(path.join(result.report, 'iPhone-swift-coverage.json'), 'utf8'));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   assert.equal(coverage.metadata.gitTreeState, 'dirty');
   assert.equal(coverage.metadata.buildNumber, '35');
   assert.equal(coverage.metadata.inputManifestSha256, digest(before));
@@ -191,7 +201,8 @@ test('runner distinguishes clean source from generated inputs and binds coverage
 
 test('runner rejects shared-vector drift during testing and retains both manifests', t => {
   const fixture = createFixture(t);
-  fs.appendFileSync(path.join(fixture.root, vectorPath), '\n');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  fs.appendFileSync(path.join(fixture.root, vectorPath), '\n');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   const result = runFixture(fixture, {EVIDENCE_MUTATE_VECTOR: '1'});
   assert.equal(result.status, 1, result.stderr + result.stdout);
   assert.match(result.stderr, /iOS\/Core 输入发生变化/);
@@ -205,7 +216,8 @@ test('runner rejects shared-vector drift during testing and retains both manifes
 test('runner rejects drift in browser resources referenced by the iOS project', t => {
   const result = runFixture(createFixture(t), {EVIDENCE_MUTATE_RESOURCE: '1'});
   assert.equal(result.status, 1, result.stderr + result.stdout);
-  assert.match(fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8'), /^input_stability_exit=1$/m);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  assert.match(fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8'), /^input_stability_exit=1$/m);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   assert.notEqual(digest(path.join(result.report, 'ios-input-sha256-before.txt')),
     digest(path.join(result.report, 'ios-input-sha256-after.txt')));
 });
@@ -214,8 +226,10 @@ test('runner rejects a stale app build number before running tests', t => {
   const result = runFixture(createFixture(t), {EVIDENCE_APP_VERSION: '34'});
   assert.equal(result.status, 1, result.stderr + result.stdout);
   assert.match(result.stderr, /CFBundleVersion mismatch/);
-  assert.match(fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8'), /^built_app_build_number=34$/m);
-  assert.ok(!fs.existsSync(path.join(result.report, 'iPhone.xcresult')));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  assert.match(fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8'), /^built_app_build_number=34$/m);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  assert.ok(!fs.existsSync(path.join(result.report, 'iPhone.xcresult')));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 });
 
 test('dry run keeps the source and report directory untouched', t => {
@@ -224,5 +238,6 @@ test('dry run keeps the source and report directory untouched', t => {
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(result.stdout, /DRY_RUN=PASS/);
   assert.equal(git(fixture.root, ['status', '--porcelain']), '');
-  assert.ok(!fs.existsSync(result.report));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  assert.ok(!fs.existsSync(result.report));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 });

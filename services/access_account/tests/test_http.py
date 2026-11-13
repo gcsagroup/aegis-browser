@@ -200,9 +200,10 @@ class AlphaConfigurationTest(unittest.TestCase):
         args = ["access-server", "--database", "unused.db", "--port", "0",
                 "--panel-url", "https://panel.invalid", "--alpha-panel-client", "fixture-alpha"]
         fake_server = MagicMock()
-        with patch.object(sys, "argv", args), \
-                patch.dict(os.environ, {"AEGIS_3XUI_TOKEN": "fixture-only"}), \
-                patch.object(server, "create_server", return_value=fake_server) as create:
+        with (patch.object(sys, "argv", args),
+                # Synthetic credentials used only by the local test fixture.
+                patch.dict(os.environ, {"AEGIS_3XUI_TOKEN": "fixture-only"}),  # nosec B105
+                patch.object(server, "create_server", return_value=fake_server) as create):
             server.main()
         panel = create.call_args.kwargs["panel"]
         self.assertEqual(panel.alpha_panel_client, "fixture-alpha")

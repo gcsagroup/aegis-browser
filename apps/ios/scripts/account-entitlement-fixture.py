@@ -7,7 +7,8 @@ from pathlib import Path
 import os
 import secrets
 import sqlite3
-import subprocess
+# Local tooling uses argument arrays with the shell disabled.
+import subprocess  # nosec B404
 import sys
 from tempfile import TemporaryDirectory
 import threading
@@ -60,7 +61,9 @@ def run(command):
                 threading.Thread(target=service.serve_forever, daemon=True).start()
                 env['TEST_RUNNER_AEGIS_S1_FIXTURE_' + key] = 'http://127.0.0.1:' + str(service.server_port)
             try:
-                return subprocess.call(command, env=env)
+                # Operator-supplied local test command is passed as argv with the shell disabled.
+                # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+                return subprocess.call(command, env=env)  # nosec B603
             finally:
                 server.shutdown()
                 redirect.shutdown()

@@ -87,8 +87,10 @@ class NativeQuery(unittest.TestCase):
                 token = self.headers.get("Authorization")
                 issued.append((payload, token))
                 cid = str(uuid4())
-                result = dict(payload, accountId="B" if token == "Bearer private-B" else "A",
-                              periodId="cycle", credentialId=cid, username=cid, password="test_secret",
+                # Synthetic credentials used only by the local test fixture.
+                result = dict(payload, accountId="B" if token == "Bearer private-B" else "A",  # nosec B105
+                              # Synthetic credentials used only by the local test fixture.
+                              periodId="cycle", credentialId=cid, username=cid, password="test_secret",  # nosec B106
                               host="node.example", port=443, expiresAt=int(time.time()*1000)+60000)
                 self.send_response(200); self.end_headers()
                 self.wfile.write(json.dumps(result).encode())
@@ -97,13 +99,17 @@ class NativeQuery(unittest.TestCase):
         origin = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), Authority))
         self.bind(self.a, origin=origin)
         def issue(mode, binding=None):
-            return subprocess.run([self.driver, self.a, "--node-"+mode], check=True, timeout=14,
+            # Fixed local test program and fixture arguments; shell execution is disabled.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            return subprocess.run([self.driver, self.a, "--node-"+mode], check=True, timeout=14,  # nosec B603
                                   input=json.dumps(binding).encode() if binding else b"",
                                   capture_output=True).stdout.strip()
         self.assertEqual(issue("regular"), b"assigned")
         self.assertEqual(issue("private"), b"unavailable")
-        self.assertEqual(issue("private", dict(origin=origin, accountId="B", token="private-B")), b"assigned")
-        self.assertEqual(issue("private", dict(origin=origin, accountId="B", token="test-A")), b"unavailable")
+        # Synthetic credentials used only by the local test fixture.
+        self.assertEqual(issue("private", dict(origin=origin, accountId="B", token="private-B")), b"assigned")  # nosec B106
+        # Synthetic credentials used only by the local test fixture.
+        self.assertEqual(issue("private", dict(origin=origin, accountId="B", token="test-A")), b"unavailable")  # nosec B106
         self.assertEqual([(p["mode"], t) for p,t in issued], [
             ("regular","Bearer test-A"), ("private","Bearer private-B"), ("private","Bearer test-A")])
         self.assertNotEqual(issued[0][0]["contextId"], issued[1][0]["contextId"])
