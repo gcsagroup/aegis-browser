@@ -79,6 +79,9 @@ For a new sealed package, successful **ios-package** and **seal-package** jobs e
 For protected environment setup, stage JSON examples and recovery steps, see the [iOS release operations reference](ios-release.md).
 
 受保护环境配置、阶段 JSON 示例及故障恢复步骤见 [iOS 发布操作参考](ios-release.zh-CN.md)。
+
+The [Aegis central export PoC](ios-central-signing.md) describes the separately gated private archive and central export-only integration.
+
 ## Product-owned archive, receipts and Downloads
 
 Cloud packages use a Development-only archive job and a separate protected export job.

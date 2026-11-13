@@ -250,8 +250,10 @@ class RelayTests(unittest.TestCase):
         started = time.monotonic()
         for count in range(1, 9):
             self.assertEqual(receive_exact(connection, 1), b"d")
-            wait_until(lambda: self.ledger.snapshot("account", "period-1").actual_bytes == count)
+            # The origin keeps pushing while the test process is descheduled.
+            wait_until(lambda: self.ledger.snapshot("account", "period-1").actual_bytes >= count)
         self.assertGreater(time.monotonic() - started, 0.45)
+        self.assertEqual(self.ledger.snapshot("account", "period-1").actual_bytes, 8)
         wait_until(lambda: source.counts()[1] == 8)
         connection.sendall(b"u")
         wait_until(lambda: self.ledger.snapshot("account", "period-1").actual_bytes == 9)
