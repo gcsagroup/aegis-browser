@@ -1,13 +1,9 @@
-From fb3eb8695cf7d28f68cb57a912f831504258104a Mon Sep 17 00:00:00 2001
+From d0fd925c83c054336e5f145a9367babc24379d7f Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 00:00:35 +0800
 Subject: [PATCH] fix(agent): finish bookmark checks after rate limits
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   4 +
- .../aegis/agent/aegis_agent_browsertest.cc    | 103 +++++++++++++++++-
- .../aegis/agent/aegis_browser_tools.cc        |  40 ++++---
- 3 files changed, 121 insertions(+), 26 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 04f68949e1fa5561387b098b4807b6d3caae56dd..c2ab010ccbc21a7b7a16e77ed819f2ab7967213a 100644
@@ -285,6 +281,3 @@ index caf749213e61f08f3a322db22aba0228da2a04da..63aaf8b3c2c92d8892ce51410acdba6e
        }
      }
    }
--- 
-2.52.0
-

@@ -1,12 +1,9 @@
-From e97f496eb02208a13f280684085ec58ed137b833 Mon Sep 17 00:00:00 2001
+From 0088843461c8801722b89d530f6c7469e4ab956b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 11 Oct 2026 07:05:07 +0800
 Subject: [PATCH] test(mac): remove raw libc buffer writes from signing fixture
 
 ---
- .../aegis/aegis_mac_signing_unittest.cc       | 28 +++++++++++--------
- .../ui/webui/help/aegis_github_update.h       |  4 +--
- 2 files changed, 18 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_mac_signing_unittest.cc b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
 index b2a88e3484ab8f7216e5c3f6a8b85cbed7f4417c..cb3d9f8229c05ae5898e5f36b61609047b0c2234 100644
@@ -90,6 +87,3 @@ index 3c84346ffc80d87448803d872056e6705121e091..4273f922960b1a46351b0411f85ac8c7
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

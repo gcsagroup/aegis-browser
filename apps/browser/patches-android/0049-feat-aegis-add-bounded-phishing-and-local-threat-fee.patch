@@ -1,47 +1,15 @@
-From 35deb208e4906e71ce4e00c8e6bd65dbcb787d10 Mon Sep 17 00:00:00 2001
+From 39a39e2589c24611cd7d4e3c6875a9cc3eb5a3ac Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 23:28:28 +0800
 Subject: [PATCH] feat(aegis): add bounded phishing and local threat feeds
 
 ---
- .../actor/execution_engine_unittest.cc        |   7 +-
- chrome/browser/aegis/BUILD.gn                 |   2 +
- .../aegis/aegis_phish_blocking_page.cc        |  59 ++++
- .../browser/aegis/aegis_phish_tab_helper.cc   |  74 +++--
- chrome/browser/aegis/aegis_phish_tab_helper.h |   3 +
- .../aegis/aegis_phish_tab_helper_unittest.cc  |   3 +-
- chrome/browser/aegis/aegis_service.cc         |  39 ++-
- chrome/browser/aegis/aegis_service.h          |   3 +
- .../aegis/generated/policy_worker_source.inc  |   4 +-
- chrome/browser/aegis/threat_feed_updater.cc   | 268 ++++++++++++++++++
- chrome/browser/aegis/threat_feed_updater.h    |  57 ++++
- .../actor_login_siwg_controller_unittest.cc   |   2 +-
- ...d_change_page_stability_waiter_unittest.cc |   2 +-
- .../browser/resources/aegis/policy_worker.ts  |   4 +-
- .../ui/webui/aegis/aegis_ui_handler.cc        |  36 +--
- chrome/common/aegis/BUILD.gn                  |   6 +-
- chrome/common/aegis/phish_score.cc            | 222 +++++++++++++--
- chrome/common/aegis/phish_score.h             |   1 +
- chrome/common/aegis/phish_score_unittest.cc   |  67 ++++-
- chrome/common/aegis/threat_feed_index.cc      | 245 ++++++++++++++++
- chrome/common/aegis/threat_feed_index.h       |  69 +++++
- .../aegis/threat_feed_index_unittest.cc       |  75 +++++
- chrome/common/chrome_render_frame.mojom       |  10 +-
- .../renderer/chrome_render_frame_observer.cc  |  70 +++--
- .../renderer/chrome_render_frame_observer.h   |   5 +-
- third_party/aegis_policy/policy_worker.js     |   4 +-
- 26 files changed, 1234 insertions(+), 103 deletions(-)
- create mode 100644 chrome/browser/aegis/threat_feed_updater.cc
- create mode 100644 chrome/browser/aegis/threat_feed_updater.h
- create mode 100644 chrome/common/aegis/threat_feed_index.cc
- create mode 100644 chrome/common/aegis/threat_feed_index.h
- create mode 100644 chrome/common/aegis/threat_feed_index_unittest.cc
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index e17d620b889bafcb8f9003fb86cf7f094658bb1c..afca830054148c9d23c447112eb13b71e2254486 100644
+index 58b4715b33a5dd660e5160e8977f552fa4bc2dea..b72efe631e1ce7f522cc165acf6067aa60092d9c 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -165,9 +165,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+@@ -167,9 +167,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
        RequestImageForContextNodeCallback callback) override {}
    void ExecuteWebUIJavaScript(const std::u16string& javascript) override {}
    void GetMediaFeedURL(GetMediaFeedURLCallback callback) override {}
@@ -1733,7 +1701,7 @@ index efaa533860e755f5ae9e2fc8900cb834dea6163e..a5139225cf26af5ba220f3a7446f19d6
    // Tells the render frame to load any blocked plugins matching the given
    // identifier (empty string matches all).
 diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
-index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e07958eb7 100644
+index a0dc63589a1ac7efdfbb014fcbf1bbffff8a61e5..c8604af7d5c4c5f2e522a53d88f8215fc647b794 100644
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
 @@ -72,6 +72,7 @@
@@ -1744,7 +1712,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  #include "third_party/blink/public/web/web_frame_content_dumper.h"
  #include "third_party/blink/public/web/web_input_element.h"
  #include "third_party/blink/public/web/web_local_frame.h"
-@@ -119,7 +120,6 @@ using content::RenderFrame;
+@@ -123,7 +124,6 @@ using content::RenderFrame;
  // Any text beyond this point will be clipped.
  static const size_t kMaxIndexChars = 65535;
  
@@ -1752,7 +1720,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  // For a page that auto-refreshes, we still show the bubble, if
  // the refresh delay is less than this value (in seconds).
  static constexpr base::TimeDelta kLocationChangeInterval = base::Seconds(10);
-@@ -229,8 +229,9 @@ ChromeRenderFrameObserver::ChromeRenderFrameObserver(
+@@ -233,8 +233,9 @@ ChromeRenderFrameObserver::ChromeRenderFrameObserver(
            base::Unretained(this)));
  
    // Don't do anything else for subframes.
@@ -1763,7 +1731,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  
  #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
    SetClientSidePhishingDetection();
-@@ -275,8 +276,9 @@ void ChromeRenderFrameObserver::ReadyToCommitNavigation(
+@@ -284,8 +285,9 @@ void ChromeRenderFrameObserver::ReadyToCommitNavigation(
      WebDocumentLoader* document_loader) {
    // Execute cache clear operations that were postponed until a navigation
    // event (including tab reload).
@@ -1774,7 +1742,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  
    // Dynamically instantiate TranslateAgent on-the-fly if this WebUI
    // exceptionally requires it.
-@@ -315,8 +317,9 @@ void ChromeRenderFrameObserver::DidSetPageLifecycleState(
+@@ -324,8 +326,9 @@ void ChromeRenderFrameObserver::DidSetPageLifecycleState(
  void ChromeRenderFrameObserver::DidFinishLoad() {
    WebLocalFrame* frame = render_frame()->GetWebFrame();
    // Don't do anything for subframes.
@@ -1785,7 +1753,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  
    GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
    if (!osdd_url.is_empty()) {
-@@ -332,16 +335,18 @@ void ChromeRenderFrameObserver::DidFinishLoad() {
+@@ -341,16 +344,18 @@ void ChromeRenderFrameObserver::DidFinishLoad() {
  void ChromeRenderFrameObserver::DidCreateNewDocument() {
  #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
    DCHECK(render_frame());
@@ -1806,7 +1774,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  
    // Connect to Mojo service on browser to notify it of the page's archive
    // properties.
-@@ -365,8 +370,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
+@@ -374,8 +379,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
    WebLocalFrame* frame = render_frame()->GetWebFrame();
  
    // Don't do anything for subframes.
@@ -1817,7 +1785,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  
    static crash_reporter::CrashKeyString<8> view_count_key("view-count");
    view_count_key.Set(base::NumberToString(blink::WebView::GetWebViewCount()));
-@@ -374,8 +380,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
+@@ -383,8 +389,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
  #if !BUILDFLAG(IS_ANDROID)
    if (render_frame()->GetEnabledBindings().HasAny(
            content::kWebUIBindingsPolicySet)) {
@@ -1828,7 +1796,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
      webui_javascript_.clear();
    }
  #endif
-@@ -659,27 +666,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
+@@ -670,27 +677,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
  }
  
  void ChromeRenderFrameObserver::CollectAegisPageSignals(
@@ -1877,7 +1845,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
          const blink::WebInputElement input =
              el.DynamicTo<blink::WebInputElement>();
          if (input.IsNull()) {
-@@ -691,8 +714,15 @@ void ChromeRenderFrameObserver::CollectAegisPageSignals(
+@@ -702,8 +725,15 @@ void ChromeRenderFrameObserver::CollectAegisPageSignals(
          }
        }
      }
@@ -1894,7 +1862,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
  }
  
  void ChromeRenderFrameObserver::LoadBlockedPlugins(
-@@ -932,11 +962,13 @@ bool ChromeRenderFrameObserver::NeedsDownscale(
+@@ -943,11 +973,13 @@ bool ChromeRenderFrameObserver::NeedsDownscale(
      const gfx::Size& original_image_size,
      int32_t requested_image_min_area_pixels,
      const gfx::Size& requested_image_max_size) {
@@ -1910,7 +1878,7 @@ index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e
    return true;
  }
  
-@@ -945,14 +977,16 @@ SkBitmap ChromeRenderFrameObserver::Downscale(
+@@ -956,14 +988,16 @@ SkBitmap ChromeRenderFrameObserver::Downscale(
      const SkBitmap& image,
      int requested_image_min_area_pixels,
      const gfx::Size& requested_image_max_size) {
@@ -1954,6 +1922,3 @@ index 6c37f1a09f6c05d0311278868c1a886e6b875d89..65ffcaa9f5f3a3dfa0d286e6328c97f0
 -${e.textSample}`.toLowerCase();for(let u of I)if(A.includes(u.toLowerCase())){o+=10,n.push({code:"urgency_language",weight:10,detail:u});break}let m=e.passwordFields??0,T=e.forms??0;return m>0&&(r||i||c)?(o+=25,n.push({code:"password_on_risky_origin",weight:25,detail:`passwordFields=${m}`})):m>0&&T>0&&o>=20&&(o+=12,n.push({code:"credential_form",weight:12})),f(e.url,o,n)}var y=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,s]=e.split("@");return`${t.slice(0,1)}***@${s}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function H(e){let t=0,s=!1;for(let o=e.length-1;o>=0;o--){let n=Number(e[o]);s&&(n*=2,n>9&&(n-=9)),t+=n,s=!s}return t%10===0}function l(e){let t=[];for(let r of y){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!H(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let s=[],o=-1;for(let r of t)r.start<o||(s.push(r),o=r.end);let n=e;for(let r=s.length-1;r>=0;r--){let i=s[r],a=y.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:s,redacted:n,blocked:s.length>0}}function k(e,t){let s=l(e);return s.blocked?t?{allowed:!0,payload:s.redacted,scan:s}:{allowed:!1,payload:s.redacted,scan:s}:{allowed:!0,payload:e,scan:s}}var z=2048,M=512,j=6e3;function W(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(l(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(l(t).redacted)}}).join("/")}function $(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=W(t.pathname);let s=[...new Set(t.searchParams.keys())];t.search="";for(let o of s)t.searchParams.append(l(o).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),l(t.toString()).redacted.slice(0,z)}catch{return"[INVALID_URL]"}}function S(e){return{url:$(e.url),title:l(e.title).redacted.slice(0,M),textSample:l(e.textSample).redacted.slice(0,j),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function F(e,t){let s=S(e),o=s.textSample.replace(/\s+/g," ").trim(),n=o.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(s.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(s.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=o.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function b(e,t){let s=S(e),o=F(s,t);return{schemaVersion:1,sanitizedSnapshot:s,heuristic:{summary:o.summary,bullets:o.bullets,risks:o.risks}}}function R(e){try{let t=new URL(e),s=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(s)}catch{return!0}}var P=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function x(e,t=[]){let s;try{s=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let o=new Set([...P,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...s.searchParams.keys()])o.has(i.toLowerCase())&&(n.push(i),s.searchParams.delete(i));s.hash&&/utm_|fbclid|gclid/i.test(s.hash)&&(s.hash="",n.push("#tracking-hash"));let r=s.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var B=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),K=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),Y=["_gcl_"],X=["_ga_","_gat_","__utm","mp_","_hj","amp_"],G=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],Z=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],J=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],V=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],Q=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function d(e,t){return t.reduce((s,o)=>e.includes(o)?s+1:s,0)}function w(e,t){return t.some(s=>e.startsWith(s))}var q=new Set(["c_user","datr","sb","xs","presence"]),ee=["facebook.com","messenger.com"];function te(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return G.some(s=>t===s||t.endsWith(`.${s}`))}function se(e,t){let s=e.toLowerCase();if(!q.has(s))return!1;let o=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ee.some(n=>o===n||o.endsWith(`.${n}`))}function C(e){let t=e.name.toLowerCase(),s=e.domain.toLowerCase();if(se(t,s))return"necessary";if(B.has(t)||w(t,Y))return"advertising";if(K.has(t)||w(t,X))return"analytics";if(te(s))return"advertising";let o=`${t} ${s}`,n={necessary:d(o,Q),functionality:d(o,V),analytics:d(o,J),advertising:d(o,Z)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var oe=8192,re=4096,ne=64*1024;function ie(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>oe||t.title.length>re||t.textSample.length>ne)return!1;for(let s of["forms","passwordFields"]){let o=t[s];if(o!==void 0&&(typeof o!="number"||!Number.isSafeInteger(o)||o<0||o>1e6))return!1}return!0}function ae(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ce(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return p(e.url??"");case"assessPhish":return _(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return l(e.text??"");case"gateOutbound":return k(e.text??"",!!e.userApproved);case"sanitizeUrl":return x(e.url??"");case"classifyCookie":return{category:C({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:R(e.url??"")};case"prepareSummary":return ie(e.snapshot)?b(e.snapshot,ae(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function le(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ce(t))}catch(t){let s=t instanceof Error?t.message:String(t);return JSON.stringify({error:s})}}var ue=globalThis;ue.aegisEvaluate=le;})();
 +"use strict";(()=>{var y=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],k=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var D=y,h=k,z=new Set(["bit.ly","buff.ly","cutt.ly","is.gd","ow.ly","rb.gy","rebrand.ly","shorturl.at","t.co","tinyurl.com"]),H=["account","auth","confirm","login","password","secure","signin","verify","wallet"],U=55,M=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function j(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function W(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function $(e){return e.includes("xn--")}function F(e){return e.replace(/0/g,"o").replace(/1/g,"i").replace(/3/g,"e").replace(/4/g,"a").replace(/5/g,"s").replace(/7/g,"t")}function B(e,t){if(Math.abs(e.length-t.length)>1)return!1;if(e===t)return!0;let o=0,s=0,n=0;for(;o<e.length&&s<t.length;){if(e[o]===t[s]){o+=1,s+=1;continue}if(n+=1,n>1)return!1;e.length>t.length?o+=1:(t.length>e.length||(o+=1),s+=1)}return n+ +(o<e.length||s<t.length)<=1}function b(e){let t=e.toLowerCase().split("."),o=new Set(["co.uk","com.au","com.br","com.cn","com.hk","co.jp","co.kr"]),s=t.slice(-2).join("."),n=o.has(s)?t.length-3:t.length-2;return t[Math.max(0,n)]??""}function S(e){try{return decodeURIComponent(e)}catch{return e}}function K(e){let t=e.toLowerCase().split("."),o=b(e);for(let s of h){if(o===s)continue;if(t.some(i=>i===s||i.startsWith(`${s}-`)||i.endsWith(`-${s}`)||i.includes(`-${s}-`)))return{brand:s,reason:"brand_spoof_host"};if(s.length<5)continue;if(t.some(i=>{if(i.length<5||i===s)return!1;let a=F(i);return a===s||B(a,s)}))return{brand:s,reason:"brand_lookalike_host"}}return null}function Y(e,t){let o=b(t),s=S(e).toLowerCase().split(/[^a-z0-9]+/);for(let n of h)if(n!==o&&s.includes(n))return n;return null}function R(e,t,o){let s=Math.min(100,t);return{score:s,severity:j(s),reasons:o,shouldBlock:s>=U,url:e}}function f(e,t=[]){let o;try{o=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let s=o.hostname.toLowerCase();if(t.some(u=>s===u.toLowerCase()||s.endsWith(`.${u.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],r=0;o.protocol==="http:"&&(r+=12,n.push({code:"insecure_http",weight:12})),W(s)&&(r+=35,n.push({code:"ip_hostname",weight:35,detail:s})),$(s)&&(r+=25,n.push({code:"punycode_host",weight:25,detail:s})),s.split(".").length>=5&&(r+=15,n.push({code:"deep_subdomain",weight:15,detail:s}));let i=s.split(".").pop()??"";D.includes(i)&&(r+=18,n.push({code:"suspicious_tld",weight:18,detail:i}));let a=K(s);if(a){let u=a.reason==="brand_lookalike_host"?40:30;r+=u,n.push({code:a.reason,weight:u,detail:a.brand})}let c=Y(o.pathname,s);c&&(r+=15,n.push({code:"brand_in_path",weight:15,detail:c}));let g=S(o.pathname).toLowerCase(),m=H.find(u=>g.split(/[^a-z0-9]+/).includes(u));return m&&(r+=10,n.push({code:"credential_path",weight:10,detail:m})),z.has(s)&&(r+=15,n.push({code:"shortened_url",weight:15,detail:s})),(o.username||e.includes("@"))&&(r+=20,n.push({code:"at_symbol_trick",weight:20})),R(e,r,n)}function w(e,t=[]){let o=f(e.url,t);if(o.reasons[0]?.code==="allowlisted"||o.reasons[0]?.code==="invalid_url")return o;let s=o.score,n=[...o.reasons],r=o.reasons.find(l=>l.code==="brand_spoof_host"||l.code==="brand_lookalike_host")?.detail??null,i=o.reasons.some(l=>l.code==="ip_hostname"),a=o.reasons.some(l=>l.code==="punycode_host"),c=null;try{c=new URL(e.url)}catch{c=null}let g=c?.protocol==="http:",m=`${e.title}
 +${e.textSample}`.toLowerCase();for(let l of M)if(m.includes(l.toLowerCase())){s+=10,n.push({code:"urgency_language",weight:10,detail:l});break}let u=e.passwordFields??0,O=e.forms??0,_=e.crossSiteFormActions??0;if(u>0&&_>0)s+=45,n.push({code:"cross_site_credential_submit",weight:45,detail:`crossSiteForms=${_}`});else if(u>0&&(r||i||g||a)){let l=a?30:25;s+=l,n.push({code:"password_on_risky_origin",weight:l,detail:`passwordFields=${u}`})}else u>0&&O>0&&s>=20&&(s+=12,n.push({code:"credential_form",weight:12}));if(u>0){let l=h.find(N=>m.includes(N));l&&!r&&(s+=15,n.push({code:"brand_credential_page",weight:15,detail:l}))}return R(e.url,s,n)}var P=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,o]=e.split("@");return`${t.slice(0,1)}***@${o}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function X(e){let t=0,o=!1;for(let s=e.length-1;s>=0;s--){let n=Number(e[s]);o&&(n*=2,n>9&&(n-=9)),t+=n,o=!o}return t%10===0}function d(e){let t=[];for(let r of P){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!X(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let o=[],s=-1;for(let r of t)r.start<s||(o.push(r),s=r.end);let n=e;for(let r=o.length-1;r>=0;r--){let i=o[r],a=P.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:o,redacted:n,blocked:o.length>0}}function x(e,t){let o=d(e);return o.blocked?t?{allowed:!0,payload:o.redacted,scan:o}:{allowed:!1,payload:o.redacted,scan:o}:{allowed:!0,payload:e,scan:o}}var G=2048,Z=512,J=6e3;function V(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(d(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(d(t).redacted)}}).join("/")}function Q(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=V(t.pathname);let o=[...new Set(t.searchParams.keys())];t.search="";for(let s of o)t.searchParams.append(d(s).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),d(t.toString()).redacted.slice(0,G)}catch{return"[INVALID_URL]"}}function C(e){return{url:Q(e.url),title:d(e.title).redacted.slice(0,Z),textSample:d(e.textSample).redacted.slice(0,J),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function q(e,t){let o=C(e),s=o.textSample.replace(/\s+/g," ").trim(),n=s.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(o.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(o.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=s.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function A(e,t){let o=C(e),s=q(o,t);return{schemaVersion:1,sanitizedSnapshot:o,heuristic:{summary:s.summary,bullets:s.bullets,risks:s.risks}}}function T(e){try{let t=new URL(e),o=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(o)}catch{return!0}}var L=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function E(e,t=[]){let o;try{o=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let s=new Set([...L,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...o.searchParams.keys()])s.has(i.toLowerCase())&&(n.push(i),o.searchParams.delete(i));o.hash&&/utm_|fbclid|gclid/i.test(o.hash)&&(o.hash="",n.push("#tracking-hash"));let r=o.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var ee=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),te=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),oe=["_gcl_"],se=["_ga_","_gat_","__utm","mp_","_hj","amp_"],ne=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],re=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],ie=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],ae=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],ce=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function p(e,t){return t.reduce((o,s)=>e.includes(s)?o+1:o,0)}function v(e,t){return t.some(o=>e.startsWith(o))}var le=new Set(["c_user","datr","sb","xs","presence"]),ue=["facebook.com","messenger.com"];function de(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return ne.some(o=>t===o||t.endsWith(`.${o}`))}function me(e,t){let o=e.toLowerCase();if(!le.has(o))return!1;let s=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ue.some(n=>s===n||s.endsWith(`.${n}`))}function I(e){let t=e.name.toLowerCase(),o=e.domain.toLowerCase();if(me(t,o))return"necessary";if(ee.has(t)||v(t,oe))return"advertising";if(te.has(t)||v(t,se))return"analytics";if(de(o))return"advertising";let s=`${t} ${o}`,n={necessary:p(s,ce),functionality:p(s,ae),analytics:p(s,ie),advertising:p(s,re)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var pe=8192,ge=4096,he=64*1024;function fe(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>pe||t.title.length>ge||t.textSample.length>he)return!1;for(let o of["forms","passwordFields"]){let s=t[o];if(s!==void 0&&(typeof s!="number"||!Number.isSafeInteger(s)||s<0||s>1e6))return!1}return!0}function _e(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ye(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return f(e.url??"");case"assessPhish":return w(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return d(e.text??"");case"gateOutbound":return x(e.text??"",!!e.userApproved);case"sanitizeUrl":return E(e.url??"");case"classifyCookie":return{category:I({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:T(e.url??"")};case"prepareSummary":return fe(e.snapshot)?A(e.snapshot,_e(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function ke(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ye(t))}catch(t){let o=t instanceof Error?t.message:String(t);return JSON.stringify({error:o})}}var be=globalThis;be.aegisEvaluate=ke;})();
--- 
-2.52.0
-

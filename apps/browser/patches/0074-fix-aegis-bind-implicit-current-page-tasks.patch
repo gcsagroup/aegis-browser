@@ -1,15 +1,9 @@
-From f545b5b8f1cd9ef8c4d0cdfc0aa27de0627c79a2 Mon Sep 17 00:00:00 2001
+From 0e9c7b7a50f06b8ebd9a031df5f6d3885b415227 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 17:04:01 +0800
 Subject: [PATCH] fix(aegis): bind implicit current-page tasks
 
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    | 44 +++++++++++++++++++
- chrome/browser/resources/aegis_agent/agent.ts | 18 +++++++-
- .../aegis_agent/aegis_agent_page_handler.cc   | 44 ++++++++++++++++---
- .../aegis_agent/aegis_agent_page_handler.h    |  1 +
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 14 ++++--
- 5 files changed, 110 insertions(+), 11 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index eb3e5270f40d703908e19310d61160a9f1dcd9e4..bd55a7abefe4b1f65a98a5034110592fbd4ecf88 100644
@@ -255,6 +249,3 @@ index d9b854fefe20c5b6a892460bd69744c97b4fe2f6..a4f18d61703ddfb00701670416e3da98
    add("goalRoutingError",
        "The AI could not determine a safe browser entry. Nothing was opened. Please clarify the goal and try again.",
        "AI 没有判断出可靠的浏览器入口，本次没有打开网页。请把目标说得更具体后重试。",
--- 
-2.52.0
-

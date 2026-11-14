@@ -1,37 +1,15 @@
-From e7ff113c2f3506063f4d767c08c046915ec882c5 Mon Sep 17 00:00:00 2001
+From ef3a6353d40a1f4c026d48e081ebbae33f0565f1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 01:30:31 +0800
 Subject: [PATCH] fix(aegis): route goals through model before browsing
 
 ---
- .../actor/ui/actor_ui_tab_controller.cc       |  23 +++
- .../actor/ui/actor_ui_tab_controller.h        |   1 +
- .../ui/actor_ui_tab_controller_interface.h    |   4 +
- .../actor/ui/handoff_button_controller.cc     |  12 +-
- .../ui/handoff_button_controller_unittest.cc  |   1 +
- .../mock_actor_ui_tab_controller.h            |   1 +
- .../aegis/agent/aegis_agent_browsertest.cc    |  53 ++++-
- .../aegis/agent/aegis_agent_service.cc        |  98 ++++++++-
- .../browser/aegis/agent/aegis_agent_service.h |  15 ++
- .../aegis/agent/agent_core_unittest.cc        |   9 +
- chrome/browser/aegis/agent/agent_execution.cc |  12 +-
- chrome/browser/aegis/agent/agent_execution.h  |   4 +-
- .../aegis/agent/agent_execution_unittest.cc   |   9 +
- chrome/browser/aegis/agent/agent_planner.cc   | 190 +++++++++++++++++-
- chrome/browser/aegis/agent/agent_planner.h    |  28 ++-
- .../aegis/agent/agent_planner_unittest.cc     |  82 +++++++-
- chrome/browser/aegis/agent/agent_workflow.cc  |  12 ++
- chrome/browser/resources/aegis_agent/agent.ts |  32 ++-
- .../aegis_agent/aegis_agent_page_handler.cc   | 169 ++++++++++------
- .../aegis_agent/aegis_agent_page_handler.h    |  20 ++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  43 ++--
- 21 files changed, 718 insertions(+), 100 deletions(-)
 
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.cc b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
-index af72dd4200b7a6e551f30e7698f674a466057a17..c91f34e01b4d1f7eedb49cea8c99d057c3a1a09c 100644
+index f58d2393ba9a602d00fb86a7638ff141f2476d7b..0f9fed9c47eda1f8302198160bd601e10f1af403 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
-@@ -15,6 +15,8 @@
+@@ -16,12 +16,15 @@
  #include "chrome/browser/actor/ui/actor_ui_tab_controller_interface.h"
  #include "chrome/browser/actor/ui/actor_ui_window_controller.h"
  #include "chrome/browser/actor/ui/handoff_button_controller.h"
@@ -40,15 +18,14 @@ index af72dd4200b7a6e551f30e7698f674a466057a17..c91f34e01b4d1f7eedb49cea8c99d057
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-@@ -22,6 +24,7 @@
- #include "chrome/browser/ui/tabs/tab_strip_model.h"
  #include "chrome/common/chrome_features.h"
+ #include "components/constrained_window/constrained_window_views.h"
  #include "components/tabs/public/tab_interface.h"
 +#include "components/actor/core/task_source_info.h"
  #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
- 
- DEFINE_USER_DATA(actor::ui::ActorUiTabController);
-@@ -251,6 +254,26 @@ void ActorUiTabController::SetActorTaskResume() {
+ #include "ui/views/bubble/bubble_dialog_model_host.h"
+ #include "ui/views/widget/widget.h"
+@@ -254,6 +257,26 @@ void ActorUiTabController::SetActorTaskResume() {
    }
  }
  
@@ -76,22 +53,23 @@ index af72dd4200b7a6e551f30e7698f674a466057a17..c91f34e01b4d1f7eedb49cea8c99d057
  // and onto contents container, investigate removing debouncing on the tab
  // controller side and handle it on the ui component side.
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.h b/chrome/browser/actor/ui/actor_ui_tab_controller.h
-index a848b2a62cc4d85b40a21a83da8d75c07f147b8e..3834b4f368b176f03e084e91220f1f31e222406c 100644
+index 591a3d4c64dcfa0407166901fbf0474931889ed2..6ac11be1e620e44dfb4177b6159d3a1ca088fe70 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.h
-@@ -34,6 +34,7 @@ class ActorUiTabController : public ActorUiTabControllerInterface {
-   UiTabState GetCurrentUiTabState() const override;
+@@ -49,6 +49,8 @@ class ActorUiTabController : public ActorUiTabControllerInterface {
+       override;
  
  #if !BUILDFLAG(IS_ANDROID)
 +  void OpenTaskUi() override;
-   void OnWebContentsAttached() override;
-   void OnViewBoundsChanged() override;
-   void OnOverlayHoverStatusChanged(bool is_hovering) override;
++
+   // Closes this tab's navigation confirmation dialog, if one is showing.
+   void CancelNavigationConfirmation(tabs::TabInterface* tab) override;
+ 
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
-index 7ca7ad87ac0bcf2ddbb7b195c28755b174152cfa..a6cab85cc0307161bcceccd76354ecd8114864e0 100644
+index 4d3c2d6b3da9a61c56f8eb414e572d2a69e4217f..0a229c851270c18f8b83766d74958294f063972b 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
-@@ -80,6 +80,10 @@ class ActorUiTabControllerInterface {
+@@ -81,6 +81,10 @@ class ActorUiTabControllerInterface : public ActorNavigationThrottle::Delegate {
        ActorTabIndicatorStateChangedCallback callback);
  
  #if !BUILDFLAG(IS_ANDROID)
@@ -145,11 +123,11 @@ index 9cc786427fc9ea52a7c12a0b51268a4ae2f7bef6..d510854f1908a9950fd28bb26425e477
    controller_->PressButton();
  
 diff --git a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
-index 8951b21d116671bda0eb50623ae7e5e794328c04..a7115392992538f70ea61717fea130513bd663e1 100644
+index 499196cde19e4a74a11d5b173a2af6338df798e9..bfc4b4067a478bc839ea62719b51f3da59ab9362 100644
 --- a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
-@@ -43,6 +43,7 @@ class MockActorUiTabController : public ActorUiTabControllerInterface {
-   MOCK_METHOD(UiTabState, GetCurrentUiTabState, (), (const, override));
+@@ -55,6 +55,7 @@ class MockActorUiTabController : public ActorUiTabControllerInterface {
+               (override));
  
  #if !BUILDFLAG(IS_ANDROID)
 +  MOCK_METHOD(void, OpenTaskUi, (), (override));
@@ -1429,6 +1407,3 @@ index 84703e61665077c1cdb6b34a49e11a40ad492b60..053858df2c5126e9a730a2f98f9f9305
    add("resultTitle", "Result", "任务结果", "任務結果");
    add("resultSources", "Sources", "来源", "來源");
    add("unfinishedItems", "Not finished", "未完成事项", "未完成事項");
--- 
-2.52.0
-

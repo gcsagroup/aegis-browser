@@ -1,12 +1,9 @@
-From 70cce4b1556392581dd08f9dfd2f76b832337d12 Mon Sep 17 00:00:00 2001
+From dd1774b1e504097d99fdf801cf336f2bdd0063ca Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:05:18 +0800
 Subject: [PATCH] fix(aegis): block non-public model routes
 
 ---
- chrome/browser/aegis/agent/agent_planner.cc        | 14 ++++----------
- .../browser/aegis/agent/agent_planner_unittest.cc  |  4 +++-
- 2 files changed, 7 insertions(+), 11 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
 index d67bef0cba7d7efb800d3c777fb04ce8ff6a0410..a8d4774a3ce803005e647e6a5b570576926bbb28 100644
@@ -57,6 +54,3 @@ index e1a3f59569c485984a6c4ace78c28f9c1b9b2e35..b795469f1b39952ee5f4b08c86f07722
    for (std::string_view target : kPrivateModelTargets) {
      EXPECT_FALSE(ParseAndValidateGoalRoute(
          GoalRouteEvent("research", "open_url", std::string(target)), &error))
--- 
-2.52.0
-

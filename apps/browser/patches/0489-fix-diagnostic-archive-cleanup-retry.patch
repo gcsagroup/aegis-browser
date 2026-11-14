@@ -1,0 +1,431 @@
+From 87d6facc6c7e3a8b3e9f4a8603fb536ec0691d5e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 20:24:01 +0800
+Subject: [PATCH] fix(access-log): recover failed archive deletion before
+ sharing again
+---
+
+diff --git a/chrome/browser/aegis/access/access_core_log_share.cc b/chrome/browser/aegis/access/access_core_log_share.cc
+index 75190a574075bf1924a2b6aa41d555df9e605ccd..d696afb29b231d83b82b5de64da53704e6f80970 100644
+--- a/chrome/browser/aegis/access/access_core_log_share.cc
++++ b/chrome/browser/aegis/access/access_core_log_share.cc
+@@ -4,6 +4,7 @@
+ #include <sys/stat.h>
+ 
+ #include <atomic>
++#include <cerrno>
+ #include <map>
+ #include <vector>
+ 
+@@ -28,29 +29,44 @@ base::LazyThreadPoolSequencedTaskRunner g_archive_runner =
+         base::TaskTraits(base::MayBlock(),
+                          base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
+ 
+-bool IsOwnedDirectory(const base::FilePath& path, bool require_private) {
++bool IsOwnedDirectory(const base::FilePath& path) {
+   struct stat info;
+   return lstat(path.value().c_str(), &info) == 0 && S_ISDIR(info.st_mode) &&
+-         info.st_uid == geteuid() &&
+-         (!require_private || (info.st_mode & 0777) == 0700);
++         info.st_uid == geteuid();
+ }
+ 
+-// Accessed only on g_archive_runner. Recover once before sharing so another
+-// active share from the same original profile is never swept.
+-bool EnsureArchiveRecovery(const base::FilePath& profile) {
+-  static base::NoDestructor<std::map<base::FilePath, bool>> results;
+-  auto [it, inserted] = results->try_emplace(profile, false);
+-  if (inserted) {
+-    it->second = RecoverCoreLogArchives(profile);
+-    if (!it->second)
+-      LOG(WARNING) << "Could not recover abandoned Access log archives.";
++bool RemoveOwnedArchive(const base::FilePath& path) {
++  struct stat info;
++  if (lstat(path.value().c_str(), &info) != 0)
++    return errno == ENOENT;
++  return S_ISDIR(info.st_mode) && info.st_uid == geteuid() &&
++         (info.st_mode & 0777) == 0700 && base::DeletePathRecursively(path);
++}
++
++// Accessed only on g_archive_runner. There is one active archive per
++// original profile, including its private browsing windows.
++struct ArchiveState {
++  bool recovered = false;
++  bool active = false;
++
++  bool Recover(const base::FilePath& profile) {
++    if (!active && !recovered) {
++      recovered = RecoverCoreLogArchives(profile);
++      if (!recovered)
++        LOG(WARNING) << "Could not recover abandoned Access log archives.";
++    }
++    return recovered;
+   }
+-  return it->second;
++};
++
++ArchiveState& StateForProfile(const base::FilePath& profile) {
++  static base::NoDestructor<std::map<base::FilePath, ArchiveState>> states;
++  return (*states)[profile];
+ }
+ }  // namespace
+ 
+ bool RecoverCoreLogArchives(const base::FilePath& profile) {
+-  if (!IsOwnedDirectory(profile, false))
++  if (!IsOwnedDirectory(profile))
+     return false;
+   base::FileEnumerator files(
+       profile, false, base::FileEnumerator::FILES |
+@@ -69,7 +85,7 @@ bool RecoverCoreLogArchives(const base::FilePath& profile) {
+     if (suffix.find_first_not_of(
+             "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") != suffix.npos)
+       continue;
+-    if (!IsOwnedDirectory(path, true) || !base::DeletePathRecursively(path))
++    if (!RemoveOwnedArchive(path))
+       recovered = false;
+   }
+   return recovered && files.GetError() == base::File::FILE_OK;
+@@ -155,8 +171,18 @@ class CoreLogShareSession::Writer {
+     shutdown_->CompleteStop();
+   }
+   base::FilePath Write(base::FilePath parent, std::string text, bool recover) {
+-    if (shutdown_->stop_requested() || (recover && !EnsureArchiveRecovery(parent)))
++    if (shutdown_->stop_requested())
+       return {};
++    if (recover) {
++      auto& state = StateForProfile(parent);
++      if (state.active)
++        return {};
++      cleanup_failed_ = !state.Recover(parent);
++      if (cleanup_failed_)
++        return {};
++      state.active = true;
++      profile_ = parent;
++    }
+     const bool created = directory_.CreateUniqueTempDirUnderPath(
+         parent, kCoreLogSharePrefix);
+     // mkdtemp creates a 0700 directory.
+@@ -164,17 +190,28 @@ class CoreLogShareSession::Writer {
+       return {};
+     return directory_.GetPath().AppendASCII(kCoreLogArchive);
+   }
+-  void CleanUp() {
+-    if (directory_.IsValid()) {
+-      const bool deleted = directory_.Delete();
+-      if (!deleted)
+-        LOG(WARNING) << "Could not delete the temporary Access log archive.";
++  bool CleanUp() {
++    const auto directory = directory_.Take();
++    if (!directory.empty() && !RemoveOwnedArchive(directory)) {
++      // Startup-style recovery on the same sequence retries this directory
++      // before another copy can be made. Leave the path for that retry.
++      cleanup_failed_ = true;
++      LOG(WARNING) << "Could not delete the temporary Access log archive.";
++    }
++    if (!profile_.empty()) {
++      auto& state = StateForProfile(profile_);
++      state.recovered = !cleanup_failed_;
++      state.active = false;
++      profile_.clear();
+     }
++    return !cleanup_failed_;
+   }
+ 
+  private:
+   std::shared_ptr<ShutdownHandle> shutdown_;
++  base::FilePath profile_;
+   base::ScopedTempDir directory_;
++  bool cleanup_failed_ = false;
+ };
+ 
+ void CoreLogShareSession::ShutdownHandle::StopOnWriter() {
+@@ -187,13 +224,15 @@ CoreLogShareSession::~CoreLogShareSession() = default;
+ 
+ void CoreLogShareSession::RecoverAtStartup(const base::FilePath& profile) {
+   g_archive_runner.Get()->PostTask(FROM_HERE, base::BindOnce(
+-      [](base::FilePath path) { EnsureArchiveRecovery(path); }, profile));
++      [](base::FilePath path) { StateForProfile(path).Recover(path); }, profile));
+ }
+ 
+ void CoreLogShareSession::Start(const base::FilePath& profile,
+-                               std::string preview, Ready ready) {
+-  StartOn(std::move(preview), std::move(ready), g_archive_runner.Get(),
+-          profile, /*recover=*/true);
++                               std::string preview,
++                               Ready ready,
++                               Cleanup cleanup) {
++  StartOn(std::move(preview), std::move(ready), std::move(cleanup),
++          g_archive_runner.Get(), profile, /*recover=*/true);
+ }
+ 
+ void CoreLogShareSession::StartForTesting(
+@@ -201,18 +240,21 @@ void CoreLogShareSession::StartForTesting(
+     Ready ready,
+     scoped_refptr<base::SequencedTaskRunner> runner,
+     base::FilePath parent) {
+-  StartOn(std::move(preview), std::move(ready), std::move(runner),
++  StartOn(std::move(preview), std::move(ready), Cleanup(), std::move(runner),
+           std::move(parent), /*recover=*/false);
+ }
+ 
+ void CoreLogShareSession::StartOn(
+     std::string preview,
+     Ready ready,
++    Cleanup cleanup,
+     scoped_refptr<base::SequencedTaskRunner> runner,
+     base::FilePath parent,
+     bool recover) {
+   if (shutting_down_ || writer_) {
+     std::move(ready).Run({}, {});
++    if (cleanup)
++      std::move(cleanup).Run(true);
+     return;
+   }
+   shutdown_ = std::make_shared<ShutdownHandle>(runner);
+@@ -223,20 +265,38 @@ void CoreLogShareSession::StartOn(
+   writer_.AsyncCall(&Writer::Write)
+       .WithArgs(std::move(parent), std::move(preview), recover)
+       .Then(base::BindOnce(&CoreLogShareSession::OnWritten, weak_.GetWeakPtr(),
+-                           std::move(ready)));
++                           std::move(ready), std::move(cleanup)));
+ }
+ 
+-void CoreLogShareSession::OnWritten(Ready ready, base::FilePath path) {
++void CoreLogShareSession::OnWritten(Ready ready,
++                                   Cleanup cleanup,
++                                   base::FilePath path) {
+   if (shutdown_->stop_requested()) {
+     Finish();
+     std::move(ready).Run({}, {});
++    if (cleanup)
++      std::move(cleanup).Run(true);
+     return;
+   }
+   base::ScopedClosureRunner release(
+-      base::BindOnce(&CoreLogShareSession::Finish, weak_.GetWeakPtr()));
++      base::BindOnce(&CoreLogShareSession::Release, weak_.GetWeakPtr(),
++                     std::move(cleanup)));
+   std::move(ready).Run(std::move(path), std::move(release));
+ }
+ 
++void CoreLogShareSession::Release(Cleanup cleanup) {
++  writer_.AsyncCall(&Writer::CleanUp)
++      .Then(base::BindOnce(
++          [](base::WeakPtr<CoreLogShareSession> session, Cleanup done,
++             bool cleaned) {
++            if (!session)
++              return;
++            session->Finish();
++            if (done)
++              std::move(done).Run(cleaned);
++          }, weak_.GetWeakPtr(), std::move(cleanup)));
++}
++
+ void CoreLogShareSession::Finish() {
+   weak_.InvalidateWeakPtrs();
+   writer_.Reset();
+diff --git a/chrome/browser/aegis/access/access_core_log_share.h b/chrome/browser/aegis/access/access_core_log_share.h
+index 62afdc8df097f8512f4cfa1e03d25220acae1e89..988c4bbd1dbe69e7f59a8700842310346c213daf 100644
+--- a/chrome/browser/aegis/access/access_core_log_share.h
++++ b/chrome/browser/aegis/access/access_core_log_share.h
+@@ -25,10 +25,14 @@ class CoreLogShareSession {
+  public:
+   using Ready =
+       base::OnceCallback<void(base::FilePath, base::ScopedClosureRunner)>;
++  using Cleanup = base::OnceCallback<void(bool)>;
+   CoreLogShareSession();
+   ~CoreLogShareSession();
+   static void RecoverAtStartup(const base::FilePath& profile);
+-  void Start(const base::FilePath& profile, std::string preview, Ready ready);
++  void Start(const base::FilePath& profile,
++             std::string preview,
++             Ready ready,
++             Cleanup cleanup);
+   void ShutDown();
+   // Runs cleanup on writer sequences and completes without a UI reply. Also
+   // includes writers whose UI owner is already awaiting asynchronous destruction.
+@@ -43,10 +47,12 @@ class CoreLogShareSession {
+   class ShutdownHandle;
+   void StartOn(std::string preview,
+                Ready ready,
++               Cleanup cleanup,
+                scoped_refptr<base::SequencedTaskRunner> runner,
+                base::FilePath parent,
+                bool recover);
+-  void OnWritten(Ready ready, base::FilePath path);
++  void OnWritten(Ready ready, Cleanup cleanup, base::FilePath path);
++  void Release(Cleanup cleanup);
+   void Finish();
+ 
+   bool shutting_down_ = false;
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index 59789946243a05337818bf12e5e0c57efc03b80a..baaa85fdc6d31ff1fde4656b8b0edcb9c56c42f0 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -397,6 +397,56 @@ bool WaitWithoutUiReplies(const std::shared_ptr<base::WaitableEvent>& event) {
+   return event->TimedWait(base::Seconds(5));
+ }
+ 
++TEST(AccessCoreLogArchiveTest, FailedCleanupBlocksNewArchiveUntilRecovery) {
++  base::test::TaskEnvironment environment;
++  base::ScopedTempDir parent;
++  ASSERT_TRUE(parent.CreateUniqueTempDir());
++  CoreLogShareSession session;
++  base::FilePath folder;
++  base::ScopedClosureRunner release;
++  std::optional<bool> cleaned;
++  session.Start(parent.GetPath(), "private destination",
++                base::BindLambdaForTesting(
++                    [&](base::FilePath file, base::ScopedClosureRunner cleanup) {
++                      folder = file.DirName();
++                      release = std::move(cleanup);
++                    }),
++                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
++  environment.RunUntilIdle();
++  ASSERT_FALSE(folder.empty());
++  // Make the parent non-writable. This prevents removing the archive
++  // directory while keeping its identity intact for the retry.
++  ASSERT_TRUE(base::SetPosixFilePermissions(parent.GetPath(), 0500));
++  release.RunAndReset();
++  environment.RunUntilIdle();
++  EXPECT_EQ(cleaned, false);
++  EXPECT_TRUE(base::PathExists(folder));
++  bool blocked = false;
++  session.Start(parent.GetPath(), "another destination",
++                base::BindLambdaForTesting(
++                    [&](base::FilePath file, base::ScopedClosureRunner) {
++                      blocked = file.empty();
++                    }),
++                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
++  environment.RunUntilIdle();
++  EXPECT_TRUE(blocked);
++  EXPECT_EQ(cleaned, false);
++  EXPECT_TRUE(base::PathExists(folder));
++  ASSERT_TRUE(base::SetPosixFilePermissions(parent.GetPath(), 0700));
++
++  bool written = false;
++  session.Start(parent.GetPath(), "new destination",
++                base::BindLambdaForTesting(
++                    [&](base::FilePath file, base::ScopedClosureRunner) {
++                      written = !file.empty() && base::PathExists(file);
++                    }),
++                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
++  environment.RunUntilIdle();
++  EXPECT_TRUE(written);
++  EXPECT_EQ(cleaned, true);
++  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
++}
++
+ TEST(AccessCoreLogArchiveTest, SessionEndingCleansAnOpenPickerWithoutUiReplies) {
+   base::test::TaskEnvironment environment;
+   base::ScopedTempDir parent;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index fda7c6f06dfbdd49b8ca766b57e999901b6b9f64..7e01fefd0d1685f31e11cd985eb1b208ea9667a3 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -427,33 +427,47 @@ void AccessSiteProxyBubbleController::SetCoreLogLevel(std::string_view level) {
+   ++state_revision_;
+ }
+ #if BUILDFLAG(IS_MAC)
+-void AccessSiteProxyBubbleController::ShareCoreLogs(content::WebContents* tab, std::string preview, uint64_t version,
+-    base::OnceCallback<void(bool)> done) {
++void AccessSiteProxyBubbleController::ShareCoreLogs(
++    content::WebContents* tab,
++    std::string preview,
++    uint64_t version,
++    base::OnceCallback<void(CoreLogShareResult)> done) {
+   if (!CanViewCoreLogs() || !tab ||
+       tab->GetBrowserContext() != profile_ || preview.empty() || !core_logs_->CanShare(version)) {
+-    std::move(done).Run(false);
++    std::move(done).Run(CoreLogShareResult::kFailed);
+     return;
+   }
++  auto picker_succeeded = std::make_shared<bool>(false);
+   log_share_.Start(profile_->GetOriginalProfile()->GetPath(), std::move(preview), base::BindOnce(
+       [](base::WeakPtr<content::WebContents> tab, content::GlobalRenderFrameHostId frame,
+          scoped_refptr<AccessCoreLogStore> store, uint64_t version,
+-         base::OnceCallback<void(bool)> done, base::FilePath path,
++         std::shared_ptr<bool> picker_succeeded, base::FilePath path,
+          base::ScopedClosureRunner release) {
+         if (!tab || path.empty() || !store->CanShare(version) ||
+             tab->GetPrimaryMainFrame()->GetGlobalId() != frame ||
+             tab->GetVisibility() != content::Visibility::VISIBLE ||
+             !tab->GetRenderWidgetHostView()) {
+-          std::move(done).Run(false);
+           return;
+         }
+         tab->GetRenderWidgetHostView()->ShowSharePicker("", "", GURL(), {path.value()},
+-            base::BindOnce([](base::ScopedClosureRunner release, base::OnceCallback<void(bool)> done,
++            base::BindOnce([](base::ScopedClosureRunner release, std::shared_ptr<bool> picker_succeeded,
+                               blink::mojom::ShareError result) {
++              *picker_succeeded = result != blink::mojom::ShareError::INTERNAL_ERROR;
+               release.RunAndReset();
+-              std::move(done).Run(result != blink::mojom::ShareError::INTERNAL_ERROR);
+-            }, std::move(release), std::move(done)));
++            }, std::move(release), std::move(picker_succeeded)));
+       }, tab->GetWeakPtr(), tab->GetPrimaryMainFrame()->GetGlobalId(), core_logs_,
+-      version, std::move(done)));
++      version, picker_succeeded),
++      base::BindOnce([](std::shared_ptr<bool> picker_succeeded,
++                        base::OnceCallback<void(CoreLogShareResult)> done,
++                        bool cleaned) {
++        auto result = CoreLogShareResult::kFailed;
++        if (!cleaned) {
++          result = CoreLogShareResult::kCleanupFailed;
++        } else if (*picker_succeeded) {
++          result = CoreLogShareResult::kCompleted;
++        }
++        std::move(done).Run(result);
++      }, picker_succeeded, std::move(done)));
+ }
+ #endif
+ void AccessSiteProxyBubbleController::CreateLocalCore() {
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index c915f3aa344ee73c7a7acee83b352d82206c1164..b03f6de1d6cab9c079b0ebd3215b3b9a3032c448 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -52,7 +52,11 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   AccessCoreLogStore* core_logs() const { return core_logs_.get(); }
+   void SetCoreLogLevel(std::string_view level);
+ #if BUILDFLAG(IS_MAC)
+-  void ShareCoreLogs(content::WebContents* tab, std::string preview, uint64_t version, base::OnceCallback<void(bool)> done);
++  enum class CoreLogShareResult { kCompleted, kFailed, kCleanupFailed };
++  void ShareCoreLogs(content::WebContents* tab,
++                     std::string preview,
++                     uint64_t version,
++                     base::OnceCallback<void(CoreLogShareResult)> done);
+ #endif
+ 
+   uint64_t state_revision() const { return state_revision_; }
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 9802f7574f9b73f86616e9e96499672378908d6a..84f92128d5109d28868b4208a3cc359c1a760943 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -486,14 +486,21 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     RefreshSoon();
+     if (auto* controller = AccessBubble()) {
+       auto [preview, version] = std::move(*confirmation);
++      using ShareResult = aegis::access::AccessSiteProxyBubbleController::CoreLogShareResult;
+       controller->ShareCoreLogs(source_.get(), std::move(preview), version,
+-          base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
+-            if (self && !ok) {
+-              self->log_notice_ = Copy(u"未能分享日志。请检查磁盘权限，重启可重试清理上次的临时文件。",
+-                  u"Could not share the logs. Check disk permissions and restart to retry temporary file cleanup.",
+-                  u"未能分享日誌。請檢查磁碟權限，重啟可重試清理上次的暫存檔。");
+-              self->RefreshSoon();
++          base::BindOnce([](base::WeakPtr<AegisPageBubble> self, ShareResult result) {
++            if (!self || result == ShareResult::kCompleted)
++              return;
++            if (result == ShareResult::kCleanupFailed) {
++              self->log_notice_ = Copy(u"临时压缩日志未能删除。下次分享前会重试清理。",
++                  u"The temporary archive could not be deleted. Cleanup will be retried before the next share.",
++                  u"暫存壓縮日誌未能刪除。下次分享前會重試清理。");
++            } else {
++              self->log_notice_ = Copy(u"未能分享日志，请重试。",
++                  u"Could not share the logs. Try again.",
++                  u"未能分享日誌，請重試。");
+             }
++            self->RefreshSoon();
+           }, weak_.GetWeakPtr()));
+     }
+   }

@@ -1,0 +1,26 @@
+From 5326eedcd8ee37dc694dd4d2717151ad630b82a4 Mon Sep 17 00:00:00 2001
+From: Aegis Source Export Fixture <aegis-source-export@example.invalid>
+Date: Tue, 27 Oct 2026 19:14:25 +0800
+Subject: [PATCH] Preserve checked gesture polyline across callbacks
+---
+
+diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
+index 84104256672477570036e1a237f8f14c4c106911..e87473571f12e54c44b25ac3ff0042160fd103ef 100644
+--- a/chrome/browser/resources/aegis/gestures.ts
++++ b/chrome/browser/resources/aegis/gestures.ts
+@@ -13,9 +13,12 @@ const enabled = element<HTMLInputElement>('enabled'), trail = element<HTMLInputE
+ const threshold = element<HTMLInputElement>('threshold'), sites = element<HTMLTextAreaElement>('disabledSites');
+ const bindings = element('bindings'), practice = element('practice');
+ const patternLabel = element('practicePattern'), resultLabel = element('practiceResult');
+-const practiceLine = root.querySelector<SVGPolylineElement>('#practiceLine');
+-if (!practiceLine) throw Error('缺少手势练习轨迹');
+-const line = practiceLine;
++function practiceLine(): SVGPolylineElement {
++  const result = root.querySelector<SVGPolylineElement>('#practiceLine');
++  if (!result) throw Error('缺少手势练习轨迹');
++  return result;
++}
++const line = practiceLine();
+ let saved: Settings|null = null, defaults: Settings|null = null, actions: Action[] = [];
+ function savedSettings(): Settings {
+   if (!saved) throw Error('手势设置尚未加载');

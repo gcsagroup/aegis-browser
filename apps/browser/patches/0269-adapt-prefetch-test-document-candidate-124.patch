@@ -1,4 +1,4 @@
-From f6477e20df3bdda1ca40b6c12bb311c2305b3691 Mon Sep 17 00:00:00 2001
+From 5cbe00630a31405372bbc4c4412097bde9703776 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 7 Oct 2026 08:06:57 +0800
 Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=E9=A2=84=E5=8F=96=E6=B5=8B?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../ui/webui/help/aegis_github_update.h       |  4 +--
- .../browser/loader/prefetch_browsertest.cc    | 32 +++++++++++++++++--
- 2 files changed, 31 insertions(+), 5 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index f2243cbcc17c749ac567d023ff31233cf0f565e3..e0bdc6a8c06fb263b69771a08cded2a497b8f0e0 100644
@@ -29,10 +26,10 @@ index f2243cbcc17c749ac567d023ff31233cf0f565e3..e0bdc6a8c06fb263b69771a08cded2a4
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
-index b38b75d1a854f2e1fb7b9eefd9b532082a8371b7..a91ad42b87a7132786f5f996dcc9e7cbccac0011 100644
+index 6fb391cdc48a9316a54edfd74c5ea2ee9f9ba457..433fe2cabf70d191feca2fd0319f06c56fc230bb 100644
 --- a/content/browser/loader/prefetch_browsertest.cc
 +++ b/content/browser/loader/prefetch_browsertest.cc
-@@ -1670,10 +1670,23 @@ class PrefetchLoadFlagsBrowserTest : public PrefetchBrowserTestBase {
+@@ -1674,10 +1674,23 @@ class PrefetchLoadFlagsBrowserTest : public PrefetchBrowserTestBase {
      StoragePartitionImpl* partition =
          static_cast<StoragePartitionImpl*>(rfh->GetStoragePartition());
      mojo::Remote<network::mojom::URLLoaderFactory> remote;
@@ -58,7 +55,7 @@ index b38b75d1a854f2e1fb7b9eefd9b532082a8371b7..a91ad42b87a7132786f5f996dcc9e7cb
      return remote;
    }
  
-@@ -1814,7 +1827,20 @@ class PrefetchRecursiveBrowserTest : public PrefetchBrowserTestBase {
+@@ -1818,7 +1831,20 @@ class PrefetchRecursiveBrowserTest : public PrefetchBrowserTestBase {
          partition->GetSubresourceProxyingURLLoaderService()->GetFactory(
              remote.BindNewPipeAndPassReceiver(), rfh->GetFrameTreeNodeId(),
              proxied_factory_.GetSafeWeakWrapper(), rfh->GetWeakPtr(),
@@ -80,6 +77,3 @@ index b38b75d1a854f2e1fb7b9eefd9b532082a8371b7..a91ad42b87a7132786f5f996dcc9e7cb
      return remote;
    }
  
--- 
-2.52.0
-

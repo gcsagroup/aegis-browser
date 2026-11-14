@@ -1,4 +1,4 @@
-From 60987046831f8644f491fb7e90b03984aed68c63 Mon Sep 17 00:00:00 2001
+From cad2c19d35b3844f04fe6a616e79aea884a746e5 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 04:24:46 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=89=8B=E6=9C=BA=E5=B9=B3?=
@@ -10,27 +10,12 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../chrome/browser/ChromeTabbedActivity.java  |  2 +-
- .../aegis/aegis_ui_handler_unittest.cc        | 31 ++++++++++
- .../aegis/agent/aegis_browser_tools.cc        | 43 ++++++++++++-
- .../browser/aegis/agent/aegis_browser_tools.h |  8 +++
- chrome/browser/aegis/agent/agent_planner.cc   | 11 ++++
- chrome/browser/aegis/agent/agent_planner.h    |  3 +
- .../aegis/agent/agent_planner_unittest.cc     | 12 ++++
- .../aegis/metalink_download_verifier.cc       | 61 ++++++++++++++++---
- .../aegis/metalink_download_verifier.h        |  8 ++-
- .../ui/webui/aegis/aegis_ui_handler.cc        | 21 +++++--
- .../browser/ui/webui/aegis/aegis_ui_handler.h |  1 +
- .../aegis_agent/aegis_agent_page_handler.cc   |  8 +++
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- .../aegis_downloads/aegis_download_panel.ts   |  8 +++
- 14 files changed, 201 insertions(+), 20 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 04e5a01e818ee4c3680386dc2b8f4478bc5f2b62..b234a1de08ad81f8beb65862d14a14884dd6f0a3 100644
+index ba29c5deba5c701d66fd8313e234777c4b82f6b1..337042be5bbd82d7f9695b93d52b766f24d59fdc 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -4368,7 +4368,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4434,7 +4434,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
          if (autoStart) url.appendQueryParameter("autostart", "1");
          LoadUrlParams params =
                  new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);
@@ -512,6 +497,3 @@ index 1ffade2ac9efa930db3c02ad840f71aa81c6e845..93668af976d88baf015cf113d45a2fb9
      if (detail.includes('magnet link is invalid or too large')) {
        return tw ? '磁力連結無效或過長，請檢查後重試。' :
                    '磁力链接无效或过长，请检查后重试。';
--- 
-2.52.0
-

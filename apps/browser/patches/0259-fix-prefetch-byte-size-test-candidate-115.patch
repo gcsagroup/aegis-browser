@@ -1,4 +1,4 @@
-From 300cc06cebc8477ec8a444cd81313f8f5d0aa99f Mon Sep 17 00:00:00 2001
+From 611ec326e62306a178c1fb97c7f3f4e0c02278f3 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 6 Oct 2026 19:05:41 +0800
 Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E9=A2=84=E5=8F=96?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- content/browser/loader/prefetch_browsertest.cc     | 4 +++-
- 2 files changed, 5 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index a426ff959efcf6b0c73b553f36a1c7de7a201467..d436f5cb736949b0d12a75336fe32acc8fc82722 100644
@@ -29,7 +26,7 @@ index a426ff959efcf6b0c73b553f36a1c7de7a201467..d436f5cb736949b0d12a75336fe32acc
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
-index 3049711cd1611fcd0ded5d8b9b813ccd6b9e95f8..b38b75d1a854f2e1fb7b9eefd9b532082a8371b7 100644
+index 925c09b3d0b9958622a3502476fb6bc2d6377294..6fb391cdc48a9316a54edfd74c5ea2ee9f9ba457 100644
 --- a/content/browser/loader/prefetch_browsertest.cc
 +++ b/content/browser/loader/prefetch_browsertest.cc
 @@ -6,6 +6,7 @@
@@ -40,7 +37,7 @@ index 3049711cd1611fcd0ded5d8b9b813ccd6b9e95f8..b38b75d1a854f2e1fb7b9eefd9b53208
  #include "base/files/file_path.h"
  #include "base/files/file_util.h"
  #include "base/files/scoped_temp_dir.h"
-@@ -143,7 +144,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+@@ -142,7 +143,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
    committed_client.RunUntilComplete();
    EXPECT_EQ(committed_client.completion_status().error_code, net::OK);
    EXPECT_TRUE(committed_client.has_received_response());
@@ -50,6 +47,3 @@ index 3049711cd1611fcd0ded5d8b9b813ccd6b9e95f8..b38b75d1a854f2e1fb7b9eefd9b53208
    EXPECT_EQ(committed_requests->GetRequestCount(), 1);
  
    mojo::Remote<network::mojom::URLLoaderFactory> cancelled_factory;
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From d1a0374f84381c0d70776c55147cb4f943f8eb0d Mon Sep 17 00:00:00 2001
+From 6501da8e9c5a1a22e48880149b9be8082ae76b6d Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:03:47 +0800
 Subject: [PATCH] =?UTF-8?q?feat(aegis):=20=E4=BB=8E=20GitHub=20=E6=A3=80?=
@@ -8,24 +8,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/app/app-Info.plist                     |   5 +
- .../settings/about_page/about_page.html.ts    |   9 +
- .../settings/about_page/about_page.ts         |  20 +
- .../about_page/about_page_browser_proxy.ts    |   1 +
- chrome/browser/ui/webui/help/BUILD.gn         |  67 ++++
- .../ui/webui/help/aegis_github_update.cc      | 377 ++++++++++++++++++
- .../ui/webui/help/aegis_github_update.h       |  94 +++++
- .../help/aegis_github_update_unittest.cc      | 217 ++++++++++
- .../browser/ui/webui/help/version_updater.h   |   3 +
- .../ui/webui/help/version_updater_basic.cc    |  77 +++-
- .../ui/webui/settings/about_handler.cc        |  17 +
- .../browser/ui/webui/settings/about_handler.h |   1 +
- .../settings_localized_strings_provider.cc    |   7 +-
- .../data/webui/settings/about_page_test.ts    |  28 +-
- 14 files changed, 901 insertions(+), 22 deletions(-)
- create mode 100644 chrome/browser/ui/webui/help/aegis_github_update.cc
- create mode 100644 chrome/browser/ui/webui/help/aegis_github_update.h
- create mode 100644 chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
 index 6fada0a2b1a1f4b5675fc657a3a7b2337e43c4a1..4d057cee650d317cc7a6ef516c6ac19697c3afcb 100644
@@ -1112,10 +1094,10 @@ index d9b2085047ed09ed8f717f093919b1f472808e1f..108e87dfe7da6448141ad5dd8419b292
  #if BUILDFLAG(IS_MAC)
    // Promotes the updater for all users.
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index c88da50a589cd9b20f714950a7a875682469cae3..ab07496994758aaf0a23107916641d210a1e650b 100644
+index 14e50dcb8c0e38fda34c4fe24a207a490ddd5eed..e0438c2495407b9b2738d8732ea8a93475e54217 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -356,11 +356,16 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -364,11 +364,16 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
    browser_version = VersionUI::GetAnnotatedVersionStringForUi();
  #else
    browser_version = base::StrCat(
@@ -1182,6 +1164,3 @@ index 6bd195aaec963da8945940563378279f2e987ea5..bbb7cd263ac6601045cf3d9dc2787e01
    test('DisabledWithMessage', async function() {
      fireStatusChanged(
          UpdateStatus.DISABLED,
--- 
-2.52.0
-

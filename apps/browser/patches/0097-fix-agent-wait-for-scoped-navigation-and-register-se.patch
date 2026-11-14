@@ -1,13 +1,10 @@
-From 2de550eca2ba0a449e8eea43549a72a1082cfbaa Mon Sep 17 00:00:00 2001
+From 0ef7fb270539dd0f72257b176a30cd04af4d9810 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 14:58:47 +0800
 Subject: [PATCH] fix(agent): wait for scoped navigation and register services
  early
 
 ---
- .../aegis/agent/aegis_agent_service.cc        | 42 ++++++++++++++++++-
- ...hrome_browser_main_extra_parts_profiles.cc |  4 ++
- 2 files changed, 44 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index 48e6bd16294d6e52e94b07af33d571760e7fbd06..f00307ab854bb4a210523e485f9bc4241b89e907 100644
@@ -95,7 +92,7 @@ index 48e6bd16294d6e52e94b07af33d571760e7fbd06..f00307ab854bb4a210523e485f9bc424
    if (!tab) {
      Transition(task_id, AgentTaskState::kFailed,
 diff --git a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-index f594d3b3abceae50b957730efce76a3855cbd059..ca2b84f6293a6358c07ad263d21cf2ebeee82174 100644
+index a281709c54cd71589a57e0360ec757c0c38efb08..9d1bcf9b8b55968fcdfdbf490f925735969fa6d3 100644
 --- a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
 +++ b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
 @@ -15,6 +15,8 @@
@@ -107,7 +104,7 @@ index f594d3b3abceae50b957730efce76a3855cbd059..ca2b84f6293a6358c07ad263d21cf2eb
  #include "chrome/browser/affiliations/affiliation_service_factory.h"
  #include "chrome/browser/ai/ai_data_keyed_service_factory.h"
  #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
-@@ -747,6 +749,8 @@ void ChromeBrowserMainExtraPartsProfiles::
+@@ -738,6 +740,8 @@ void ChromeBrowserMainExtraPartsProfiles::
    search_integrity::SearchIntegrityFactory::GetInstance();
  #endif
    actor::ActorKeyedServiceFactory::GetInstance();
@@ -116,6 +113,3 @@ index f594d3b3abceae50b957730efce76a3855cbd059..ca2b84f6293a6358c07ad263d21cf2eb
  #if BUILDFLAG(IS_ANDROID)
    AndroidSessionDurationsServiceFactory::GetInstance();
  #endif
--- 
-2.52.0
-

@@ -1,12 +1,9 @@
-From 25be4ffc72c6ef99f626fa57cd47bb2dd3576420 Mon Sep 17 00:00:00 2001
+From 72b4d48c6de2b0f680c41101b23875176050febb Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:57:00 +0800
 Subject: [PATCH] fix(aegis): keep browser data tasks native
 
 ---
- chrome/browser/aegis/agent/agent_planner.cc   | 28 +++++++++++++++++++
- .../aegis/agent/agent_planner_unittest.cc     | 13 +++++++++
- 2 files changed, 41 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
 index ef716ddfff6f54f854b883ea73f8b72d935bccfb..b76deec8c1688581de89a8d236d6ff439828a7e4 100644
@@ -78,6 +75,3 @@ index 1189d48036d0898cc9b00ba86f826ea532a35d5b..4a7c166fd432fdf731b39fac1c4d78b1
  }
  
  TEST(AegisAgentPlannerTest, BrowserOwnsScopeAndModelChoosesOnlySteps) {
--- 
-2.52.0
-

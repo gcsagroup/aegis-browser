@@ -1,4 +1,4 @@
-From f418bb16a2b67ba964bb127a88b61a1a81579aba Mon Sep 17 00:00:00 2001
+From b0ff00c98e020e719651d7d563b931a1a6783fba Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 17:06:36 +0800
 Subject: [PATCH] Aegis: add chrome://aegis WebUI and module prefs
@@ -6,51 +6,6 @@ Subject: [PATCH] Aegis: add chrome://aegis WebUI and module prefs
 Expose tracker/phish/fingerprint toggles via chrome://aegis, persist
 prefs, and sync tracker blocking to renderers through DynamicParams.
 ---
- chrome/browser/aegis/BUILD.gn                 |  5 ++
- chrome/browser/aegis/aegis_prefs.cc           | 19 +++++
- chrome/browser/aegis/aegis_prefs.h            | 19 +++++
- chrome/browser/aegis/aegis_service.cc         | 56 +++++++++++++-
- chrome/browser/aegis/aegis_service.h          | 12 ++-
- .../browser/chrome_content_browser_client.cc  | 10 ++-
- chrome/browser/prefs/browser_prefs.cc         |  2 +
- chrome/browser/profiles/BUILD.gn              |  1 +
- chrome/browser/profiles/renderer_updater.cc   | 10 ++-
- chrome/browser/profiles/renderer_updater.h    |  1 +
- chrome/browser/resources/BUILD.gn             |  2 +
- chrome/browser/resources/aegis/BUILD.gn       | 19 +++++
- chrome/browser/resources/aegis/aegis.css      | 74 +++++++++++++++++++
- chrome/browser/resources/aegis/aegis.html     | 30 ++++++++
- chrome/browser/resources/aegis/aegis.ts       | 54 ++++++++++++++
- chrome/browser/ui/webui/BUILD.gn              |  1 +
- chrome/browser/ui/webui/aegis/BUILD.gn        | 21 ++++++
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 63 ++++++++++++++++
- chrome/browser/ui/webui/aegis/aegis_ui.h      | 37 ++++++++++
- .../ui/webui/aegis/aegis_ui_handler.cc        | 63 ++++++++++++++++
- .../browser/ui/webui/aegis/aegis_ui_handler.h | 25 +++++++
- .../browser/ui/webui/chrome_web_ui_configs.cc |  2 +
- chrome/common/aegis/BUILD.gn                  |  1 +
- chrome/common/aegis/aegis_net_throttle.cc     | 17 +++--
- chrome/common/aegis/aegis_net_throttle.h      |  9 ++-
- chrome/common/aegis/pref_names.h              | 19 +++++
- chrome/common/renderer_configuration.mojom    |  1 +
- chrome/common/webui_url_constants.cc          |  1 +
- chrome/common/webui_url_constants.h           |  2 +
- .../url_loader_throttle_provider_impl.cc      |  9 ++-
- tools/gritsettings/resource_ids.spec          |  4 +
- ui/webui/resources/tools/build_webui.gni      |  1 +
- 32 files changed, 571 insertions(+), 19 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_prefs.cc
- create mode 100644 chrome/browser/aegis/aegis_prefs.h
- create mode 100644 chrome/browser/resources/aegis/BUILD.gn
- create mode 100644 chrome/browser/resources/aegis/aegis.css
- create mode 100644 chrome/browser/resources/aegis/aegis.html
- create mode 100644 chrome/browser/resources/aegis/aegis.ts
- create mode 100644 chrome/browser/ui/webui/aegis/BUILD.gn
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui.cc
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui.h
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui_handler.h
- create mode 100644 chrome/common/aegis/pref_names.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 7af9ba36640c49a22bc39f73f53cfac7f0860c72..1ef0295be6d24892fddd752b94959d08b16ff45c 100644
@@ -259,10 +214,10 @@ index 1cb917885cbc483fae2d7c8b3c8b54bc28e95492..5d2e3d6bc1608e66041def4266079802
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 72fbf97e140f2a39c03c0512d9dbd8ba8414b8f0..d1b1ff7512a74098359f7a1286eb80661784dec9 100644
+index 625d46b8bd31243d55a0988b0c54652be9cdc901..34f4a782c7cfc5c08ba2645bf77467941077b502 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -230,6 +230,7 @@
+@@ -238,6 +238,7 @@
  #include "chrome/common/google_url_loader_throttle.h"
  #include "chrome/common/logging_chrome.h"
  #include "chrome/common/pref_names.h"
@@ -270,18 +225,18 @@ index 72fbf97e140f2a39c03c0512d9dbd8ba8414b8f0..d1b1ff7512a74098359f7a1286eb8066
  #include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
  #include "chrome/common/profiler/process_type.h"
  #include "chrome/common/profiler/thread_profiler_configuration.h"
-@@ -5986,7 +5987,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6145,7 +6146,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
                policy::policy_prefs::kForceGoogleSafeSearch),
            profile->GetPrefs()->GetInteger(
                policy::policy_prefs::kForceYouTubeRestrict),
--          profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps));
+-          profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps)
 +          profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
 +          profile->GetPrefs()->GetBoolean(
-+              aegis::prefs::kTrackerBlockingEnabled));
-   return std::make_unique<GoogleURLLoaderThrottle>(
- #if BUILDFLAG(IS_ANDROID)
-       client_data_header,
-@@ -6112,7 +6115,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
++              aegis::prefs::kTrackerBlockingEnabled)
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+               ,
+           // Only the copy pushed to renderers carries this; the throttle
+@@ -6325,7 +6328,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
      result.push_back(std::move(contextual_tasks_throttle));
    }
  
@@ -294,7 +249,7 @@ index 72fbf97e140f2a39c03c0512d9dbd8ba8414b8f0..d1b1ff7512a74098359f7a1286eb8066
      result.push_back(std::move(aegis_throttle));
    }
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index 2653e37becbfa113d92456139d86c321f09ed8b5..e1cec7748c984533211ac94f3e3e73dcb46fdcf8 100644
+index 334da9ad62b59013c44ba6335072e433157f40d6..609feae3334e551e8a71f765fa8d6317ef62bd37 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -19,6 +19,7 @@
@@ -305,7 +260,7 @@ index 2653e37becbfa113d92456139d86c321f09ed8b5..e1cec7748c984533211ac94f3e3e73dc
  #include "chrome/browser/accessibility/accessibility_labels_service.h"
  #include "chrome/browser/accessibility/invert_bubble_prefs.h"
  #include "chrome/browser/accessibility/page_colors_controller.h"
-@@ -1749,6 +1750,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+@@ -1996,6 +1997,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
    // User prefs. Please keep this list alphabetized.
    AccessibilityLabelsService::RegisterProfilePrefs(registry);
    registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);
@@ -314,10 +269,10 @@ index 2653e37becbfa113d92456139d86c321f09ed8b5..e1cec7748c984533211ac94f3e3e73dc
  #if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_DESKTOP_ANDROID)  // nocheck
    ttc::AiOverlayDialogController::RegisterProfilePrefs(registry);
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 56192632d304bdeccd3758726c57e7e8efac7b53..4a24b73d76902f0bf2fea915becbdfd5aa3cdd8c 100644
+index f569264cf0e530634f9e064054511b25ca2273d2..5f1ad15d05ca3a044ed3d130f87cfd0363ffec6c 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -121,6 +121,7 @@ source_set("misc") {
+@@ -125,6 +125,7 @@ source_set("misc") {
      "//chrome/browser/ui/zoom",
      "//chrome/browser/updates/announcement_notification",
      "//chrome/browser/webid",
@@ -326,18 +281,18 @@ index 56192632d304bdeccd3758726c57e7e8efac7b53..4a24b73d76902f0bf2fea915becbdfd5
      "//chrome/common:buildflags",
      "//chrome/common:constants",
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index 78a14905c7b75dae4ee0e2f30aef264e0d44e5c9..e0dd3d9bf2928007b27ac30890d08b5b53e6f597 100644
+index caa836b7e969753cdde401e07c8a3d17a84b394f..7abfca3883e36229bcd8e95795ca2f8f5b2373e4 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
-@@ -14,6 +14,7 @@
- #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+@@ -16,6 +16,7 @@
+ #include "chrome/browser/global_features.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/common/pref_names.h"
 +#include "chrome/common/aegis/pref_names.h"
  #include "chrome/common/renderer_configuration.mojom.h"
+ #include "chrome/common/request_header_integrity/buildflags.h"
  #include "components/content_settings/common/content_settings_manager.mojom.h"
- #include "components/content_settings/core/browser/content_settings_utils.h"
-@@ -74,6 +75,8 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -82,6 +83,8 @@ RendererUpdater::RendererUpdater(Profile* profile)
    force_youtube_restrict_.Init(policy::policy_prefs::kForceYouTubeRestrict,
                                 pref_service);
    allowed_domains_for_apps_.Init(prefs::kAllowedDomainsForApps, pref_service);
@@ -346,7 +301,7 @@ index 78a14905c7b75dae4ee0e2f30aef264e0d44e5c9..e0dd3d9bf2928007b27ac30890d08b5b
  
    pref_change_registrar_.Init(pref_service);
    pref_change_registrar_.Add(
-@@ -88,6 +91,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -96,6 +99,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
        prefs::kAllowedDomainsForApps,
        base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
                            base::Unretained(this)));
@@ -354,34 +309,36 @@ index 78a14905c7b75dae4ee0e2f30aef264e0d44e5c9..e0dd3d9bf2928007b27ac30890d08b5b
 +      aegis::prefs::kTrackerBlockingEnabled,
 +      base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
 +                          base::Unretained(this)));
- }
  
- RendererUpdater::~RendererUpdater() {
-@@ -231,5 +238,6 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+   if (auto* platform_runtime_host =
+@@ -249,7 +256,8 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
        GetBoundSessionThrottlerParams(),
  #endif
        force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
--      allowed_domains_for_apps_.GetValue());
+-      allowed_domains_for_apps_.GetValue()
 +      allowed_domains_for_apps_.GetValue(),
-+      aegis_tracker_blocking_.GetValue());
- }
++      aegis_tracker_blocking_.GetValue()
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+           ,
+       GetPlatformRuntimeHeaders()
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index fcf8832d21232e9a8e00b0307a04fc3a97391ce7..b24bf26ca3c90e8cdbb43e952ef5e526fe63a76e 100644
+index 3f48f57c45ca671a3ed69550d0ebcbea46a2d7ca..b3c36514803df636190b9f6dc63822ef7ccc1e74 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
-@@ -104,6 +104,7 @@ class RendererUpdater : public KeyedService
+@@ -118,6 +118,7 @@ class RendererUpdater : public KeyedService
    BooleanPrefMember force_google_safesearch_;
    IntegerPrefMember force_youtube_restrict_;
    StringPrefMember allowed_domains_for_apps_;
 +  BooleanPrefMember aegis_tracker_blocking_;
- };
  
- #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+   // The Platform Runtime header block is global rather than per-profile, so
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index c76bba135901cf2ff205e59ffe58a74a4031eae3..1e1fa8225c446e7393fc7200839924b2ca1a4023 100644
+index b0e80f7a4d8ce28035efdda928076ca36b70fd58..dd75dcbb2ce723869d8502a438cc0588d9f59f9e 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
-@@ -480,6 +480,7 @@ group("dev_ui_resources") {
+@@ -492,6 +492,7 @@ group("dev_ui_resources") {
        "user_education_internals:resources",
        "webnn_internals:resources",
        "webui_js_error:resources",
@@ -389,7 +346,7 @@ index c76bba135901cf2ff205e59ffe58a74a4031eae3..1e1fa8225c446e7393fc7200839924b2
      ]
    }
  
-@@ -572,6 +573,7 @@ repack("dev_ui_paks") {
+@@ -584,6 +585,7 @@ repack("dev_ui_paks") {
        "$root_gen_dir/chrome/page_action_internals_resources.pak",
        "$root_gen_dir/chrome/user_education_internals_resources.pak",
        "$root_gen_dir/chrome/webui_js_error_resources.pak",
@@ -599,11 +556,11 @@ index 0000000000000000000000000000000000000000..b74beb6519a3dc8805082d34ed03145e
 +  void init();
 +});
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index 2a4eae8943e6a1f1ad56a6f9891250ef126632cb..ad845ba36555edecd4c203647efd86f87ab47a3e 100644
+index d591f473242c921dcb49033ca04dbe0b172e6fd1..cd4cbcbbc68cae53bd720b45c33271e7311c181c 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
-@@ -60,6 +60,7 @@ source_set("configs") {
-     "//chrome/browser/ui",
+@@ -52,6 +52,7 @@ source_set("configs") {
+     "//chrome/browser/glic",
      "//chrome/browser/ui/webui/about",
      "//chrome/browser/ui/webui/accessibility",
 +    "//chrome/browser/ui/webui/aegis",
@@ -850,7 +807,7 @@ index 0000000000000000000000000000000000000000..2a26d77cd2f0aaf51c7a4e224d595e72
 +
 +#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index 62b07dca0834562cb0393b09e4754a7d40af68a2..18b06b86433e94abfc396faa75f9921fb5d91485 100644
+index d79e9dfdb0e675f19c4a3f7e8ef8b06abdc7d3f5..923811fcd54dacf8b67cd1b20a068ff170de2641 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 @@ -3,6 +3,7 @@
@@ -861,7 +818,7 @@ index 62b07dca0834562cb0393b09e4754a7d40af68a2..18b06b86433e94abfc396faa75f9921f
  
  #include "build/android_buildflags.h"
  #include "build/branding_buildflags.h"
-@@ -264,6 +265,7 @@ void RegisterChromeWebUIConfigs() {
+@@ -270,6 +271,7 @@ void RegisterChromeWebUIConfigs() {
  
    auto& map = content::WebUIConfigMap::GetInstance();
    map.AddWebUIConfig(std::make_unique<AccessibilityUIConfig>());
@@ -985,22 +942,22 @@ index 0000000000000000000000000000000000000000..77d70a5d628036c294811e38ce8b2a0f
 +
 +#endif  // CHROME_COMMON_AEGIS_PREF_NAMES_H_
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index 94e265c86ae7a78b750eb8a54ae26f6ea73b6d75..94a8d402ce66e7154712a0e0ea9d87002eefe222 100644
+index b5631d2a8d915c9209ee9499cedad28b0b43e79a..ea274a4dfb153198e7515603440de70638b9daaa 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
-@@ -30,6 +30,7 @@ struct DynamicParams {
+@@ -33,6 +33,7 @@ struct DynamicParams {
    bool force_safe_search = true;
    int32 youtube_restrict = 0;
    string allowed_domains_for_apps;
 +  bool aegis_tracker_blocking = true;
- };
  
- // The renderer configuration parameters are set during the process lock update
+   // Request headers produced by the Platform Runtime library. Empty until the
+   // browser has a value.
 diff --git a/chrome/common/webui_url_constants.cc b/chrome/common/webui_url_constants.cc
-index 17100eb74d54ccb2b0a69ead43667b901cca9c76..4a635e96b8b63c93defac2079e6e47ab06690a05 100644
+index bb97c63d19778ea77853a1dc13b17a8b994eb21e..bb592e68ced7c00a78e46d6a11d43f468794408d 100644
 --- a/chrome/common/webui_url_constants.cc
 +++ b/chrome/common/webui_url_constants.cc
-@@ -121,6 +121,7 @@ bool IsSystemWebUIHost(std::string_view host) {
+@@ -120,6 +120,7 @@ bool IsSystemWebUIHost(std::string_view host) {
  base::span<const base::cstring_view> ChromeURLHosts() {
    static constexpr auto kChromeURLHosts = std::to_array<base::cstring_view>({
        kChromeUIAboutHost,
@@ -1009,10 +966,10 @@ index 17100eb74d54ccb2b0a69ead43667b901cca9c76..4a635e96b8b63c93defac2079e6e47ab
        kChromeUIActorInternalsHost,
  #if !BUILDFLAG(IS_ANDROID)
 diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
-index 47c543c844b3348c0360fb2a38c214aeab41944f..88a267008caa2b2ded768d9bf1c85902205f03b8 100644
+index 066f46dbe14318b66828afc6478a738b81a3b9d9..c56bb159324c087d1191a4027fc1d4648a4ac15c 100644
 --- a/chrome/common/webui_url_constants.h
 +++ b/chrome/common/webui_url_constants.h
-@@ -362,6 +362,8 @@ inline constexpr char kChromeUIUserEducationInternalsHost[] =
+@@ -364,6 +364,8 @@ inline constexpr char kChromeUIUserEducationInternalsHost[] =
  inline constexpr char kChromeUIUserEducationInternalsURL[] =
      "chrome://user-education-internals";
  inline constexpr char kChromeUIVersionHost[] = "version";
@@ -1022,7 +979,7 @@ index 47c543c844b3348c0360fb2a38c214aeab41944f..88a267008caa2b2ded768d9bf1c85902
  inline constexpr char16_t kChromeUIVersionURL16[] = u"chrome://version/";
  inline constexpr char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 4c42c7c195d6252ef7fc31e25a6c3490ad2ff46a..32204a6cd863ec4f3dac92e221724d3708c82524 100644
+index b481c04cdac161c3f13ef5ff26dd9672ff715e44..19b6b64fb8ac0a453b8ba5b65ef222b290c1863c 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -264,7 +264,14 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
@@ -1042,10 +999,10 @@ index 4c42c7c195d6252ef7fc31e25a6c3490ad2ff46a..32204a6cd863ec4f3dac92e221724d37
      throttles.emplace_back(std::move(aegis_throttle));
    }
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index c90c7c5e5521e0355bc2df9c3435b500a6613118..b4368dbb04c8cf44afb7a30aa963ff599aabc90a 100644
+index 52b97ceee9ec8e0542a4b1612f6b1351f0463280..66e81deddd734121ceaa358d9daa3e92331b93eb 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -887,6 +887,10 @@
+@@ -875,6 +875,10 @@
     "META": {"sizes": {"includes": [10],}},
     "includes": [5160],
    },
@@ -1057,7 +1014,7 @@ index c90c7c5e5521e0355bc2df9c3435b500a6613118..b4368dbb04c8cf44afb7a30aa963ff59
      "META": {"sizes": {"includes": [10]}},
      "includes": [5200],
 diff --git a/ui/webui/resources/tools/build_webui.gni b/ui/webui/resources/tools/build_webui.gni
-index eee5ac59c4f17fdb492fe1b7fdf886b0abb9c7c6..9c94ef8e54990518c1cc643d71620f4a22e09c81 100644
+index fdc22efe9fb5779d6de7b21c1a26e5a60866a9f7..bfefb7988121aa855e23975c18bec2a46961a9e8 100644
 --- a/ui/webui/resources/tools/build_webui.gni
 +++ b/ui/webui/resources/tools/build_webui.gni
 @@ -584,6 +584,7 @@ template("build_webui") {
@@ -1068,6 +1025,3 @@ index eee5ac59c4f17fdb492fe1b7fdf886b0abb9c7c6..9c94ef8e54990518c1cc643d71620f4a
          "//chrome/browser/resources/accessibility",
          "//chrome/browser/resources/bookmarks",
          "//chrome/browser/resources/browser_switch",
--- 
-2.52.0
-

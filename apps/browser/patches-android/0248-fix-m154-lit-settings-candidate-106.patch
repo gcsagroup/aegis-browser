@@ -1,4 +1,4 @@
-From a7efce78887742b0aaf4c28722e46a253f44f2e8 Mon Sep 17 00:00:00 2001
+From f012722b8de84c500e85fc6d82fb428f3f1bcdd0 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 5 Oct 2026 11:33:40 +0800
 Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Chromium=20154=20=E7=9A=84?=
@@ -10,10 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../settings/people_page/people_page.ts       |  2 +-
- .../ui/webui/help/aegis_github_update.h       |  4 ++--
- .../data/webui/settings/people_page_test.ts   | 21 ++++++++++++++++++-
- 3 files changed, 23 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/resources/settings/people_page/people_page.ts b/chrome/browser/resources/settings/people_page/people_page.ts
 index 0d92503179e6ff1f86d99fe2066ee53a670cbeb2..7870a07a1f0286fbd43bf9bcdd0a21f2e5ceb8a4 100644
@@ -82,6 +78,3 @@ index f7fceaafb645919f55fd7bd02e3e908bd5fd970d..16e8000188a7ad494179e67d0662dd1e
  });
  // </if>
  
--- 
-2.52.0
-

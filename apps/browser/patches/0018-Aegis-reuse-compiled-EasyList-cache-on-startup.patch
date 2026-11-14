@@ -1,4 +1,4 @@
-From 146f92f2f2cceebe634a3c396b4dc420b8533992 Mon Sep 17 00:00:00 2001
+From 8d74062986d541b35e29a3054a08448a2ec3416a Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:18:01 +0800
 Subject: [PATCH] Aegis: reuse compiled EasyList cache on startup
@@ -8,12 +8,6 @@ from file mtime, and skip the network fetch when the cache is fresh.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ---
- chrome/browser/aegis/aegis_service.cc       |  2 +-
- chrome/browser/aegis/filter_list_updater.cc | 69 ++++++++++++++++-----
- chrome/browser/aegis/filter_list_updater.h  | 10 ++-
- chrome/browser/ui/webui/aegis/aegis_ui.cc   |  8 +--
- chrome/common/aegis/filter_list.cc          |  4 +-
- 5 files changed, 68 insertions(+), 25 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 2869561d87c586fbd6c2616c004f966ee8b08c14..7cd380f95e48e546e216c433960a7132d6b5e3b1 100644
@@ -258,6 +252,3 @@ index 0f77dd29d82e5ea664e6144f9479342a9b283061..bed097884f8d577acde8f7b7caf4cac4
    return json;
  }
  
--- 
-2.52.0
-

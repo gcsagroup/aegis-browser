@@ -1,4 +1,4 @@
-From d88a93ff5c8e4e23c1941e2065b54fac6a799b3d Mon Sep 17 00:00:00 2001
+From e059808fa4119c9d53729bcd130d283e08ee227d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 07:15:38 +0800
 Subject: [PATCH] Aegis: farble WebGPU adapter.info fingerprint strings
@@ -7,10 +7,6 @@ Stabilize GPUAdapter vendor/architecture/device/driver per eTLD+1 so
 WebGPU cannot undo FingerprintGuard the way canvas and WebGL already
 cannot.
 ---
- .../blink/renderer/core/aegis/farbling.cc     | 34 +++++++++++++++++++
- .../blink/renderer/core/aegis/farbling.h      |  8 +++++
- .../renderer/modules/webgpu/gpu_adapter.cc    | 18 ++++++++--
- 3 files changed, 57 insertions(+), 3 deletions(-)
 
 diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
 index 5a282beeab2cec026fd71c900135862f159ad289..6b89d058e92f19ce29bb3558d783c3179d623c23 100644
@@ -123,6 +119,3 @@ index 5d35a355c7743111841128548855e86338bbd7c2..6533e0dbcd9392cc2eb2b42c2c829ca6
          is_fallback_adapter);
    }
  
--- 
-2.52.0
-

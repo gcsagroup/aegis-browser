@@ -1,0 +1,39 @@
+From f52f75cd9a4d266d4e7afb3a54edc876db1fa42b Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 14:33:26 +0800
+Subject: [PATCH] fix(build): declare Access panel and traffic test
+ dependencies
+---
+
+diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
+index 7574d0a016e9d67e3e17b8248d31097ad19c4612..a1c77d326c7ce9be4e6121b508b96ceaad6ad183 100644
+--- a/chrome/browser/ui/views/toolbar/BUILD.gn
++++ b/chrome/browser/ui/views/toolbar/BUILD.gn
+@@ -244,6 +244,7 @@ source_set("impl") {
+     "//chrome/app/vector_icons",
+     "//chrome/browser:browser_process",
+     "//chrome/browser/aegis",
++    "//chrome/browser/aegis/access:access_site_dev_allow_block_panel",
+     "//chrome/browser:chained_back_navigation_tracker",
+     "//chrome/browser:flags",
+     "//chrome/browser:primitives",
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index fb04536a3806236926f0f9cf073e4e5cc771f40f..bcbd62e644ba653f7bfe6f680e1d64e2f1999c8b 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -262,6 +262,7 @@ test("access_proxy_tunnel_context_unittests") {
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
+     "//net",
++    "//net/traffic_annotation:test_support",
+     "//testing/gtest",
+     "//url",
+   ]
+@@ -296,6 +297,7 @@ test("access_route_pool_isolation_unittests") {
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
+     "//net",
++    "//net/traffic_annotation:test_support",
+     "//testing/gtest",
+     "//url",
+   ]

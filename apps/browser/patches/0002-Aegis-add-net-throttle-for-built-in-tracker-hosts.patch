@@ -1,4 +1,4 @@
-From 5db0928ceec7885953b46b06dc094e8cc2b8cd25 Mon Sep 17 00:00:00 2001
+From bc19ae915ce438995b025bbd16c1bf42d04ea146 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 12:21:27 +0800
 Subject: [PATCH] Aegis: add net throttle for built-in tracker hosts
@@ -6,29 +6,12 @@ Subject: [PATCH] Aegis: add net throttle for built-in tracker hosts
 Block subresource requests matching packages/core BUILTIN_TRACKER_HOSTS
 via URLLoaderThrottle in both browser and renderer paths.
 ---
- chrome/browser/BUILD.gn                       |  1 +
- chrome/browser/aegis/BUILD.gn                 |  1 +
- chrome/browser/aegis/aegis_service.cc         | 20 ++++-
- chrome/browser/aegis/aegis_service.h          |  8 +-
- .../browser/chrome_content_browser_client.cc  |  6 ++
- chrome/common/aegis/BUILD.gn                  | 12 ++-
- chrome/common/aegis/aegis_net_throttle.cc     | 70 ++++++++++++++++
- chrome/common/aegis/aegis_net_throttle.h      | 42 ++++++++++
- chrome/common/aegis/builtin_tracker_hosts.cc  | 80 +++++++++++++++++++
- chrome/common/aegis/builtin_tracker_hosts.h   | 18 +++++
- chrome/renderer/BUILD.gn                      |  1 +
- .../url_loader_throttle_provider_impl.cc      |  8 ++
- 12 files changed, 263 insertions(+), 4 deletions(-)
- create mode 100644 chrome/common/aegis/aegis_net_throttle.cc
- create mode 100644 chrome/common/aegis/aegis_net_throttle.h
- create mode 100644 chrome/common/aegis/builtin_tracker_hosts.cc
- create mode 100644 chrome/common/aegis/builtin_tracker_hosts.h
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 34959a155979e60aa3c040f4b8a2cc61e8786052..746a1de232b927f042d6e2d8dc6438191f47a5c8 100644
+index f343b7470691b9edf83ede1321fa385fcf40a3bd..65486b596cf78e13f18852e642ba58bac3292b20 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -923,6 +923,7 @@ source_set("core") {
+@@ -1090,6 +1090,7 @@ source_set("core") {
      ":universal_web_contents_observers",
      "//base/allocator:buildflags",
      "//build/config/linux/dbus:buildflags",
@@ -123,7 +106,7 @@ index fb76c457df3ea6db3ee3447c1ebe149fc9d83ef4..1cb917885cbc483fae2d7c8b3c8b54bc
   private:
    friend struct base::DefaultSingletonTraits<AegisService>;
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 19045777b3d811c15ba6e3f16cff859a05327b88..72fbf97e140f2a39c03c0512d9dbd8ba8414b8f0 100644
+index 1defcfa514d5b100c35165f02ce91df492fa351e..625d46b8bd31243d55a0988b0c54652be9cdc901 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -3,6 +3,7 @@
@@ -134,7 +117,7 @@ index 19045777b3d811c15ba6e3f16cff859a05327b88..72fbf97e140f2a39c03c0512d9dbd8ba
  
  #include <algorithm>
  #include <iterator>
-@@ -6111,6 +6112,11 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+@@ -6324,6 +6325,11 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
      result.push_back(std::move(contextual_tasks_throttle));
    }
  
@@ -405,10 +388,10 @@ index 0000000000000000000000000000000000000000..4a2c3cca836d03bf236db0b3ab3a0108
 +
 +#endif  // CHROME_COMMON_AEGIS_BUILTIN_TRACKER_HOSTS_H_
 diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
-index 8ea705840f0ca2fcf23d6249849beb32d12f1da9..d5621de7c799ebd435306ff2758bb493f37caf72 100644
+index a28d0ae008cf35d02510ae381863bd835d3bf058..64ea66c0aa2438b817ba4d3d76555d68e9f8ea1e 100644
 --- a/chrome/renderer/BUILD.gn
 +++ b/chrome/renderer/BUILD.gn
-@@ -132,6 +132,7 @@ static_library("renderer") {
+@@ -133,6 +133,7 @@ static_library("renderer") {
      "//chrome:resources",
      "//chrome:strings",
      "//chrome/common",
@@ -417,7 +400,7 @@ index 8ea705840f0ca2fcf23d6249849beb32d12f1da9..d5621de7c799ebd435306ff2758bb493
      "//chrome/common/net",
      "//chrome/common/request_header_integrity:buildflags",
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index d49edab182ec86cf8af54b5a297c7b199d430e15..4c42c7c195d6252ef7fc31e25a6c3490ad2ff46a 100644
+index c6735f92411c738e2f4eea3fdac3b23af0b51f21..b481c04cdac161c3f13ef5ff26dd9672ff715e44 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -15,6 +15,7 @@
@@ -442,6 +425,3 @@ index d49edab182ec86cf8af54b5a297c7b199d430e15..4c42c7c195d6252ef7fc31e25a6c3490
  #if BUILDFLAG(IS_CHROMEOS)
    throttles.emplace_back(std::make_unique<AshMergeSessionLoaderThrottle>(
        chrome_content_renderer_client_->GetChromeObserver()
--- 
-2.52.0
-

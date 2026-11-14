@@ -1,4 +1,4 @@
-From 571a8785682a2460a5aebe314abeb20a50ad9c90 Mon Sep 17 00:00:00 2001
+From f8e6f53be5171848e74570da7be41f27db27b893 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 19:58:49 +0800
 Subject: [PATCH] Aegis: defer filter-list and cookie work until after startup
@@ -7,12 +7,6 @@ Compile EasyList off the UI thread, load compiled rules at BEST_EFFORT,
 and skip first-run / default-browser prompts so the first window can
 appear without waiting on those jobs.
 ---
- chrome/browser/aegis/BUILD.gn                |  1 +
- chrome/browser/aegis/aegis_cookie_janitor.cc |  7 +-
- chrome/browser/aegis/filter_list_updater.cc  | 76 ++++++++++++++------
- chrome/browser/aegis/filter_list_updater.h   |  4 +-
- chrome/browser/chrome_browser_main.cc        |  9 +++
- 5 files changed, 74 insertions(+), 23 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 71db5f64f8474732ce9358438a33e4b510df9c9c..01eaeed6bff7e4c10ced7215c18bbbdacd54527a 100644
@@ -208,7 +202,7 @@ index a66e8f96cd6b5ca32c6d83dc9a85072fda825996..1d92d45069c3f2881855a28dcda712ca
    void ApplyList(CompiledFilterList list);
    void Persist(const CompiledFilterList& list);
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index bf35530a0f98fc0774eee7bba7ea747b2161523f..b58466931834b15a072efc101413b59304c2556b 100644
+index 2beb48b12c910c5c257368e8ae36089c5bea7e14..c9cd6ce4ab09582568c104f9b3efe5c8f0fa934e 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -1005,6 +1005,15 @@ void ChromeBrowserMainParts::RecordBrowserStartupTime() {
@@ -227,6 +221,3 @@ index bf35530a0f98fc0774eee7bba7ea747b2161523f..b58466931834b15a072efc101413b593
    for (auto& chrome_extra_part : chrome_extra_parts_) {
      chrome_extra_part->PreEarlyInitialization();
    }
--- 
-2.52.0
-

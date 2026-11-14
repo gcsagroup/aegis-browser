@@ -1,0 +1,20 @@
+From 1f0e4eec7af1e01961874d7d0d330d16d401607e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 00:51:08 +0800
+Subject: [PATCH] fix(access): expose generated Alpha assets to framework
+ bundling
+---
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 2053ecb7e51a035c8b12dc387c697f37c592dbb4..e091e90c5f4f101eb3ef08e19a9081d8eba516bd 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -37,7 +37,7 @@ if (aegis_alpha_test_node_enabled) {
+     sources = get_target_outputs(":alpha_access_resource_files")
+     outputs =
+         [ "{{bundle_resources_dir}}/AegisAlphaAccess/{{source_file_part}}" ]
+-    deps = [ ":alpha_access_resource_files" ]
++    public_deps = [ ":alpha_access_resource_files" ]
+   }
+ }
+ 

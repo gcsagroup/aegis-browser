@@ -1,4 +1,4 @@
-From 5737fa2c6ac18bfb2d72bbbd532b29259c1a4e28 Mon Sep 17 00:00:00 2001
+From 440aa0d76960fd7774db53fca1688306d482f485 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 5 Oct 2026 00:08:49 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E9=94=81=E5=AE=9A=E5=8C=BA?=
@@ -10,10 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- .../display_lock/display_lock_context_test.cc | 53 +++++++++++++++++++
- .../layout/simplified_layout_algorithm.cc     |  9 +++-
- 3 files changed, 63 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 0f4a4b1781ddc97e3af7d80b0413c6d7fb64f629..da6f74662902498e22e1aa34187b5a6619ece20a 100644
@@ -31,10 +27,10 @@ index 0f4a4b1781ddc97e3af7d80b0413c6d7fb64f629..da6f74662902498e22e1aa34187b5a66
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc b/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
-index ef54a336c685829435d4a6e9fc88afb920db8bfe..8686900b3ec2cae93123ed1b5e1852c7be76c8b0 100644
+index d4d88b974e355ac30e29ea6c924948ccb320c11b..b17313ab409d6902a2b8fa58cdcd35eaea90e5c9 100644
 --- a/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
 +++ b/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
-@@ -37,6 +37,7 @@
+@@ -38,6 +38,7 @@
  #include "third_party/blink/renderer/core/html/html_plugin_element.h"
  #include "third_party/blink/renderer/core/html/html_template_element.h"
  #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
@@ -42,8 +38,8 @@ index ef54a336c685829435d4a6e9fc88afb920db8bfe..8686900b3ec2cae93123ed1b5e1852c7
  #include "third_party/blink/renderer/core/paint/paint_layer.h"
  #include "third_party/blink/renderer/core/paint/timing/container_timing.h"
  #include "third_party/blink/renderer/core/paint/timing/container_timing_paint_attribution_tracker.h"
-@@ -4406,4 +4407,56 @@ TEST_F(DisplayLockContextRenderingTest, VisualOverflowUpdateAfterUnlock) {
-             PhysicalRect(0, 0, 120, 120));
+@@ -4510,4 +4511,56 @@ TEST_F(DisplayLockContextTest,
+   EXPECT_FALSE(weak_state2);
  }
  
 +// 强制布局结束后，仍锁定的区域可能再次执行简化布局。
@@ -100,7 +96,7 @@ index ef54a336c685829435d4a6e9fc88afb920db8bfe..8686900b3ec2cae93123ed1b5e1852c7
 +
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc b/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
-index 5e327ba860b27b58e8dc8bd83aedb15a5c67a753..9d0c5eadd38403a57b1382d3c67657ddf98b3284 100644
+index c6e3848041a00fdac6b06ca7d5cb746505fed743..8567896723548e44c962aca5dd8faf46faa81b98 100644
 --- a/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
 +++ b/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
 @@ -4,6 +4,7 @@
@@ -111,7 +107,7 @@ index 5e327ba860b27b58e8dc8bd83aedb15a5c67a753..9d0c5eadd38403a57b1382d3c67657dd
  #include "third_party/blink/renderer/core/layout/block_break_token.h"
  #include "third_party/blink/renderer/core/layout/constraint_space.h"
  #include "third_party/blink/renderer/core/layout/constraint_space_builder.h"
-@@ -218,8 +219,14 @@ void SimplifiedLayoutAlgorithm::AppendNewChildFragment(
+@@ -219,8 +220,14 @@ void SimplifiedLayoutAlgorithm::AppendNewChildFragment(
  const LayoutResult* SimplifiedLayoutAlgorithm::Layout() {
    // Since simplified layout's |Layout()| function deals with laying out
    // children, we can early out if we are display-locked.
@@ -127,6 +123,3 @@ index 5e327ba860b27b58e8dc8bd83aedb15a5c67a753..9d0c5eadd38403a57b1382d3c67657dd
  
    const auto& previous_fragment =
        To<PhysicalBoxFragment>(previous_result_.GetPhysicalFragment());
--- 
-2.52.0
-

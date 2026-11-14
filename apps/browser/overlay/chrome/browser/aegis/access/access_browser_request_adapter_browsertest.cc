@@ -6,7 +6,9 @@
 #include <optional>
 
 #include "base/functional/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
+#include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -238,13 +240,44 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+                       EnhancementSessionPreventsPrerenderCreation) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("/title1.html")));
+  ASSERT_TRUE(aegis::EnhancementTabHelper::FromWebContents(web_contents()));
+  base::HistogramTester histograms;
+  const GURL target = embedded_test_server()->GetURL("/title2.html");
+  content::test::PrerenderHostRegistryObserver observer(*web_contents());
+  prerender_helper_.AddPrerenderAsync(target);
+  observer.WaitForTrigger(target);
+  EXPECT_FALSE(prerender_helper_.GetHostForUrl(target));
+  // 记录现有兼容限制，不将默认会话下未创建预渲染冒充隔离验收。
+  // Chromium PrerenderFinalStatus::kPrerenderingDisabledByDevTools 的 UMA 值。
+  constexpr int kPrerenderingDisabledByDevTools = 69;
+  histograms.ExpectUniqueSample(
+      "Prerender.Experimental.PrerenderHostFinalStatus.SpeculationRule",
+      kPrerenderingDisabledByDevTools, 1);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
                        PrerenderPageCannotInheritPrimaryPageIdentity) {
   const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
   const GURL prerender_url = embedded_test_server()->GetURL("/title2.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), primary_url));
+  // 只在此隔离夹具中移除会阻止预渲染的增强会话。默认集成行为由上面
+  // 的测试覆盖；这里必须真正创建非主页面，验证其不能继承主页面身份。
+  ASSERT_TRUE(aegis::EnhancementTabHelper::FromWebContents(web_contents()));
+  web_contents()->RemoveUserData(aegis::EnhancementTabHelper::UserDataKey());
+  ASSERT_FALSE(aegis::EnhancementTabHelper::FromWebContents(web_contents()));
 
+  // 先检查预渲染实际创建，失败时报告原因，而非在辅助方法内崩溃。
+  base::HistogramTester histograms;
+  content::test::PrerenderHostRegistryObserver observer(*web_contents());
+  prerender_helper_.AddPrerenderAsync(prerender_url);
+  observer.WaitForTrigger(prerender_url);
   const content::PrerenderHostId host_id =
-      prerender_helper_.AddPrerender(prerender_url);
+      prerender_helper_.GetHostForUrl(prerender_url);
+  ASSERT_TRUE(host_id) << histograms.GetAllHistogramsRecorded();
+  prerender_helper_.WaitForPrerenderLoadCompletion(prerender_url);
   content::RenderFrameHost* prerender_frame =
       prerender_helper_.GetPrerenderedMainFrameHost(host_id);
   ASSERT_NE(prerender_frame, nullptr);

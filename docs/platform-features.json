@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-10-13",
+  "updated": "2026-11-14",
   "platforms": [
     "macOS",
     "Windows",
@@ -2892,6 +2892,399 @@
           "evidence": [
             "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
           ]
+        }
+      }
+    },
+    {
+      "id": "unified-settings",
+      "name": {
+        "zh-CN": "统一设置与旧入口迁移",
+        "en": "Unified settings and legacy routes",
+        "zh-TW": "統一設定與舊入口遷移"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已整合统一分类、保存和旧入口迁移；本轮仅验证源码及流程，156实机验收未完成。",
+            "en": "Unified categories, saving and legacy routes are integrated; this run verifies source and workflow only. Native acceptance of 156 is pending.",
+            "zh-TW": "已整合統一分類、儲存與舊入口遷移；本輪僅驗證原始碼及流程，156實機驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/resources/settings/aegis_page/aegis_page.ts"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已整合统一分类、保存和旧入口迁移；本轮仅验证源码及流程，156实机验收未完成。",
+            "en": "Unified categories, saving and legacy routes are integrated; this run verifies source and workflow only. Native acceptance of 156 is pending.",
+            "zh-TW": "已整合統一分類、儲存與舊入口遷移；本輪僅驗證原始碼及流程，156實機驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/resources/settings/aegis_page/aegis_page.ts"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已整合统一分类、保存和旧入口迁移；本轮仅验证源码及流程，156实机验收未完成。",
+            "en": "Unified categories, saving and legacy routes are integrated; this run verifies source and workflow only. Native acceptance of 156 is pending.",
+            "zh-TW": "已整合統一分類、儲存與舊入口遷移；本輪僅驗證原始碼及流程，156實機驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/resources/aegis/mobile_settings.ts",
+            "apps/browser/overlay/chrome/browser/resources/aegis_agent/mobile_settings.ts"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "保留已合入main的SwiftUI分类和表单布局；使用WebKit，本轮未重跑iOS验收。",
+            "en": "Preserves the SwiftUI categories and forms merged into main. iOS uses WebKit; its acceptance was not rerun in this integration.",
+            "zh-TW": "保留已合入main的SwiftUI分類與表單版面；使用WebKit，本輪未重跑iOS驗收。"
+          },
+          "source": [
+            "apps/ios/AegisApp/BrowserSettings.swift",
+            "apps/ios/AegisApp/SettingsFormControls.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "p01-two-hop-tls",
+      "name": {
+        "zh-CN": "P01 控制协议和双跳 TLS 传输",
+        "en": "P01 control protocol and two-hop TLS transport",
+        "zh-TW": "P01 控制協議和雙跳 TLS 傳輸"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "传输库和原生测试由 is_mac 条件编入。",
+            "en": "The build includes the transport library and its native tests on macOS.",
+            "zh-TW": "傳輸庫和原生測試由 is_mac 條件編入。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn",
+            "apps/browser/overlay/chrome/browser/aegis/proxy/core_tls_unittest.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "mac-access-site-proxy-session",
+      "name": {
+        "zh-CN": "Mac本站代理会话与故障恢复",
+        "en": "Mac site proxy session and recovery",
+        "zh-TW": "Mac本站代理工作階段與故障恢復"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入本次源码和功能回归要求；新产物原生与实操验收尚未完成。",
+            "en": "Integrated into this source candidate and regression requirements; native and interactive acceptance of the new artifact is pending.",
+            "zh-TW": "已納入本次原始碼與功能回歸要求；新產物原生與實作驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_site_proxy_session.cc",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_site_proxy_session.cc",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_site_proxy_session.cc",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "iOS保留独立WebKit账户或代理入口；不包含Mac的Chromium连接、子进程和原生测试，不能复用其验收。",
+            "en": "iOS retains separate WebKit account or proxy entry points. Mac Chromium connections, child processes and native tests do not establish iOS acceptance.",
+            "zh-TW": "iOS保留獨立WebKit帳戶或代理入口；不包含Mac的Chromium連線、子程序與原生測試，不能複用其驗收。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserSession.swift",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "mac-access-account",
+      "name": {
+        "zh-CN": "Mac账户节点、额度和登出隔离",
+        "en": "Mac account nodes, quota and sign-out isolation",
+        "zh-TW": "Mac帳戶節點、額度與登出隔離"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入本次源码和功能回归要求；新产物原生与实操验收尚未完成。",
+            "en": "Integrated into this source candidate and regression requirements; native and interactive acceptance of the new artifact is pending.",
+            "zh-TW": "已納入本次原始碼與功能回歸要求；新產物原生與實作驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_paid_site_mac.mm",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_paid_site_mac.mm",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_paid_site_mac.mm",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "iOS保留独立WebKit账户或代理入口；不包含Mac的Chromium连接、子进程和原生测试，不能复用其验收。",
+            "en": "iOS retains separate WebKit account or proxy entry points. Mac Chromium connections, child processes and native tests do not establish iOS acceptance.",
+            "zh-TW": "iOS保留獨立WebKit帳戶或代理入口；不包含Mac的Chromium連線、子程序與原生測試，不能複用其驗收。"
+          },
+          "source": [
+            "apps/ios/AegisApp/AccessAccountSession.swift",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "mac-access-core-diagnostics",
+      "name": {
+        "zh-CN": "Mac本地核心诊断隐私与分享",
+        "en": "Mac local core diagnostic privacy and sharing",
+        "zh-TW": "Mac本地核心診斷隱私與分享"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入本次源码和功能回归要求；新产物原生与实操验收尚未完成。",
+            "en": "Integrated into this source candidate and regression requirements; native and interactive acceptance of the new artifact is pending.",
+            "zh-TW": "已納入本次原始碼與功能回歸要求；新產物原生與實作驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "windows-uninstall-localization",
+      "name": {
+        "zh-CN": "Windows卸载提示本地化",
+        "en": "Windows uninstall prompt localization",
+        "zh-TW": "Windows解除安裝提示在地化"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Windows卸载器；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Windows uninstaller; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Windows解除安裝程式；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/scripts/windows-uninstall-locales_test.py",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入本次源码和功能回归要求；新产物原生与实操验收尚未完成。",
+            "en": "Integrated into this source candidate and regression requirements; native and interactive acceptance of the new artifact is pending.",
+            "zh-TW": "已納入本次原始碼與功能回歸要求；新產物原生與實作驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/scripts/windows-uninstall-locales_test.py",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Windows卸载器；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Windows uninstaller; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Windows解除安裝程式；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/scripts/windows-uninstall-locales_test.py",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本项按既有设计仅适用于Windows卸载器；不能将该端源码与测试视为本平台实现。",
+            "en": "This item is scoped to the Windows uninstaller; its source and tests do not establish implementation on this platform.",
+            "zh-TW": "本項依既有設計僅適用於Windows解除安裝程式；不能將該端原始碼與測試視為本平台實作。"
+          },
+          "source": [
+            "apps/browser/scripts/windows-uninstall-locales_test.py",
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
         }
       }
     }

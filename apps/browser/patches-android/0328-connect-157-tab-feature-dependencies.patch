@@ -1,0 +1,87 @@
+From 2beb65952406ad56a972a7e98745db379360b554 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sat, 7 Nov 2026 09:30:04 +0800
+Subject: [PATCH] =?UTF-8?q?build:=20=E6=8E=A5=E9=80=9A=20Chromium=20157=20?=
+ =?UTF-8?q?=E6=A0=87=E7=AD=BE=E9=A1=B5=E5=8A=9F=E8=83=BD=E4=BE=9D=E8=B5=96?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+---
+
+diff --git a/chrome/browser/android/BUILD.gn b/chrome/browser/android/BUILD.gn
+index b42156222ccfcddc5858d9a22179f0171561972f..252d8fea4681f5251878d421772ef88dafe49bcb 100644
+--- a/chrome/browser/android/BUILD.gn
++++ b/chrome/browser/android/BUILD.gn
+@@ -154,6 +154,7 @@ source_set("tabs_impl") {
+   sources = [ "tab_features.cc" ]
+ 
+   deps = [
++    "//chrome/browser/aegis",
+     ":media_state_observer",
+     ":oom_intervention",
+     ":persisted_tab_data",
+diff --git a/chrome/browser/renderer_context_menu/BUILD.gn b/chrome/browser/renderer_context_menu/BUILD.gn
+index d66c9ebf0f1d094e76b165d27a9ae00a114e7778..3686425674adcb2f68b49987deddf49b76360932 100644
+--- a/chrome/browser/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/renderer_context_menu/BUILD.gn
+@@ -113,7 +113,6 @@ source_set("impl") {
+     ]
+ 
+     deps += [
+-      "//chrome/browser/aegis",
+       "//chrome/app:command_ids",
+       "//chrome/app:generated_resources",
+       "//chrome/browser:browser_features",
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index f401f7b59d4e51e9f2ac0573a0368d652b437e4b..f7152e65229153e358fd35ffe513b9be381fd048 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -295,7 +295,6 @@ if (!is_android) {
+     sources = [ "browser_actions.cc" ]
+     public_deps = [ "//base" ]
+     deps = [
+-      "//chrome/common/aegis",
+       ":browser_actions",
+       ":browser_command_controller",
+       ":browser_commands",
+@@ -1351,7 +1350,7 @@ if (!is_android) {
+       "//cc/paint",
+       "//chrome/app:command_ids",
+       "//chrome/browser/profiles:profile",
+-      "//chrome/browser/ui/browser_window/public",
++      "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/tabs:tab_strip",
+       "//chrome/common",
+       "//components/input",
+@@ -1368,6 +1367,7 @@ source_set("tab_helpers_impl") {
+   public_deps = [ ":tab_helpers" ]
+ 
+   deps = [
++    "//chrome/browser/aegis",
+     ":recently_audible_helper",
+     ":ui_features",
+     "//base",
+diff --git a/chrome/browser/ui/tabs/BUILD.gn b/chrome/browser/ui/tabs/BUILD.gn
+index a1a35c63aa1778206122afe3c4a59126b304c752..25dbb25b51d6bd00b5e2002ec2063f3e16afe013 100644
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -533,6 +533,7 @@ if (!is_android) {
+     }
+ 
+     deps = [
++      "//chrome/browser/aegis",
+       "//chrome/browser/ui:aegis_mouse_gesture_tab_helper",
+       ":tab_group",
+       ":tab_model",
+diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+index 0babd21439f46e53e6cffc9c93db49850a306bc5..ae6e01c16c2ad2bf6e62d053e6ec3c34b448a87b 100644
+--- a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+@@ -57,7 +57,6 @@ source_set("impl") {
+   }
+ 
+   if (!is_android) {
+-    deps += [ "//chrome/common/aegis" ]
+   }
+ }
+ 

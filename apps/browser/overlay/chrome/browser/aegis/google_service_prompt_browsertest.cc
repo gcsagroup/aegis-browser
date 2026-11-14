@@ -4,10 +4,9 @@
 #include "base/test/run_until.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/signin/signin_view_controller.h"
 #include "chrome/browser/ui/startup/infobar_utils.h"
 #include "chrome/browser/ui/startup/startup_types.h"
@@ -23,12 +22,13 @@
 #include "content/public/test/browser_test.h"
 #include "google_apis/google_api_keys.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "ui/base/base_window.h"
 
 namespace aegis {
 class GoogleServicePromptBrowserTest : public InProcessBrowserTest {
  protected:
   content::WebContents* contents() {
-    return browser()->tab_strip_model()->GetActiveWebContents();
+    return browser()->GetTabStripModel()->GetActiveWebContents();
   }
 
   size_t GooglePromptCount() {
@@ -92,13 +92,14 @@ IN_PROC_BROWSER_TEST_F(GoogleServicePromptBrowserTest,
 IN_PROC_BROWSER_TEST_F(GoogleServicePromptBrowserTest,
                        ExplicitBrowserSigninExplainsMissingOAuth) {
   ASSERT_FALSE(google_apis::HasOAuthClientConfigured());
-  const int tab_count = browser()->tab_strip_model()->count();
+  const int tab_count = browser()->GetTabStripModel()->count();
   const GURL original_url = contents()->GetLastCommittedURL();
   EXPECT_EQ(0u, GooglePromptCount());
-  SigninViewController::From(browser())->ShowSignin(
-      signin_metrics::AccessPoint::kSettings);
+  SigninViewController::From(browser())->ShowDiceEnableSyncTab(
+      signin_metrics::AccessPoint::kSettings,
+      signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO, std::string());
   EXPECT_EQ(1u, GooglePromptCount());
-  EXPECT_EQ(tab_count, browser()->tab_strip_model()->count());
+  EXPECT_EQ(tab_count, browser()->GetTabStripModel()->count());
   EXPECT_EQ(original_url, contents()->GetLastCommittedURL());
 }
 }  // namespace aegis

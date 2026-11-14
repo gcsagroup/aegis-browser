@@ -1,11 +1,9 @@
-From bed37bbce8fbd4b3d67cff9fc19f80713c0650dd Mon Sep 17 00:00:00 2001
+From 18ecdd47f0bf54a17f05249a5c7a8f8142d4d832 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:21:32 +0800
 Subject: [PATCH] fix(aegis): brand Android agent entry
 
 ---
- chrome/android/java/res/layout/aegis_agent_ntp_card.xml | 4 +---
- 1 file changed, 1 insertion(+), 3 deletions(-)
 
 diff --git a/chrome/android/java/res/layout/aegis_agent_ntp_card.xml b/chrome/android/java/res/layout/aegis_agent_ntp_card.xml
 index d7a01e28863eb4d9a57b3d2419015450d81f43bb..f6638194c798096553db415f96d2de106a5d85fb 100644
@@ -29,6 +27,3 @@ index d7a01e28863eb4d9a57b3d2419015450d81f43bb..f6638194c798096553db415f96d2de10
  
          <LinearLayout
              android:layout_width="0dp"
--- 
-2.52.0
-

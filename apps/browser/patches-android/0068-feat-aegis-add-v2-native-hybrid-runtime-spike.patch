@@ -1,18 +1,9 @@
-From cc50669e5898f2a6bb2c777cdcdc66f6a8b3b492 Mon Sep 17 00:00:00 2001
+From 95e6aad565ae6d8ee4d567e03681c4d68c06ae41 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 12:59:08 +0800
 Subject: [PATCH] feat(aegis): add v2 native hybrid runtime spike
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   3 +
- .../aegis/agent/aegis_agent_browsertest.cc    |  69 +++++++++
- .../browser/aegis/agent/v2_runtime_spike.cc   | 143 ++++++++++++++++++
- chrome/browser/aegis/agent/v2_runtime_spike.h | 102 +++++++++++++
- .../aegis/agent/v2_runtime_spike_unittest.cc  | 131 ++++++++++++++++
- 5 files changed, 448 insertions(+)
- create mode 100644 chrome/browser/aegis/agent/v2_runtime_spike.cc
- create mode 100644 chrome/browser/aegis/agent/v2_runtime_spike.h
- create mode 100644 chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index ca2fa97f3d14adbce483a02d2fe7a7fdb262af1a..ef968aa958d0520ec51fb6344c913ab7ea639c8f 100644
@@ -536,6 +527,3 @@ index 0000000000000000000000000000000000000000..818cb5ab434a9cc8e3cfeccb1fe8ab98
 +
 +}  // namespace
 +}  // namespace aegis::agent
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From 89d4cb5049cce7ff37911752c96e296774f32882 Mon Sep 17 00:00:00 2001
+From bc02661cd6df89bcbda81adca01a22bf4e17b900 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:59:10 +0800
 Subject: [PATCH] Aegis: hide sensitive CDP targets and show live agent
@@ -7,27 +7,6 @@ Subject: [PATCH] Aegis: hide sensitive CDP targets and show live agent
 Remote CDP lists only the browser target and http(s) pages. Loopback
 agent WebSocket counts appear on chrome://aegis.
 ---
- chrome/browser/aegis/aegis_service.cc         | 39 +++++++++++++++-
- chrome/browser/aegis/aegis_service.h          |  3 ++
- chrome/browser/devtools/BUILD.gn              |  1 +
- .../chrome_devtools_manager_delegate.cc       | 19 ++++++++
- .../chrome_devtools_manager_delegate.h        |  2 +
- chrome/browser/resources/aegis/aegis.ts       | 14 +++++-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 25 ++++++-----
- .../ui/webui/aegis/aegis_ui_handler.cc        |  2 +
- chrome/common/aegis/BUILD.gn                  | 16 +++++++
- chrome/common/aegis/cdp_target_filter.cc      | 19 ++++++++
- chrome/common/aegis/cdp_target_filter.h       | 20 +++++++++
- .../aegis/cdp_target_filter_unittest.cc       | 37 ++++++++++++++++
- chrome/common/aegis/cdp_ws_hook.cc            | 44 +++++++++++++++++++
- chrome/common/aegis/cdp_ws_hook.h             | 25 +++++++++++
- .../browser/devtools/devtools_http_handler.cc | 11 ++---
- 15 files changed, 256 insertions(+), 21 deletions(-)
- create mode 100644 chrome/common/aegis/cdp_target_filter.cc
- create mode 100644 chrome/common/aegis/cdp_target_filter.h
- create mode 100644 chrome/common/aegis/cdp_target_filter_unittest.cc
- create mode 100644 chrome/common/aegis/cdp_ws_hook.cc
- create mode 100644 chrome/common/aegis/cdp_ws_hook.h
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 9c6887281abe883a19fba50e7249a0d810543e09..0f0b0db49a5b8dfdefc3c2799b937f0f29576038 100644
@@ -134,10 +113,10 @@ index 8a64464ded3606fbdd968ebedef9c8c767d3c1e7..03b752f4937e9be578915a9e0202e4e8
    void InstallReporterCallbacks();
    void OnHeuristicSummary(PageSnapshot snapshot,
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index 2e694986c7617565320e7259f4548ba6e75561b4..a05f0ab7b122da5dd38ea0b34e7150e4063f4af9 100644
+index 9011cb9983878fbd6c14914586f9f5baaf32ba55..a66b00ca500e3786d995ead8571a8c08af5d7a9f 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -292,6 +292,7 @@ static_library("devtools") {
+@@ -325,6 +325,7 @@ static_library("devtools") {
        "//chrome/browser/user_education",
        "//chrome/browser/web_applications",
        "//chrome/common",
@@ -146,10 +125,10 @@ index 2e694986c7617565320e7259f4548ba6e75561b4..a05f0ab7b122da5dd38ea0b34e7150e4
        "//components/input",
        "//components/keep_alive_registry",
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-index 37a83372cec45117a84b810f9b4667bcc8a26a74..7c753799d17b823c90d79583a2cde5a8286dea53 100644
+index 34e568267b70739bd0f3d82b65b790c98187e77b..45187fb030129cab3da89f646b253722c7a01378 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-@@ -43,6 +43,8 @@
+@@ -46,6 +46,8 @@
  #include "chrome/browser/web_applications/web_app_registrar.h"
  #include "chrome/browser/web_applications/web_app_tab_helper.h"
  #include "chrome/browser/web_applications/web_app_utils.h"
@@ -158,7 +137,7 @@ index 37a83372cec45117a84b810f9b4667bcc8a26a74..7c753799d17b823c90d79583a2cde5a8
  #include "chrome/common/chrome_switches.h"
  #include "chrome/grit/browser_resources.h"
  #include "components/guest_view/browser/guest_view_base.h"
-@@ -421,6 +423,22 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
+@@ -424,6 +426,22 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
    return IsInspectionAllowed(profile, agent_host);
  }
  
@@ -180,15 +159,15 @@ index 37a83372cec45117a84b810f9b4667bcc8a26a74..7c753799d17b823c90d79583a2cde5a8
 +
  void ChromeDevToolsManagerDelegate::ClientAttached(
      content::DevToolsAgentHostClientChannel* channel) {
-   DCHECK(sessions_.find(channel) == sessions_.end());
-@@ -550,6 +568,7 @@ void ChromeDevToolsManagerDelegate::AcceptDebugging(AcceptCallback callback) {
+   CHECK(sessions_.find(channel) == sessions_.end(), base::NotFatalUntil::M161);
+@@ -553,6 +571,7 @@ void ChromeDevToolsManagerDelegate::AcceptDebugging(AcceptCallback callback) {
  
  void ChromeDevToolsManagerDelegate::SetActiveWebSocketConnections(
      size_t count) {
 +  aegis::CdpWsHook::NotifyClientCount(count);
-   if (count == 0 && infobar_) {
-     // We need to reset the pointer to the infobar before closing it because
-     // closing the infobar deletes it.
+   if (infobars::IsInfoBarMigrated(
+           infobars::InfoBarDelegate::
+               DEV_TOOLS_REMOTE_DEBUGGING_INFOBAR_DELEGATE)) {
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.h b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
 index 5a1fb503d2ce171289b6ac406fdaff303f76a28c..61de40316ca1b9930e41c9ff138935feb1a14f30 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.h
@@ -555,10 +534,10 @@ index 0000000000000000000000000000000000000000..8407761169ac4dc0fe4a53142ccc710b
 +
 +#endif  // CHROME_COMMON_AEGIS_CDP_WS_HOOK_H_
 diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
-index e63f76cf8447df74b8a2e24769e524843d8be49f..42d1fb5b93b36b03f216b851c7217fe32b7c4007 100644
+index fab13300e5d8f6f562dfef1e5bc8e902ca0a43c4..eaf7a05d1f556e44e35577e6cd356805eab31ed7 100644
 --- a/content/browser/devtools/devtools_http_handler.cc
 +++ b/content/browser/devtools/devtools_http_handler.cc
-@@ -402,9 +402,7 @@ net::IPEndPoint DevToolsHttpHandler::GetServerIpAddress() const {
+@@ -412,9 +412,7 @@ net::IPEndPoint DevToolsHttpHandler::GetServerIpAddress() const {
  }
  
  DevToolsHttpHandler::~DevToolsHttpHandler() {
@@ -569,7 +548,7 @@ index e63f76cf8447df74b8a2e24769e524843d8be49f..42d1fb5b93b36b03f216b851c7217fe3
      delegate_->SetActiveWebSocketConnections(0);
    }
    // Disconnecting sessions might lead to the last minute messages generated
-@@ -891,9 +889,7 @@ void DevToolsHttpHandler::OnWebSocketMessage(int connection_id,
+@@ -923,9 +921,7 @@ void DevToolsHttpHandler::OnWebSocketMessage(int connection_id,
  
  void DevToolsHttpHandler::OnClose(int connection_id) {
    auto removed_count = connection_to_client_.erase(connection_id);
@@ -580,7 +559,7 @@ index e63f76cf8447df74b8a2e24769e524843d8be49f..42d1fb5b93b36b03f216b851c7217fe3
      delegate_->SetActiveWebSocketConnections(connection_to_client_.size());
    }
  }
-@@ -1020,8 +1016,7 @@ void DevToolsHttpHandler::AcceptWebSocket(
+@@ -1052,8 +1048,7 @@ void DevToolsHttpHandler::AcceptWebSocket(
      const net::HttpServerRequestInfo& request) {
    if (!thread_)
      return;
@@ -590,6 +569,3 @@ index e63f76cf8447df74b8a2e24769e524843d8be49f..42d1fb5b93b36b03f216b851c7217fe3
      delegate_->SetActiveWebSocketConnections(connection_to_client_.size());
    }
    thread_->task_runner()->PostTask(
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From 78e9365459073d5ad6d669906a9db44f94f3aa62 Mon Sep 17 00:00:00 2001
+From a18f8c679140d47f5909a5dbab6e682434db7f80 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 7 Oct 2026 06:10:51 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E7=95=99Android155.39=E7=8B=AC?=
@@ -9,47 +9,99 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/actor/actor_keyed_service.cc   |  7 +++++
- chrome/browser/actor/actor_keyed_service.h    |  4 +++
- .../actor/actor_keyed_service_unittest.cc     | 28 +++++++++++++++++++
- .../ui/webui/help/aegis_github_update.h       |  4 +--
- 4 files changed, 41 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
-index 228fb638c98a0be8c4abed190f49f240ed58739c..caa9021405d116ad1829f11b0d611de16b373148 100644
+index fd3052491a59d7aea6a45515cb23dac087cb5af3..cc46ae1beb87661c448276a58c4b23b63ca859a4 100644
 --- a/chrome/browser/actor/actor_keyed_service.cc
 +++ b/chrome/browser/actor/actor_keyed_service.cc
-@@ -866,6 +866,13 @@ ActorTask* ActorKeyedService::GetTask(TaskId task_id) {
-   return nullptr;
+@@ -507,7 +507,7 @@ TaskId ActorKeyedService::CreateTask(
+     AllowedSchemes allowed_schemes) {
+   return CreateTaskWithOptions(
+       source_info, policy_checker, /*options=*/nullptr,
+-      /*delegate=*/nullptr, actor_ui_state_manager_.get(),
++      /*delegate=*/nullptr, GetTaskUiStateManager(),
+       /*initial_invocation_source=*/std::nullopt, allowed_schemes);
+ }
+ 
+@@ -533,7 +533,7 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
+     webui::mojom::TaskOptionsPtr options,
+     base::WeakPtr<ActorTaskDelegate> delegate) {
+   CHECK(policy_checker);
+-  auto* ui_state_manager = actor_ui_state_manager_.get();
++  auto* ui_state_manager = GetTaskUiStateManager();
+   CHECK(ui_state_manager);
+   const EnterprisePolicyChecker* policy_checker_ptr = policy_checker.get();
+   return CreateTaskImpl(
+@@ -554,7 +554,7 @@ TaskId ActorKeyedService::CreateTaskForTesting(
+     AllowedSchemes allowed_schemes) {
+   return CreateTaskImpl(std::move(ui_event_dispatcher), source_info,
+                         policy_checker, nullptr, std::move(options),
+-                        std::move(delegate), actor_ui_state_manager_.get(),
++                        std::move(delegate), GetTaskUiStateManager(),
+                         initial_invocation_source, allowed_schemes);
+ }
+ 
+@@ -907,6 +907,19 @@ ActorSurfaceRegistry& ActorKeyedService::GetSurfaceRegistry() {
+   return *surface_registry_;
  }
  
 +void ActorKeyedService::SetActorUiStateManagerForTesting(
 +    std::unique_ptr<ui::ActorUiStateManagerInterface> manager) {
 +  CHECK(manager);
 +  CHECK(active_tasks_.empty());
-+  actor_ui_state_manager_ = std::move(manager);
++  actor_ui_state_manager_for_testing_ = std::move(manager);
 +}
 +
- ActorUiStateManagerInterface* ActorKeyedService::GetActorUiStateManager() {
++ActorUiStateManagerInterface* ActorKeyedService::GetTaskUiStateManager() {
++  return actor_ui_state_manager_for_testing_
++             ? actor_ui_state_manager_for_testing_.get()
++             : actor_ui_state_manager_.get();
++}
++
+ ui::ActorUiStateManager* ActorKeyedService::GetActorUiStateManager(
+     base::PassKey<ui::ActorUiStateManager>) {
    return actor_ui_state_manager_.get();
- }
 diff --git a/chrome/browser/actor/actor_keyed_service.h b/chrome/browser/actor/actor_keyed_service.h
-index 24a66091a134aa2be3759eb1c8803cbfa6506cff..5336d1c7fff565e8f5c0a140f9e36bae345a4a5e 100644
+index 81c316309a180a529b42c7844ece907e9946ba23..ca9e338607bff5f2c42a26abf2b5d75d41b13f17 100644
 --- a/chrome/browser/actor/actor_keyed_service.h
 +++ b/chrome/browser/actor/actor_keyed_service.h
-@@ -69,6 +69,10 @@ class ActorKeyedService : public KeyedService,
+@@ -75,6 +75,14 @@ class ActorKeyedService : public KeyedService,
    // Convenience method, may return nullptr.
    static ActorKeyedService* Get(content::BrowserContext* context);
  
 +  // 仅在创建任务前注入测试界面，保留管理器与任务的生命周期关系。
 +  void SetActorUiStateManagerForTesting(
 +      std::unique_ptr<ui::ActorUiStateManagerInterface> manager);
++  ui::ActorUiStateManagerInterface* GetActorUiStateManagerForTesting() {
++    return GetTaskUiStateManager();
++  }
++
 +
    const std::map<TaskId, const ActorTask*> GetActiveTasks() const;
  
    size_t GetActiveTasksCount() const;
+@@ -308,6 +316,8 @@ class ActorKeyedService : public KeyedService,
+   base::WeakPtr<ActorKeyedService> GetWeakPtr();
+ 
+  private:
++  ui::ActorUiStateManagerInterface* GetTaskUiStateManager();
++
+   TaskId CreateTaskImpl(
+       std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
+       const TaskSourceInfo& source_info,
+@@ -347,6 +357,10 @@ class ActorKeyedService : public KeyedService,
+   // Note: This field should not be used directly, use the
+   // ActorUiStateManagerInterface* passed in via CreateTaskImpl instead.
+   std::unique_ptr<ui::ActorUiStateManager> actor_ui_state_manager_;
++  // 测试接口与原生管理器分别持有；不得改变上游PassKey和具体类型接口。
++  std::unique_ptr<ui::ActorUiStateManagerInterface>
++      actor_ui_state_manager_for_testing_;
++
+ 
+   // Declared before `surface_registry_` so the manager outlives the registry
+   // that uses it, and before `active_tasks_` so tasks are destroyed before
 diff --git a/chrome/browser/actor/actor_keyed_service_unittest.cc b/chrome/browser/actor/actor_keyed_service_unittest.cc
-index c75037b556a25082400f08533f9b890bc231033a..66ba0f294b4c2f46f42d25bf5d5d2fe5ed532538 100644
+index 9851654337217b31ee81d6753cfd9cc54e3177f0..816c80fe4fe096c92158ed564722018c45a709bc 100644
 --- a/chrome/browser/actor/actor_keyed_service_unittest.cc
 +++ b/chrome/browser/actor/actor_keyed_service_unittest.cc
 @@ -11,6 +11,7 @@
@@ -57,9 +109,9 @@ index c75037b556a25082400f08533f9b890bc231033a..66ba0f294b4c2f46f42d25bf5d5d2fe5
  #include "base/files/scoped_temp_dir.h"
  #include "base/test/bind.h"
 +#include "base/test/gtest_util.h"
- #include "base/test/metrics/histogram_tester.h"
- #include "base/test/run_until.h"
  #include "base/test/scoped_command_line.h"
+ #include "chrome/browser/actor/actor_surface_registry.h"
+ #include "chrome/browser/actor/actor_task.h"
 @@ -162,6 +163,33 @@ TEST_F(AegisActorRuntimeTest, CreatesAegisTaskWithoutGlicRuntime) {
    EXPECT_TRUE(checker_destroyed);
  }
@@ -69,7 +121,7 @@ index c75037b556a25082400f08533f9b890bc231033a..66ba0f294b4c2f46f42d25bf5d5d2fe5
 +  auto manager = BuildUiStateManagerMock();
 +  auto* manager_ptr = manager.get();
 +  actor_service->SetActorUiStateManagerForTesting(std::move(manager));
-+  EXPECT_EQ(actor_service->GetActorUiStateManager(), manager_ptr);
++  EXPECT_EQ(actor_service->GetActorUiStateManagerForTesting(), manager_ptr);
 +  const TaskId id = actor_service->CreateTask(TestTaskSourceInfo(),
 +                                            NoEnterprisePolicyChecker());
 +  EXPECT_NE(actor_service->GetTask(id), nullptr);
@@ -109,6 +161,3 @@ index 6e2cf344cf2a7d7b48aee76e4af93557407800cc..f2243cbcc17c749ac567d023ff31233c
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

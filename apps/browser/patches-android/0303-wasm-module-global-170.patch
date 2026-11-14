@@ -1,4 +1,4 @@
-From 07c1d76177c3f3525ad12d7eee74988ef3691d48 Mon Sep 17 00:00:00 2001
+From c1f07808fc654690bc1da42722b2823edfcdb12f Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 12 Oct 2026 03:35:55 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E9=80=82=E9=85=8D=20WASM=20=E8=83=B6?=
@@ -7,13 +7,7 @@ Subject: [PATCH] =?UTF-8?q?fix:=20=E9=80=82=E9=85=8D=20WASM=20=E8=83=B6?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt  | 2 +-
- .../resources/aegis_agent/local_ai/asset_manifest.json    | 8 ++++----
- .../bergamot/worker/bergamot-translator-worker.js         | 3 ++-
- chrome/browser/ui/webui/help/aegis_github_update.h        | 4 ++--
- 4 files changed, 9 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
 index e5cf0c4d1c0c8b7a8c7b566f2cb09c6beb57126f..beee1e84713eab99f60f76e59b035d42b32d5c8c 100644
@@ -83,6 +77,3 @@ index e807b1c832e57b0ea4e8cb2db7a87ce41ffec6f8..5ec7e6d8c5a8bf00edfebf2bc8ed3bc8
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

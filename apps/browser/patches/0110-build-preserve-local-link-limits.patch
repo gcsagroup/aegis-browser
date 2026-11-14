@@ -1,4 +1,4 @@
-From 6744985d10368807353bd53b9beb45c84dd16047 Mon Sep 17 00:00:00 2001
+From 157e5a6ec9bd336d93e09de63d5cdc72aa309917 Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:06:52 +0800
 Subject: [PATCH] =?UTF-8?q?build(aegis):=20=E4=BF=9D=E7=95=99=E6=9C=AC?=
@@ -9,16 +9,12 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/BUILD.gn               | 9 +++++++++
- chrome/browser/aegis/BUILD.gn | 4 ++++
- chrome/test/BUILD.gn          | 4 ++++
- 3 files changed, 17 insertions(+)
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index 8a60d7061bbfbeea1a15992ee0d9f2389b742f6e..e0c798080f4bdae7aed228a725d6212db14ba8b7 100644
+index f1d133b6cda978b105c6110b279fdd75a1b2f061..fec79333c9c23c52a043fa2a84f3c39cc6fb79f6 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
-@@ -1358,6 +1358,14 @@ if (is_win) {
+@@ -1364,6 +1364,14 @@ if (is_win) {
      }
    }
  
@@ -33,8 +29,8 @@ index 8a60d7061bbfbeea1a15992ee0d9f2389b742f6e..e0c798080f4bdae7aed228a725d6212d
    mac_framework_bundle("chrome_framework") {
      output_name = chrome_framework_name
  
-@@ -1371,6 +1379,7 @@ if (is_win) {
-     configs += [ "//build/config/compiler:wexit_time_destructors" ]
+@@ -1376,6 +1384,7 @@ if (is_win) {
+ 
      configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
      configs += [ "//build/config/compiler:thinlto_optimize_max" ]
 +    configs += [ ":aegis_acceptance_link_limits" ]
@@ -57,10 +53,10 @@ index 5543d5affb08d914e41616bf4df1b5ca31a9ba15..0a6c89102a9ca5fb0f3cb1f5db43bdca
      "aegis_ai_control_unittest.cc",
      "aegis_download_prefs_unittest.cc",
 diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
-index eebdb636122e0a000772ddcad7d5bf5573a9d34b..5ec121b4b3b35d36887aeadfea77b427ab23e1c2 100644
+index 8fff03283474382fcb728d7006560d8ada5054fb..63ad9752490160c822dd34432248676ec5276264 100644
 --- a/chrome/test/BUILD.gn
 +++ b/chrome/test/BUILD.gn
-@@ -1627,6 +1627,10 @@ if (!is_android) {
+@@ -1327,6 +1327,10 @@ if (!is_android) {
    test("browser_tests") {
      use_xvfb = use_xvfb_in_this_config
  
@@ -71,6 +67,3 @@ index eebdb636122e0a000772ddcad7d5bf5573a9d34b..5ec121b4b3b35d36887aeadfea77b427
      configs += [ "//build/config:precompiled_headers" ]
      configs += [ ":disable_thinlto_cache_flags" ]
      defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
--- 
-2.52.0
-

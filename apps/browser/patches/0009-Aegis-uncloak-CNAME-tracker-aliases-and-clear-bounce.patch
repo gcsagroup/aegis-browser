@@ -1,4 +1,4 @@
-From 2d3e78a5c022564e058bf70f88674a01d40c5be1 Mon Sep 17 00:00:00 2001
+From 4cd8ec791c563c63251ab79fd28bbe4b26506bab Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:16:20 +0800
 Subject: [PATCH] Aegis: uncloak CNAME tracker aliases and clear bounce-tracker
@@ -8,34 +8,6 @@ Block first-party subresources whose DNS CNAME chain points at a known
 tracker, and immediately delete cookies on BTM bounce hops that match
 Aegis tracker rules instead of waiting for the default grace period.
 ---
- chrome/browser/aegis/BUILD.gn                 |   2 +
- chrome/browser/aegis/aegis_bounce_observer.cc | 106 ++++++++++++++++++
- chrome/browser/aegis/aegis_bounce_observer.h  |  49 ++++++++
- chrome/browser/aegis/aegis_prefs.cc           |   2 +
- chrome/browser/aegis/aegis_service.cc         |  43 ++++++-
- chrome/browser/aegis/aegis_service.h          |   4 +
- .../browser/chrome_content_browser_client.cc  |  14 ++-
- chrome/browser/profiles/renderer_updater.cc   |   8 +-
- chrome/browser/profiles/renderer_updater.h    |   1 +
- chrome/browser/resources/aegis/aegis.html     |   8 ++
- chrome/browser/resources/aegis/aegis.ts       |  12 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  10 ++
- .../ui/webui/aegis/aegis_ui_handler.cc        |   6 +
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/aegis_net_throttle.cc     |  64 +++++++++--
- chrome/common/aegis/aegis_net_throttle.h      |  25 +++--
- chrome/common/aegis/cname_uncloak.cc          |  93 +++++++++++++++
- chrome/common/aegis/cname_uncloak.h           |  50 +++++++++
- chrome/common/aegis/features.cc               |   2 +
- chrome/common/aegis/features.h                |   2 +
- chrome/common/aegis/pref_names.h              |   3 +
- chrome/common/renderer_configuration.mojom    |   1 +
- .../url_loader_throttle_provider_impl.cc      |   6 +-
- 23 files changed, 490 insertions(+), 23 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_bounce_observer.cc
- create mode 100644 chrome/browser/aegis/aegis_bounce_observer.h
- create mode 100644 chrome/common/aegis/cname_uncloak.cc
- create mode 100644 chrome/common/aegis/cname_uncloak.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 77140ce2db2b1d81867c70894590ae4569195d7c..c18d4021e0140a39c39a30110eaba69fcf046d77 100644
@@ -328,7 +300,7 @@ index bcc72edff8768622556baaa0b4ac179789b60f4f..ebecb7d954fd582c742ac69ba85e2b6c
  
    // Host-rule match against builtin seed + compiled EasyList. Callers should
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 469838c949024a05476e0c3d3749dbb4c7ab0658..263f3e32737ead685659f417884d8c049368750a 100644
+index 6ae67c026f3bf2c1dfb11854346e75188d12bf1d..bc1b68f48ccbae2b58207de4dd5300cc021d8de4 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -4,6 +4,7 @@
@@ -339,18 +311,18 @@ index 469838c949024a05476e0c3d3749dbb4c7ab0658..263f3e32737ead685659f417884d8c04
  
  #include <algorithm>
  #include <iterator>
-@@ -5991,7 +5992,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6150,7 +6151,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kTrackerBlockingEnabled),
            profile->GetPrefs()->GetBoolean(
--              aegis::prefs::kFingerprintGuardEnabled));
+-              aegis::prefs::kFingerprintGuardEnabled)
 +              aegis::prefs::kFingerprintGuardEnabled),
 +          profile->GetPrefs()->GetBoolean(
-+              aegis::prefs::kCnameUncloakEnabled));
-   return std::make_unique<GoogleURLLoaderThrottle>(
- #if BUILDFLAG(IS_ANDROID)
-       client_data_header,
-@@ -6119,8 +6122,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
++              aegis::prefs::kCnameUncloakEnabled)
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+               ,
+           // Only the copy pushed to renderers carries this; the throttle
+@@ -6332,8 +6335,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
  
    const bool aegis_tracker_blocking =
        profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
@@ -363,7 +335,7 @@ index 469838c949024a05476e0c3d3749dbb4c7ab0658..263f3e32737ead685659f417884d8c04
        aegis_throttle) {
      result.push_back(std::move(aegis_throttle));
    }
-@@ -9231,6 +9236,9 @@ void ChromeContentBrowserClient::OnBtmServiceCreated(
+@@ -9517,6 +9522,9 @@ void ChromeContentBrowserClient::OnBtmServiceCreated(
    // Create BtmBrowserSigninDetector.
    CHECK(BtmBrowserSigninDetector::Get(browser_context));
    btm::StatefulBounceCounter::CreateFor(btm_service);
@@ -374,10 +346,10 @@ index 469838c949024a05476e0c3d3749dbb4c7ab0658..263f3e32737ead685659f417884d8c04
  
  static_assert(content::ContentBrowserClient::kDefaultBtmRemoveMask ==
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index f2b7e9c980035d81294d8f89398b5f4a833c605b..fc82f8cf7087afcbf5eeca38e993ceb7f2c6b9a6 100644
+index 0653cda24f8f51db8b5fc0ba22c4208e5b666816..9966baf818c4f1ffeab8c38a7b85e47141d82e58 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
-@@ -81,6 +81,7 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -89,6 +89,7 @@ RendererUpdater::RendererUpdater(Profile* profile)
                                 pref_service);
    aegis_fingerprint_guard_.Init(aegis::prefs::kFingerprintGuardEnabled,
                                  pref_service);
@@ -385,7 +357,7 @@ index f2b7e9c980035d81294d8f89398b5f4a833c605b..fc82f8cf7087afcbf5eeca38e993ceb7
  
    pref_change_registrar_.Init(pref_service);
    pref_change_registrar_.Add(
-@@ -103,6 +104,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -111,6 +112,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
        aegis::prefs::kFingerprintGuardEnabled,
        base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
                            base::Unretained(this)));
@@ -396,26 +368,28 @@ index f2b7e9c980035d81294d8f89398b5f4a833c605b..fc82f8cf7087afcbf5eeca38e993ceb7
    pref_change_registrar_.Add(
        aegis::prefs::kFilterListGeneration,
        base::BindRepeating(&RendererUpdater::PushAegisFilterList,
-@@ -277,5 +282,6 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+@@ -295,7 +300,8 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
        force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
        allowed_domains_for_apps_.GetValue(),
        aegis_tracker_blocking_.GetValue(),
--      aegis_fingerprint_guard_.GetValue());
+-      aegis_fingerprint_guard_.GetValue()
 +      aegis_fingerprint_guard_.GetValue(),
-+      aegis_cname_uncloak_.GetValue());
- }
++      aegis_cname_uncloak_.GetValue()
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+           ,
+       GetPlatformRuntimeHeaders()
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index 3236d383bb28ba45966043046c27206b2410e8d2..b8df9968f5c7dfdd293f84bd35fef73841628878 100644
+index 48ee2b2a8066865cc9350c59d62fa73c9c385c86..ad2d834358c11d46df84f66849b3360cfd48c725 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
-@@ -111,6 +111,7 @@ class RendererUpdater : public KeyedService
+@@ -125,6 +125,7 @@ class RendererUpdater : public KeyedService
    StringPrefMember allowed_domains_for_apps_;
    BooleanPrefMember aegis_tracker_blocking_;
    BooleanPrefMember aegis_fingerprint_guard_;
 +  BooleanPrefMember aegis_cname_uncloak_;
- };
  
- #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+   // The Platform Runtime header block is global rather than per-profile, so
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
 index 5456e1ca729f393c387d0cc47f6b924e37965fec..6101ac3377374bbcdf5719d645bd4ae8992962a3 100644
 --- a/chrome/browser/resources/aegis/aegis.html
@@ -946,19 +920,19 @@ index b445aea5465493a473751a68be6f4be4fd7c9e58..93b81d040142f24edaa1eabc18ab7099
  }  // namespace aegis::prefs
  
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index 3f33b331d03263f064fb6df31313410675cb5acd..cecaf01ebbfbe3cf2e596ca92c140389ce7aea05 100644
+index de3e9a7427033a614285020724cf578aded5b31e..c6d4aec212133536155cdd650ca8ed7503a16407 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
-@@ -32,6 +32,7 @@ struct DynamicParams {
+@@ -35,6 +35,7 @@ struct DynamicParams {
    string allowed_domains_for_apps;
    bool aegis_tracker_blocking = true;
    bool aegis_fingerprint_guard = true;
 +  bool aegis_cname_uncloak = true;
- };
  
- // The renderer configuration parameters are set during the process lock update
+   // Request headers produced by the Platform Runtime library. Empty until the
+   // browser has a value.
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 32204a6cd863ec4f3dac92e221724d3708c82524..091cdda90f0720a30d8da500f1d8173707308b37 100644
+index 19b6b64fb8ac0a453b8ba5b65ef222b290c1863c..30a068fb5fd3e786f4e2061d2fb9719f653a7071 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -265,13 +265,15 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
@@ -979,6 +953,3 @@ index 32204a6cd863ec4f3dac92e221724d3708c82524..091cdda90f0720a30d8da500f1d81737
        aegis_throttle) {
      throttles.emplace_back(std::move(aegis_throttle));
    }
--- 
-2.52.0
-

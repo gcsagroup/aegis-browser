@@ -1,4 +1,4 @@
-From cbb134d98be1decf5dd068ff1c8cdf0e40e20122 Mon Sep 17 00:00:00 2001
+From 9865e3b1c37d401823217f89b5ccbd8c4b66ab2c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 6 Oct 2026 17:43:08 +0800
 Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E8=BF=9C=E7=A8=8B?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../browser/aegis/agent/aegis_agent_interactive_uitest.cc  | 7 ++++---
- .../devtools/protocol/devtools_protocol_browsertest.cc     | 4 ++--
- 2 files changed, 6 insertions(+), 5 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 index 1d4a929ca49e3b431abfa932b6dd19fcefcedab1..ba932cbb41eea8a4f5151733752952604c385c68 100644
@@ -56,10 +53,10 @@ index 1d4a929ca49e3b431abfa932b6dd19fcefcedab1..ba932cbb41eea8a4f515173375295260
    SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
    ASSERT_TRUE(side_panel);
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index cf461026822509cd23325090aee49c562bc6f126..ae3d3cc97e28b2731052f49d73fffd1de0c598fa 100644
+index c414cb8ea1af196ad6a388365c42610a3e54ac98..90364080a9bce9bd383f6b5fe660043e8c43336b 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -485,7 +485,7 @@ class AegisOtherRemoteDevToolsProtocolClient
+@@ -489,7 +489,7 @@ class AegisOtherRemoteDevToolsProtocolClient
  
  IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
                         AegisRemoteCreationCanClaimUncommittedInitialDocument) {
@@ -68,7 +65,7 @@ index cf461026822509cd23325090aee49c562bc6f126..ae3d3cc97e28b2731052f49d73fffd1d
    create_params.desired_renderer_state =
        content::WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
    auto created_contents_owner = content::WebContents::Create(create_params);
-@@ -544,7 +544,7 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -548,7 +548,7 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    EXPECT_TRUE(found_http_target);
    EXPECT_FALSE(found_internal_target);
  
@@ -77,6 +74,3 @@ index cf461026822509cd23325090aee49c562bc6f126..ae3d3cc97e28b2731052f49d73fffd1d
    EXPECT_FALSE(SendCommandSync("Browser.getWindowBounds",
                                 base::DictValue().Set("windowId", window_id)));
    ASSERT_TRUE(error());
--- 
-2.52.0
-

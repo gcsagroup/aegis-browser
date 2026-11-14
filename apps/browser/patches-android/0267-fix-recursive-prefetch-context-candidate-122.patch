@@ -1,4 +1,4 @@
-From 65f28a81e712ade545a88245c95eea9a075a5f5d Mon Sep 17 00:00:00 2001
+From 85e1d65aa9277ec3af5a12d562fb3e9e76314f16 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 7 Oct 2026 06:01:56 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D155=E9=80=92=E5=BD=92?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h            | 4 ++--
- content/browser/loader/prefetch_url_loader_service_context.cc | 2 +-
- 2 files changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index ee3a614d39a677af5719790fa1c894fbc72489fa..6e2cf344cf2a7d7b48aee76e4af93557407800cc 100644
@@ -29,10 +26,10 @@ index ee3a614d39a677af5719790fa1c894fbc72489fa..6e2cf344cf2a7d7b48aee76e4af93557
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/content/browser/loader/prefetch_url_loader_service_context.cc b/content/browser/loader/prefetch_url_loader_service_context.cc
-index 9ae7682b842917e4c819fd67bcaa3b295a6e54af..7288c17f04d2093166d571d27bcf06748c2c03ba 100644
+index c148ab11935cd7fffd1612ce8824e16ad794efc6..9166da2e77e13e92c8a82f8c9bbd5d3dd52331e3 100644
 --- a/content/browser/loader/prefetch_url_loader_service_context.cc
 +++ b/content/browser/loader/prefetch_url_loader_service_context.cc
-@@ -276,7 +276,7 @@ void PrefetchURLLoaderServiceContext::StartCommittedPrefetch(
+@@ -332,7 +332,7 @@ void PrefetchURLLoaderServiceContext::StartCommittedPrefetch(
        return;
      }
  
@@ -41,6 +38,3 @@ index 9ae7682b842917e4c819fd67bcaa3b295a6e54af..7288c17f04d2093166d571d27bcf0674
      if (!current_context.cross_origin_factory) {
        mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
            ->OnComplete(network::URLLoaderCompletionStatus(net::ERR_FAILED));
--- 
-2.52.0
-

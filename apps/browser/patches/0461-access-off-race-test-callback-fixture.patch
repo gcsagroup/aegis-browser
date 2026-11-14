@@ -1,0 +1,28 @@
+From 8be39f1d37e6c7755e7b8235567f695cfa3d6646 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 15:31:48 +0800
+Subject: [PATCH] test(access): use supported captured callback in OFF race
+ fixture
+---
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 9691540b5960333bb859abbdd2a75b80027d9cf1..7269364ec306523f2826c2088105ff4512a71fee 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -16,6 +16,7 @@
+ #include "base/pending_task.h"
+ #include "base/task/current_thread.h"
+ #include "base/task/task_observer.h"
++#include "base/test/bind.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+ #include "base/test/test_future.h"
+@@ -869,7 +870,7 @@ TEST_F(AccessRetryNavigationProductTest,
+        OffAtQueuedCommittedVerificationRevokesRetryAndPersistsOff) {
+   BeginHeldRetry();
+   bool accepted = false;
+-  DisableAtQueuedCoreVerification disable(base::BindOnce([&] {
++  DisableAtQueuedCoreVerification disable(base::BindLambdaForTesting([&] {
+     EXPECT_EQ(bubble_->SnapshotForCommittedUrl(failed_).intent,
+               AccessSiteIntent::kAllow);
+     EXPECT_TRUE(AccessSiteProxyProductTestPeer::IsPreparing(bubble_));

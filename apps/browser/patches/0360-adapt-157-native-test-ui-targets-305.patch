@@ -1,0 +1,169 @@
+From 0c98653ebbb776a1c7a98ed0f025f16e4aff6831 Mon Sep 17 00:00:00 2001
+From: Aegis Upstream <aegis-upstream@example.invalid>
+Date: Sun, 8 Nov 2026 22:24:00 +0800
+Subject: [PATCH] 适配157拆分后的原生测试UI依赖并递增至305
+---
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index e1c7ce98acd908d0d5e6501ff99794a91903b344..ccf50ba0f4d6259b4c690977b2361b5351f478d7 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -338,13 +338,20 @@ if (!is_android) {
+       "//chrome/browser/renderer_context_menu:test_support",
+       "//chrome/browser/search_engines",
+       "//chrome/browser/translate",
+-      "//chrome/browser/ui",
+       "//chrome/browser/ui:browser_actions",
++      "//chrome/browser/ui:browser_command_controller",
++      "//chrome/browser/ui:browser_commands",
++      "//chrome/browser/ui:browser_tabstrip",
++      "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/side_panel",
+       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+       "//chrome/browser/ui/signin",
+       "//chrome/browser/ui/startup",
++      "//chrome/browser/ui/tabs:tab_strip",
++      "//chrome/browser/ui/toolbar",
++      "//chrome/browser/ui/toolbar/pinned_toolbar",
+       "//chrome/browser/ui/views/side_panel",
++      "//chrome/browser/ui/views/toolbar",
+       "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/aegis_agent:impl",
+       "//chrome/common/aegis",
+@@ -394,10 +401,12 @@ if (!is_android) {
+       "//chrome/browser/pdf:pdf_extension_test_base",
+       "//chrome/browser/profiles:profile",
+       "//chrome/browser/renderer_context_menu:test_support",
+-      "//chrome/browser/ui",
++      "//chrome/browser/ui:browser_commands",
+       "//chrome/browser/ui:browser_element_identifiers",
++      "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/side_panel",
+       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
++      "//chrome/browser/ui/tabs:tab_strip",
+       "//chrome/browser/ui/views/side_panel",
+       "//chrome/common/aegis",
+       "//chrome/test:test_support",
+@@ -502,15 +511,16 @@ test("aegis_browser_unittests") {
+     sources += [
+       "actor_journal_privacy_unittest.cc",
+       "aegis_ui_handler_unittest.cc",
+-      "enhancements/enhancement_store_unittest.cc",
+       "agent/aegis_agent_service_unittest.cc",
+       "agent/agent_core_unittest.cc",
+       "agent/agent_observation_unittest.cc",
+       "agent/agent_task_store_unittest.cc",
++      "enhancements/enhancement_store_unittest.cc",
+       "summary_session_unittest.cc",
+     ]
+     deps += [
+-      # 桌面测试直接引用 BrowserClient；test_support 的私有依赖不会透传头文件。
++      # 桌面测试直接引用 BrowserClient；test_support
++      # 的私有依赖不会透传头文件。
+       "//chrome/browser:chrome_content_browser_client",
+       "//chrome/browser/actor",
+       "//chrome/browser/actor/ui:event_dispatcher",
+@@ -531,8 +541,8 @@ test("aegis_browser_unittests") {
+   }
+   if (is_mac) {
+     sources += [
+-      "aegis_torrent_client_unittest.cc",
+       "aegis_mac_signing_unittest.cc",
++      "aegis_torrent_client_unittest.cc",
+     ]
+   }
+ }
+diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+index f54fb3fb337d7adb3680ddb43e90a6697e63266f..725ce374008b70d2658766f7042c171049a71cfa 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+@@ -11,7 +11,7 @@
+ #include "chrome/browser/aegis/enhancements/enhancement_store.h"
+ #include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
+ #include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+@@ -76,7 +76,7 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
+     ASSERT_TRUE(base::test::RunUntil([&] { return store_->ready(); }));
+   }
+   content::WebContents* contents() {
+-    return browser()->tab_strip_model()->GetActiveWebContents();
++    return browser()->GetTabStripModel()->GetActiveWebContents();
+   }
+   std::string Mutate(base::DictValue request) {
+     base::test::TestFuture<std::string> result;
+@@ -507,7 +507,7 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+               EnhancementField(a_helper->Snapshot(), "document"));
+   } else if (change == "closed") {
+     content::WebContentsDestroyedWatcher closed(a);
+-    browser()->tab_strip_model()->CloseWebContents(a, /*close_types=*/0);
++    browser()->GetTabStripModel()->CloseWebContents(a, /*close_types=*/0);
+     closed.Wait();
+     a = nullptr;
+     a_helper = nullptr;
+diff --git a/chrome/browser/aegis/google_service_prompt_browsertest.cc b/chrome/browser/aegis/google_service_prompt_browsertest.cc
+index 372f3dc77fb13b6639dce89485cd4545214cc6b9..17af34d714ec413bfaffadc4cb3eb0b30aa81e58 100644
+--- a/chrome/browser/aegis/google_service_prompt_browsertest.cc
++++ b/chrome/browser/aegis/google_service_prompt_browsertest.cc
+@@ -4,10 +4,9 @@
+ #include "base/test/run_until.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/translate/chrome_translate_client.h"
+-#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_command_controller.h"
+ #include "chrome/browser/ui/browser_commands.h"
+-#include "chrome/browser/ui/browser_window.h"
+ #include "chrome/browser/ui/signin/signin_view_controller.h"
+ #include "chrome/browser/ui/startup/infobar_utils.h"
+ #include "chrome/browser/ui/startup/startup_types.h"
+@@ -23,12 +22,13 @@
+ #include "content/public/test/browser_test.h"
+ #include "google_apis/google_api_keys.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
++#include "ui/base/base_window.h"
+ 
+ namespace aegis {
+ class GoogleServicePromptBrowserTest : public InProcessBrowserTest {
+  protected:
+   content::WebContents* contents() {
+-    return browser()->tab_strip_model()->GetActiveWebContents();
++    return browser()->GetTabStripModel()->GetActiveWebContents();
+   }
+ 
+   size_t GooglePromptCount() {
+@@ -92,14 +92,14 @@ IN_PROC_BROWSER_TEST_F(GoogleServicePromptBrowserTest,
+ IN_PROC_BROWSER_TEST_F(GoogleServicePromptBrowserTest,
+                        ExplicitBrowserSigninExplainsMissingOAuth) {
+   ASSERT_FALSE(google_apis::HasOAuthClientConfigured());
+-  const int tab_count = browser()->tab_strip_model()->count();
++  const int tab_count = browser()->GetTabStripModel()->count();
+   const GURL original_url = contents()->GetLastCommittedURL();
+   EXPECT_EQ(0u, GooglePromptCount());
+   SigninViewController::From(browser())->ShowDiceEnableSyncTab(
+       signin_metrics::AccessPoint::kSettings,
+       signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO, std::string());
+   EXPECT_EQ(1u, GooglePromptCount());
+-  EXPECT_EQ(tab_count, browser()->tab_strip_model()->count());
++  EXPECT_EQ(tab_count, browser()->GetTabStripModel()->count());
+   EXPECT_EQ(original_url, contents()->GetLastCommittedURL());
+ }
+ }  // namespace aegis
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 854156892137caabf2b1f38937002cfed1a4e98c..5d4ce9744f8afbb51fcd1efa2efa3b4bf1f05476 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.304";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (304)";
++inline constexpr char kProductVersion[] = "6.1.0.305";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (305)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

@@ -1,4 +1,4 @@
-From 0553cb047d8a7517546bed819c7f2a6d58ffe2be Mon Sep 17 00:00:00 2001
+From 5db34087c46968e0f3a2040faae817ff6e02d455 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 17:19:59 +0800
 Subject: [PATCH] Aegis: show a CDP agent banner that opens chrome://aegis
@@ -6,22 +6,12 @@ Subject: [PATCH] Aegis: show a CDP agent banner that opens chrome://aegis
 Replace the stock automation infobar copy so a loopback agent
 connection is visible, and send the action to chrome://aegis.
 ---
- ...tools_remote_server_infobar_browsertest.cc |  4 +--
- ...devtools_remote_server_infobar_delegate.cc | 14 +++++----
- chrome/common/aegis/BUILD.gn                  |  7 ++++-
- chrome/common/aegis/cdp_infobar_copy.cc       | 29 ++++++++++++++++++
- chrome/common/aegis/cdp_infobar_copy.h        | 18 +++++++++++
- .../common/aegis/cdp_infobar_copy_unittest.cc | 30 +++++++++++++++++++
- 6 files changed, 93 insertions(+), 9 deletions(-)
- create mode 100644 chrome/common/aegis/cdp_infobar_copy.cc
- create mode 100644 chrome/common/aegis/cdp_infobar_copy.h
- create mode 100644 chrome/common/aegis/cdp_infobar_copy_unittest.cc
 
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
-index 041fefd3e8ee6df651c44b24cafa6dcc86111074..8fe70949435a80bda2f20f263e7fc1ef9247046d 100644
+index acddc2f001ae4e78874f6d14a9bbac0d70193eee..e07da689cd30e6781dea1a472354dab2a9dc5221 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
-@@ -65,7 +65,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
+@@ -102,7 +102,7 @@ IN_PROC_BROWSER_TEST_P(DevToolsRemoteServerInfobarBrowserTest,
    ASSERT_EQ(1u, manager->infobars().size());
  
    content::TestNavigationObserver navigation_observer(
@@ -30,7 +20,7 @@ index 041fefd3e8ee6df651c44b24cafa6dcc86111074..8fe70949435a80bda2f20f263e7fc1ef
    navigation_observer.StartWatchingNewWebContents();
  
    auto* confirm =
-@@ -76,7 +76,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
+@@ -113,7 +113,7 @@ IN_PROC_BROWSER_TEST_P(DevToolsRemoteServerInfobarBrowserTest,
  
    navigation_observer.Wait();
    EXPECT_EQ(2, second_browser->GetTabStripModel()->count());
@@ -211,6 +201,3 @@ index 0000000000000000000000000000000000000000..7e9b99290c87c44668fb09d059579922
 +}
 +
 +}  // namespace aegis
--- 
-2.52.0
-

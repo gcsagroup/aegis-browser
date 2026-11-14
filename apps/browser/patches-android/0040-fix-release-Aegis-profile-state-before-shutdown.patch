@@ -1,12 +1,9 @@
-From 86d57ee1018af283b7aff6303b6626cccaf2c5fd Mon Sep 17 00:00:00 2001
+From 36e5e5493b30084d19a6dd585b5c789d29402ca2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 00:30:07 +0800
 Subject: [PATCH] fix: release Aegis profile state before shutdown
 
 ---
- chrome/browser/aegis/aegis_service.cc | 47 +++++++++++++++++++++++++--
- chrome/browser/aegis/aegis_service.h  | 11 ++++++-
- 2 files changed, 55 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 963323df6ef11c1aed4bde9687fb644ecd86e2d1..d8dae036f17386fff3dcc05d4735147cbddc95ce 100644
@@ -144,6 +141,3 @@ index 5d71c55a85c768a404c7f2d0d1928bd91fffd3b4..2ccc9fc511924d7e3ec64476a2d9675f
    void OnOllamaReady(SummarizeResult heuristic,
                       std::string system,
                       std::string user,
--- 
-2.52.0
-

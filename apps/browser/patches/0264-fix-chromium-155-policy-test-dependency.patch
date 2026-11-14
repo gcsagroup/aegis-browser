@@ -1,4 +1,4 @@
-From d40e997c8e80d6bec9f49bf808390c926783f03a Mon Sep 17 00:00:00 2001
+From a56f9fdc7266db450afc895847ee3f748f0390a3 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 7 Oct 2026 02:58:02 +0800
 Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8DChromium155=E5=B7=B2=E7=A7=BB?=
@@ -9,21 +9,16 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/policy/BUILD.gn | 1 -
- 1 file changed, 1 deletion(-)
 
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index c38f2124a6ae8301cb8f19b933d987804069f134..8f4d5cf44f700739843cf9ea966d51615108e73f 100644
+index a5728a23c28deb0e6e0dafaa746af7e0723e1324..bc96564c17ab58a883386eae648046c4bfb0c708 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
-@@ -835,7 +835,6 @@ source_set("unit_tests") {
-     "//chrome/test:test_support",
+@@ -863,7 +863,6 @@ source_set("unit_tests") {
+     "//chrome/test/base:testing_browser_process",
      "//components/account_id:test_support",
      "//components/enterprise:test_support",
 -    "//components/invalidation:legacy_topics_cleanup",
      "//components/invalidation:test_support",
      "//components/policy/core/browser:test_support",
      "//components/policy/core/common:test_support",
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From 6fea3ab6271ae4e989b54dddc89d779bf760c351 Mon Sep 17 00:00:00 2001
+From 6449b751956cc0109daf6ff22efb8ab699de9a27 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:37:31 +0800
 Subject: [PATCH] Aegis: refresh EasyList cache with conditional GET
@@ -9,15 +9,6 @@ of wiping the on-disk cache.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ---
- chrome/browser/aegis/aegis_prefs.cc         |   2 +
- chrome/browser/aegis/aegis_service.cc       |   3 +
- chrome/browser/aegis/filter_list_updater.cc | 234 +++++++++++++++++---
- chrome/browser/aegis/filter_list_updater.h  |  26 ++-
- chrome/browser/ui/webui/aegis/aegis_ui.cc   |   8 +-
- chrome/common/aegis/filter_list.cc          |   5 +
- chrome/common/aegis/filter_list.h           |   3 +
- chrome/common/aegis/pref_names.h            |   4 +
- 8 files changed, 251 insertions(+), 34 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
 index fc5fb366a02f748954c7792ad4c9dc7e96c63fef..b857da29cb2f634c8eee45a3690d98dfe1fd19ae 100644
@@ -596,6 +587,3 @@ index 78be0b3a4d1b6ec31b15b995eacca3d68ce6bc8b..94972c1f14296a68944083a4a7a8395a
  inline constexpr char kLinkSanitizeEnabled[] = "aegis.link_sanitize_enabled";
  inline constexpr char kCookieJanitorEnabled[] = "aegis.cookie_janitor_enabled";
  inline constexpr char kCnameUncloakEnabled[] = "aegis.cname_uncloak_enabled";
--- 
-2.52.0
-

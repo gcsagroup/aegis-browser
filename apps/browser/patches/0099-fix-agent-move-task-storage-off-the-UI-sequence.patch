@@ -1,15 +1,9 @@
-From b4287799c616cc52ec446fdb02239de4952fa611 Mon Sep 17 00:00:00 2001
+From 15ac07959a6d455e7e4e7c667c8e7d1f4a51e857 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 17:44:13 +0800
 Subject: [PATCH] fix(agent): move task storage off the UI sequence
 
 ---
- .../aegis/agent/aegis_agent_service.cc        | 282 ++++++++++++++----
- .../browser/aegis/agent/aegis_agent_service.h |  30 +-
- .../agent/aegis_agent_service_unittest.cc     |  30 ++
- .../browser/aegis/agent/agent_task_store.cc   |  84 ++++--
- chrome/browser/aegis/agent/agent_task_store.h |  37 ++-
- 5 files changed, 373 insertions(+), 90 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index f00307ab854bb4a210523e485f9bc4241b89e907..8baa30f81180007d8163e46574d54d93fddff6f8 100644
@@ -873,6 +867,3 @@ index c9c28c46d79c577d6821afe3be63476ceb431b9f..750dea9505911ea5ff8b4134880cd2cd
    static std::string SerializeScope(const AgentTaskScope& scope);
    static int64_t SerializeTime(base::Time time);
    static base::Time DeserializeTime(int64_t value);
--- 
-2.52.0
-

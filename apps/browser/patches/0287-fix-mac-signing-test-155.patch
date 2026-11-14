@@ -1,12 +1,9 @@
-From bfe3baf3e7f7dda66870e886f77b8bb3848d86c4 Mon Sep 17 00:00:00 2001
+From 8c3c8b591970a7ac1c47ada81ce8d27dc7825eb1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 11 Oct 2026 07:02:48 +0800
 Subject: [PATCH] test(mac): use public signature requirement APIs
 
 ---
- .../aegis/aegis_mac_signing_unittest.cc       | 42 ++++++++++++-------
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- 2 files changed, 28 insertions(+), 18 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_mac_signing_unittest.cc b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
 index 0f2e60c02ee7db7585f112653d297c4efe0f22dc..d9694bd63201988d250a9be284f0769cf43a498c 100644
@@ -121,6 +118,3 @@ index 0e132eddd9b0cff64c3a0833516f78a46c432757..ba31c776d7f7e8fe5f5df47d91daa597
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

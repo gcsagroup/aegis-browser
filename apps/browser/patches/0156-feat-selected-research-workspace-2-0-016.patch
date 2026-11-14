@@ -1,4 +1,4 @@
-From 22cff9c53f84691f6dd593f250de085e7c1da908 Mon Sep 17 00:00:00 2001
+From 14bf3d8e8ad081566dfdbe865f5a13eba22558b2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 14:38:50 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=8A=9F=E8=83=BD=EF=BC=9A=E9=99=90=E5=AE=9A?=
@@ -10,28 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../browser/aegis/agent/aegis_actor_bridge.cc |  37 +++--
- .../aegis/agent/aegis_agent_service.cc        | 140 ++++++++++++++++--
- .../browser/aegis/agent/aegis_agent_service.h |   4 +
- .../aegis/agent/agent_core_unittest.cc        |  27 ++++
- chrome/browser/aegis/agent/agent_execution.cc |  21 ++-
- .../aegis/agent/agent_execution_unittest.cc   |  40 +++++
- .../browser/aegis/agent/agent_observation.cc  |  14 +-
- .../aegis/agent/agent_observation_unittest.cc |  37 +++++
- chrome/browser/aegis/agent/agent_planner.cc   |   1 +
- .../browser/aegis/agent/agent_task_store.cc   |  11 +-
- .../aegis/agent/agent_task_store_unittest.cc  |  24 +++
- chrome/browser/aegis/agent/agent_types.cc     |   7 +-
- chrome/browser/aegis/agent/agent_types.h      |   2 +
- .../browser/resources/aegis_agent/agent.css   |  12 +-
- .../browser/resources/aegis_agent/agent.html  |  18 ++-
- chrome/browser/resources/aegis_agent/agent.ts | 111 +++++++++++++-
- .../ui/webui/aegis_agent/aegis_agent.mojom    |  11 ++
- .../aegis_agent/aegis_agent_page_handler.cc   |  95 ++++++++++++
- .../aegis_agent/aegis_agent_page_handler.h    |  10 ++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  26 ++++
- .../ui/webui/help/aegis_github_update.h       |   6 +-
- 21 files changed, 608 insertions(+), 46 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 index 244dc9b7f46cb2c74f9a8936fddf84d298492757..06e95a511d57f6cb8dcc28af655c93e7c9a22acc 100644
@@ -1126,6 +1104,3 @@ index 2d895b29b47781bd3fc438b6d138a47b8bc4b4f8..cf731afa0f15c1701c1007ead25fde08
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

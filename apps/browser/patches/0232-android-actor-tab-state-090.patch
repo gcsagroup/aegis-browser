@@ -1,4 +1,4 @@
-From ee8e93e3c845333edb88f1f2439adbed14684fb4 Mon Sep 17 00:00:00 2001
+From 6124747ccce266c85f1ac1a54bcfc24cde7fe184 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 19:43:44 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Android=20=E9=A1=B5?=
@@ -9,15 +9,12 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/android/tab_features.cc             | 5 +++--
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- 2 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/android/tab_features.cc b/chrome/browser/android/tab_features.cc
-index a476210c78b3947e38cc1b7e6e86e1c518a0e0d1..7aeae3b168fd8e5c10877451db3889f764abe302 100644
+index 6f10b82e8bcdd16aff8e79ab83f6d34b87b6e65c..d4524f1d7a06aa0df95679074811d732075c1cd5 100644
 --- a/chrome/browser/android/tab_features.cc
 +++ b/chrome/browser/android/tab_features.cc
-@@ -151,12 +151,13 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+@@ -351,7 +351,9 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
      }
    }
  
@@ -27,6 +24,9 @@ index a476210c78b3947e38cc1b7e6e86e1c518a0e0d1..7aeae3b168fd8e5c10877451db3889f7
 +  if (actor_service || base::FeatureList::IsEnabled(features::kGlicActor)) {
      actor_tab_data_ =
          GetUserDataFactory().CreateInstance<actor::ActorTabData>(*tab, tab);
+     actor_surface_tab_helper_ =
+@@ -359,7 +361,6 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+                                                                           *tab);
    }
  
 -  auto* actor_service = actor::ActorKeyedService::Get(profile);
@@ -48,6 +48,3 @@ index 83d7fe74523d6efeb37fd1f2e3b23e0e29b92913..9e9728714c380620adcc92d0b550382a
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

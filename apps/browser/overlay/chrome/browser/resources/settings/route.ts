@@ -125,7 +125,7 @@ function addPrivacyChildRoutes(r: Partial<SettingsRoutes>) {
       r.SITE_SETTINGS.createChild('automaticFullScreen');
   if (loadTimeData.getBoolean('enableWebAppInstallation')) {
     r.SITE_SETTINGS_WEB_APP_INSTALLATION =
-        r.SITE_SETTINGS.createChild('webApplications');
+        r.SITE_SETTINGS.createChild('webAppInstallations');
   }
   if (loadTimeData.getBoolean('enableLocalNetworkAccessSetting')) {
     r.SITE_SETTINGS_LOCAL_NETWORK = r.SITE_SETTINGS.createChild('localNetwork');
@@ -208,6 +208,9 @@ function createRoutes(): SettingsRoutes {
         r.GEMINI_LOGIN = r.GEMINI.createChild('/ai/gemini/login');
       }
     }
+    if (loadTimeData.getBoolean('showGeicSettings')) {
+      r.GEMINI_ENTERPRISE = r.AI.createChild('/ai/geminienterprise');
+    }
     if (loadTimeData.getBoolean('showAiSuggestionsControl')) {
       r.AI_SUGGESTIONS = r.AI.createChild('/ai/suggestions');
     }
@@ -279,9 +282,8 @@ function createRoutes(): SettingsRoutes {
     r.LANGUAGES = r.ADVANCED.createSection(
         '/languages', 'languages',
         loadTimeData.getString('languagesPageTitle'));
-    r.SPELL_CHECK = r.LANGUAGES.createSection('/spellCheck', 'languages');
     // <if expr="not is_chromeos and not is_macosx">
-    r.EDIT_DICTIONARY = r.SPELL_CHECK.createChild('/editDictionary');
+    r.EDIT_DICTIONARY = r.LANGUAGES.createChild('/editDictionary');
     // </if>
   }
 

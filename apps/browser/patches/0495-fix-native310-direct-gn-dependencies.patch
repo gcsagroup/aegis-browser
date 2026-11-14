@@ -1,0 +1,42 @@
+From b7d869ac74a87ee396ff58ca5bfcfb23c9ebdb0b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-4.local>
+Date: Sat, 14 Nov 2026 09:12:31 +0800
+Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E8=A1=A5=E9=BD=90=E8=B4=A6?=
+ =?UTF-8?q?=E6=88=B7=E6=B5=8B=E8=AF=95=E5=8F=8A=E6=A1=8C=E9=9D=A2Agent?=
+ =?UTF-8?q?=E7=9B=B4=E6=8E=A5=E4=BE=9D=E8=B5=96?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/BUILD.gn              | 1 +
+ chrome/browser/aegis/access/BUILD.gn | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index f6d7314d86366b1b6fd5b464ef7cd8b0d462d0cd..cfc0aae10ad448396c7b0d774b84687daad1de65 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -516,6 +516,7 @@ if (!is_android) {
+   source_set("chrome_browser_interface_binders_webui_parts_desktop") {
+     sources = [ "chrome_browser_interface_binders_webui_parts_desktop.cc" ]
+     deps = [
++      "//chrome/browser/ui/webui/aegis_agent:aegis_agent",
+       "//chrome/browser/ui/webui/aegis_agent:impl",
+       "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+       ":chrome_browser_interface_binders_webui_parts",
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index f64f175fabdd36b0039bf817ed187bdb6f7c3b8f..fc683729ecb155038230a78046f5be8f3e1b53aa 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -573,6 +573,7 @@ test("access_service_coordinator_unittests") {
+     "//chrome/browser/profiles:test_support",
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
++    "//chrome/test/base:chrome_render_view_host_test_harness",
+     "//components/prefs",
+     "//components/proxy_config",
+     "//content/test:test_support",
+-- 
+2.52.0
+

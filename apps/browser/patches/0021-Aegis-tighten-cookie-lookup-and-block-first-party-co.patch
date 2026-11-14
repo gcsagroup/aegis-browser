@@ -1,4 +1,4 @@
-From d15290a0da7ca1ad0bd1424fbde8db9fc5e3a84e Mon Sep 17 00:00:00 2001
+From 3e9c2d9f13f12cbba2076208565a35ba24bf8798 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 01:27:39 +0800
 Subject: [PATCH] Aegis: tighten cookie lookup and block first-party collect
@@ -8,19 +8,6 @@ GA/GTM collect copies, and strip more click-id query params.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ---
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  14 +-
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/cookie_classify.cc        | 132 ++++++++++++++----
- chrome/common/aegis/filter_list_matcher.cc    |   4 +
- chrome/common/aegis/first_party_collect.cc    |  43 ++++++
- chrome/common/aegis/first_party_collect.h     |  19 +++
- .../generated/first_party_collect_paths.inc   |  15 ++
- .../aegis/generated/tracking_query_params.inc |   9 ++
- third_party/aegis_policy/policy_snapshot.json |  26 +++-
- 9 files changed, 232 insertions(+), 32 deletions(-)
- create mode 100644 chrome/common/aegis/first_party_collect.cc
- create mode 100644 chrome/common/aegis/first_party_collect.h
- create mode 100644 chrome/common/aegis/generated/first_party_collect_paths.inc
 
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 index 56426b38fb4ccade002740dab1ff0370fdb01353..7b11bd3bae06f524b8516b6d77b4d84d969d68af 100644
@@ -446,6 +433,3 @@ index f0ff867c3445f94d9db64eb894e1ecd91bbc6d92..397444673f8857b8d4f34622ac711671
    ],
    "phishHosts": [
      "testsafebrowsing.appspot.com/s/phishing",
--- 
-2.52.0
-

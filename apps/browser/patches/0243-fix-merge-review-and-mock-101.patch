@@ -1,4 +1,4 @@
-From 8b4516a797d82f905313b68ab4baa2f8b7f2bb3c Mon Sep 17 00:00:00 2001
+From 1f68ab6e7cd8c233086da671f54bba4dda9c4133 Mon Sep 17 00:00:00 2001
 From: Aegis integration <aegis-integration@users.noreply.github.com>
 Date: Sat, 3 Oct 2026 05:13:41 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=20Mock=20?=
@@ -9,21 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../aegis/aegis_ui_handler_unittest.cc        |  12 +-
- .../aegis/agent/aegis_browser_tools.cc        |   2 +-
- .../browser/aegis/agent/agent_task_store.cc   |  12 +-
- chrome/browser/resources/aegis_agent/agent.ts | 213 ++++++++++--------
- .../ui/webui/help/aegis_github_update.h       |   4 +-
- chrome/browser/ui/webui/version/version_ui.cc |   4 +
- .../product_install_details_unittest.cc       |   2 +-
- .../webui/history/history_routing_test.ts     |   6 +
- .../data/webui/settings/about_page_test.ts    |   4 +
- .../policy/tools/generate_policy_source.py    |  71 +++---
- .../writers/reg_writer_unittest.py            |   8 +-
- .../prefetch_network_context_unittest.cc      |   6 +-
- .../prefetch/prefetch_test_util_internal.h    |  31 ++-
- ...refetch_url_loader_interceptor_unittest.cc |  16 +-
- 14 files changed, 241 insertions(+), 150 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 index f51e80dc247061d925c5c013a4f727d2f3203d2d..c3003bc190f0b9dd82cb754499ea032e032eb7ff 100644
@@ -484,7 +469,7 @@ index 768cfa92c419ba35e18c4c63794b4068ab3390eb..08915bfdb86c83c83ad6bfcd39bd900f
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/version/version_ui.cc b/chrome/browser/ui/webui/version/version_ui.cc
-index ac96419abce972375536bb168c864d46ab19a713..0d0326ed0f51072c1efe25deddea6febe45c7ea7 100644
+index 9e1d66038bc9c3417c80fdf04afa27202dc8e149..1289aa9fe9f177be5ac37b00af9198748dfa5df9 100644
 --- a/chrome/browser/ui/webui/version/version_ui.cc
 +++ b/chrome/browser/ui/webui/version/version_ui.cc
 @@ -220,6 +220,8 @@ int VersionUI::VersionProcessorVariation() {
@@ -519,7 +504,7 @@ index 524806957c3d4df57084660cd7029bfd6f02a727..71fa8895be3ff65fce4f55fc20b5223d
    }
  }
 diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
-index b8c4eeb49ff2815f691598a0a84aeb80dc4c14a7..5bf940992671d1adf88e986091ab56a7b296445c 100644
+index 45af70111450e490d2d11458e9e5d5165c4535bf..e365004822410eb12be372edafd1284a5053853a 100644
 --- a/chrome/test/data/webui/history/history_routing_test.ts
 +++ b/chrome/test/data/webui/history/history_routing_test.ts
 @@ -45,6 +45,8 @@ import {navigateTo} from './test_util.js';
@@ -531,7 +516,7 @@ index b8c4eeb49ff2815f691598a0a84aeb80dc4c14a7..5bf940992671d1adf88e986091ab56a7
        document.body.innerHTML = window.trustedTypes!.emptyHTML;
        CrRouter.resetForTesting();
        const clustersHandler =
-@@ -301,6 +303,8 @@ suite(`routing-test-with-history-clusters-pref-set`, () => {
+@@ -299,6 +301,8 @@ suite('routing-test-with-history-clusters-pref-set', () => {
  
    setup(function() {
      window.history.replaceState({}, '', '/');
@@ -540,7 +525,7 @@ index b8c4eeb49ff2815f691598a0a84aeb80dc4c14a7..5bf940992671d1adf88e986091ab56a7
      document.body.innerHTML = window.trustedTypes!.emptyHTML;
      CrRouter.resetForTesting();
      testProxy = new TestHistoryBrowserProxy();
-@@ -363,6 +367,8 @@ suite(`routing-test-with-history-embeddings-enabled`, () => {
+@@ -361,6 +365,8 @@ suite('routing-test-with-history-embeddings-enabled', () => {
  
    setup(() => {
      window.history.replaceState({}, '', '/');
@@ -572,10 +557,10 @@ index 3fe0f5bcf9c83d2e098089c4bc2328c913278d03..151c9573b1917441636a9ed8a9a40f0d
      page = document.createElement('settings-about-page');
      Router.getInstance().navigateTo(routes.ABOUT);
 diff --git a/components/policy/tools/generate_policy_source.py b/components/policy/tools/generate_policy_source.py
-index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe9928ae3bd6 100755
+index 84e1daa22da6f6242e21d499ccc14e3c4cd54c6c..9be3c208c816a76509a20c7f75516de45693538e 100755
 --- a/components/policy/tools/generate_policy_source.py
 +++ b/components/policy/tools/generate_policy_source.py
-@@ -17,14 +17,17 @@ from collections import namedtuple
+@@ -16,14 +16,17 @@ from collections import namedtuple
  from collections import OrderedDict
  from functools import cmp_to_key
  from functools import partial
@@ -596,20 +581,25 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
  
  CHROME_POLICY_KEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome'
  CHROME_FOR_TESTING_POLICY_KEY = CHROME_POLICY_KEY + ' for Testing'
-@@ -358,29 +361,31 @@ def main():
-       policy_atomic_groups, key=lambda group: group.name)
- 
+@@ -409,13 +412,13 @@ def main():
+     policy_atomic_groups, key=lambda group: group.name
+   )
  
 -  def GenerateFile(path, writer, sorted=False, xml=False, mutable=False):
 +  def GenerateFile(path, writer, sort_by_name=False, xml=False, mutable=False):
      if path:
        with open(path, 'w', encoding='utf-8') as f:
          _OutputGeneratedWarningHeader(f, template_file_name, xml)
--        writer(sorted and sorted_policy_details or policy_details,
--               sorted and sorted_policy_atomic_groups or policy_atomic_groups,
-+        writer(sort_by_name and sorted_policy_details or policy_details,
-+               sort_by_name and sorted_policy_atomic_groups or policy_atomic_groups,
-                target_platform, f, risk_tags, args.chunking, mutable)
+         writer(
+-          sorted and sorted_policy_details or policy_details,
+-          sorted and sorted_policy_atomic_groups or policy_atomic_groups,
++          sort_by_name and sorted_policy_details or policy_details,
++          sort_by_name and sorted_policy_atomic_groups or policy_atomic_groups,
+           target_platform,
+           f,
+           risk_tags,
+@@ -424,23 +427,25 @@ def main():
+         )
  
    if args.header_path:
 -    GenerateFile(args.header_path, _WritePolicyConstantHeader, sorted=True)
@@ -618,11 +608,13 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
 -    assert args.header_path.endswith('.h')
 +    if not (args.header_path.endswith('.h')):
 +      raise AssertionError("政策定义不满足生成约束")
-     GenerateFile(args.header_path.replace('.h', '_mutable.h'),
-                  _WritePolicyConstantHeader,
--                 sorted=True,
-+                 sort_by_name=True,
-                  mutable=True)
+     GenerateFile(
+       args.header_path.replace('.h', '_mutable.h'),
+       _WritePolicyConstantHeader,
+-      sorted=True,
++      sort_by_name=True,
+       mutable=True,
+     )
    if args.source_path:
 -    GenerateFile(args.source_path, _WritePolicyConstantSource, sorted=True)
 +    GenerateFile(args.source_path, _WritePolicyConstantSource, sort_by_name=True)
@@ -630,24 +622,25 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
 -    assert args.source_path.endswith('.cc')
 +    if not (args.source_path.endswith('.cc')):
 +      raise AssertionError("政策定义不满足生成约束")
-     GenerateFile(args.source_path.replace('.cc', '_mutable.cc'),
-                  _WritePolicyConstantSource,
--                 sorted=True,
-+                 sort_by_name=True,
-                  mutable=True)
+     GenerateFile(
+       args.source_path.replace('.cc', '_mutable.cc'),
+       _WritePolicyConstantSource,
+-      sorted=True,
++      sort_by_name=True,
+       mutable=True,
+     )
    if args.risk_header_path:
-     GenerateFile(args.risk_header_path, _WritePolicyRiskTagHeader)
-@@ -389,7 +394,7 @@ def main():
+@@ -449,7 +454,7 @@ def main():
+     GenerateFile(args.cloud_policy_proto_path, _WriteCloudPolicyProtobuf)
    if args.chrome_settings_proto_path:
-     GenerateFile(args.chrome_settings_proto_path,
-                  _WriteChromeSettingsProtobuf,
--                 sorted=True)
-+                 sort_by_name=True)
+     GenerateFile(
+-      args.chrome_settings_proto_path, _WriteChromeSettingsProtobuf, sorted=True
++      args.chrome_settings_proto_path, _WriteChromeSettingsProtobuf, sort_by_name=True
+     )
  
    if target_platform == 'android' and args.app_restrictions_path:
-     GenerateFile(args.app_restrictions_path, _WriteAppRestrictions, xml=True)
-@@ -723,7 +728,8 @@ class SchemaNodesGenerator:
-         sortedSeq[i] + 1 == sortedSeq[i + 1] for i in range(len(sortedSeq) - 1))
+@@ -825,7 +830,8 @@ class SchemaNodesGenerator:
+     )
  
    def GetEnumIntegerType(self, schema, is_sensitive_value, name):
 -    assert all(type(x) == int for x in schema['enum'])
@@ -656,8 +649,8 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
      possible_values = schema['enum']
      if self.IsConsecutiveInterval(possible_values):
        index = self.AppendRestriction(max(possible_values), min(possible_values))
-@@ -739,7 +745,8 @@ class SchemaNodesGenerator:
-                              'integer with enumeration restriction: %s' % name)
+@@ -846,7 +852,8 @@ class SchemaNodesGenerator:
+     )
  
    def GetEnumStringType(self, schema, is_sensitive_value, name):
 -    assert all(type(x) == str for x in schema['enum'])
@@ -666,7 +659,7 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
      offset_begin = len(self.string_enums)
      self.string_enums += schema['enum']
      offset_end = len(self.string_enums)
-@@ -803,7 +810,8 @@ class SchemaNodesGenerator:
+@@ -920,7 +927,8 @@ class SchemaNodesGenerator:
        return schema['$ref']
  
      is_sensitive_value = schema.get('sensitiveValue', False)
@@ -676,7 +669,7 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
  
      if schema['type'] in SIMPLE_SCHEMA_NAME_MAP:
        if not self.SchemaHaveRestriction(schema):
-@@ -870,15 +878,18 @@ class SchemaNodesGenerator:
+@@ -994,15 +1002,18 @@ class SchemaNodesGenerator:
  
        required_begin = len(self.required_properties)
        required_properties = schema.get('required', [])
@@ -698,7 +691,7 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
  
        case_insensitive_lookup_begin = len(self.case_insensitive_lookup)
        indices = list(range(begin, end))
-@@ -897,7 +908,8 @@ class SchemaNodesGenerator:
+@@ -1030,7 +1041,8 @@ class SchemaNodesGenerator:
        self.schema_nodes[index] = self.schema_nodes[index]._replace(extra=extra)
        return index
      else:
@@ -708,35 +701,38 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
  
    def GenerateAndCollectID(self, schema, name):
      """A wrapper of Generate(), will take the return value, check and add 'id'
-@@ -921,7 +933,8 @@ class SchemaNodesGenerator:
-             '//  Type' + ' ' * 27 +
-             'Extra  IsSensitiveValue HasSensitiveChildren\n')
+@@ -1055,7 +1067,8 @@ class SchemaNodesGenerator:
+       '//  Type' + ' ' * 27 + 'Extra  IsSensitiveValue HasSensitiveChildren\n'
+     )
      for schema_node in self.schema_nodes:
 -      assert schema_node.extra >= MIN_INDEX and schema_node.extra <= MAX_INDEX
 +      if not (schema_node.extra >= MIN_INDEX and schema_node.extra <= MAX_INDEX):
 +        raise AssertionError("政策定义不满足生成约束")
        comment = ('\n' + ' ' * 69 + '// ').join(sorted(schema_node.comments))
-       f.write('  { base::Value::%-19s %4s %-16s %-5s },  // %s\n' %
-               (schema_node.schema_type + ',', str(schema_node.extra) + ',',
-@@ -944,8 +957,9 @@ class SchemaNodesGenerator:
-           '  Additional CaseInsensitiveLookupBegin CaseInsensitiveLookupEnd\n')
+       f.write(
+         '  { base::Value::%-19s %4s %-16s %-5s },  // %s\n'
+@@ -1088,9 +1101,9 @@ class SchemaNodesGenerator:
+       )
        for properties_node in self.properties_nodes:
          for i in range(0, len(properties_node) - 1):
--          assert (properties_node[i] >= MIN_INDEX and
--                  properties_node[i] <= MAX_INDEX)
+-          assert (
+-            properties_node[i] >= MIN_INDEX and properties_node[i] <= MAX_INDEX
+-          )
 +          if not (properties_node[i] >= MIN_INDEX and
 +                  properties_node[i] <= MAX_INDEX):
 +            raise AssertionError("政策定义不满足生成约束")
-         f.write('  { %5d, %5d, %5d, %5d, %10d, %5d, %5d, %5d },  // %s\n' %
-                 properties_node)
-       f.write('};\n\n')
-@@ -1159,9 +1173,11 @@ namespace {namespace} {{
+         f.write(
+           '  { %5d, %5d, %5d, %5d, %10d, %5d, %5d, %5d },  // %s\n'
+           % properties_node
+@@ -1336,11 +1349,11 @@ namespace {namespace} {{
  ''')
    for policy in policies:
      if policy.is_supported:
 -      assert policy.id >= MIN_POLICY_ID and policy.id <= MAX_POLICY_ID
--      assert (policy.max_size >= MIN_EXTERNAL_DATA_SIZE and
--              policy.max_size <= MAX_EXTERNAL_DATA_SIZE)
+-      assert (
+-        policy.max_size >= MIN_EXTERNAL_DATA_SIZE
+-        and policy.max_size <= MAX_EXTERNAL_DATA_SIZE
+-      )
 +      if not (policy.id >= MIN_POLICY_ID and policy.id <= MAX_POLICY_ID):
 +        raise AssertionError("政策定义不满足生成约束")
 +      if not (policy.max_size >= MIN_EXTERNAL_DATA_SIZE and
@@ -745,8 +741,8 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
        f.write('  // %s\n' % policy.name)
        source_restriction = 'kSourceRestrictionNone'
        if policy.cloud_only:
-@@ -1722,7 +1738,8 @@ def _GetProtobufTypes():
- #------------------ app restrictions -------------------------------#
+@@ -2003,7 +2016,8 @@ def _GetProtobufTypes():
+ # ------------------ app restrictions -------------------------------#
  
  
 -ENROLLMENT_TOKEN_POLICY_NAME = 'CloudManagementEnrollmentToken'
@@ -756,10 +752,10 @@ index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe99
  
  def _FormatDefaultValue(default_value):
 diff --git a/components/policy/tools/template_writers/writers/reg_writer_unittest.py b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
-index d1cc9c6a129658fa78acd7097492c828faf3a943..3b36201e2589f12a7343e340bdbd76ecebb656d8 100755
+index c6b162260449c4cd0d24acb9f75d04290d774776..8aab7a4f3b02b06433b7d552981f7088dc08136c 100755
 --- a/components/policy/tools/template_writers/writers/reg_writer_unittest.py
 +++ b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
-@@ -29,7 +29,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+@@ -30,7 +30,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
      Raises:
        AssertionError: if the two strings are not equivalent.
      '''
@@ -768,7 +764,7 @@ index d1cc9c6a129658fa78acd7097492c828faf3a943..3b36201e2589f12a7343e340bdbd76ec
  
    def testEmpty(self):
      # Test the handling of an empty policy list.
-@@ -244,7 +244,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+@@ -268,7 +268,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
                "type": "list",
                "caption": "",
                "desc": "",
@@ -777,15 +773,15 @@ index d1cc9c6a129658fa78acd7097492c828faf3a943..3b36201e2589f12a7343e340bdbd76ec
                "example_value": ["foo", "bar"]
              },
            ],
-@@ -258,6 +258,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
-         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
-         '"1"="foo"', '"2"="bar"'
-     ])
+@@ -286,6 +286,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '"2"="bar"',
+       ]
+     )
 +    self.CompareOutputs(output, expected_output)
  
    def testStringEnumListPolicy(self):
      # Tests a policy group with a single policy of type 'string-enum-list'.
-@@ -273,7 +274,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+@@ -301,7 +302,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
                  {"name": "ProxyServerDisabled", "value": "foo", "caption": ""},
                  {"name": "ProxyServerAutoDetect", "value": "bar","caption": ""},
                ],
@@ -794,10 +790,10 @@ index d1cc9c6a129658fa78acd7097492c828faf3a943..3b36201e2589f12a7343e340bdbd76ec
                "example_value": ["foo", "bar"]
              },
            ],
-@@ -287,6 +288,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
-         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
-         '"1"="foo"', '"2"="bar"'
-     ])
+@@ -319,6 +320,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '"2"="bar"',
+       ]
+     )
 +    self.CompareOutputs(output, expected_output)
  
    def testDictionaryPolicy(self):
@@ -958,6 +954,3 @@ index 0869545e07f96d3eaed00828f4b15dca377712e4..24de643a006c5bca6b77c0b41d58cf81
        .Times(2);
  
    auto prefetch_container = CreateSpeculationRulesPrefetchContainer(
--- 
-2.52.0
-

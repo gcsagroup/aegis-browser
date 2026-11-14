@@ -52,6 +52,12 @@ Source: supported by source or the product contract. Partial: defined difference
 | Per-site website enhancements | Partial | Source | Not ported | Partial |
 | User scripts and AI drafts | Partial | Source | Not ported | Partial |
 | Built-in Markdown reader | Partial | Source | Not ported | Partial |
+| Unified settings and legacy routes | Source | Source | Source | Source |
+| P01 control protocol and two-hop TLS transport | Source | Not ported | Not ported | Not ported |
+| Mac site proxy session and recovery | Source | Not ported | Not ported | Partial |
+| Mac account nodes, quota and sign-out isolation | Source | Not ported | Not ported | Partial |
+| Mac local core diagnostic privacy and sharing | Source | Not ported | Not ported | Not ported |
+| Windows uninstall prompt localization | Not ported | Source | Not ported | Not ported |
 
 ## iOS scope and evidence
 
@@ -406,5 +412,53 @@ iOS Simulator evidence：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.
 Source：[apps/ios/AegisApp/MarkdownReaderView.swift](../apps/ios/AegisApp/MarkdownReaderView.swift)
 
 iOS Simulator evidence：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md](../docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md)
+
+### Unified settings and legacy routes
+
+`unified-settings` — Preserves the SwiftUI categories and forms merged into main. iOS uses WebKit; its acceptance was not rerun in this integration.
+
+Source：[apps/ios/AegisApp/BrowserSettings.swift](../apps/ios/AegisApp/BrowserSettings.swift) · [apps/ios/AegisApp/SettingsFormControls.swift](../apps/ios/AegisApp/SettingsFormControls.swift)
+
+Runtime acceptance not completed for this item in this work。
+
+### P01 control protocol and two-hop TLS transport
+
+`p01-two-hop-tls` — The build for this platform does not include the P01 two-hop transport.
+
+Source：[apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn](../apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn)
+
+Runtime acceptance not completed for this item in this work。
+
+### Mac site proxy session and recovery
+
+`mac-access-site-proxy-session` — iOS retains separate WebKit account or proxy entry points. Mac Chromium connections, child processes and native tests do not establish iOS acceptance.
+
+Source：[apps/ios/BrowserKit/BrowserSession.swift](../apps/ios/BrowserKit/BrowserSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
+
+### Mac account nodes, quota and sign-out isolation
+
+`mac-access-account` — iOS retains separate WebKit account or proxy entry points. Mac Chromium connections, child processes and native tests do not establish iOS acceptance.
+
+Source：[apps/ios/AegisApp/AccessAccountSession.swift](../apps/ios/AegisApp/AccessAccountSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
+
+### Mac local core diagnostic privacy and sharing
+
+`mac-access-core-diagnostics` — This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.
+
+Source：[apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
+
+### Windows uninstall prompt localization
+
+`windows-uninstall-localization` — This item is scoped to the Windows uninstaller; its source and tests do not establish implementation on this platform.
+
+Source：[apps/browser/scripts/windows-uninstall-locales_test.py](../apps/browser/scripts/windows-uninstall-locales_test.py) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
 
 Maintenance: edit the JSON, run `node scripts/check-platform-features.mjs --write` to generate all three pages, then run `node scripts/check-platform-features.mjs`. A new release-contract feature fails repository checks until every platform has a recorded status and explanation.

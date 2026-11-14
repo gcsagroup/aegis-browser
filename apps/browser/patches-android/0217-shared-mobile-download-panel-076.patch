@@ -1,4 +1,4 @@
-From c615770901ed0cbbf4610e7df7aa64cfb0279d9b Mon Sep 17 00:00:00 2001
+From cb52b80f65f176001df0429cfb812264d7e175ba Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 03:34:34 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=A4=8D=E7=94=A8=E4=B8=89=E7=AB=AF=E5=A2=9E?=
@@ -9,25 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../aegis/aegis_ui_handler_unittest.cc        |  1 -
- chrome/browser/resources/aegis/BUILD.gn       |  5 +-
- chrome/browser/resources/aegis/aegis.html     |  3 +-
- chrome/browser/resources/aegis/aegis.ts       |  2 +
- chrome/browser/resources/downloads/BUILD.gn   |  4 +-
- chrome/browser/resources/downloads/manager.ts |  2 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 10 +++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 12 ++-
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- ui/webui/resources/BUILD.gn                   |  2 +
- .../cr_components/aegis_downloads/BUILD.gn    | 22 ++++++
- .../aegis_downloads}/aegis_download_panel.css | 75 ++++++++++++++-----
- .../aegis_download_panel.html.ts              |  6 +-
- .../aegis_downloads}/aegis_download_panel.ts  |  4 +-
- 14 files changed, 118 insertions(+), 34 deletions(-)
- create mode 100644 ui/webui/resources/cr_components/aegis_downloads/BUILD.gn
- rename {chrome/browser/resources/downloads => ui/webui/resources/cr_components/aegis_downloads}/aegis_download_panel.css (60%)
- rename {chrome/browser/resources/downloads => ui/webui/resources/cr_components/aegis_downloads}/aegis_download_panel.html.ts (95%)
- rename {chrome/browser/resources/downloads => ui/webui/resources/cr_components/aegis_downloads}/aegis_download_panel.ts (98%)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 index 11ee95e32a0b25d910d53212a63d15301ce3c863..b68e3318d40efc4ded713d9eb2eef4288c7b892f 100644
@@ -195,7 +176,7 @@ index 9c12cebab32dbff2189cbe5df809892cf75a6978..8868dbcbd5f590d4c92d91bb036603dd
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/ui/webui/resources/BUILD.gn b/ui/webui/resources/BUILD.gn
-index 44b39cda6816b726d1414fb0c5490956f7a78909..53a8f4e755dc6933324280aa2c6303c8505f329b 100644
+index ebebce61a325e6a967d198167c5152d54564c208..c81042c093ba03af3feb2bbb86f959e3c0a2e398 100644
 --- a/ui/webui/resources/BUILD.gn
 +++ b/ui/webui/resources/BUILD.gn
 @@ -33,6 +33,7 @@ generate_grd("build_grd") {
@@ -448,6 +429,3 @@ index 3e3641857947994ab774cf77fe7ee39560f0a68c..9d23c6e93c8e67695558f51c2f2f8286
            this.formatPreviewError_(result.error || 'download start failed');
      } catch (error) {
        this.previewText_ = this.formatPreviewError_(error);
--- 
-2.52.0
-

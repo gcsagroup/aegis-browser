@@ -1,4 +1,4 @@
-From 53d95f82695fd9b8fbab19a2dcb43ae685fbd7eb Mon Sep 17 00:00:00 2001
+From 4e3124c2d0025947263760b82db6fd46b9694d13 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 05:10:11 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=AF=B9=E9=BD=90=E5=8E=86=E5=8F=B2=E9=A1=B5?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h     | 6 +++---
- chrome/test/data/webui/history/history_routing_test.ts | 2 ++
- 2 files changed, 5 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 5041b16867fad1d40d9bac5228b06441eb2d9141..60c94969861156afab9f7357520658a33983a749 100644
@@ -31,7 +28,7 @@ index 5041b16867fad1d40d9bac5228b06441eb2d9141..60c94969861156afab9f7357520658a3
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
-index dab64f8d85a5ebd219bcaafa9db7d52b2dff0b7a..f6b9649fe8f98ee52c24ea7ac0acc0896923eb97 100644
+index 51d5a50a101b7ebdd09556e09ae274220aa79263..b1e68a8eaf55ab40414783201d9435b496ce4eae 100644
 --- a/chrome/test/data/webui/history/history_routing_test.ts
 +++ b/chrome/test/data/webui/history/history_routing_test.ts
 @@ -8,7 +8,9 @@ import type {HistoryAppElement, HistorySideBarElement} from 'chrome://history/hi
@@ -44,6 +41,3 @@ index dab64f8d85a5ebd219bcaafa9db7d52b2dff0b7a..f6b9649fe8f98ee52c24ea7ac0acc089
  import {TestMock} from 'chrome://webui-test/test_mock.js';
  import {eventToPromise, isVisible, microtasksFinished} from 'chrome://webui-test/test_util.js';
  
--- 
-2.52.0
-

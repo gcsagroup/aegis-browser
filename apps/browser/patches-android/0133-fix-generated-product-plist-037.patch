@@ -1,4 +1,4 @@
-From cc808e69434937d43919e4a4139982b05cf87fd5 Mon Sep 17 00:00:00 2001
+From 66c6f344c009cf53df913398c158955cf3660d0b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 07:08:20 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BB=8E=E7=BB=9F=E4=B8=80=E4=BA=A7=E5=93=81?=
@@ -9,20 +9,12 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/BUILD.gn                               | 20 ++++++++-
- chrome/app/app-Info.plist                     |  6 +--
- .../ui/webui/help/aegis_github_update.h       |  6 +--
- chrome/tools/build/aegis_product_plist.py     | 42 +++++++++++++++++++
- .../tools/build/aegis_product_plist_test.py   | 40 ++++++++++++++++++
- 5 files changed, 105 insertions(+), 9 deletions(-)
- create mode 100644 chrome/tools/build/aegis_product_plist.py
- create mode 100644 chrome/tools/build/aegis_product_plist_test.py
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index e0c798080f4bdae7aed228a725d6212db14ba8b7..c6ca74e3a81b332e578e7e3d1d73ba2162310103 100644
+index fec79333c9c23c52a043fa2a84f3c39cc6fb79f6..3aa9b6aade5ca270649a20f744e4fd93744efede 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
-@@ -508,8 +508,26 @@ if (is_win) {
+@@ -518,8 +518,26 @@ if (is_win) {
      }
    }
  
@@ -178,6 +170,3 @@ index 0000000000000000000000000000000000000000..11b6d3c6a5ed6dc07acc1af9018f3679
 +
 +if __name__ == '__main__':
 +    unittest.main()
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From e50a26c9d9de5312c2621fe48647936f7c20d454 Mon Sep 17 00:00:00 2001
+From 8d3fb6af50f034ac40078aa92abdc97f86f5684a Mon Sep 17 00:00:00 2001
 From: Aegis integration <aegis-integration@users.noreply.github.com>
 Date: Sat, 3 Oct 2026 04:26:57 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=E6=89=80=E9=80=89=E4=BB=BB?=
@@ -10,11 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/BUILD.gn                 |  2 +
- .../aegis/agent/aegis_agent_service.cc        | 48 ++++++++++++---
- .../agent/aegis_agent_service_unittest.cc     | 58 +++++++++++++++++++
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- 4 files changed, 102 insertions(+), 10 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 10c1e2c7b4dd894a2f7dcbf23bb9e1635275ec13..c853991eba4a7bb36092d144253e4731c82aa7dd 100644
@@ -230,6 +225,3 @@ index 9a3761e33276d836ca7d81447c83fa5700fc0ab2..4f1bd8132ff56a302a34523730a35279
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

@@ -1,130 +1,15 @@
-From d1a8cc7b4f19f6f2afcfa833a78a9917c0655ca3 Mon Sep 17 00:00:00 2001
+From 2235bd8d5d1ae8faa37f052c0d964233a8fecfb0 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 01:41:32 +0800
 Subject: [PATCH] feat(aegis): isolate primary incognito profiles
 
 ---
- chrome/browser/BUILD.gn                       |   1 +
- chrome/browser/actor/BUILD.gn                 |   1 +
- chrome/browser/actor/actor_keyed_service.cc   |   9 +-
- .../actor/actor_keyed_service_factory.cc      |  24 +-
- .../browser/actor/tools/attempt_login_tool.cc |   7 +
- chrome/browser/actor/tools/tool_controller.cc |  78 ++-
- chrome/browser/actor/ui/BUILD.gn              |   2 +
- chrome/browser/actor/ui/actor_overlay_ui.cc   |  23 +-
- .../actor/ui/actor_ui_state_manager.cc        |  10 +-
- .../actor/ui/actor_ui_tab_controller.cc       |  10 +-
- chrome/browser/actor/ui/event_dispatcher.cc   |  74 ++-
- chrome/browser/actor/ui/event_dispatcher.h    |   5 +-
- .../actor/ui/event_dispatcher_computations.cc |  38 +-
- .../actor/ui/event_dispatcher_unittest.cc     |   3 +-
- chrome/browser/aegis/BUILD.gn                 |  26 +
- .../aegis/actor_journal_privacy_unittest.cc   | 321 ++++++++++
- chrome/browser/aegis/aegis_ai_control.cc      |  37 +-
- chrome/browser/aegis/aegis_ai_control.h       |  10 +-
- chrome/browser/aegis/aegis_bounce_observer.cc |  13 +-
- chrome/browser/aegis/aegis_cookie_janitor.cc  |  11 +-
- ...aegis_link_sanitize_navigation_throttle.cc |  33 +-
- .../aegis/aegis_phish_navigation_throttle.cc  |  39 +-
- .../browser/aegis/aegis_phish_tab_helper.cc   |  23 +-
- chrome/browser/aegis/aegis_profile_support.cc |  27 +
- chrome/browser/aegis/aegis_profile_support.h  |  17 +
- chrome/browser/aegis/aegis_service.cc         | 502 ++++++++++++---
- chrome/browser/aegis/aegis_service.h          |  57 +-
- chrome/browser/aegis/aegis_service_factory.cc |  75 +++
- chrome/browser/aegis/aegis_service_factory.h  |  42 ++
- .../aegis/aegis_service_factory_unittest.cc   |  51 ++
- .../browser/aegis/aegis_service_unittest.cc   | 226 ++++++-
- chrome/browser/aegis/aegis_torrent_client.cc  | 202 +++++-
- chrome/browser/aegis/aegis_torrent_client.h   |  69 ++-
- .../aegis/aegis_torrent_client_unittest.cc    |  73 +++
- .../aegis/aegis_ui_handler_unittest.cc        | 123 ++++
- .../aegis/agent/aegis_agent_browsertest.cc    | 575 +++++++++++++++++-
- .../aegis/agent/aegis_agent_service.cc        |  46 +-
- .../browser/aegis/agent/aegis_agent_service.h |   7 +
- .../agent/aegis_agent_service_factory.cc      |  10 +-
- .../agent/aegis_agent_service_unittest.cc     |  74 ++-
- .../aegis/agent/aegis_browser_tools.cc        | 168 ++++-
- .../browser/aegis/agent/agent_task_store.cc   |   9 +-
- chrome/browser/aegis/agent/agent_task_store.h |   4 +-
- .../aegis/agent/agent_task_store_unittest.cc  |  22 +
- chrome/browser/aegis/summary_session.cc       |  38 +-
- chrome/browser/aegis/summary_session.h        |   1 +
- .../devtools_manager_delegate_android.cc      |   4 +
- .../devtools_manager_delegate_android.h       |   1 +
- chrome/browser/android/devtools_server.cc     |  12 +-
- chrome/browser/chrome_browser_main.cc         |  11 +-
- .../browser/chrome_content_browser_client.cc  |  42 +-
- chrome/browser/devtools/BUILD.gn              |   2 +
- .../chrome_devtools_manager_delegate.cc       |   4 +
- .../chrome_devtools_manager_delegate.h        |   1 +
- .../devtools/remote_debugging_server.cc       |  46 +-
- .../devtools/remote_debugging_server.h        |   7 +
- .../remote_debugging_server_unittest.cc       |  41 ++
- chrome/browser/profiles/BUILD.gn              |   5 +-
- chrome/browser/profiles/renderer_updater.cc   |  54 +-
- chrome/browser/profiles/renderer_updater.h    |   9 +
- .../profiles/renderer_updater_unittest.cc     | 150 +++++
- chrome/browser/renderer_context_menu/BUILD.gn |   2 +
- .../render_view_context_menu.cc               |   7 +-
- chrome/browser/resources/aegis/aegis.ts       |  24 +-
- .../downloads/aegis_download_panel.html.ts    |  21 +-
- .../downloads/aegis_download_panel.ts         |  31 +-
- chrome/browser/ui/BUILD.gn                    |   2 +
- chrome/browser/ui/browser_actions.cc          |   3 +-
- .../browser/ui/browser_command_controller.cc  |  25 +-
- chrome/browser/ui/tabs/BUILD.gn               |   2 +
- chrome/browser/ui/tabs/tab_features.cc        |  12 +-
- chrome/browser/ui/toolbar/BUILD.gn            |   6 +-
- chrome/browser/ui/toolbar/app_menu_model.cc   |  23 +-
- chrome/browser/ui/views/side_panel/BUILD.gn   |   1 +
- .../aegis_agent/aegis_agent_side_panel.cc     |   3 +-
- .../ui/views/toolbar/aegis_toolbar_button.cc  |  28 +-
- .../ui/views/toolbar/aegis_toolbar_button.h   |   4 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  11 +
- chrome/browser/ui/webui/aegis/aegis_ui.h      |   2 +
- .../ui/webui/aegis/aegis_ui_handler.cc        | 161 +++--
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   1 +
- chrome/browser/ui/webui/aegis_agent/BUILD.gn  |   1 +
- .../aegis_agent/aegis_agent_page_handler.cc   |   5 +-
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  12 +-
- chrome/common/aegis/BUILD.gn                  |   1 +
- chrome/common/aegis/aegis_net_throttle.cc     |  46 +-
- chrome/common/aegis/aegis_net_throttle.h      |   7 +-
- .../aegis/aegis_net_throttle_unittest.cc      | 149 ++++-
- chrome/common/aegis/cdp_target_filter.cc      |  16 +
- chrome/common/aegis/cdp_target_filter.h       |   7 +
- .../aegis/cdp_target_filter_unittest.cc       |  13 +
- chrome/common/aegis/cname_cache_partition.h   |  23 +
- chrome/common/aegis/cname_uncloak.cc          |  49 +-
- chrome/common/aegis/cname_uncloak.h           |  25 +-
- chrome/common/renderer_configuration.mojom    |   6 +-
- .../url_loader_throttle_provider_impl.cc      |   7 +
- components/actor/core/aggregated_journal.cc   |  88 ++-
- components/actor/core/aggregated_journal.h    |  13 +
- .../devtools/devtools_agent_host_impl.cc      |   3 +
- .../devtools_agent_host_impl_unittest.cc      |  44 ++
- .../render_frame_devtools_agent_host.cc       |   3 +
- .../browser/devtools_manager_delegate.cc      |   4 +
- .../browser/devtools_manager_delegate.h       |   6 +
- net/http/http_log_util.cc                     |   2 +
- net/http/http_log_util_unittest.cc            |  12 +
- 105 files changed, 4062 insertions(+), 454 deletions(-)
- create mode 100644 chrome/browser/aegis/actor_journal_privacy_unittest.cc
- create mode 100644 chrome/browser/aegis/aegis_profile_support.cc
- create mode 100644 chrome/browser/aegis/aegis_profile_support.h
- create mode 100644 chrome/browser/aegis/aegis_service_factory.cc
- create mode 100644 chrome/browser/aegis/aegis_service_factory.h
- create mode 100644 chrome/browser/aegis/aegis_service_factory_unittest.cc
- create mode 100644 chrome/browser/aegis/aegis_torrent_client_unittest.cc
- create mode 100644 chrome/browser/profiles/renderer_updater_unittest.cc
- create mode 100644 chrome/common/aegis/cname_cache_partition.h
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index f05c54ad394e3136990f6cae430e29bb01c41068..7166888c29e7e3e06acbe7b0f94d47d72a9153d7 100644
+index a5320523509414ec000d9964a3af8a4bd7ddf720..42f7820ca4efe9be81bc8acba1e6b25f28c16b3a 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1106,6 +1106,7 @@ source_set("core") {
+@@ -1278,6 +1278,7 @@ source_set("core") {
      "//chrome/browser/webauthn:chrome_web_authentication_delegate",
      "//chrome/browser/webid",
      "//chrome/common:version_header",
@@ -133,11 +18,11 @@ index f05c54ad394e3136990f6cae430e29bb01c41068..7166888c29e7e3e06acbe7b0f94d47d7
      "//components/activity_reporter",
      "//components/actor/core",
 diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
-index 7408b022b86f0ae6c68437f613044ff0cd242452..1c8d2a7899d8c570dd11e085ad1bf11e9070543b 100644
+index ae10cffa70e68dcc1e514e416a8079ac7ab0e015..d87a16643df5446c1de2cb759713c6c7ed549c1a 100644
 --- a/chrome/browser/actor/BUILD.gn
 +++ b/chrome/browser/actor/BUILD.gn
-@@ -211,6 +211,7 @@ source_set("impl") {
-     "//chrome/browser:browser_process",
+@@ -240,6 +240,7 @@ source_set("impl") {
+     "//chrome/browser/actor/tools/registry:impl",
      "//chrome/browser/actor/ui",
      "//chrome/browser/actor/ui:event_dispatcher",
 +    "//chrome/browser/aegis:profile_support",
@@ -145,10 +30,10 @@ index 7408b022b86f0ae6c68437f613044ff0cd242452..1c8d2a7899d8c570dd11e085ad1bf11e
      "//chrome/browser/autofill/actor",
      "//chrome/browser/bookmarks",
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
-index b02698ccfb32857bd69b1249a412bd598ff44495..426f02f473ba39feee28c5b6c3f2867ce06ec812 100644
+index 066012b3080c2199923d5688dfc00b2400227148..cfae9343eddccc3fa1786098576768256ddc8487 100644
 --- a/chrome/browser/actor/actor_keyed_service.cc
 +++ b/chrome/browser/actor/actor_keyed_service.cc
-@@ -151,7 +151,10 @@ CreateOptionalPaintPreviewOptions() {
+@@ -154,7 +154,10 @@ CreateOptionalPaintPreviewOptions() {
  
  using ui::ActorUiStateManagerInterface;
  
@@ -158,28 +43,28 @@ index b02698ccfb32857bd69b1249a412bd598ff44495..426f02f473ba39feee28c5b6c3f2867c
 +                                         : AggregatedJournal::Mode::kStandard),
 +      profile_(profile) {
    actor_ui_state_manager_ = std::make_unique<ui::ActorUiStateManager>(*this);
-   profile_observation_.Observe(profile_);
-   if (base::FeatureList::IsEnabled(features::kGlicActor)) {
-@@ -488,7 +491,7 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
-     actor::ui::ActorUiStateManagerInterface* ui_state_manager,
-     std::optional<glic::mojom::InvocationSource> initial_invocation_source) {
+   headless_web_contents_manager_ =
+       std::make_unique<HeadlessWebContentsManager>(profile_);
+@@ -517,7 +520,7 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
+     std::optional<glic::mojom::InvocationSource> initial_invocation_source,
+     AllowedSchemes allowed_schemes) {
    CHECK(ui_state_manager);
 -  return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager), source_info,
 +  return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager, journal_.is_private()), source_info,
                          policy_checker, nullptr, std::move(options),
                          std::move(delegate), ui_state_manager,
-                         initial_invocation_source);
-@@ -503,7 +506,7 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
-   auto* ui_state_manager = GetActorUiStateManager();
+                         initial_invocation_source, allowed_schemes);
+@@ -532,7 +535,7 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
+   auto* ui_state_manager = actor_ui_state_manager_.get();
    CHECK(ui_state_manager);
    const EnterprisePolicyChecker* policy_checker_ptr = policy_checker.get();
 -  return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager),
 +  return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager, journal_.is_private()),
                          source_info, policy_checker_ptr,
                          std::move(policy_checker), std::move(options),
-                         std::move(delegate), ui_state_manager, std::nullopt);
+                         std::move(delegate), ui_state_manager, std::nullopt,
 diff --git a/chrome/browser/actor/actor_keyed_service_factory.cc b/chrome/browser/actor/actor_keyed_service_factory.cc
-index 8cf7b183c7628e40a2fc9039c1a0e7040ca7a161..b5ab81af8f07b924a212b1211f9dff9fd00ce563 100644
+index 85038c2515e916f4f413f8f2b3678271a4b57375..6b8d1c425dfc4620f8e76be72f5c48860c88d2d0 100644
 --- a/chrome/browser/actor/actor_keyed_service_factory.cc
 +++ b/chrome/browser/actor/actor_keyed_service_factory.cc
 @@ -4,6 +4,8 @@
@@ -188,9 +73,9 @@ index 8cf7b183c7628e40a2fc9039c1a0e7040ca7a161..b5ab81af8f07b924a212b1211f9dff9f
  
 +#include "build/build_config.h"
 +#include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/origin_gating/origin_gating_service_factory.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/signin/identity_manager_factory.h"
- #include "chrome/common/aegis/features.h"
 @@ -30,8 +32,9 @@ ActorKeyedServiceFactory* ActorKeyedServiceFactory::GetInstance() {
  
  ActorKeyedServiceFactory::ActorKeyedServiceFactory(
@@ -201,9 +86,9 @@ index 8cf7b183c7628e40a2fc9039c1a0e7040ca7a161..b5ab81af8f07b924a212b1211f9dff9f
 +          "ActorKeyedService",
 +          ProfileSelections::BuildForRegularAndIncognito()) {
    DependsOn(IdentityManagerFactory::GetInstance());
+   DependsOn(origin_gating::OriginGatingServiceFactory::GetInstance());
  }
- 
-@@ -44,11 +47,26 @@ bool ActorKeyedServiceFactory::ServiceIsCreatedWithBrowserContext() const {
+@@ -45,11 +48,26 @@ bool ActorKeyedServiceFactory::ServiceIsCreatedWithBrowserContext() const {
  std::unique_ptr<KeyedService>
  ActorKeyedServiceFactory::BuildServiceInstanceForBrowserContext(
      content::BrowserContext* context) const {
@@ -232,10 +117,10 @@ index 8cf7b183c7628e40a2fc9039c1a0e7040ca7a161..b5ab81af8f07b924a212b1211f9dff9f
  }
  
 diff --git a/chrome/browser/actor/tools/attempt_login_tool.cc b/chrome/browser/actor/tools/attempt_login_tool.cc
-index f57dd1de3583e2f12e441dacc16605f2665f8bf4..0717adf5a8500530d2205d6d7562b7e30d4205a6 100644
+index b67a0006a3a8d510e441024655a8f97e297a8a84..5a28420a7291377a4976a68a05d14493ad0fd518 100644
 --- a/chrome/browser/actor/tools/attempt_login_tool.cc
 +++ b/chrome/browser/actor/tools/attempt_login_tool.cc
-@@ -69,6 +69,11 @@ std::string MaybeTargetDebugString(const std::optional<PageTarget>& target) {
+@@ -78,6 +78,11 @@ std::string MaybeTargetDebugString(const std::optional<PageTarget>& target) {
  // logging is disabled, in which case the log is collected but never uploaded.
  optimization_guide::ModelQualityLogsUploaderService*
  GetModelQualityLogsUploader(Profile& profile) {
@@ -247,7 +132,7 @@ index f57dd1de3583e2f12e441dacc16605f2665f8bf4..0717adf5a8500530d2205d6d7562b7e3
    // TODO(crbug.com/562029939): Clean up kActorLoginQualityLogs.
    if (!base::FeatureList::IsEnabled(
            password_manager::features::kActorLoginQualityLogs)) {
-@@ -372,6 +377,8 @@ void AttemptLoginTool::OnCredentialSelected(
+@@ -380,6 +385,8 @@ void AttemptLoginTool::OnCredentialSelected(
          });
      if (it != credentials.end()) {
        selected_credential = *it;
@@ -257,7 +142,7 @@ index f57dd1de3583e2f12e441dacc16605f2665f8bf4..0717adf5a8500530d2205d6d7562b7e3
        VLOG(1) << "Selected credential id " << *response->selected_credential_id
                << " not found in the credentials list.";
 diff --git a/chrome/browser/actor/tools/tool_controller.cc b/chrome/browser/actor/tools/tool_controller.cc
-index 4c89f65650e55b4e26309465e471b461e8fe376e..411eac9bd2fca4d60be09b34594704efd11f63f7 100644
+index 454b2857c70656f4566f43f62b5fecd1c3693a47..46cd2cb562757340c7ac3799b42d9ee7b9f8d3ad 100644
 --- a/chrome/browser/actor/tools/tool_controller.cc
 +++ b/chrome/browser/actor/tools/tool_controller.cc
 @@ -6,6 +6,7 @@
@@ -356,7 +241,7 @@ index 4c89f65650e55b4e26309465e471b461e8fe376e..411eac9bd2fca4d60be09b34594704ef
  
    SetState(State::kValidating);
  
-@@ -223,10 +253,14 @@ void ToolController::Invoke(ResultCallback result_callback) {
+@@ -217,10 +247,14 @@ void ToolController::Invoke(ResultCallback result_callback) {
    mojom::ActionResultPtr toctou_result =
        tool.TimeOfUseValidation(last_observed_page_content);
    if (!IsOk(*toctou_result)) {
@@ -375,19 +260,17 @@ index 4c89f65650e55b4e26309465e471b461e8fe376e..411eac9bd2fca4d60be09b34594704ef
      CompleteToolRequest(std::move(toctou_result));
      return;
    }
-@@ -284,8 +318,8 @@ void ToolController::WaitForObservation(mojom::ActionResultPtr result) {
-         base::BindOnce(&ToolController::ObservationDelayComplete,
+@@ -279,7 +313,7 @@ void ToolController::WaitForObservation(mojom::ActionResultPtr result) {
                         weak_ptr_factory_.GetWeakPtr(), std::move(result)));
    } else {
--    journal().Log(active_state_->tool->JournalURL(), task_->id(),
--                  "ToolController DidFinishToolInvoke",
-+    journal().Log(JournalURLForMode(journal(), *active_state_->tool),
-+                  task_->id(), "ToolController DidFinishToolInvoke",
-                   JournalDetailsBuilder()
-                       .AddError("Tab is gone when tool finishes successfully")
-                       .Build());
-@@ -304,8 +338,8 @@ void ToolController::ObservationDelayComplete(
-       if (tabs::TabInterface* tab = active_state_->tool->GetTargetTab().Get()) {
+     journal().Log(
+-        active_state_->tool->JournalURL(), task_->id(),
++        JournalURLForMode(journal(), *active_state_->tool), task_->id(),
+         "ToolController DidFinishToolInvoke",
+         JournalDetailsBuilder()
+             .AddError("Surface is gone when tool finishes successfully")
+@@ -300,8 +334,8 @@ void ToolController::ObservationDelayComplete(
+               active_state_->tool->GetTargetActorSurface().Get()) {
          size_t last_navigation_count = observation_delayer_->NavigationCount();
          // The page navigated, restart the observation.
 -        journal().Log(active_state_->tool->JournalURL(), task_->id(),
@@ -395,9 +278,9 @@ index 4c89f65650e55b4e26309465e471b461e8fe376e..411eac9bd2fca4d60be09b34594704ef
 +        journal().Log(JournalURLForMode(journal(), *active_state_->tool),
 +                      task_->id(), "ToolController Restarting Observation", {});
          observation_delayer_ = std::make_unique<ObservationDelayController>(
-             *tab->GetContents()->GetPrimaryMainFrame(), task_->id(), journal(),
-             observation_page_stability_config_);
-@@ -340,6 +374,8 @@ void ToolController::CompleteToolRequest(mojom::ActionResultPtr result) {
+             *actor_surface->GetWebContents()->GetPrimaryMainFrame(),
+             task_->id(), journal(), observation_page_stability_config_);
+@@ -336,6 +370,8 @@ void ToolController::CompleteToolRequest(mojom::ActionResultPtr result) {
    if (IsOk(*result)) {
      active_state_->journal_entry->EndEntry(
          JournalDetailsBuilder().Add("result", "success").Build());
@@ -407,10 +290,10 @@ index 4c89f65650e55b4e26309465e471b461e8fe376e..411eac9bd2fca4d60be09b34594704ef
      active_state_->journal_entry->EndEntry(
          JournalDetailsBuilder().AddError(ToDebugString(*result)).Build());
 diff --git a/chrome/browser/actor/ui/BUILD.gn b/chrome/browser/actor/ui/BUILD.gn
-index 25ab8b21367da11f1db1e5f7ce1f4395900b3d54..a1e05f69e2a91374e609598f35a5fd4f6b974ba9 100644
+index 89a22874af42491d0d70eed74ac36a693cdc3796..4dd5d648e819ee623d3c7eedcc1caa302a69064b 100644
 --- a/chrome/browser/actor/ui/BUILD.gn
 +++ b/chrome/browser/actor/ui/BUILD.gn
-@@ -111,6 +111,7 @@ source_set("actor_overlay") {
+@@ -112,6 +112,7 @@ source_set("actor_overlay") {
      ":ui",
      "//base",
      "//chrome/browser/actor/resources:grit_grit",
@@ -418,7 +301,7 @@ index 25ab8b21367da11f1db1e5f7ce1f4395900b3d54..a1e05f69e2a91374e609598f35a5fd4f
      "//chrome/browser/profiles",
      "//chrome/browser/resources/actor_overlay:resources",
      "//chrome/browser/ui/color:color_headers",
-@@ -118,6 +119,7 @@ source_set("actor_overlay") {
+@@ -119,6 +120,7 @@ source_set("actor_overlay") {
      "//chrome/browser/ui/webui",
      "//chrome/browser/ui/webui:webui_util",
      "//chrome/common",
@@ -427,7 +310,7 @@ index 25ab8b21367da11f1db1e5f7ce1f4395900b3d54..a1e05f69e2a91374e609598f35a5fd4f
      "//content/public/browser",
      "//mojo/public/cpp/bindings",
 diff --git a/chrome/browser/actor/ui/actor_overlay_ui.cc b/chrome/browser/actor/ui/actor_overlay_ui.cc
-index 425cc4057dfcb66b2efee3079991f555b6ff1b1a..f3b0c8901d1dfe477f543cd8e49f3be33a2d2da5 100644
+index 7aa218681d0a1dec76369285e80ed71e00e12b64..48e4a463d091f7ff7ec09a3dc727ed83b61e5301 100644
 --- a/chrome/browser/actor/ui/actor_overlay_ui.cc
 +++ b/chrome/browser/actor/ui/actor_overlay_ui.cc
 @@ -4,13 +4,16 @@
@@ -475,7 +358,7 @@ index 425cc4057dfcb66b2efee3079991f555b6ff1b1a..f3b0c8901d1dfe477f543cd8e49f3be3
  
  ActorOverlayUI::ActorOverlayUI(content::WebUI* web_ui)
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index 8d061ce8a1a4c7c62ced9eb89129b463bb632753..14175162c83e05fc6f419b952084fbedf962dd0f 100644
+index f279c991391005ebc80a1d03943b015d47de4917..80380ec931f26c522875b4c973b7aaccd836f211 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
 @@ -4,6 +4,8 @@
@@ -487,7 +370,7 @@ index 8d061ce8a1a4c7c62ced9eb89129b463bb632753..14175162c83e05fc6f419b952084fbed
  #include "base/logging.h"
  #include "base/task/single_thread_task_runner.h"
  #include "base/trace_event/trace_event.h"
-@@ -303,7 +305,9 @@ std::vector<tabs::TabInterface*> ActorUiStateManager::GetTabs(TaskId id) {
+@@ -316,7 +318,9 @@ std::vector<tabs::TabInterface*> ActorUiStateManager::GetTabs(TaskId id) {
  void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
                                      UiCompleteCallback callback) {
    TRACE_EVENT("actor", "UiStateManager::OnUiEvent_Async", "event",
@@ -498,7 +381,7 @@ index 8d061ce8a1a4c7c62ced9eb89129b463bb632753..14175162c83e05fc6f419b952084fbed
    if (base::FeatureList::IsEnabled(features::kGlicActorUi)) {
      const TabUiUpdate update = std::visit(
          absl::Overload{[this](const StartingToActOnTab& e) -> TabUiUpdate {
-@@ -348,7 +352,9 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
+@@ -361,7 +365,9 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
  
  void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
    TRACE_EVENT("actor", "UiStateManager::OnUiEvent_Sync", "event",
@@ -510,20 +393,20 @@ index 8d061ce8a1a4c7c62ced9eb89129b463bb632753..14175162c83e05fc6f419b952084fbed
    if (!base::FeatureList::IsEnabled(features::kGlicActorUi)) {
      return;
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.cc b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
-index c91f34e01b4d1f7eedb49cea8c99d057c3a1a09c..e7b30a4f63d2c5a4c0b1db66f53418f688fec315 100644
+index 0f9fed9c47eda1f8302198160bd601e10f1af403..8461affec0c00330307d8390961e3eaa22fce7b5 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 @@ -23,8 +23,8 @@
- #include "chrome/browser/ui/tabs/tab_change_type.h"
- #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
  #include "chrome/common/chrome_features.h"
+ #include "components/constrained_window/constrained_window_views.h"
 -#include "components/tabs/public/tab_interface.h"
  #include "components/actor/core/task_source_info.h"
 +#include "components/tabs/public/tab_interface.h"
  #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
- 
- DEFINE_USER_DATA(actor::ui::ActorUiTabController);
-@@ -76,9 +76,11 @@ void ActorUiTabController::OnUiTabStateChange(const UiTabState& ui_tab_state,
+ #include "ui/views/bubble/bubble_dialog_model_host.h"
+ #include "ui/views/widget/widget.h"
+@@ -86,9 +86,11 @@ void ActorUiTabController::OnUiTabStateChange(const UiTabState& ui_tab_state,
          FROM_HERE, base::BindOnce(std::move(callback), true));
      return;
    }
@@ -539,10 +422,10 @@ index c91f34e01b4d1f7eedb49cea8c99d057c3a1a09c..e7b30a4f63d2c5a4c0b1db66f53418f6
    current_ui_tab_state_ = ui_tab_state;
    UpdateUi(std::move(callback));
 diff --git a/chrome/browser/actor/ui/event_dispatcher.cc b/chrome/browser/actor/ui/event_dispatcher.cc
-index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df5bb4c726 100644
+index 8bc7b9ccfeae62e4e1aa9d2b2faf7702ccfcd9c9..d832af380e30568d9a2dff58e074fa0ba4dc5eba 100644
 --- a/chrome/browser/actor/ui/event_dispatcher.cc
 +++ b/chrome/browser/actor/ui/event_dispatcher.cc
-@@ -260,13 +260,19 @@ struct InputTraits<UiEventDispatcher::ActorTaskSyncChange> {
+@@ -280,13 +280,19 @@ struct InputTraits<UiEventDispatcher::ActorTaskSyncChange> {
        };
  };
  
@@ -564,7 +447,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
      }
    }
  }
-@@ -274,8 +280,10 @@ void Complete(UiCompleteCallback callback, ActionResultPtr result) {
+@@ -294,8 +300,10 @@ void Complete(UiCompleteCallback callback, ActionResultPtr result) {
  class AsyncEventSequenceTask {
   public:
    explicit AsyncEventSequenceTask(
@@ -577,7 +460,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
  
    ~AsyncEventSequenceTask() {
      DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-@@ -300,22 +308,28 @@ class AsyncEventSequenceTask {
+@@ -320,22 +328,28 @@ class AsyncEventSequenceTask {
      TRACE_EVENT_BEGIN("actor", "MaybeSendNextEvent");
      DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
      if (result->code != ActionResultCode::kOk) {
@@ -612,7 +495,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
  
      // Create a callback that records metrics based on the result.
      base::OnceCallback<ActionResultPtr(ActionResultPtr)> record_metrics =
-@@ -345,14 +359,17 @@ class AsyncEventSequenceTask {
+@@ -365,14 +379,17 @@ class AsyncEventSequenceTask {
    SEQUENCE_CHECKER(sequence_checker_);
    raw_ref<ActorUiStateManagerInterface> ui_state_manager_
        GUARDED_BY_CONTEXT(sequence_checker_);
@@ -632,7 +515,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
    ~UiEventDispatcherImpl() override = default;
  
    void OnPreTool(const ToolRequest& tr, UiCompleteCallback callback) override {
-@@ -379,6 +396,7 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
+@@ -399,6 +416,7 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
   private:
    raw_ref<ActorUiStateManagerInterface> ui_state_manager_
        GUARDED_BY_CONTEXT(sequence_checker_);
@@ -640,7 +523,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
    absl::flat_hash_set<std::unique_ptr<AsyncEventSequenceTask>> in_flight_tasks_
        GUARDED_BY_CONTEXT(sequence_checker_);
    SEQUENCE_CHECKER(sequence_checker_);
-@@ -387,8 +405,11 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
+@@ -407,8 +425,11 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
    // Takes async path.
    template <absl::Overload V, typename InputT>
    void On(const InputT& in, UiCompleteCallback callback) {
@@ -654,7 +537,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
      GenerateAndSend<V, AsyncUiEvent>(InputTraits<InputT>::convert_fn(in),
                                       std::move(callback));
    }
-@@ -396,8 +417,11 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
+@@ -416,8 +437,11 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
    // Takes synchronous path.
    template <absl::Overload V, typename InputT>
    void On(const InputT& in) {
@@ -668,7 +551,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
      GenerateAndSend<V, SyncUiEvent>(InputTraits<InputT>::convert_fn(in),
                                      UiCompleteCallback() /*=null*/);
    }
-@@ -421,8 +445,8 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
+@@ -441,8 +465,8 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
        CHECK(!callback.is_null()) << "Callback not defined for AsyncUiEvent";
        auto& sequence_task =
            *in_flight_tasks_
@@ -679,7 +562,7 @@ index 34adbafe2a87823b6e4fe3d52d27aac6893c627b..62e7a1638e3b2eb701d791d21a6089df
                 .first;
        sequence_task->SendEvents<V>(
            std::move(std::get<EventSequence<AsyncUiEvent>>(events)),
-@@ -455,20 +479,24 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
+@@ -475,20 +499,24 @@ class UiEventDispatcherImpl : public UiEventDispatcher {
      while (!events.empty()) {
        const SyncUiEvent event = std::move(events.front());
        events.pop_front();
@@ -5158,11 +5041,11 @@ index 72b7e65660197b63b41f1596d888690e59cd0d69..2c30f53b2b1d4d710ea5c2f671bfd9fe
    void OnPageSignals(int32_t password_fields,
                       int32_t forms,
 diff --git a/chrome/browser/android/devtools_manager_delegate_android.cc b/chrome/browser/android/devtools_manager_delegate_android.cc
-index 2104c62a9218606e5e517ef858301eb7ef36bf1b..b30f62b84c0ea92e2afb0d1c0f61d01691b3654f 100644
+index 99e26402b5aa650c1ed6e59e3271bd47d69ca808..6245742aef13daa54d458d3bb142aef6b2152169 100644
 --- a/chrome/browser/android/devtools_manager_delegate_android.cc
 +++ b/chrome/browser/android/devtools_manager_delegate_android.cc
-@@ -412,6 +412,10 @@ bool DevToolsManagerDelegateAndroid::AllowInspectingTarget(
-   return IsInspectionAllowed(profile, agent_host);
+@@ -437,6 +437,10 @@ void DevToolsManagerDelegateAndroid::Activate(
+   devtools_window->ActivateWindow();
  }
  
 +bool DevToolsManagerDelegateAndroid::AllowRemoteDebugging() {
@@ -5173,13 +5056,13 @@ index 2104c62a9218606e5e517ef858301eb7ef36bf1b..b30f62b84c0ea92e2afb0d1c0f61d016
      RemoteDebuggingTargetOperation operation,
      std::string_view target_type,
 diff --git a/chrome/browser/android/devtools_manager_delegate_android.h b/chrome/browser/android/devtools_manager_delegate_android.h
-index 61969c51d54d0603d0fe2587d81f760a9d12d743..3796cc76267418dfd11d29c2fd433202be4e284d 100644
+index b444965c1f38d4eaa6582e88fd3ad0dc7adab349..a442805e014f12ced3e2630597ecc3ba9854add5 100644
 --- a/chrome/browser/android/devtools_manager_delegate_android.h
 +++ b/chrome/browser/android/devtools_manager_delegate_android.h
-@@ -44,6 +44,7 @@ class DevToolsManagerDelegateAndroid : public content::DevToolsManagerDelegate {
-       TargetType target_type) override;
+@@ -45,6 +45,7 @@ class DevToolsManagerDelegateAndroid : public content::DevToolsManagerDelegate {
    bool IsBrowserTargetDiscoverable() override;
    bool AllowInspectingTarget(content::DevToolsAgentHost* agent_host) override;
+   void Activate(content::DevToolsAgentHost* agent_host) override;
 +  bool AllowRemoteDebugging() override;
    bool AllowRemoteDebuggingTargetOperation(
        RemoteDebuggingTargetOperation operation,
@@ -5223,7 +5106,7 @@ index 0eaf1f6c2090fb3eb7441a6cee11a2649fef9e09..f3f90b5f7ed3b29a8977212e4d6c7cb0
    } else {
      devtools_server->Stop();
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index b58466931834b15a072efc101413b59304c2556b..7dea82967848d32503025c4a6886715a0964a3d1 100644
+index c9cd6ce4ab09582568c104f9b3efe5c8f0fa934e..164c6a3d0a553cba78fe77b8b9e7582a8260bc7f 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -3,7 +3,6 @@
@@ -5242,7 +5125,7 @@ index b58466931834b15a072efc101413b59304c2556b..7dea82967848d32503025c4a6886715a
  #include "chrome/browser/after_startup_task_utils.h"
  #include "chrome/browser/browser_features.h"
  #include "chrome/browser/browser_process.h"
-@@ -1630,6 +1630,11 @@ void ChromeBrowserMainParts::PostProfileInit(Profile* profile,
+@@ -1621,6 +1621,11 @@ void ChromeBrowserMainParts::PostProfileInit(Profile* profile,
      chrome_extra_part->PostProfileInit(profile, is_initial_profile);
    }
  
@@ -5254,7 +5137,7 @@ index b58466931834b15a072efc101413b59304c2556b..7dea82967848d32503025c4a6886715a
  #if BUILDFLAG(IS_WIN)
    // Verify that the profile is not on a network share and if so prepare to show
    // notification to the user.
-@@ -1985,10 +1990,6 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1974,10 +1979,6 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
    // Call `PostProfileInit()`and set it up for profiles created later.
    profile_init_manager_ = std::make_unique<ProfileInitManager>(this, profile);
  
@@ -5266,10 +5149,10 @@ index b58466931834b15a072efc101413b59304c2556b..7dea82967848d32503025c4a6886715a
    // Execute first run specific code after the PrefService has been initialized
    // and preferences have been registered since some of the import code depends
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 6e9e272dc6307fa17963de69492d27e322a67574..972ae28f70c4817d60b59eb5b49db70b3109020e 100644
+index b1866c83c558163052e2147f1e1f8ca2ebd38916..343339acb605c10a90b45e8b55c10e058b02708c 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -60,6 +60,7 @@
+@@ -62,6 +62,7 @@
  #include "chrome/browser/actor/actor_commit_deferring_condition.h"
  #include "chrome/browser/aegis/aegis_bounce_observer.h"
  #include "chrome/browser/aegis/aegis_service.h"
@@ -5277,7 +5160,7 @@ index 6e9e272dc6307fa17963de69492d27e322a67574..972ae28f70c4817d60b59eb5b49db70b
  #include "chrome/browser/after_startup_task_utils.h"
  #include "chrome/browser/ai/ai_manager.h"
  #include "chrome/browser/app_mode/app_mode_utils.h"
-@@ -1878,10 +1879,13 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
+@@ -1911,10 +1912,13 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
    if (RendererUpdater* service =
            RendererUpdaterFactory::GetForProfile(profile)) {
      service->InitializeRenderer(host);
@@ -5295,7 +5178,7 @@ index 6e9e272dc6307fa17963de69492d27e322a67574..972ae28f70c4817d60b59eb5b49db70b
    }
  
    for (auto& part : extra_parts_) {
-@@ -5984,6 +5988,16 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6143,6 +6147,16 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
      const std::string& client_data_header,
  #endif
      Profile* profile) {
@@ -5312,7 +5195,7 @@ index 6e9e272dc6307fa17963de69492d27e322a67574..972ae28f70c4817d60b59eb5b49db70b
  #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
    BoundSessionCookieRefreshService* bound_session_cookie_refresh_service =
        BoundSessionCookieRefreshServiceFactory::GetForProfile(profile);
-@@ -6011,11 +6025,13 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6170,11 +6184,13 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
            profile->GetPrefs()->GetInteger(
                policy::policy_prefs::kForceYouTubeRestrict),
            profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
@@ -5329,10 +5212,16 @@ index 6e9e272dc6307fa17963de69492d27e322a67574..972ae28f70c4817d60b59eb5b49db70b
            profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled),
            profile->GetPrefs()->GetBoolean(aegis::prefs::kLinkSanitizeEnabled),
            profile->GetPrefs()->GetString(aegis::prefs::kPausedSites),
-@@ -6152,8 +6168,20 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
-       profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled);
-   const bool aegis_link_sanitize =
-       profile->GetPrefs()->GetBoolean(aegis::prefs::kLinkSanitizeEnabled);
+@@ -6323,6 +6339,36 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+     result.push_back(std::move(glic_throttle));
+   }
+ 
++  const bool aegis_tracker_blocking =
++      profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
++  const bool aegis_cname_uncloak =
++      profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled);
++  const bool aegis_link_sanitize =
++      profile->GetPrefs()->GetBoolean(aegis::prefs::kLinkSanitizeEnabled);
 +  const bool aegis_profile_eligible = aegis::IsAegisProfileSupported(profile);
 +  const RendererUpdater* aegis_renderer_updater =
 +      aegis_profile_eligible ? RendererUpdaterFactory::GetForProfile(profile)
@@ -5344,17 +5233,52 @@ index 6e9e272dc6307fa17963de69492d27e322a67574..972ae28f70c4817d60b59eb5b49db70b
 +  const bool aegis_profile_supported =
 +      aegis_profile_eligible &&
 +      aegis_cname_cache_partition_id != aegis::kInvalidCnameCachePartitionId;
-   content::WebContents* aegis_contents = wc_getter.Run();
-   if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate(
++  content::WebContents* aegis_contents = wc_getter.Run();
++  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate(
 +          aegis_profile_supported, aegis_cname_cache_partition_id,
-           aegis_tracker_blocking, aegis_cname_uncloak, aegis_link_sanitize,
-           profile->GetPrefs()->GetString(aegis::prefs::kPausedSites),
-           aegis::AegisService::DocumentIdForWebContents(aegis_contents),
++          aegis_tracker_blocking, aegis_cname_uncloak, aegis_link_sanitize,
++          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites),
++          aegis::AegisService::DocumentIdForWebContents(aegis_contents),
++          aegis_contents
++              ? std::string(aegis_contents->GetLastCommittedURL().host())
++              : std::string());
++      aegis_throttle) {
++    result.push_back(std::move(aegis_throttle));
++  }
++
+   return result;
+ }
+ 
+@@ -6359,24 +6405,6 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
+   }
+ 
+ 
+-  const bool aegis_tracker_blocking =
+-      profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
+-  const bool aegis_cname_uncloak =
+-      profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled);
+-  const bool aegis_link_sanitize =
+-      profile->GetPrefs()->GetBoolean(aegis::prefs::kLinkSanitizeEnabled);
+-  content::WebContents* aegis_contents = wc_getter.Run();
+-  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate(
+-          aegis_tracker_blocking, aegis_cname_uncloak, aegis_link_sanitize,
+-          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites),
+-          aegis::AegisService::DocumentIdForWebContents(aegis_contents),
+-          aegis_contents
+-              ? std::string(aegis_contents->GetLastCommittedURL().host())
+-              : std::string());
+-      aegis_throttle) {
+-    result.push_back(std::move(aegis_throttle));
+-  }
+-
+   return result;
+ }
+ 
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index c1da8bec7380c3a1a0f681144795e5a8c6757c63..4e8a7ee056d556c23f49512624fb4a490451e7dc 100644
+index d4bff09af4c59f43e62508fd85c54b7787c4136a..bc035ac0a07eec94736b4dcdc426e2b8dabe9549 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -132,6 +132,7 @@ static_library("devtools") {
+@@ -148,6 +148,7 @@ static_library("devtools") {
      "//chrome/browser/ui/browser_window:create_browser_window",
      "//chrome/browser/ui/dialogs",
      "//chrome/browser/ui/select_file_policy",
@@ -5362,19 +5286,19 @@ index c1da8bec7380c3a1a0f681144795e5a8c6757c63..4e8a7ee056d556c23f49512624fb4a49
      "//components/page_load_metrics/browser",
      "//components/page_load_metrics/browser/observers/ad_metrics",
  
-@@ -554,6 +555,7 @@ source_set("unit_tests") {
+@@ -596,6 +597,7 @@ source_set("unit_tests") {
      "//base",
      "//chrome/browser/file_system_access",
      "//chrome/browser/sync",
 +    "//chrome/common/aegis",
      "//chrome/test:test_support",
-     "//content/test:test_support",
-     "//testing/gtest",
+     "//chrome/test/base:chrome_render_view_host_test_harness",
+     "//chrome/test/base:testing_browser_process",
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-index 19f0a79f24bcd0b976cbc426d1079a7aca0068ae..1657f7b64371f75120cde76c48b6bb6b2c51da62 100644
+index f14ecb1e838b67f719995a44f47a6aa62e6dd0c4..cd1a0955b0b4ed9c29ba88449d5ea2c1714a9ed8 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-@@ -454,6 +454,10 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
+@@ -457,6 +457,10 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
    return IsInspectionAllowed(profile, agent_host);
  }
  
@@ -5398,7 +5322,7 @@ index d65f7e041df9bbc2a027285808f1371acac41784..0ec0c56836061e1e2a277a0eede97683
        RemoteDebuggingTargetOperation operation,
        std::string_view target_type,
 diff --git a/chrome/browser/devtools/remote_debugging_server.cc b/chrome/browser/devtools/remote_debugging_server.cc
-index d348e8695ef2a024d9076eab6a820923121c0525..13b3055f205cf1ef02aa809f19b096506a75e7c9 100644
+index 084c1427a65384a4cf8bb55c52a816cdaa9e9750..92911d56e97e83a932d445e9451931bf1b392020 100644
 --- a/chrome/browser/devtools/remote_debugging_server.cc
 +++ b/chrome/browser/devtools/remote_debugging_server.cc
 @@ -25,6 +25,7 @@
@@ -5606,10 +5530,10 @@ index f4108a1ff8379729571425e1181c2cfde87dd1ad..118b2eda159de8452e934f86fa22fd7c
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndDisableFeature(
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 4a24b73d76902f0bf2fea915becbdfd5aa3cdd8c..0bbbe5b517fcb8baf43007936491a77ad2b46e7e 100644
+index 5f1ad15d05ca3a044ed3d130f87cfd0363ffec6c..c2eeddb646d05c82875548848dcca2bf930f7edd 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -121,10 +121,10 @@ source_set("misc") {
+@@ -125,10 +125,10 @@ source_set("misc") {
      "//chrome/browser/ui/zoom",
      "//chrome/browser/updates/announcement_notification",
      "//chrome/browser/webid",
@@ -5621,25 +5545,25 @@ index 4a24b73d76902f0bf2fea915becbdfd5aa3cdd8c..0bbbe5b517fcb8baf43007936491a77a
      "//components/background_sync",
      "//components/bookmarks/browser",
      "//components/browsing_data/content",
-@@ -1114,6 +1114,7 @@ source_set("unit_tests") {
-     "profile_metrics_unittest.cc",
+@@ -1140,6 +1140,7 @@ source_set("unit_tests") {
      "profile_selections_unittest.cc",
+     "profile_unittest.cc",
      "profiles_state_unittest.cc",
 +    "renderer_updater_unittest.cc",
    ]
    deps = [
      ":misc",
-@@ -1128,6 +1129,8 @@ source_set("unit_tests") {
+@@ -1154,6 +1155,8 @@ source_set("unit_tests") {
      "//chrome/browser/signin",
      "//chrome/browser/ui:ui_features",
      "//chrome/browser/ui/profiles",
 +    "//chrome/common",
 +    "//chrome/common/aegis",
      "//chrome/test:test_support",
+     "//chrome/test/base:testing_browser_process",
      "//components/policy/core/browser",
-     "//components/policy/core/browser:incognito_mode_policy_test_support",
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300c947b71f 100644
+index 2dca3ac2768404748ffc67f3a70ef48b62beee99..5c278ae6a08fe92e655b245f82a43b1385d3e368 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
 @@ -9,6 +9,7 @@
@@ -5650,15 +5574,15 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
  #include "base/base64.h"
  #include "base/functional/bind.h"
  #include "base/functional/callback.h"
-@@ -17,6 +18,7 @@
- #include "chrome/browser/content_settings/content_settings_manager_delegate.h"
+@@ -19,6 +20,7 @@
  #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/global_features.h"
  #include "chrome/browser/profiles/profile.h"
 +#include "chrome/common/aegis/cname_uncloak.h"
  #include "chrome/common/aegis/features.h"
  #include "chrome/common/aegis/filter_list.h"
  #include "chrome/common/aegis/filter_list_matcher.h"
-@@ -42,6 +44,7 @@
+@@ -45,6 +47,7 @@
  #if BUILDFLAG(IS_CHROMEOS)
  #include "chrome/browser/ash/login/signin/merge_session_throttling_utils.h"
  #include "chrome/browser/ash/login/signin/oauth2_login_manager_factory.h"
@@ -5666,7 +5590,7 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
  #endif
  
  #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-@@ -52,6 +55,28 @@
+@@ -60,6 +63,28 @@
  namespace {
  
  constexpr size_t kAegisFarblingSecretSize = 32;
@@ -5695,7 +5619,7 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
  
  std::vector<uint8_t> LoadOrCreateAegisFarblingSecret(Profile* profile) {
    if (profile->IsOffTheRecord() || profile->IsGuestSession()) {
-@@ -78,7 +103,13 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -86,7 +111,13 @@ RendererUpdater::RendererUpdater(Profile* profile)
      : profile_(profile),
        is_off_the_record_(profile_->IsOffTheRecord()),
        original_profile_(profile->GetOriginalProfile()),
@@ -5710,7 +5634,7 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
  #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
        ,
        bound_session_cookie_refresh_service_(
-@@ -172,6 +203,8 @@ RendererUpdater::~RendererUpdater() {
+@@ -190,6 +221,8 @@ RendererUpdater::~RendererUpdater() {
  
  void RendererUpdater::Shutdown() {
    pref_change_registrar_.RemoveAll();
@@ -5719,7 +5643,7 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
  #if BUILDFLAG(IS_CHROMEOS)
    oauth2_login_manager_->RemoveObserver(this);
    oauth2_login_manager_ = nullptr;
-@@ -307,6 +340,9 @@ void RendererUpdater::UpdateAllRenderers() {
+@@ -325,6 +358,9 @@ void RendererUpdater::UpdateAllRenderers() {
  }
  
  void RendererUpdater::PushAegisFilterList() {
@@ -5729,7 +5653,7 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
    auto renderer_configurations = GetRendererConfigurations();
    for (auto& renderer_configuration : renderer_configurations) {
      content::RenderProcessHost* render_process_host =
-@@ -320,7 +356,7 @@ void RendererUpdater::PushAegisFilterList() {
+@@ -338,7 +374,7 @@ void RendererUpdater::PushAegisFilterList() {
  
  void RendererUpdater::PushAegisFilterListTo(
      mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>& remote) {
@@ -5738,7 +5662,7 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
      return;
    }
    const aegis::CompiledFilterList list =
-@@ -330,6 +366,11 @@ void RendererUpdater::PushAegisFilterListTo(
+@@ -348,6 +384,11 @@ void RendererUpdater::PushAegisFilterListTo(
                               aegis::JoinNewline(list.exceptions));
  }
  
@@ -5750,7 +5674,7 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
  chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
      const {
    return chrome::mojom::DynamicParams::New(
-@@ -337,9 +378,12 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+@@ -355,9 +396,12 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
        GetBoundSessionThrottlerParams(),
  #endif
        force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
@@ -5764,21 +5688,21 @@ index 45b7955e5ec260cf35300694e3814f499c2cdb5c..e00c3bc021a2ba9df2685f39e5b24300
 +          aegis::features::IsFingerprintGuardGloballyEnabled(
 +              aegis_fingerprint_guard_.GetValue()),
        aegis_cname_uncloak_.GetValue(), aegis_link_sanitize_.GetValue(),
-       aegis_paused_sites_.GetValue(), aegis_farbling_secret_);
- }
+       aegis_paused_sites_.GetValue(), aegis_farbling_secret_
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index 95e146555cdba9faac946ad36d0d6c6c43bb0d9e..a91f95e7be53427d5026b833b87bba9cc60e79af 100644
+index 1737736733b714d7d63c055ee8f9f02cbc762556..45192857cbc7dd7dcc0eb8f245605192151c5f95 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
-@@ -10,6 +10,7 @@
+@@ -11,6 +11,7 @@
  #include "base/memory/raw_ptr.h"
  #include "base/scoped_observation.h"
  #include "build/chromeos_buildflags.h"
 +#include "chrome/common/aegis/cname_cache_partition.h"
  #include "chrome/common/renderer_configuration.mojom-forward.h"
+ #include "chrome/common/request_header_integrity/buildflags.h"
  #include "components/content_settings/core/browser/host_content_settings_map.h"
- #include "components/keyed_service/core/keyed_service.h"
-@@ -55,6 +56,12 @@ class RendererUpdater : public KeyedService
+@@ -63,6 +64,12 @@ class RendererUpdater : public KeyedService
    void SetAegisHost(content::RenderProcessHost* render_process_host,
                      mojo::PendingRemote<chrome::mojom::AegisHost> host);
  
@@ -5791,7 +5715,7 @@ index 95e146555cdba9faac946ad36d0d6c6c43bb0d9e..a91f95e7be53427d5026b833b87bba9c
   private:
    using RendererConfigurations = std::vector<
        std::pair<content::RenderProcessHost*,
-@@ -94,6 +101,8 @@ class RendererUpdater : public KeyedService
+@@ -108,6 +115,8 @@ class RendererUpdater : public KeyedService
    const raw_ptr<Profile> profile_;
    const bool is_off_the_record_;
    const raw_ptr<Profile> original_profile_;
@@ -5957,18 +5881,18 @@ index 0000000000000000000000000000000000000000..6c9acafac0b1b218fbdaf70d533b1a17
 +
 +}  // namespace
 diff --git a/chrome/browser/renderer_context_menu/BUILD.gn b/chrome/browser/renderer_context_menu/BUILD.gn
-index b2e9ee838ff8ce05f6c3b177ffb9e4031c54ba69..47f120b33a90da769fc7a66b1fa89b3dd953fc10 100644
+index 70663c19059c839a6485c04b4d0f9245f96bb20e..d66c9ebf0f1d094e76b165d27a9ae00a114e7778 100644
 --- a/chrome/browser/renderer_context_menu/BUILD.gn
 +++ b/chrome/browser/renderer_context_menu/BUILD.gn
-@@ -116,6 +116,7 @@ source_set("impl") {
+@@ -119,6 +119,7 @@ source_set("impl") {
+       "//chrome/browser:browser_features",
        "//chrome/browser:browser_process",
-       "//chrome/browser:browser_public_dependencies",
        "//chrome/browser/accessibility",
 +      "//chrome/browser/aegis",
        "//chrome/browser/apps/app_service",
        "//chrome/browser/apps/platform_apps",
        "//chrome/browser/autocomplete",
-@@ -167,6 +168,7 @@ source_set("impl") {
+@@ -174,6 +175,7 @@ source_set("impl") {
        "//chrome/browser/ui/webui/history",
        "//chrome/browser/user_education",
        "//chrome/common:mojo_bindings",
@@ -5977,7 +5901,7 @@ index b2e9ee838ff8ce05f6c3b177ffb9e4031c54ba69..47f120b33a90da769fc7a66b1fa89b3d
        "//components/compose/core/browser:features",
        "//components/guest_view/browser",
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-index 04627c302f677605bd74df07631c11d7c2721c4e..d0034ca2d08808e662dc020ac549865d9bcd8f37 100644
+index 9ea551a7564d768260b64faa9b4a3e1ad9ade45f..ee9acc91ca8048a3ebe0e723af53de16558c7819 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 @@ -40,6 +40,7 @@
@@ -5988,7 +5912,7 @@ index 04627c302f677605bd74df07631c11d7c2721c4e..d0034ca2d08808e662dc020ac549865d
  #include "chrome/browser/aegis/agent/aegis_agent_service.h"
  #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
  #include "chrome/browser/app_mode/app_mode_utils.h"
-@@ -2940,7 +2941,7 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
+@@ -2974,7 +2975,7 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
  void RenderViewContextMenu::AppendAegisAgentItem() {
    Profile* profile = GetProfile();
    const GURL page_url = source_web_contents_->GetLastCommittedURL();
@@ -5997,7 +5921,7 @@ index 04627c302f677605bd74df07631c11d7c2721c4e..d0034ca2d08808e662dc020ac549865d
        !page_url.SchemeIsHTTPOrHTTPS() ||
        !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
        !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
-@@ -2963,7 +2964,7 @@ void RenderViewContextMenu::ExecuteAegisAgentContext() {
+@@ -2997,7 +2998,7 @@ void RenderViewContextMenu::ExecuteAegisAgentContext() {
    aegis::agent::AegisAgentService* service =
        profile ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
                : nullptr;
@@ -6006,7 +5930,7 @@ index 04627c302f677605bd74df07631c11d7c2721c4e..d0034ca2d08808e662dc020ac549865d
        !service || !service->IsEnabled()) {
      return;
    }
-@@ -3573,7 +3574,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
+@@ -3657,7 +3658,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
  
    switch (id) {
      case IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT:
@@ -6220,10 +6144,10 @@ index 2394f2aa6d2da0f320a6b889d3ab408167c0bc61..aecda7bf51e29136b4a0e9826c3f303c
          await this.refreshTask_();
        }
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index e840981c7d27d21843846d5c17339f317999f77c..21838a7e8cb8deb3105128066abd46fc5e4d2709 100644
+index ce18d3b740087f75af821484566df65a821492fa..916140b9150907765b7dbaa0919bdf211d55f215 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -213,6 +213,7 @@ if (!is_android) {
+@@ -309,6 +309,7 @@ if (!is_android) {
        "//chrome/app:command_ids",
        "//chrome/app/vector_icons",
        "//chrome/browser/browsing_data",
@@ -6231,19 +6155,19 @@ index e840981c7d27d21843846d5c17339f317999f77c..21838a7e8cb8deb3105128066abd46fc
        "//chrome/browser/contextual_cueing",
        "//chrome/browser/contextual_tasks:ui",
        "//chrome/browser/devtools",
-@@ -282,6 +283,7 @@ if (!is_android) {
-       "//chrome/browser/ui/webui/inspect",
+@@ -385,6 +386,7 @@ if (!is_android) {
        "//chrome/browser/ui/webui/omnibox_popup",
+       "//chrome/browser/ui/webui/util",
        "//chrome/browser/undo",
 +      "//chrome/common/aegis",
        "//components/commerce/core:metrics",
        "//components/multistep_filter/core:features",
        "//components/omnibox/common:features",
 diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
-index db7ae120d1db080a64d1a46cdcea00795b47dad5..74daabbd521e92ec6630d31f628f20d7d6b01d94 100644
+index 61dae4946038d41b33450cb21f17130ccaba9647..f48ac56bc45533ac6611ebe47cc0378c0145f804 100644
 --- a/chrome/browser/ui/browser_actions.cc
 +++ b/chrome/browser/ui/browser_actions.cc
-@@ -23,6 +23,7 @@
+@@ -24,6 +24,7 @@
  #include "chrome/app/vector_icons/vector_icons.h"
  #include "chrome/browser/browsing_data/browsing_data_important_sites_util.h"
  #include "chrome/browser/contextual_cueing/contextual_cueing_controller.h"
@@ -6251,7 +6175,7 @@ index db7ae120d1db080a64d1a46cdcea00795b47dad5..74daabbd521e92ec6630d31f628f20d7
  #include "chrome/browser/contextual_cueing/features.h"
  #include "chrome/browser/contextual_tasks/contextual_tasks_side_panel_coordinator.h"
  #include "chrome/browser/contextual_tasks/contextual_tasks_utils.h"
-@@ -388,7 +389,7 @@ void BrowserActions::InitializeSidePanelActions() {
+@@ -444,7 +445,7 @@ void BrowserActions::InitializeSidePanelActions() {
    BrowserWindowInterface* const bwi = base::to_address(bwi_);
  
    if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
@@ -6261,10 +6185,10 @@ index db7ae120d1db080a64d1a46cdcea00795b47dad5..74daabbd521e92ec6630d31f628f20d7
          actions::ActionItem::Builder(
              CreateToggleSidePanelActionCallback(
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index cf3e5d9d721cf6255f411333a7ac54c342cb428c..ce0e7fefc785014d45768d7d86d963dc085fd22e 100644
+index cb5dfab0ee83a0e111651f8c229b85a34d88da3d..2d6a161f12988dc0b736bb908da8df7feaef7b36 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -174,6 +174,7 @@
+@@ -182,6 +182,7 @@
  #include "chrome/browser/ui/ash/multi_user/multi_user_context_menu.h"
  #include "chrome/browser/ui/browser_commands_chromeos.h"
  #include "chrome/browser/ui/chromeos/locked_state/locked_state_controller.h"
@@ -6272,7 +6196,7 @@ index cf3e5d9d721cf6255f411333a7ac54c342cb428c..ce0e7fefc785014d45768d7d86d963dc
  #include "components/session_manager/core/session_manager.h"
  #include "components/user_manager/user_manager.h"
  #endif
-@@ -206,6 +207,17 @@ namespace chrome {
+@@ -219,6 +220,17 @@ namespace chrome {
  
  namespace {
  
@@ -6290,7 +6214,7 @@ index cf3e5d9d721cf6255f411333a7ac54c342cb428c..ce0e7fefc785014d45768d7d86d963dc
  // Ensures that - if we have not popped up an infobar to prompt the user to e.g.
  // reload the current page - that the content pane of the browser is refocused.
  void AppInfoDialogClosedCallback(SessionID session_id,
-@@ -1292,7 +1304,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1329,7 +1341,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
        ShowSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
      case IDC_SHOW_AEGIS:
@@ -6301,7 +6225,7 @@ index cf3e5d9d721cf6255f411333a7ac54c342cb428c..ce0e7fefc785014d45768d7d86d963dc
        break;
      case IDC_SHOW_AEGIS_AGENT:
        browser_->GetFeatures().side_panel_ui()->Show(
-@@ -1867,7 +1881,7 @@ void BrowserCommandController::InitCommandState() {
+@@ -1935,7 +1949,7 @@ void BrowserCommandController::InitCommandState() {
    command_updater_->UpdateCommandEnabled(
        IDC_SHOW_AEGIS_AGENT,
        base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
@@ -6309,8 +6233,8 @@ index cf3e5d9d721cf6255f411333a7ac54c342cb428c..ce0e7fefc785014d45768d7d86d963dc
 +          IsAegisProfileSupported(profile()));
    command_updater_->UpdateCommandEnabled(IDC_FIND_AND_EDIT_MENU, true);
    command_updater_->UpdateCommandEnabled(IDC_SAVE_AND_SHARE_MENU, true);
-   command_updater_->UpdateCommandEnabled(IDC_SHOW_READING_MODE_SIDE_PANEL,
-@@ -2096,7 +2110,7 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+   command_updater_->UpdateCommandEnabled(IDC_SHOW_READING_MODE, true);
+@@ -2175,7 +2189,7 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
    command_updater->UpdateCommandEnabled(IDC_OPTIONS,
                                          !forced_incognito || is_guest);
    command_updater->UpdateCommandEnabled(IDC_SHOW_AEGIS,
@@ -6319,7 +6243,7 @@ index cf3e5d9d721cf6255f411333a7ac54c342cb428c..ce0e7fefc785014d45768d7d86d963dc
    command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
                                          !forced_incognito && !is_guest);
  }
-@@ -2417,12 +2431,13 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+@@ -2489,12 +2503,13 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
    command_updater_->UpdateCommandEnabled(IDC_EDIT_SEARCH_ENGINES, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
@@ -6336,47 +6260,47 @@ index cf3e5d9d721cf6255f411333a7ac54c342cb428c..ce0e7fefc785014d45768d7d86d963dc
    command_updater_->UpdateCommandEnabled(IDC_CHROME_TIPS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_CHROME_WHATS_NEW, show_main_ui);
 diff --git a/chrome/browser/ui/tabs/BUILD.gn b/chrome/browser/ui/tabs/BUILD.gn
-index 3396b27000c3120dbe0c332293c16c0964f63d78..3e86e661f642705c6cc0b58d09063f4e04140096 100644
+index bb4b18f7dc2c0757abdea80882975186618a38fb..56fb112cfd17e84369b36579cf4b539a9ed2667b 100644
 --- a/chrome/browser/ui/tabs/BUILD.gn
 +++ b/chrome/browser/ui/tabs/BUILD.gn
-@@ -522,6 +522,7 @@ if (!is_android) {
+@@ -545,6 +545,7 @@ if (!is_android) {
        "//chrome/browser/actor",
        "//chrome/browser/actor/ui",
        "//chrome/browser/banners",
 +      "//chrome/browser/aegis:profile_support",
        "//chrome/browser/bookmarks",
+       "//chrome/browser/breadcrumbs",
        "//chrome/browser/collaboration/messaging",
-       "//chrome/browser/commerce",
-@@ -612,6 +613,7 @@ if (!is_android) {
-       "//chrome/browser/ui/webui_browser:headers",
-       "//chrome/browser/vr",
+@@ -686,6 +687,7 @@ if (!is_android) {
        "//chrome/browser/web_applications",
+       "//chrome/browser/web_applications/isolated_web_apps:isolated_web_apps_no_pwa_core_deps",
+       "//chrome/common",
 +      "//chrome/common/aegis",
-       "//components/content_settings/core/browser",
-       "//components/contextual_tasks/public",
-       "//components/enterprise",
+       "//components/blocked_content",
+       "//components/breadcrumbs/core",
+       "//components/breadcrumbs/core:status",
 diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
-index 34a7b2e82607b5b0613dfad6f7f9552bb0cb2320..64d6d383ffea23ef6120ee8a977d8ef7816211ac 100644
+index b4b0f792890e434975d5909e9dc2b5619608ca12..bddc9b13a4c8aa6c91bb40584aea2ff567004a44 100644
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
-@@ -15,6 +15,7 @@
+@@ -19,6 +19,7 @@
  #include "chrome/browser/actor/actor_tab_data.h"
  #include "chrome/browser/actor/ui/actor_ui_tab_controller.h"
  #include "chrome/browser/banners/app_banner_manager_desktop.h"
 +#include "chrome/browser/aegis/aegis_profile_support.h"
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
- #include "chrome/browser/commerce/in_stock_notification/in_stock_notification_manager.h"
- #include "chrome/browser/commerce/shopping_service_factory.h"
-@@ -160,6 +161,7 @@
- #include "chrome/browser/ui/tabs/tab_attachment_tracker.h"
+ #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
+ #include "chrome/browser/browser_process.h"
+@@ -253,6 +254,7 @@
+ #include "chrome/browser/web_applications/policy/pre_redirection_url_observer.h"
  #include "chrome/browser/web_applications/web_app_tab_helper.h"
  #include "chrome/browser/web_applications/web_app_utils.h"
 +#include "chrome/common/aegis/features.h"
  #include "chrome/common/chrome_features.h"
+ #include "chrome/common/chrome_isolated_world_ids.h"
  #include "components/autofill/core/common/autofill_features.h"
- #include "components/commerce/core/commerce_feature_list.h"
-@@ -432,9 +434,17 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
-               tab, tab, side_panel_registry_.get());
+@@ -708,9 +710,17 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
+                   tab, &tab, side_panel_registry_.get());
      }
      // TODO(crbug.com/433973411): Move this logic to a helper function.
 +    bool is_supported_actor_ui_profile =
@@ -6395,10 +6319,10 @@ index 34a7b2e82607b5b0613dfad6f7f9552bb0cb2320..64d6d383ffea23ef6120ee8a977d8ef7
        // injection callbacks and as a direct constructor argument.
        actor_ui_tab_controller_ =
 diff --git a/chrome/browser/ui/toolbar/BUILD.gn b/chrome/browser/ui/toolbar/BUILD.gn
-index 605a25e6dec8bc3a7523bf697ef81b4746eb8a65..661f20587666dd381dddd71f14b7e49accb15a45 100644
+index 3b2dc51be7ae288d4e4c63ffb70ca6ab0a687cb7..fc788132eb6e0b49f60587188a6dfed9e82ba53f 100644
 --- a/chrome/browser/ui/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/toolbar/BUILD.gn
-@@ -184,6 +184,7 @@ source_set("impl") {
+@@ -199,6 +199,7 @@ source_set("impl") {
        "//chrome/common:chrome_features",
        "//chrome/common:constants",
        "//chrome/common:non_code_constants",
@@ -6406,7 +6330,7 @@ index 605a25e6dec8bc3a7523bf697ef81b4746eb8a65..661f20587666dd381dddd71f14b7e49a
        "//components/bookmarks/common",
        "//components/commerce/core:feature_list",
        "//components/commerce/core:feature_utils",
-@@ -233,7 +234,10 @@ source_set("impl") {
+@@ -250,7 +251,10 @@ source_set("impl") {
        "//ui/strings:ui_strings_grit",
      ]
      if (is_chromeos) {
@@ -6419,10 +6343,10 @@ index 605a25e6dec8bc3a7523bf697ef81b4746eb8a65..661f20587666dd381dddd71f14b7e49a
        deps += [
          "//chrome/browser/ui/webui/signin:signin_ui_error",
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index c1bb6824c17429c616adad9df3607d69553a568c..061dd8aa5a910b18052c059384290bad9910d3cf 100644
+index 7353ce0a682e72b4441241f47c8bb565fad427b6..f31a3faa3ed3dc899f1ee6db0d2486727f76f502 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -173,6 +173,7 @@
+@@ -179,6 +179,7 @@
  
  #if BUILDFLAG(IS_CHROMEOS)
  #include "chrome/browser/policy/system_features_disable_list_policy_handler.h"
@@ -6430,7 +6354,7 @@ index c1bb6824c17429c616adad9df3607d69553a568c..061dd8aa5a910b18052c059384290bad
  #include "components/policy/core/common/policy_pref_names.h"
  #include "ui/display/screen.h"
  #else
-@@ -225,6 +226,17 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(HelpMenuModel, kReportUnsafeSiteMenuItem);
+@@ -237,6 +238,17 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(HelpMenuModel, kReportUnsafeSiteMenuItem);
  
  namespace {
  
@@ -6448,7 +6372,7 @@ index c1bb6824c17429c616adad9df3607d69553a568c..061dd8aa5a910b18052c059384290bad
  ////////////////////////////////////////////////////////////////////////////////
  // AddItemWithStringIdAndVectorIcon
  void AddItemWithStringIdAndVectorIcon(ui::SimpleMenuModel* model,
-@@ -2132,7 +2144,7 @@ void AppMenuModel::Build() {
+@@ -2190,7 +2202,7 @@ void AppMenuModel::Build() {
  #endif
  
    if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
@@ -6457,7 +6381,7 @@ index c1bb6824c17429c616adad9df3607d69553a568c..061dd8aa5a910b18052c059384290bad
      AddItemWithStringIdAndVectorIcon(this, IDC_SHOW_AEGIS_AGENT,
                                       IDS_SHOW_AEGIS_AGENT, omnibox::kSparkIcon);
      AddSeparator(ui::SPACING_SEPARATOR);
-@@ -2337,9 +2349,12 @@ void AppMenuModel::Build() {
+@@ -2471,9 +2483,12 @@ void AppMenuModel::Build() {
    AddItemWithStringIdAndVectorIcon(
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
@@ -6474,10 +6398,10 @@ index c1bb6824c17429c616adad9df3607d69553a568c..061dd8aa5a910b18052c059384290bad
    if (browser_defaults::kShowExitMenuItem) {
      AddItemWithStringIdAndVectorIcon(
 diff --git a/chrome/browser/ui/views/side_panel/BUILD.gn b/chrome/browser/ui/views/side_panel/BUILD.gn
-index 28fdcf66e1df1bbb9afc7e6d443dcfb798cf6916..0347b53f90df696f4741c981ee7797b629d8b2a8 100644
+index 18f2830953a2d0768297fcc1278e8c0eccaf7391..0aa5a1d01553dbc542b52b03a396b5501360046f 100644
 --- a/chrome/browser/ui/views/side_panel/BUILD.gn
 +++ b/chrome/browser/ui/views/side_panel/BUILD.gn
-@@ -99,6 +99,7 @@ source_set("side_panel") {
+@@ -95,6 +95,7 @@ source_set("side_panel") {
      "//chrome/app:generated_resources",
      "//chrome/app:generated_resources_grit",
      "//chrome/app/vector_icons",
@@ -7664,10 +7588,10 @@ index 34756cf2dfa21a9ece20008e6ebdeda57ea68a2b..283312721a87dcf7de178b93f24f8dcd
  
  // True when |dns_aliases| contains a tracker host on a different registrable
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index cd7d6557af294e5105cacc976470ca7fb1acb769..6ffe888a485377fe4515e257614d54ac4e30117b 100644
+index 685ba6968590aef7094caed7dd79fd3286d82818..f05ed1ccf931d8908e34a68ad749805679ff68f0 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
-@@ -30,8 +30,12 @@ struct DynamicParams {
+@@ -33,8 +33,12 @@ struct DynamicParams {
    bool force_safe_search = true;
    int32 youtube_restrict = 0;
    string allowed_domains_for_apps;
@@ -7682,7 +7606,7 @@ index cd7d6557af294e5105cacc976470ca7fb1acb769..6ffe888a485377fe4515e257614d54ac
    bool aegis_link_sanitize = true;
    string aegis_paused_sites;
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index a6f05de348b558083f03898c51fbba829550f15f..e955ea9795f6c79871d77b5712b655a0a6218949 100644
+index 352a7e84ff2378e9c6aab9d98fbe91f806b34dcb..d050a23e00f3892e0b716c01d0d331c42b5f2281 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -264,12 +264,18 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
@@ -7713,7 +7637,7 @@ index a6f05de348b558083f03898c51fbba829550f15f..e955ea9795f6c79871d77b5712b655a0
            std::move(aegis_paused_sites),
            local_frame_token.has_value() ? local_frame_token.value().ToString()
 diff --git a/components/actor/core/aggregated_journal.cc b/components/actor/core/aggregated_journal.cc
-index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739e184b05f 100644
+index c3b35142160d480e4b055c9fa907bbf26b9ed606..46b876bd65a1e6b4c8eb5c66bc155244df53c175 100644
 --- a/components/actor/core/aggregated_journal.cc
 +++ b/components/actor/core/aggregated_journal.cc
 @@ -15,6 +15,8 @@ namespace actor {
@@ -7755,7 +7679,7 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
        begin_time_(base::TimeTicks::Now()),
        track_uuid_(track_uuid) {}
  
-@@ -79,7 +86,12 @@ void AggregatedJournal::PendingAsyncEntry::EndEntry(
+@@ -85,7 +92,12 @@ void AggregatedJournal::PendingAsyncEntry::EndEntry(
      std::vector<mojom::JournalDetailsPtr> details) {
    CHECK(!terminated_);
    terminated_ = true;
@@ -7767,9 +7691,9 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
 +    ACTOR_LOG() << "End " << event_name_ << ": " << details;
 +  }
    journal_->AddEndEvent(pass_key_, task_id_, event_name_, track_uuid_,
-                         std::move(details));
+                         timestamp, std::move(details));
  }
-@@ -116,16 +128,22 @@ AggregatedJournal::CreatePendingAsyncEntry(
+@@ -134,16 +146,22 @@ AggregatedJournal::CreatePendingAsyncEntry(
      std::string_view event_name,
      std::vector<mojom::JournalDetailsPtr> details) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -7786,20 +7710,19 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
 -      url.possibly_invalid_spec(),
 +      is_private() ? std::string() : url.possibly_invalid_spec(),
        mojom::JournalEntry::New(mojom::JournalEntryType::kBegin, task_id,
--                               base::Time::Now(), std::string(event_name),
--                               track_uuid, std::move(details))));
+-                               timestamp, std::string(event_name), track_uuid,
++                               timestamp, safe_event_name, track_uuid,
+                                std::move(details))));
 -  return std::make_unique<PendingAsyncEntry>(base::PassKey<AggregatedJournal>(),
 -                                             weak_ptr_factory_.GetSafeRef(),
 -                                             task_id, event_name, track_uuid);
-+                               base::Time::Now(), safe_event_name, track_uuid,
-+                               std::move(details))));
 +  return std::make_unique<PendingAsyncEntry>(
 +      base::PassKey<AggregatedJournal>(), weak_ptr_factory_.GetSafeRef(),
 +      task_id, safe_event_name, track_uuid);
  }
  
  void AggregatedJournal::Log(const GURL& url,
-@@ -142,12 +160,18 @@ void AggregatedJournal::Log(const GURL& url,
+@@ -170,11 +188,17 @@ void AggregatedJournal::Log(const GURL& url,
                              std::string_view event_name,
                              std::vector<mojom::JournalDetailsPtr> details) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -7815,14 +7738,12 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
 -      url.possibly_invalid_spec(),
 +      is_private() ? std::string() : url.possibly_invalid_spec(),
        mojom::JournalEntry::New(mojom::JournalEntryType::kInstant, task_id,
--                               base::Time::Now(), std::string(event_name),
--                               track_uuid, std::move(details))));
-+                               base::Time::Now(), safe_event_name, track_uuid,
-+                               std::move(details))));
+-                               timestamp, std::string(event_name), track_uuid,
++                               timestamp, safe_event_name, track_uuid,
+                                std::move(details))));
  }
  
- void AggregatedJournal::LogProto(const GURL& url,
-@@ -167,6 +191,11 @@ void AggregatedJournal::LogProto(const GURL& url,
+@@ -195,6 +219,11 @@ void AggregatedJournal::LogProto(const GURL& url,
                                   std::vector<mojom::JournalDetailsPtr> details,
                                   const google::protobuf::MessageLite& message,
                                   std::string_view proto_type_override) {
@@ -7834,7 +7755,7 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
    // TODO(b/512580434): Avoid logging protos in protos as base64 strings. Move
    // logging arbitrary fields as proto_bytes inside the stream.
    std::string base64_proto = ToBase64(message);
-@@ -195,7 +224,8 @@ void AggregatedJournal::AppendJournalEntries(
+@@ -223,7 +252,8 @@ void AggregatedJournal::AppendJournalEntries(
      const GURL& url,
      std::vector<mojom::JournalEntryPtr> entries) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -7844,8 +7765,8 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
    for (auto& renderer_entry : entries) {
      AddEntry(std::make_unique<Entry>(location, std::move(renderer_entry)));
    }
-@@ -208,10 +238,14 @@ void AggregatedJournal::AddEndEvent(
-     uint64_t track_uuid,
+@@ -237,10 +267,15 @@ void AggregatedJournal::AddEndEvent(
+     base::Time timestamp,
      std::vector<mojom::JournalDetailsPtr> details) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 +  std::string safe_event_name = EventNameForMode(is_private(), event_name);
@@ -7853,14 +7774,17 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
 +    details.clear();
 +  }
    AddEntry(std::make_unique<Entry>(
-       std::string(),
-       mojom::JournalEntry::New(mojom::JournalEntryType::kEnd, task_id,
--                               base::Time::Now(), event_name, track_uuid,
-+                               base::Time::Now(), safe_event_name, track_uuid,
-                                std::move(details))));
+-      std::string(), mojom::JournalEntry::New(mojom::JournalEntryType::kEnd,
+-                                              task_id, timestamp, event_name,
+-                                              track_uuid, std::move(details))));
++      std::string(),
++      mojom::JournalEntry::New(mojom::JournalEntryType::kEnd, task_id,
++                               timestamp, safe_event_name, track_uuid,
++                               std::move(details))));
  }
  
-@@ -222,6 +256,9 @@ void AggregatedJournal::LogScreenshot(
+ void AggregatedJournal::LogScreenshot(
+@@ -250,6 +285,9 @@ void AggregatedJournal::LogScreenshot(
      base::span<const uint8_t> data,
      std::optional<base::span<const uint8_t>> iframe_data) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -7870,7 +7794,7 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
    auto entry = std::make_unique<Entry>(
        url.possibly_invalid_spec(),
        mojom::JournalEntry::New(
-@@ -240,6 +277,9 @@ void AggregatedJournal::LogAnnotatedPageContent(
+@@ -268,6 +306,9 @@ void AggregatedJournal::LogAnnotatedPageContent(
      TaskId task_id,
      base::span<const uint8_t> data) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -7880,7 +7804,7 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
    auto entry = std::make_unique<Entry>(
        url.possibly_invalid_spec(),
        mojom::JournalEntry::New(
-@@ -250,8 +290,24 @@ void AggregatedJournal::LogAnnotatedPageContent(
+@@ -278,8 +319,24 @@ void AggregatedJournal::LogAnnotatedPageContent(
    AddEntry(std::move(entry));
  }
  
@@ -7906,7 +7830,7 @@ index 052ae434f39c8f836c805247a30ae0b369909f8b..577886cf3df623596576adcf52315739
      observer.WillAddJournalEntry(*new_entry);
    }
 diff --git a/components/actor/core/aggregated_journal.h b/components/actor/core/aggregated_journal.h
-index de9b62eaab57f2cc60e933b503aaf4eec964d03c..a93ef2609a17207f848430eb05a33ce662697d6e 100644
+index 3e035ad17d0298630f3fc1612d282b441acdbcf0..439609c567284b762f74520fedb9a04cb979ccc0 100644
 --- a/components/actor/core/aggregated_journal.h
 +++ b/components/actor/core/aggregated_journal.h
 @@ -34,14 +34,25 @@ class AggregatedJournalRenderFrameBinder;
@@ -7935,7 +7859,7 @@ index de9b62eaab57f2cc60e933b503aaf4eec964d03c..a93ef2609a17207f848430eb05a33ce6
    // Journal entry
    struct Entry {
      std::string url;
-@@ -168,8 +179,10 @@ class AggregatedJournal {
+@@ -184,8 +195,10 @@ class AggregatedJournal {
                     std::vector<mojom::JournalDetailsPtr> details);
  
   private:
@@ -7961,7 +7885,7 @@ index 6b1546a6a955acf04805e5341213f6bca19d0bb9..2c6bbd4515c0457d0383f807cd21e8a8
    auto allow_target = [client, delegate](
                            DevToolsAgentHost* target,
 diff --git a/content/browser/devtools/devtools_agent_host_impl_unittest.cc b/content/browser/devtools/devtools_agent_host_impl_unittest.cc
-index 495caa2699a0dd64ffb964010b0e0f084b62e8f1..21ba1a89c6c608ed126a9d31c65a77a94f5eae47 100644
+index 18b0e1bd1c81ac253521a4a2840f488da8020431..9db5159e7e3d94b6dde2581248f24136d81e62ae 100644
 --- a/content/browser/devtools/devtools_agent_host_impl_unittest.cc
 +++ b/content/browser/devtools/devtools_agent_host_impl_unittest.cc
 @@ -2,6 +2,8 @@
@@ -7970,9 +7894,9 @@ index 495caa2699a0dd64ffb964010b0e0f084b62e8f1..21ba1a89c6c608ed126a9d31c65a77a9
  
 +#include "content/browser/devtools/devtools_agent_host_impl.h"
 +
- #include <algorithm>
  #include <map>
  #include <memory>
+ #include <string>
 @@ -22,12 +24,14 @@
  #include "content/public/browser/devtools_external_agent_proxy_delegate.h"
  #include "content/public/browser/devtools_manager_delegate.h"
@@ -8043,10 +7967,10 @@ index 495caa2699a0dd64ffb964010b0e0f084b62e8f1..21ba1a89c6c608ed126a9d31c65a77a9
    const GURL url("http://www.google.com");
    contents()->NavigateAndCommit(url);
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index 5d0780f279972cb6ea8c67a7203b201e3a009209..4ef8c88df526c1fdca9f6de76829f64746ab858c 100644
+index 8e45c3ece528bd7b1ab04db240518656f6f26761..9e32c3756242ca2ebccba9bdeb9d3b62a0f45056 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
-@@ -1190,6 +1190,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+@@ -1208,6 +1208,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
    if (!session->GetClient()->IsRemoteDebuggingClient()) {
      return true;
    }
@@ -8124,6 +8048,3 @@ index 29637c25b487bcd1ee5c63328eb04c8f2c73621e..59f569f0c63201d70d6aa7d63e7a9367
  
    // Unknown headers should pass through.
    EXPECT_EQ("value", ElideHeaderValueForNetLog(NetLogCaptureMode::kDefault,
--- 
-2.52.0
-

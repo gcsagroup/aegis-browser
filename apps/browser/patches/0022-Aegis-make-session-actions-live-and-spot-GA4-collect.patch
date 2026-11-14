@@ -1,4 +1,4 @@
-From 44437ec4f6bd5591facf2b44493a2f010920a1ab Mon Sep 17 00:00:00 2001
+From 7bcbb08d8cef16ed6c41b4b8acb72cca3a34e286 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:09:16 +0800
 Subject: [PATCH] Aegis: make session actions live and spot GA4 collect
@@ -9,17 +9,6 @@ collect copies that use custom paths or v=2+tid=G- query artifacts.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ---
- chrome/browser/aegis/aegis_bounce_observer.cc |  1 +
- chrome/browser/aegis/aegis_service.cc         | 12 +++
- chrome/browser/aegis/aegis_service.h          |  1 +
- chrome/browser/resources/aegis/aegis.css      | 17 ++++
- chrome/browser/resources/aegis/aegis.html     |  5 +
- chrome/browser/resources/aegis/aegis.ts       | 97 +++++++++++++++++--
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 14 ++-
- chrome/common/aegis/first_party_collect.cc    | 17 ++++
- .../generated/first_party_collect_paths.inc   |  1 +
- third_party/aegis_policy/policy_snapshot.json |  5 +-
- 10 files changed, 159 insertions(+), 11 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_bounce_observer.cc b/chrome/browser/aegis/aegis_bounce_observer.cc
 index 08bc56e356b43ce1dd57b2cfc9ecf86ec9c6f749..31edfdf865444c7fb03366d4497ec8fb73196aeb 100644
@@ -410,6 +399,3 @@ index 397444673f8857b8d4f34622ac711671f142a634..797ade05d57835ddca6d18abea099fc0
    ],
    "phishHosts": [
      "testsafebrowsing.appspot.com/s/phishing",
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From 0f0417befa5e98b85bc2954d16c5f48660a5c57f Mon Sep 17 00:00:00 2001
+From 7f28c068ca00fef40b4cfa67f53ac7b08b7a2455 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 12 Oct 2026 01:08:28 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E6=89=A9=E5=85=85=E6=9C=AC=E6=9C=BA?=
@@ -7,11 +7,7 @@ Subject: [PATCH] =?UTF-8?q?fix:=20=E6=89=A9=E5=85=85=E6=9C=AC=E6=9C=BA?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- tools/gritsettings/resource_ids.spec               | 2 +-
- 2 files changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 9ce71356d0a5cdfb589f006293e93793fc4bbcb6..eac23603f36e49fa1703bfa17bf822bc4f4cd47b 100644
@@ -29,10 +25,10 @@ index 9ce71356d0a5cdfb589f006293e93793fc4bbcb6..eac23603f36e49fa1703bfa17bf822bc
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 8eeef24f1f8899457ef78b073d54bf1eb0d5cbee..6d522634a991968e634e1bbdf4d677e998678f90 100644
+index 9d7f6119453b0cb96a23fe602ab442b9cad4ea21..de7141bb1feaca13781c76f90a0961ac10a7e2e6 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -892,7 +892,7 @@
+@@ -880,7 +880,7 @@
      "includes": [5170],
    },
    "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis_agent/resources.grd": {
@@ -41,6 +37,3 @@ index 8eeef24f1f8899457ef78b073d54bf1eb0d5cbee..6d522634a991968e634e1bbdf4d677e9
      "includes": [5180],
    },
    "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/whats_new/resources.grd": {
--- 
-2.52.0
-

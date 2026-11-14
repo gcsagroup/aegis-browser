@@ -194,7 +194,24 @@
         "mac-arm64",
         "win-x64",
         "android-arm64"
-      ]
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AccessBrowserRequestAdapterBrowserTest.*",
+          "AccessLoadingPredictorPrefetchBrowserTest.*",
+          "AccessProxyingURLLoaderFactoryBrowserTest.*",
+          "AccessProxyingURLLoaderFactorySameFrameBrowserTest.*",
+          "SiteTokenChainingBrowserTest.*"
+        ],
+        "win-x64": [
+          "AccessBrowserRequestAdapterBrowserTest.*",
+          "AccessLoadingPredictorPrefetchBrowserTest.*",
+          "AccessProxyingURLLoaderFactoryBrowserTest.*",
+          "AccessProxyingURLLoaderFactorySameFrameBrowserTest.*",
+          "SiteTokenChainingBrowserTest.*"
+        ]
+      },
+      "additionalChecks": "预渲染身份隔离须创建真实非主页面；网站增强的既有 DevTools 会话会阻止默认预渲染，须单独验证这一限制，不能把未创建的页面计为身份隔离通过。"
     },
     {
       "id": "profile-compatibility",
@@ -315,7 +332,8 @@
           "AegisAgentTaskStoreTest.*Monitor*"
         ]
       },
-      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。"
+      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。",
+      "additionalChecks": "必须覆盖 Glic Actor 关闭时的真实监控标签绑定与跨来源重定向拦截。"
     },
     {
       "id": "kAegisWebsiteEnhancements",
@@ -370,6 +388,112 @@
           "EnhancementBrowserTest.Markdown*"
         ]
       }
+    },
+    {
+      "id": "p01-two-hop-tls",
+      "name": "P01 控制协议 v2 和双跳 TLS 传输",
+      "platforms": [
+        "mac-arm64"
+      ],
+      "testFilters": [
+        "CoreTlsTest.*"
+      ],
+      "nativeAcceptance": "在同一候选的 mac-arm64 输出构建并运行 //chrome/browser/aegis/proxy:p01_transport_unittests。覆盖证书协商、双握手、断开和超时。"
+    },
+    {
+      "id": "unified-settings",
+      "name": "统一设置分类、旧入口迁移、保存与重启回读",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AegisUIHandlerTest.SettingsKeepLocalPacksWithoutExemptingWebOrigins",
+          "AegisUIHandlerTest.KeepsCnamePreferenceSeparateFromRuntimeDependency",
+          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages",
+          "AegisAgentBrowserTest.SettingsCommandsPreserveRoutes",
+          "AegisAgentBrowserTest.ProfileIsolationAndRestrictedProfiles",
+          "AegisAgentInteractiveUiTest.SettingsEntryOpensAgentSidePanel",
+          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety"
+        ],
+        "win-x64": [
+          "AegisUIHandlerTest.SettingsKeepLocalPacksWithoutExemptingWebOrigins",
+          "AegisUIHandlerTest.KeepsCnamePreferenceSeparateFromRuntimeDependency",
+          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages",
+          "AegisAgentBrowserTest.SettingsCommandsPreserveRoutes",
+          "AegisAgentBrowserTest.ProfileIsolationAndRestrictedProfiles",
+          "AegisAgentInteractiveUiTest.SettingsEntryOpensAgentSidePanel",
+          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety"
+        ]
+      },
+      "sourceRegressionTests": [
+        "apps/browser/scripts/mobile-settings_test.mjs",
+        "apps/browser/scripts/agent-model-selection_test.mjs",
+        "apps/browser/scripts/language-packs_test.mjs",
+        "apps/browser/scripts/gestures-settings_test.mjs",
+        "apps/browser/tests/enhancements/settings.test.mjs",
+        "apps/browser/tests/enhancements/settings-editing.test.mjs"
+      ],
+      "additionalChecks": "真实候选须覆盖八类设置入口、旧链接和参数保留、未保存表单、跨页来源校验、保存后重启回填、本地语言包保留与非可信来源隔离；DOM及脚本测试不能代替本次产物验收。",
+      "androidAcceptance": "按已合入main的移动设置布局验收手机、折叠内屏和横屏，覆盖返回路径、下载展开表单、阅读入口及资料保留；尚未合入的Android原生设置页面不在本候选范围。"
+    },
+    {
+      "id": "mac-access-site-proxy-session",
+      "name": "Mac本站代理开关、连接状态、故障拒绝直连和恢复",
+      "platforms": [
+        "mac-arm64"
+      ],
+      "testFilters": [
+        "AccessSiteProxyProductTest.*",
+        "AccessRetryNavigationProductTest.*",
+        "AccessSiteProxySessionTest.*",
+        "AccessSiteProxyBubbleModelTest.*"
+      ],
+      "additionalChecks": "按docs/plans/macos-access-phase1-evidence-NOTES.md完成同候选开启、加载、故障、恢复、关闭五步实操；不能把直连成功当成代理成功。Android保持其原独立实现。"
+    },
+    {
+      "id": "mac-access-account",
+      "name": "Mac账户额度、资料隔离、登出和过期响应保护",
+      "platforms": [
+        "mac-arm64"
+      ],
+      "additionalChecks": "执行python3 apps/browser/tests/access-account/test_mac.py的真实Foundation通信回归，并在本次App实操切换资料、账户及登出；本地测试服务不是生产账户接入证明。 本次账户指定节点须验证真实 Chromium CONNECT、租约续期中的下载、拒绝续期与登出中止，并拒绝本地直连规则替换账户路由。",
+      "testFilters": [
+        "PaidSiteMac.*"
+      ],
+      "nativeTargets": [
+        "aegis_browser_unittests"
+      ]
+    },
+    {
+      "id": "mac-access-core-diagnostics",
+      "name": "Mac本地核心启动、诊断隐私、清除和分享确认",
+      "platforms": [
+        "mac-arm64"
+      ],
+      "testFilters": [
+        "AccessLocalCoreManagerTest.*",
+        "AccessLocalCoreInputTest.*",
+        "AccessLocalCoreFaultTest.*",
+        "AccessCoreLogTest.*",
+        "AccessCoreLogDiskTest.*",
+        "AccessCoreLogArchiveTest.*",
+        "AccessCoreLogSessionEndingTest.*"
+      ],
+      "nativeTargets": [
+        "access_local_core_manager_unittests"
+      ],
+      "additionalChecks": "保持渠道默认开关、凭据脱敏、读取限制及关闭后停止采集；分享必须用户确认，本次App验证清除跨重启生效及旧归档删除失败恢复。"
+    },
+    {
+      "id": "windows-uninstall-localization",
+      "name": "Windows卸载确认和占用提示的产品名称与语言",
+      "platforms": [
+        "win-x64"
+      ],
+      "additionalChecks": "使用本次Windows真实构建执行python3 apps/browser/scripts/windows-uninstall-locales_test.py <src> <out>，读取英文、简体和繁体语言包；再实际确认卸载提示，不卸载日常App。"
     }
   ]
 }

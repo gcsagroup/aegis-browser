@@ -1,11 +1,9 @@
-From d688d96d89d15c82201cf07c42556a26e078e7be Mon Sep 17 00:00:00 2001
+From 4a5afd4c9a76d66df31222da80d22ee79b9ab8c5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 11 Oct 2026 07:36:32 +0800
 Subject: [PATCH] chore: bump 158 for signed upgrade acceptance
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 4273f922960b1a46351b0411f85ac8c702f3b112..23448226782854b8e16f06a4661b951926a71680 100644
@@ -22,6 +20,3 @@ index 4273f922960b1a46351b0411f85ac8c702f3b112..23448226782854b8e16f06a4661b9519
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

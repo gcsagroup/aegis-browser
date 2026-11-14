@@ -1,0 +1,82 @@
+From ae8b3c7a70caf621b554112f56fb551508a22cfb Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 16:53:23 +0800
+Subject: [PATCH] fix(access): define test NetworkContext callbacks out of line
+---
+
+diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
+index 75ab1b321df4d4bdc97ad8a42e0e907762930e40..7f4aeb7b6f957ffbe67f337e182a4aaf35201758 100644
+--- a/services/network/BUILD.gn
++++ b/services/network/BUILD.gn
+@@ -718,6 +718,7 @@ source_set("test_support") {
+     "test/test_dns_util.h",
+     "test/test_network_connection_tracker.cc",
+     "test/test_network_connection_tracker.h",
++    "test/test_network_context.cc",
+     "test/test_network_context.h",
+     "test/test_network_context_client.cc",
+     "test/test_network_context_client.h",
+diff --git a/services/network/test/test_network_context.cc b/services/network/test/test_network_context.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..92d7d59007c27baff7985404c0c592561fd8f0ac
+--- /dev/null
++++ b/services/network/test/test_network_context.cc
+@@ -0,0 +1,25 @@
++// Copyright 2026 GCSA
++#include "services/network/test/test_network_context.h"
++
++namespace network {
++void TestNetworkContext::InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
++      InstallAegisAccessSnapshotCallback callback) {
++    auto ack = mojom::AegisAccessSnapshotAck::New();
++    ack->owner = snapshot->owner.Clone();
++    ack->incarnation = snapshot->incarnation;
++    ack->sequence = snapshot->sequence;
++    ack->common_generations = snapshot->common_generations.Clone();
++    ack->accepted = false;
++    std::move(callback).Run(std::move(ack));
++  }
++void TestNetworkContext::BeginAegisAccessRestore(mojom::AegisAccessOwnerPtr,
++      const std::string&, BeginAegisAccessRestoreCallback callback) {
++    std::move(callback).Run(false);
++  }
++void TestNetworkContext::CreateAegisAccessURLLoaderFactory(
++      mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory>,
++      mojom::URLLoaderFactoryParamsPtr, mojom::AegisAccessFactoryBindingPtr,
++      CreateAegisAccessURLLoaderFactoryCallback callback) {
++    std::move(callback).Run(false);
++  }
++}  // namespace network
+diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
+index 4d0540aa3a5ddbabb2c6401772b0ac889b523057..fc973e078e04c9b08005ba6b7291f10f7fb401a9 100644
+--- a/services/network/test/test_network_context.h
++++ b/services/network/test/test_network_context.h
+@@ -335,25 +335,13 @@ class TestNetworkContext : public mojom::NetworkContext {
+       mojo::PendingReceiver<mojom::MdnsResponder> responder_receiver) override {
+   }
+   void InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
+-      InstallAegisAccessSnapshotCallback callback) override {
+-    auto ack = mojom::AegisAccessSnapshotAck::New();
+-    ack->owner = snapshot->owner.Clone();
+-    ack->incarnation = snapshot->incarnation;
+-    ack->sequence = snapshot->sequence;
+-    ack->common_generations = snapshot->common_generations.Clone();
+-    ack->accepted = false;
+-    std::move(callback).Run(std::move(ack));
+-  }
++      InstallAegisAccessSnapshotCallback callback) override;
+   void BeginAegisAccessRestore(mojom::AegisAccessOwnerPtr,
+-      const std::string&, BeginAegisAccessRestoreCallback callback) override {
+-    std::move(callback).Run(false);
+-  }
++      const std::string&, BeginAegisAccessRestoreCallback callback) override;
+   void CreateAegisAccessURLLoaderFactory(
+       mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory>,
+       mojom::URLLoaderFactoryParamsPtr, mojom::AegisAccessFactoryBindingPtr,
+-      CreateAegisAccessURLLoaderFactoryCallback callback) override {
+-    std::move(callback).Run(false);
+-  }
++      CreateAegisAccessURLLoaderFactoryCallback callback) override;
+   void ResetURLLoaderFactories() override {}
+   void GetViaObliviousHttp(
+       mojom::ObliviousHttpRequestPtr request,

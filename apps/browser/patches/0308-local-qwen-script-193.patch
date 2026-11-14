@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 5e891b147ecfcee8eb992cdc9e5d12a320b974ab Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 05:35:44 +0800
 Subject: [PATCH] 限定本机 Qwen 脚本生成关闭思考，候选 193
-
 ---
+
 diff --git a/chrome/browser/aegis/model_provider_client.cc b/chrome/browser/aegis/model_provider_client.cc
 index 2034d4300a7c0802bd22d7a8500aeb5e51821e87..b1070034ac1c13f72cd155b3dd45d0945b802262 100644
 --- a/chrome/browser/aegis/model_provider_client.cc

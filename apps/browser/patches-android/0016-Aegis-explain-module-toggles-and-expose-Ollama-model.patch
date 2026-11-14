@@ -1,4 +1,4 @@
-From 16a47b0e95385e098fd1e837ed1da1c3c65e4fd4 Mon Sep 17 00:00:00 2001
+From 51e09da94dfd5b4609e1b8f74aa89f8ae0cf2037 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 18:46:02 +0800
 Subject: [PATCH] Aegis: explain module toggles and expose Ollama model
@@ -7,15 +7,6 @@ Subject: [PATCH] Aegis: explain module toggles and expose Ollama model
 chrome://aegis now describes each privacy control and lets users set
 the loopback Ollama URL/model, probe installed models, and save prefs.
 ---
- chrome/browser/aegis/aegis_service.cc         | 106 ++++++++
- chrome/browser/aegis/aegis_service.h          |  14 ++
- chrome/browser/resources/aegis/aegis.css      |  52 +++-
- chrome/browser/resources/aegis/aegis.html     |  69 +++++-
- chrome/browser/resources/aegis/aegis.ts       | 100 ++++++++
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 232 ++++++++++++++----
- .../ui/webui/aegis/aegis_ui_handler.cc        |  57 +++++
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   7 +
- 8 files changed, 571 insertions(+), 66 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 3836e1bff3df9f22a4907e60ff288ec80e4a85b0..2869561d87c586fbd6c2616c004f966ee8b08c14 100644
@@ -920,6 +911,3 @@ index a18deb434dc573ad3dd49bb92dc441772354124b..a9668fbb2a85f46b1cb9a6c5cb04e6fe
  
    base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
  };
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From f1b0a340c4c6ed4c1b58a2f6e5d3278c98348177 Mon Sep 17 00:00:00 2001
+From 1724a35270d134f70edc125b85c3931253dd8de7 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 21:45:22 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=BD=92=E4=B8=80=E5=8C=96=20Windows=20?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- build/toolchain/win/midl.py                   | 19 +++++++++++++++++++
- .../ui/webui/help/aegis_github_update.h       |  4 ++--
- 2 files changed, 21 insertions(+), 2 deletions(-)
 
 diff --git a/build/toolchain/win/midl.py b/build/toolchain/win/midl.py
 index 370e5addb5a7aa4f241e19438721824252471923..8a53225c093e231a541f5edab43c1dee237a62b1 100644
@@ -65,6 +62,3 @@ index 9f98bcb40923019c032d2d5e0d792e23df0da589..540158361a61840dc91eb9dc08484154
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

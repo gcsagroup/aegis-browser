@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 828734ed96964f91cb13cb708f8d1c21a5753844 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Wed, 14 Oct 2026 03:30:00 +0800
 Subject: [PATCH] 在本地文件成功载入后自动预览 Markdown，修复首次拖放
-
 ---
+
 diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
 index 4835f62798288b31ef212182c2dd1c1c70445c1d..4d3aa2342e310c53f048c200f412a1c4e02bd00a 100644
 --- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc

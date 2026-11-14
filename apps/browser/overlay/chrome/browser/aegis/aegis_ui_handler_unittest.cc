@@ -3,6 +3,7 @@
 #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,7 +23,9 @@
 #include "chrome/browser/aegis/metalink_download_verifier.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
+#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
 #include "chrome/common/aegis/pref_names.h"
@@ -45,7 +48,40 @@
 namespace aegis {
 namespace {
 
-class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
+class AegisUIHandlerTest : public BrowserWithTestWindowTest {
+ protected:
+  void SetUp() override {
+    BrowserWithTestWindowTest::SetUp();
+    BrowserWindowCreateParams params(profile(), /*from_user_gesture=*/false);
+    params.window = CreateBrowserWindow().release();
+    browser_ = DeprecatedCreateOwnedBrowserWindowForTesting(std::move(params));
+  }
+
+  void TearDown() override {
+    // 窗口和标签须先于 Profile 销毁，保持原测试基础类的生命周期。
+    browser_->GetTabStripModel()->CloseAllTabs();
+    browser_.reset();
+    BrowserWithTestWindowTest::TearDown();
+  }
+
+  virtual std::unique_ptr<BrowserWindow> CreateBrowserWindow() {
+    return std::make_unique<TestBrowserWindow>();
+  }
+
+  BrowserWindowInterface* browser() { return browser_.get(); }
+
+  void AddTab(BrowserWindowInterface* target, const GURL& url) {
+    // 保留旧辅助方法的真实导航和索引语义，不用模拟列表替代工作区。
+    NavigateParams params(target, url, ui::PAGE_TRANSITION_TYPED);
+    params.tabstrip_index = 0;
+    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+    Navigate(&params);
+    CommitPendingLoad(&params.navigated_or_inserted_contents->GetController());
+  }
+
+ private:
+  std::unique_ptr<BrowserWindowInterface> browser_;
+};
 
 TEST_F(AegisUIHandlerTest, SettingsKeepLocalPacksWithoutExemptingWebOrigins) {
   ChromeContentBrowserClient client;
@@ -59,7 +95,7 @@ TEST_F(AegisUIHandlerTest, SettingsKeepLocalPacksWithoutExemptingWebOrigins) {
   EXPECT_FALSE(client.ShouldUseFirstPartyStorageKey(url::Origin()));
 }
 
-// 工作区恢复需要可编辑的标签栏；基础测试窗口默认禁止编辑。
+// 工作区恢复需要可编辑的标签栏；保留原测试窗口的明确覆盖。
 class WorkspaceTestWindow : public TestBrowserWindow {
  public:
   bool IsTabStripEditable() const override { return true; }
@@ -265,7 +301,7 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
   auto before = read_state();
   ASSERT_TRUE(before.ok);
   ASSERT_TRUE(before.value.FindString("revision"));
-  auto* test_window = static_cast<TestBrowserWindow*>(window());
+  auto* test_window = static_cast<TestBrowserWindow*>(browser()->GetWindow());
   test_window->set_is_active(true);
   auto focused = read_state();
   ASSERT_TRUE(focused.ok);

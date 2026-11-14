@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 68c417a1ab6d33ec691dd84687e097336a8c46e7 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 13 Oct 2026 02:43:00 +0800
 Subject: [PATCH] 网站增强、用户脚本与 Markdown 阅读 185
@@ -9,12 +9,13 @@ Content-Transfer-Encoding: 8bit
 未提交工作区补丁，基于 07c1d76177c3f3525ad12d7eee74988ef3691d48。
 零值标记表示尚无对应提交，不变更源仓库分支或索引。
 ---
+
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
-index a53651c7424231d1b1e3f8d6c0445b7b516c53e6..574975ef3cb7fa2840f3b820b1710ccacd37429d 100644
+index 4999ea287ec8b26c6bfb1931a36e68e71649fca4..d940417c74f478db600b6ffd31f6323577b50450 100644
 --- a/chrome/app/chrome_command_ids.h
 +++ b/chrome/app/chrome_command_ids.h
-@@ -294,6 +294,8 @@
- #define IDC_CHROME_ENTERPRISE_RELEASE_NOTES 40305
+@@ -295,6 +295,8 @@
+ #define IDC_SHOW_TTC_MENU 40306
  #define IDC_SHOW_AEGIS                  40310
  #define IDC_SHOW_AEGIS_AGENT            40311
 +#define IDC_AEGIS_ENHANCEMENTS          40312
@@ -10999,10 +11000,10 @@ index 184ca43b9b10889f1e287c4b1f96f3b6e93bbf31..8071fe8d00074c701a69ca511718bd1d
    text('title', 'title');
    text('subtitle', 'subtitle');
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca2744339990 100644
+index c753f91ee30dd2d765be0bc23b05866f4f486f7e..a6beeeba472ed722577ece5fceb6e807e69119b6 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1307,6 +1307,11 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1344,6 +1344,11 @@ void BrowserCommandController::HandleCommandWithDisposition(
          ShowAegisPage(webui::GetBrowserForOpeningWebUi(browser_));
        }
        break;
@@ -11014,7 +11015,7 @@ index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca27
      case IDC_SHOW_AEGIS_AGENT:
        SidePanelUI::From(browser_)->Show(
            SidePanelEntryId::kAegisAgent, SidePanelOpenTrigger::kAegisAgent);
-@@ -2108,6 +2113,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+@@ -2187,6 +2192,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
                                          !forced_incognito && !is_guest);
    command_updater->UpdateCommandEnabled(IDC_OPTIONS,
                                          !forced_incognito || is_guest);
@@ -11023,7 +11024,7 @@ index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca27
    command_updater->UpdateCommandEnabled(IDC_SHOW_AEGIS,
                                          IsAegisProfileSupported(profile));
    command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
-@@ -2432,6 +2439,8 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+@@ -2504,6 +2511,8 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
    command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
    command_updater_->UpdateCommandEnabled(
        IDC_SHOW_AEGIS, show_main_ui && IsAegisProfileSupported(profile()));
@@ -11033,30 +11034,58 @@ index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca27
        IDC_SHOW_AEGIS_AGENT,
        show_main_ui &&
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 61d5a223d93af460ec9e5e26b159df3d7b7a6080..ee54be8cc9fd34941de5e52e7ba94e9468666129 100644
+index 25225650497183a20795c5b542baed4d7f780d08..ee0e789f2cc034e05f1f904f1f4b1a64d9d87265 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
-@@ -18,6 +18,7 @@
+@@ -16,6 +16,7 @@
  #include "chrome/browser/aegis/aegis_phish_tab_helper.h"
  #if !BUILDFLAG(IS_ANDROID)
  #include "chrome/browser/ui/aegis_mouse_gesture_tab_helper.h"
 +#include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
  #endif
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
- #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
-@@ -453,6 +454,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+ #include "chrome/browser/browser_process.h"
+@@ -107,6 +108,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
    aegis::PhishTabHelper::CreateForWebContents(web_contents);
  #if !BUILDFLAG(IS_ANDROID)
    aegis::MouseGestureTabHelper::CreateForWebContents(web_contents);
 +  aegis::EnhancementTabHelper::CreateForWebContents(web_contents);
  #endif
-   ExternalProtocolObserver::CreateForWebContents(web_contents);
-   favicon::CreateContentFaviconDriverForWebContents(web_contents);
+   // AutofillClientProvider initializes ContentAutofillClient for web_contents,
+   // which is gated by enable_browser_autofill.
+diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
+index eea1761fc4c3cf61162e5d3b2001e9da710d1f87..9b6f0b56e26ed13bb3ecf3b76f93d36c43e2c312 100644
+--- a/chrome/browser/ui/tabs/tab_features.cc
++++ b/chrome/browser/ui/tabs/tab_features.cc
+@@ -15,6 +15,7 @@
+ #include "base/time/default_tick_clock.h"
+ #include "chrome/browser/aegis/aegis_phish_tab_helper.h"
+ #include "chrome/browser/ui/aegis_mouse_gesture_tab_helper.h"
++#include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_surface_tab_helper.h"
+ #include "chrome/browser/actor/actor_tab_data.h"
+@@ -421,6 +422,7 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
+   initialized_ = true;
+   aegis::PhishTabHelper::CreateForWebContents(tab.GetContents());
+   aegis::MouseGestureTabHelper::CreateForWebContents(tab.GetContents());
++  aegis::EnhancementTabHelper::CreateForWebContents(tab.GetContents());
+ 
+   // In tests you may want to disable TabFeatures initialization.
+   // See tabs::TabModel::PreventFeatureInitializationForTesting
+@@ -1484,6 +1486,7 @@ void TabFeatures::WillDiscardContents(tabs::TabInterface* tab,
+   DCHECK_EQ(old_contents, tab->GetContents());
+   aegis::PhishTabHelper::CreateForWebContents(new_contents);
+   aegis::MouseGestureTabHelper::CreateForWebContents(new_contents);
++  aegis::EnhancementTabHelper::CreateForWebContents(new_contents);
+ 
+   Profile* profile = tab->GetBrowserWindowInterface()->GetProfile();
+ 
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index d980c3cbef4ea3cc8860bfb14ed513b487d93260..7b00b4f5bf6c0e17091cf4406a282dc75e519d72 100644
+index a140c3de4d96de0b9ccdce07032c3e043be7fdf3..a57c3e2326a8fa03a68810573e02a938d110cbe9 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2350,6 +2350,9 @@ void AppMenuModel::Build() {
+@@ -2484,6 +2484,9 @@ void AppMenuModel::Build() {
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
    if (IsAegisProfileSupported(browser_->GetProfile())) {
@@ -11586,10 +11615,10 @@ index 5ec7e6d8c5a8bf00edfebf2bc8ed3bc82aad7011..c232dd0c7ab94325ce933d5ab096dedd
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 6d522634a991968e634e1bbdf4d677e998678f90..2152f779fc4d86aec0743456c98f103dc71f0df8 100644
+index de7141bb1feaca13781c76f90a0961ac10a7e2e6..9602ee88b3ec6036fa978d9bfd11458c58b2b95b 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -888,7 +888,7 @@
+@@ -876,7 +876,7 @@
     "includes": [5160],
    },
    "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis/resources.grd": {

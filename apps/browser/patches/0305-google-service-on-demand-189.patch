@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 845cd1866623dbc55e337dc9b61723cc3ab0814a Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 13 Oct 2026 03:56:18 +0800
 Subject: [PATCH] 移除启动 Google 密钥提示，改为操作时说明不可用 189
@@ -8,6 +8,7 @@ Content-Transfer-Encoding: 8bit
 
 未提交工作区补丁，接续 0304。零值标记表示尚无对应提交。
 ---
+
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 2453e927c85b8a82755083db8d8f81796b05f122..fb8233cbc2ed31036f4d001239678ea8dd94fdd8 100644
 --- a/chrome/browser/aegis/BUILD.gn
@@ -54,10 +55,10 @@ index 2453e927c85b8a82755083db8d8f81796b05f122..fb8233cbc2ed31036f4d001239678ea8
        "//services/network:test_support",
 diff --git a/chrome/browser/aegis/google_service_prompt_browsertest.cc b/chrome/browser/aegis/google_service_prompt_browsertest.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..31327695a3334ba9859d588da98a0bc5d1f68403
+index 0000000000000000000000000000000000000000..372f3dc77fb13b6639dce89485cd4545214cc6b9
 --- /dev/null
 +++ b/chrome/browser/aegis/google_service_prompt_browsertest.cc
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,105 @@
 +// Copyright 2026 GCSA
 +// 验证真实启动及用户操作：缺少 Google 配置时不在启动阶段提示。
 +#include "base/command_line.h"
@@ -155,38 +156,32 @@ index 0000000000000000000000000000000000000000..31327695a3334ba9859d588da98a0bc5
 +  const int tab_count = browser()->tab_strip_model()->count();
 +  const GURL original_url = contents()->GetLastCommittedURL();
 +  EXPECT_EQ(0u, GooglePromptCount());
-+  SigninViewController::From(browser())->ShowSignin(
-+      signin_metrics::AccessPoint::kSettings);
++  SigninViewController::From(browser())->ShowDiceEnableSyncTab(
++      signin_metrics::AccessPoint::kSettings,
++      signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO, std::string());
 +  EXPECT_EQ(1u, GooglePromptCount());
 +  EXPECT_EQ(tab_count, browser()->tab_strip_model()->count());
 +  EXPECT_EQ(original_url, contents()->GetLastCommittedURL());
 +}
 +}  // namespace aegis
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 7b6aa449b46270cbcb60c1d5f58d8021474fde0a..56d155673b7c453f1f5e7a7e1b5be8891f1dd35c 100644
+index f401f7b59d4e51e9f2ac0573a0368d652b437e4b..4cc07fa1e087aad318693cf58a92c10d9b9cc79d 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -1028,6 +1028,7 @@ static_library("ui") {
-     "//components/feature_engagement",
-     "//components/history/content/browser",
-     "//components/history_clusters/core",
-+    "//components/infobars/content",
-     "//components/input",
-     "//components/keyed_service/content",
-     "//components/keyed_service/core",
-@@ -1065,6 +1066,7 @@ static_library("ui") {
-     "//components/viz/host",
-     "//components/webapps/browser",
-     "//content/public/common",
-+    "//google_apis",
-     "//media",
-     "//net",
-     "//services/device/public/cpp:device_features",
+@@ -831,6 +831,8 @@ if (!is_android) {
+     sources = [ "browser_commands.cc" ]
+     public_deps = [ ":browser_commands" ]
+     deps = [
++      "//components/infobars/content",
++      "//google_apis",
+       ":accelerator_utils_headers",
+       ":browser_command_controller",
+       ":browser_init_state",
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 92e31f0b2ae0f761e565f51eb3b5ca2744339990..fe0a3efec372d47e876ae683541cb105ac0efa5e 100644
+index a6beeeba472ed722577ece5fceb6e807e69119b6..78fb2b3bf5432d0c3eac4d577cc3f76e8f6f7a44 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -2240,7 +2240,8 @@ void BrowserCommandController::UpdateCommandsForTabState() {
+@@ -2321,7 +2321,8 @@ void BrowserCommandController::UpdateCommandsForTabState() {
        ChromeTranslateClient::FromWebContents(current_web_contents);
    const bool can_translate =
        chrome_translate_client &&
@@ -197,10 +192,10 @@ index 92e31f0b2ae0f761e565f51eb3b5ca2744339990..fe0a3efec372d47e876ae683541cb105
                                  can_translate);
  
 diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
-index 19b58e11263f194a50736c6b6fe8a681eab93f5b..5c8eb5eceafa5ef4693ae1846d6d1933650fc5d6 100644
+index 365dcd789dff01df138a01a307a5f43695461ca8..6a10d35ec8fd21374f6e2a311fdd5019e59a7fdb 100644
 --- a/chrome/browser/ui/browser_commands.cc
 +++ b/chrome/browser/ui/browser_commands.cc
-@@ -102,6 +102,7 @@
+@@ -106,6 +106,7 @@
  #include "chrome/browser/ui/side_panel/side_panel_entry.h"
  #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
  #include "chrome/browser/ui/side_panel/side_panel_ui.h"
@@ -208,7 +203,7 @@ index 19b58e11263f194a50736c6b6fe8a681eab93f5b..5c8eb5eceafa5ef4693ae1846d6d1933
  #include "chrome/browser/ui/startup/startup_tab.h"
  #include "chrome/browser/ui/status_bubble.h"
  #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-@@ -152,6 +153,7 @@
+@@ -158,6 +159,7 @@
  #include "components/find_in_page/find_tab_helper.h"
  #include "components/find_in_page/find_types.h"
  #include "components/google/core/common/google_util.h"
@@ -216,7 +211,7 @@ index 19b58e11263f194a50736c6b6fe8a681eab93f5b..5c8eb5eceafa5ef4693ae1846d6d1933
  #include "components/language_detection/core/constants.h"
  #include "components/lens/buildflags.h"
  #include "components/lens/lens_features.h"
-@@ -199,6 +201,7 @@
+@@ -205,6 +207,7 @@
  #include "content/public/common/url_constants.h"
  #include "content/public/common/url_utils.h"
  #include "extensions/buildflags/buildflags.h"
@@ -224,7 +219,7 @@ index 19b58e11263f194a50736c6b6fe8a681eab93f5b..5c8eb5eceafa5ef4693ae1846d6d1933
  #include "pdf/buildflags.h"
  #include "printing/buildflags/buildflags.h"
  #include "rlz/buildflags/buildflags.h"
-@@ -2289,6 +2292,15 @@ void ShowTranslateBubble(BrowserWindowInterface* browser) {
+@@ -2314,6 +2317,15 @@ void ShowTranslateBubble(BrowserWindowInterface* browser) {
      return;
    }
  
@@ -241,19 +236,27 @@ index 19b58e11263f194a50736c6b6fe8a681eab93f5b..5c8eb5eceafa5ef4693ae1846d6d1933
    // focus here as the user has intentionally opened the bubble.
    web_contents->ClearFocusedElement();
 diff --git a/chrome/browser/ui/signin/BUILD.gn b/chrome/browser/ui/signin/BUILD.gn
-index 31faff42afc0bb54c33519a414fe7b2952e1c8ca..59f9eb2e64216abb375efb483d3b6d2ceea15229 100644
+index b6d01ad15c3bfa2ee1e17e94f0d4e7057f5e06b4..249d4bce9b6778deeb695264262a62f2f8593e6b 100644
 --- a/chrome/browser/ui/signin/BUILD.gn
 +++ b/chrome/browser/ui/signin/BUILD.gn
-@@ -91,6 +91,7 @@ source_set("impl") {
+@@ -92,6 +92,7 @@ source_set("impl") {
      "//chrome/browser/signin:signin_promo",
      "//chrome/browser/ui/profiles:impl",
      "//chrome/browser/ui/signin",
 +    "//chrome/browser/ui/startup",
      "//chrome/browser/ui/tabs:tab_strip",
+     "//chrome/browser/ui/views/frame:browser_view_header",
      "//chrome/browser/ui/views/frame:toolbar_button_provider",
-     "//chrome/browser/ui/webui/signin",
+@@ -131,6 +132,7 @@ source_set("impl") {
+       "//chrome/browser/profiles:profile_util",
+       "//chrome/browser/signin:signin_promo",
+       "//chrome/browser/ui/hats",
++      "//chrome/browser/ui/startup",
+       "//chrome/browser/ui/toasts",
+       "//chrome/browser/ui/views:layout_provider",
+       "//chrome/browser/ui/views/controls",
 diff --git a/chrome/browser/ui/signin/signin_view_controller.cc b/chrome/browser/ui/signin/signin_view_controller.cc
-index bf67e58c15162f77c0f67ea7296852ced68e93f4..7eed75ac8b5f2227cd46948ebabe0473fda8bf0e 100644
+index 85ae1f933dfedff09ba8028f4176f7930cdbe829..483f7727c553f287976efe0c88eec4a9bcf7ee7b 100644
 --- a/chrome/browser/ui/signin/signin_view_controller.cc
 +++ b/chrome/browser/ui/signin/signin_view_controller.cc
 @@ -77,6 +77,7 @@
@@ -262,14 +265,15 @@ index bf67e58c15162f77c0f67ea7296852ced68e93f4..7eed75ac8b5f2227cd46948ebabe0473
  #include "chrome/browser/ui/singleton_tabs.h"
 +#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
- #include "chrome/common/webui_url_constants.h"
- #include "chrome/grit/branded_strings.h"
-@@ -424,6 +425,16 @@ bool SigninViewController::IsNTPTab(content::WebContents* contents) {
- 
- void SigninViewController::ShowSignin(signin_metrics::AccessPoint access_point,
-                                       const GURL& redirect_url) {
-+  // 仅拦截用户发起的浏览器登录；Google 网站登录仍由网页正常处理。
-+  if (!google_apis::HasOAuthClientConfigured()) {
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/toolbar_button_provider.h"
+@@ -766,6 +767,17 @@ void SigninViewController::ShowDiceSigninTab(
+     signin_metrics::PromoAction promo_action,
+     const std::string& email_hint,
+     const GURL& redirect_url) {
++  // 浏览器登录缺少 OAuth 配置时提示，网页自身的登录继续按原流程处理。
++  if (signin_reason == signin_metrics::Reason::kSigninPrimaryAccount &&
++      !google_apis::HasOAuthClientConfigured()) {
 +    if (auto* contents = GetTabStripModel()->GetActiveWebContents()) {
 +      if (auto* manager =
 +              infobars::ContentInfoBarManager::FromWebContents(contents)) {
@@ -278,9 +282,9 @@ index bf67e58c15162f77c0f67ea7296852ced68e93f4..7eed75ac8b5f2227cd46948ebabe0473
 +    }
 +    return;
 +  }
-   signin::IdentityManager* identity_manager =
-       IdentityManagerFactory::GetForProfile(GetProfile());
-   signin_metrics::PromoAction promo_action =
+ #if DCHECK_IS_ON()
+   if (!AccountConsistencyModeManager::IsDiceEnabledForProfile(GetProfile())) {
+     // Developers often fall into the trap of not configuring the OAuth client
 diff --git a/chrome/browser/ui/startup/infobar_utils.cc b/chrome/browser/ui/startup/infobar_utils.cc
 index 598e361a2988674243dd6ace9cc63de2f74ed1e1..4c759d97eab58c2aa07c52bd74ad2506c66efc4d 100644
 --- a/chrome/browser/ui/startup/infobar_utils.cc
@@ -338,20 +342,37 @@ index c232dd0c7ab94325ce933d5ab096dedd87965862..1113d4ed2ef35db7000378a4410baaa9
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/components/translate/core/browser/translate_manager.cc b/components/translate/core/browser/translate_manager.cc
-index fe8a2397eba46e54e3d871260675c8555f8e4d93..6dc320f49b36dcd84454450058540d1209efbd9c 100644
+index b2943db6e1e020a222ef522d4d4ec1d8af64180e..73e6e4f8e7b04db6ca534e69463fa5eb99b3d308 100644
 --- a/components/translate/core/browser/translate_manager.cc
 +++ b/components/translate/core/browser/translate_manager.cc
-@@ -186,7 +186,8 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
+@@ -186,18 +186,22 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
    GetActiveTranslateMetricsLogger()->LogInitialState();
  }
  
 -bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
 +bool TranslateManager::CanManuallyTranslate(bool menu_logging,
 +                                            bool allow_missing_key) {
+   return CanManuallyTranslateInternal(menu_logging,
+-                                      /*is_partial_translate=*/false);
++                                      /*is_partial_translate=*/false,
++                                      allow_missing_key);
+ }
+ 
+ bool TranslateManager::CanPartiallyTranslate() {
+   return CanManuallyTranslateInternal(/*menu_logging=*/false,
+-                                      /*is_partial_translate=*/true);
++                                      /*is_partial_translate=*/true,
++                                      /*allow_missing_key=*/false);
+ }
+ 
+ bool TranslateManager::CanManuallyTranslateInternal(bool menu_logging,
+-                                                    bool is_partial_translate) {
++                                                    bool is_partial_translate,
++                                                    bool allow_missing_key) {
    bool can_translate = true;
  
    if (net::NetworkChangeNotifier::IsOffline()) {
-@@ -199,7 +200,7 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
+@@ -210,7 +214,7 @@ bool TranslateManager::CanManuallyTranslateInternal(bool menu_logging,
      can_translate = false;
    }
  
@@ -361,7 +382,7 @@ index fe8a2397eba46e54e3d871260675c8555f8e4d93..6dc320f49b36dcd84454450058540d12
      if (!menu_logging) {
        return false;
 diff --git a/components/translate/core/browser/translate_manager.h b/components/translate/core/browser/translate_manager.h
-index fe02c855fc5e846bb3bb31f4bcc4e62675d626af..e632e7a4c5856a47512e4e998e63592fa5b37703 100644
+index a504f3a0562663c8aabbc88c4e771379d6196d4b..8a059c166fbe456e9fe07a173715e4afe6a67f61 100644
 --- a/components/translate/core/browser/translate_manager.h
 +++ b/components/translate/core/browser/translate_manager.h
 @@ -141,7 +141,9 @@ class TranslateManager {
@@ -373,5 +394,15 @@ index fe02c855fc5e846bb3bb31f4bcc4e62675d626af..e632e7a4c5856a47512e4e998e63592f
 +  bool CanManuallyTranslate(bool menu_logging = false,
 +                            bool allow_missing_key = false);
  
-   // Whether or not partial translation is supported for the current target
-   // language. Partial translate supports a subset of translation languages,
+   // Returns true iff a selection on the current page could be partially
+   // translated.
+@@ -253,7 +255,8 @@ class TranslateManager {
+ 
+   // Shared helper for CanManuallyTranslate() and CanPartiallyTranslate().
+   bool CanManuallyTranslateInternal(bool menu_logging,
+-                                    bool is_partial_translate);
++                                    bool is_partial_translate,
++                                    bool allow_missing_key);
+ 
+   // Sends a translation request to the TranslateDriver.
+   void DoTranslatePage(std::string_view translate_script,

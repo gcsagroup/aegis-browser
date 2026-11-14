@@ -1,4 +1,4 @@
-From 9cce1b03b8cc63d78ba4a8d7c08e62f690056790 Mon Sep 17 00:00:00 2001
+From d09ad4a95803c94b345dbcbd19a01de49b86f3c0 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:41:38 +0800
 Subject: [PATCH] Aegis: farble WebGPU numeric limits per site
@@ -7,12 +7,6 @@ Lower a few enumerable adapter limits toward spec minima using the
 same host seed as adapter.info, without raising hardware or breaking
 power-of-two subgroup sizes.
 ---
- chrome/browser/resources/aegis/aegis.ts       | 19 ++++-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  7 +-
- .../blink/renderer/core/aegis/farbling.cc     | 71 +++++++++++++++++++
- .../blink/renderer/core/aegis/farbling.h      | 10 +++
- .../renderer/modules/webgpu/gpu_adapter.cc    |  6 ++
- 5 files changed, 109 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
 index ff1be2266edc2ad1d0caa1c243357c2c1122c894..9568aa43b5b5887343d1e8e075c8307d1a1b6679 100644
@@ -204,6 +198,3 @@ index 6533e0dbcd9392cc2eb2b42c2c829ca665f12745..20dc4c663e8858eb09fe50f07529f4bd
    limits_ = MakeGarbageCollected<GPUSupportedLimits>(limits);
  
    info_ = CreateAdapterInfoForAdapter();
--- 
-2.52.0
-

@@ -1,47 +1,9 @@
-From 1eb488358a3723687ba973c8eafffcf5ffb9a247 Mon Sep 17 00:00:00 2001
+From 260e91bd29ec3039263741e81e0388d670052755 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 20:12:31 +0800
 Subject: [PATCH] feat(aegis): structure page events and site controls
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   3 +
- chrome/browser/aegis/aegis_bounce_observer.cc |   3 +
- chrome/browser/aegis/aegis_cookie_janitor.cc  |   3 +
- ...aegis_link_sanitize_navigation_throttle.cc |  32 +-
- chrome/browser/aegis/aegis_prefs.cc           |   5 +-
- chrome/browser/aegis/aegis_service.cc         | 367 +++++++++++++-----
- chrome/browser/aegis/aegis_service.h          | 110 ++++--
- chrome/browser/aegis/privacy_event_store.cc   | 113 ++++++
- chrome/browser/aegis/privacy_event_store.h    |  59 +++
- .../aegis/privacy_event_store_unittest.cc     |  76 ++++
- .../browser/chrome_content_browser_client.cc  |  26 +-
- chrome/browser/profiles/renderer_updater.cc   |  29 +-
- chrome/browser/profiles/renderer_updater.h    |   6 +-
- chrome/browser/resources/aegis/aegis.ts       |  39 +-
- .../ui/webui/aegis/aegis_ui_handler.cc        |  84 ++--
- .../browser/ui/webui/aegis/aegis_ui_handler.h |  10 +-
- chrome/common/aegis/BUILD.gn                  |   3 +
- chrome/common/aegis/aegis_block_reporter.cc   |  21 +-
- chrome/common/aegis/aegis_block_reporter.h    |  30 +-
- .../aegis/aegis_block_reporter_unittest.cc    |  55 ++-
- chrome/common/aegis/aegis_net_throttle.cc     |  71 +++-
- chrome/common/aegis/aegis_net_throttle.h      |  22 +-
- .../aegis/aegis_net_throttle_unittest.cc      |  22 ++
- chrome/common/aegis/pref_names.h              |   2 +
- chrome/common/aegis/site_control.cc           |  98 +++++
- chrome/common/aegis/site_control.h            |  30 ++
- chrome/common/aegis/site_control_unittest.cc  |  31 ++
- chrome/common/renderer_configuration.mojom    |  10 +-
- .../renderer/chrome_render_thread_observer.cc |  37 +-
- .../renderer/chrome_render_thread_observer.h  |  17 +-
- .../url_loader_throttle_provider_impl.cc      |  12 +-
- 31 files changed, 1138 insertions(+), 288 deletions(-)
- create mode 100644 chrome/browser/aegis/privacy_event_store.cc
- create mode 100644 chrome/browser/aegis/privacy_event_store.h
- create mode 100644 chrome/browser/aegis/privacy_event_store_unittest.cc
- create mode 100644 chrome/common/aegis/site_control.cc
- create mode 100644 chrome/common/aegis/site_control.h
- create mode 100644 chrome/common/aegis/site_control_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 055c8dc00d15cb50a1c14306831cef221979bd3d..2951ccc0e77aee858e6c7a02ed79800a9ba753ea 100644
@@ -1189,7 +1151,7 @@ index 0000000000000000000000000000000000000000..cf5b441dcf2357f9f342c91a7873bd4b
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index d9854cbbafbaac96c36ad245ad05e4cc88932b83..50e4c231bccabdc7065b93a84dedb4ad17b27c78 100644
+index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a149e0d0124 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -3,9 +3,6 @@
@@ -1202,16 +1164,16 @@ index d9854cbbafbaac96c36ad245ad05e4cc88932b83..50e4c231bccabdc7065b93a84dedb4ad
  
  #include <algorithm>
  #include <iterator>
-@@ -60,6 +57,8 @@
- #include "build/config/chromebox_for_meetings/buildflags.h"  // PLATFORM_CFM
+@@ -62,6 +59,8 @@
  #include "chrome/browser/accessibility/caption_settings_dialog.h"
+ #include "chrome/browser/accessibility/page_colors_controller.h"
  #include "chrome/browser/actor/actor_commit_deferring_condition.h"
 +#include "chrome/browser/aegis/aegis_bounce_observer.h"
 +#include "chrome/browser/aegis/aegis_service.h"
  #include "chrome/browser/after_startup_task_utils.h"
  #include "chrome/browser/ai/ai_manager.h"
  #include "chrome/browser/app_mode/app_mode_utils.h"
-@@ -219,6 +218,8 @@
+@@ -227,6 +226,8 @@
  #include "chrome/browser/webapps/web_app_offline.h"
  #include "chrome/browser/webauthn/chrome_web_authentication_delegate_base.h"
  #include "chrome/browser/webauthn/webauthn_pref_names.h"
@@ -1220,7 +1182,7 @@ index d9854cbbafbaac96c36ad245ad05e4cc88932b83..50e4c231bccabdc7065b93a84dedb4ad
  #include "chrome/common/buildflags.h"
  #include "chrome/common/channel_info.h"
  #include "chrome/common/chrome_constants.h"
-@@ -232,7 +233,6 @@
+@@ -240,7 +241,6 @@
  #include "chrome/common/google_url_loader_throttle.h"
  #include "chrome/common/logging_chrome.h"
  #include "chrome/common/pref_names.h"
@@ -1228,7 +1190,7 @@ index d9854cbbafbaac96c36ad245ad05e4cc88932b83..50e4c231bccabdc7065b93a84dedb4ad
  #include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
  #include "chrome/common/profiler/process_type.h"
  #include "chrome/common/profiler/thread_profiler_configuration.h"
-@@ -1875,7 +1875,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
+@@ -1908,7 +1908,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
      service->InitializeRenderer(host);
      mojo::PendingRemote<chrome::mojom::AegisHost> aegis_host;
      aegis::AegisService::GetInstance()->BindAegisHost(
@@ -1237,21 +1199,21 @@ index d9854cbbafbaac96c36ad245ad05e4cc88932b83..50e4c231bccabdc7065b93a84dedb4ad
      service->SetAegisHost(host, std::move(aegis_host));
    }
  
-@@ -5999,10 +5999,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6158,10 +6158,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
                aegis::prefs::kTrackerBlockingEnabled),
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kFingerprintGuardEnabled),
 -          profile->GetPrefs()->GetBoolean(
 -              aegis::prefs::kCnameUncloakEnabled),
 -          profile->GetPrefs()->GetBoolean(
--              aegis::prefs::kLinkSanitizeEnabled));
+-              aegis::prefs::kLinkSanitizeEnabled)
 +          profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled),
 +          profile->GetPrefs()->GetBoolean(aegis::prefs::kLinkSanitizeEnabled),
-+          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites));
-   return std::make_unique<GoogleURLLoaderThrottle>(
- #if BUILDFLAG(IS_ANDROID)
-       client_data_header,
-@@ -6128,14 +6127,21 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
++          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites)
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+               ,
+           // Only the copy pushed to renderers carries this; the throttle
+@@ -6341,14 +6340,21 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
      result.push_back(std::move(contextual_tasks_throttle));
    }
  
@@ -1275,12 +1237,12 @@ index d9854cbbafbaac96c36ad245ad05e4cc88932b83..50e4c231bccabdc7065b93a84dedb4ad
      result.push_back(std::move(aegis_throttle));
    }
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d5e65b75f 100644
+index 2aff0440a1ec6effa7074d97c55bdbe219c326c3..ecfbd7bb906af9c553cb757850032c3fa086cb1c 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
-@@ -13,10 +13,10 @@
- #include "chrome/browser/content_settings/content_settings_manager_delegate.h"
+@@ -15,10 +15,10 @@
  #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/global_features.h"
  #include "chrome/browser/profiles/profile.h"
 -#include "chrome/common/pref_names.h"
 -#include "chrome/common/aegis/pref_names.h"
@@ -1289,9 +1251,9 @@ index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d
 +#include "chrome/common/aegis/pref_names.h"
 +#include "chrome/common/pref_names.h"
  #include "chrome/common/renderer_configuration.mojom.h"
+ #include "chrome/common/request_header_integrity/buildflags.h"
  #include "components/content_settings/common/content_settings_manager.mojom.h"
- #include "components/content_settings/core/browser/content_settings_utils.h"
-@@ -84,6 +84,7 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -92,6 +92,7 @@ RendererUpdater::RendererUpdater(Profile* profile)
                                  pref_service);
    aegis_cname_uncloak_.Init(aegis::prefs::kCnameUncloakEnabled, pref_service);
    aegis_link_sanitize_.Init(aegis::prefs::kLinkSanitizeEnabled, pref_service);
@@ -1299,7 +1261,7 @@ index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d
  
    pref_change_registrar_.Init(pref_service);
    pref_change_registrar_.Add(
-@@ -114,6 +115,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -122,6 +123,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
        aegis::prefs::kLinkSanitizeEnabled,
        base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
                            base::Unretained(this)));
@@ -1310,7 +1272,7 @@ index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d
    pref_change_registrar_.Add(
        aegis::prefs::kFilterListGeneration,
        base::BindRepeating(&RendererUpdater::PushAegisFilterList,
-@@ -203,9 +208,10 @@ RendererUpdater::GetRendererConfigurations() {
+@@ -221,9 +226,10 @@ RendererUpdater::GetRendererConfigurations() {
      if (renderer_profile == profile_) {
        auto renderer_configuration =
            GetRendererConfiguration(render_process_host);
@@ -1322,7 +1284,7 @@ index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d
      }
    }
    return rc;
-@@ -215,8 +221,9 @@ mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>
+@@ -233,8 +239,9 @@ mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>
  RendererUpdater::GetRendererConfiguration(
      content::RenderProcessHost* render_process_host) {
    IPC::ChannelProxy* channel = render_process_host->GetChannel();
@@ -1333,7 +1295,7 @@ index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d
  
    mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>
        renderer_configuration;
-@@ -231,11 +238,13 @@ void RendererUpdater::OnSessionRestoreStateChanged(
+@@ -249,11 +256,13 @@ void RendererUpdater::OnSessionRestoreStateChanged(
    merge_session_running_ =
        ash::merge_session_throttling_utils::ShouldDelayRequestForProfile(
            original_profile_);
@@ -1349,7 +1311,7 @@ index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d
    chromeos_listeners_.clear();
  }
  #endif
-@@ -296,9 +305,7 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+@@ -314,11 +323,9 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
        GetBoundSessionThrottlerParams(),
  #endif
        force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
@@ -1357,16 +1319,18 @@ index 58ad436c7d8a18261931c0c93516cbb2b2afa70f..8ab76f0485015f351c3f035bc9acdc1d
 -      aegis_tracker_blocking_.GetValue(),
 -      aegis_fingerprint_guard_.GetValue(),
 -      aegis_cname_uncloak_.GetValue(),
--      aegis_link_sanitize_.GetValue());
+-      aegis_link_sanitize_.GetValue()
 +      allowed_domains_for_apps_.GetValue(), aegis_tracker_blocking_.GetValue(),
 +      aegis_fingerprint_guard_.GetValue(), aegis_cname_uncloak_.GetValue(),
-+      aegis_link_sanitize_.GetValue(), aegis_paused_sites_.GetValue());
- }
++      aegis_link_sanitize_.GetValue(), aegis_paused_sites_.GetValue()
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+           ,
+       GetPlatformRuntimeHeaders()
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index 57d1b79519af61f2454e0a825962e780b135456b..741e038b0665df4be78db9c8c0b3abb9e6a8215a 100644
+index ff8640dd3e53aa790295991e32c7079b3361f5a3..ae88a38edbb703342d001ab5f2c12453ada3f946 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
-@@ -52,9 +52,8 @@ class RendererUpdater : public KeyedService
+@@ -60,9 +60,8 @@ class RendererUpdater : public KeyedService
  
    // Initialize a newly-started renderer process.
    void InitializeRenderer(content::RenderProcessHost* render_process_host);
@@ -1378,14 +1342,14 @@ index 57d1b79519af61f2454e0a825962e780b135456b..741e038b0665df4be78db9c8c0b3abb9
  
   private:
    using RendererConfigurations = std::vector<
-@@ -117,6 +116,7 @@ class RendererUpdater : public KeyedService
+@@ -131,6 +130,7 @@ class RendererUpdater : public KeyedService
    BooleanPrefMember aegis_fingerprint_guard_;
    BooleanPrefMember aegis_cname_uncloak_;
    BooleanPrefMember aegis_link_sanitize_;
 +  StringPrefMember aegis_paused_sites_;
- };
  
- #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+   // The Platform Runtime header block is global rather than per-profile, so
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
 index 0826127a45d8de16b0ecc31c7c7303e9bbb93c67..d4867979005612bedf8dc0b79e3964e59d5f6b36 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
@@ -2399,15 +2363,18 @@ index 0000000000000000000000000000000000000000..8a39baf6adbe59665835c58a96022a0a
 +
 +}  // namespace aegis
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index a682cd5fba84d532958ac5c1b854f917c066a7b4..fba394b8716496b82994b7333e77393175fb12a8 100644
+index 534e6073058f41df42fad956829a7cea7060d9de..a153f7a793300c2bd089822f48c4bd535d553ab7 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
-@@ -34,13 +34,17 @@ struct DynamicParams {
+@@ -37,6 +37,7 @@ struct DynamicParams {
    bool aegis_fingerprint_guard = true;
    bool aegis_cname_uncloak = true;
    bool aegis_link_sanitize = true;
 +  string aegis_paused_sites;
- };
+ 
+   // Request headers produced by the Platform Runtime library. Empty until the
+   // browser has a value.
+@@ -51,9 +52,12 @@ struct DynamicParams {
  
  // Renderer → browser: AegisNetThrottle 拦截与 Referer 去参。
  interface AegisHost {
@@ -2424,7 +2391,7 @@ index a682cd5fba84d532958ac5c1b854f917c066a7b4..fba394b8716496b82994b7333e773931
  
  // The renderer configuration parameters are set during the process lock update
 diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
-index fc1d917b8f7c9dff16ab1e93fe923341474df474..160c6059c6d9b5100335dc8fc5aaa61555f6e36d 100644
+index 7e68b4714f0271d15e9182cf38c7a8a8c226dd0a..113f569c30e2e1cd04f29362b9f78118582661e0 100644
 --- a/chrome/renderer/chrome_render_thread_observer.cc
 +++ b/chrome/renderer/chrome_render_thread_observer.cc
 @@ -3,10 +3,6 @@
@@ -2448,7 +2415,7 @@ index fc1d917b8f7c9dff16ab1e93fe923341474df474..160c6059c6d9b5100335dc8fc5aaa615
  #include "chrome/common/chrome_paths.h"
  #include "chrome/common/media/media_resource_provider.h"
  #include "chrome/common/net/net_resource_provider.h"
-@@ -48,15 +47,16 @@
+@@ -49,15 +48,16 @@
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "net/base/module/net_module.h"
  #include "net/base/net_errors.h"
@@ -2464,9 +2431,9 @@ index fc1d917b8f7c9dff16ab1e93fe923341474df474..160c6059c6d9b5100335dc8fc5aaa615
  #include "third_party/blink/public/web/web_view.h"
 +#include "url/gurl.h"
  
- #if BUILDFLAG(IS_CHROMEOS)
- #include "chrome/renderer/ash_merge_session_loader_throttle.h"
-@@ -80,8 +80,9 @@ namespace {
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+ #include "chrome/common/request_header_integrity/platform_runtime_headers.h"  // nogncheck
+@@ -85,8 +85,9 @@ namespace {
  #if BUILDFLAG(IS_CHROMEOS)
  scoped_refptr<base::SequencedTaskRunner> GetCallbackGroupTaskRunner() {
    content::ChildThread* child_thread = content::ChildThread::Get();
@@ -2477,7 +2444,7 @@ index fc1d917b8f7c9dff16ab1e93fe923341474df474..160c6059c6d9b5100335dc8fc5aaa615
  
    // This will happen when running via tests.
    return base::SequencedTaskRunner::GetCurrentDefault();
-@@ -201,8 +202,9 @@ void ChromeRenderThreadObserver::SetInitialConfiguration(
+@@ -206,8 +207,9 @@ void ChromeRenderThreadObserver::SetInitialConfiguration(
          content_settings_manager,
      mojo::PendingRemote<chrome::mojom::BoundSessionRequestThrottledHandler>
          bound_session_request_throttled_handler) {
@@ -2488,7 +2455,7 @@ index fc1d917b8f7c9dff16ab1e93fe923341474df474..160c6059c6d9b5100335dc8fc5aaa615
    process_state::SetIsIncognitoProcess(is_incognito_process);
  #if BUILDFLAG(IS_CHROMEOS)
    if (chromeos_listener_receiver) {
-@@ -261,28 +263,37 @@ void ChromeRenderThreadObserver::SetAegisHost(
+@@ -270,28 +272,37 @@ void ChromeRenderThreadObserver::SetAegisHost(
  void ChromeRenderThreadObserver::ForwardBlockedRequest(
      GURL url,
      std::string reason,
@@ -2533,7 +2500,7 @@ index fc1d917b8f7c9dff16ab1e93fe923341474df474..160c6059c6d9b5100335dc8fc5aaa615
  }
  
 diff --git a/chrome/renderer/chrome_render_thread_observer.h b/chrome/renderer/chrome_render_thread_observer.h
-index 7bfe87b202e489f26483675dbb76f899fde0a898..a0f412e50d604b232144a377822927dc521f754f 100644
+index 1ee48af1d04c5466743ff192845dafcff9425ea5..d099ba0058dc402c52e1da47bdc6a2b604b03bf2 100644
 --- a/chrome/renderer/chrome_render_thread_observer.h
 +++ b/chrome/renderer/chrome_render_thread_observer.h
 @@ -126,8 +126,9 @@ class ChromeRenderThreadObserver : public content::RenderThreadObserver,
@@ -2565,11 +2532,11 @@ index 7bfe87b202e489f26483675dbb76f899fde0a898..a0f412e50d604b232144a377822927dc
 +                             std::vector<std::string> keys,
 +                             std::string source_site,
 +                             std::string local_frame_token);
- #if !BUILDFLAG(IS_ANDROID)
    void SetConfigurationOnProcessLockUpdate(
        chrome::mojom::StaticParamsPtr params) override;
+   void OnRendererConfigurationAssociatedRequest(
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 2938d8c5ca3e82b9a9a743bb805526ad55087c9c..a6f05de348b558083f03898c51fbba829550f15f 100644
+index fbe6538e099ab24c31c759e00745d57ebed31416..352a7e84ff2378e9c6aab9d98fbe91f806b34dcb 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -5,6 +5,7 @@
@@ -2622,6 +2589,3 @@ index 2938d8c5ca3e82b9a9a743bb805526ad55087c9c..a6f05de348b558083f03898c51fbba82
  #if BUILDFLAG(IS_CHROMEOS)
    throttles.emplace_back(std::make_unique<AshMergeSessionLoaderThrottle>(
        chrome_content_renderer_client_->GetChromeObserver()
--- 
-2.52.0
-

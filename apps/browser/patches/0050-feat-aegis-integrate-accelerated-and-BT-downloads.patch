@@ -1,84 +1,9 @@
-From c9cb99e65d2208eb954f0ffe443122af066f416e Mon Sep 17 00:00:00 2001
+From 70d86a81ed6dae00d6fb73e36f4732d844193492 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 26 Aug 2026 18:00:16 +0800
 Subject: [PATCH] feat(aegis): integrate accelerated and BT downloads
 
 ---
- chrome/browser/aegis/BUILD.gn                 |  19 +
- chrome/browser/aegis/aegis_prefs.cc           |   2 +
- chrome/browser/aegis/aegis_torrent_client.cc  | 106 ++++
- chrome/browser/aegis/aegis_torrent_client.h   |  61 +++
- .../aegis/metalink_download_verifier.cc       | 305 +++++++++++
- .../aegis/metalink_download_verifier.h        |  36 ++
- chrome/browser/aegis/metalink_parser.cc       | 194 +++++++
- chrome/browser/aegis/metalink_parser.h        |  41 ++
- .../browser/aegis/metalink_parser_unittest.cc |  96 ++++
- chrome/browser/download/download_ui_model.cc  |  79 ++-
- chrome/browser/resources/aegis/aegis.css      |  95 +++-
- chrome/browser/resources/aegis/aegis.html     |   9 +-
- chrome/browser/resources/aegis/aegis.ts       | 114 ++--
- chrome/browser/resources/downloads/BUILD.gn   |   3 +
- .../downloads/aegis_download_panel.css        | 185 +++++++
- .../downloads/aegis_download_panel.html.ts    | 127 +++++
- .../downloads/aegis_download_panel.ts         | 517 ++++++++++++++++++
- chrome/browser/resources/downloads/item.css   |  12 +
- .../browser/resources/downloads/item.html.ts  |   5 +
- .../resources/downloads/manager.html.ts       |   2 +
- chrome/browser/resources/downloads/manager.ts |   1 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 136 +++++
- .../ui/webui/aegis/aegis_ui_handler.cc        | 437 ++++++++++++++-
- .../browser/ui/webui/aegis/aegis_ui_handler.h |  42 +-
- chrome/browser/ui/webui/downloads/BUILD.gn    |   1 +
- .../ui/webui/downloads/downloads.mojom        |   7 +
- .../webui/downloads/downloads_list_tracker.cc |  66 ++-
- .../webui/downloads/downloads_list_tracker.h  |   4 +
- .../downloads_list_tracker_unittest.cc        |  39 ++
- .../ui/webui/downloads/downloads_ui.cc        |   2 +
- chrome/common/aegis/pref_names.h              |   3 +
- chrome/services/aegis_torrent/BUILD.gn        |  50 ++
- .../aegis_torrent/aegis_torrent_service.cc    | 325 +++++++++++
- .../aegis_torrent/aegis_torrent_service.h     |  55 ++
- .../aegis_torrent/public/mojom/BUILD.gn       |  13 +
- .../public/mojom/aegis_torrent_service.mojom  |  70 +++
- .../services/aegis_torrent/torrent_safety.cc  | 232 ++++++++
- .../services/aegis_torrent/torrent_safety.h   |  34 ++
- .../aegis_torrent/torrent_safety_unittest.cc  |  76 +++
- .../torrent_transfer_unittest.cc              | 138 +++++
- .../test/data/webui/downloads/test_support.ts |   5 +
- chrome/utility/BUILD.gn                       |   1 +
- chrome/utility/services.cc                    |   8 +
- .../common/parallel_download_utils.cc         |  41 +-
- .../parallel_download_utils_unittest.cc       |  16 +
- .../public/common/download_features.cc        |   8 +-
- sandbox/policy/mac/network.sb                 |   7 +
- third_party/aegis_libtorrent/.gitignore       |   7 +
- third_party/aegis_libtorrent/BUILD.gn         | 230 ++++++++
- third_party/aegis_libtorrent/LICENSE          |  27 +
- third_party/aegis_libtorrent/README.aegis     |  19 +
- 51 files changed, 4012 insertions(+), 96 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_torrent_client.cc
- create mode 100644 chrome/browser/aegis/aegis_torrent_client.h
- create mode 100644 chrome/browser/aegis/metalink_download_verifier.cc
- create mode 100644 chrome/browser/aegis/metalink_download_verifier.h
- create mode 100644 chrome/browser/aegis/metalink_parser.cc
- create mode 100644 chrome/browser/aegis/metalink_parser.h
- create mode 100644 chrome/browser/aegis/metalink_parser_unittest.cc
- create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.css
- create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.html.ts
- create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.ts
- create mode 100644 chrome/services/aegis_torrent/BUILD.gn
- create mode 100644 chrome/services/aegis_torrent/aegis_torrent_service.cc
- create mode 100644 chrome/services/aegis_torrent/aegis_torrent_service.h
- create mode 100644 chrome/services/aegis_torrent/public/mojom/BUILD.gn
- create mode 100644 chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom
- create mode 100644 chrome/services/aegis_torrent/torrent_safety.cc
- create mode 100644 chrome/services/aegis_torrent/torrent_safety.h
- create mode 100644 chrome/services/aegis_torrent/torrent_safety_unittest.cc
- create mode 100644 chrome/services/aegis_torrent/torrent_transfer_unittest.cc
- create mode 100644 third_party/aegis_libtorrent/.gitignore
- create mode 100644 third_party/aegis_libtorrent/BUILD.gn
- create mode 100644 third_party/aegis_libtorrent/LICENSE
- create mode 100644 third_party/aegis_libtorrent/README.aegis
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index f5938cb5ee7594df39bb399a5eda084af0e0803e..da0c389d215b785baa7dbe81ae5dfbdee6080902 100644
@@ -1041,7 +966,7 @@ index 0000000000000000000000000000000000000000..dd900b5e2a72e2820de9b7a6a784425c
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
-index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31ba8bfacc0 100644
+index c1f21ea28e40d16a497778a78b3bcea443b5a45a..05f27b26a855ede7dfb764f66cb460b9c6ef1b3c 100644
 --- a/chrome/browser/download/download_ui_model.cc
 +++ b/chrome/browser/download/download_ui_model.cc
 @@ -10,6 +10,9 @@
@@ -1116,7 +1041,7 @@ index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31b
  }
  #endif
  
-@@ -856,8 +879,9 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetInProgressStatusText()
+@@ -857,8 +880,9 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetInProgressStatusText()
  
    // A download scheduled to be opened when complete: "Opening in 10 secs"
    if (model_->GetOpenWhenComplete()) {
@@ -1127,7 +1052,7 @@ index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31b
  
      return l10n_util::GetStringFUTF16(
          IDS_DOWNLOAD_STATUS_OPEN_IN,
-@@ -967,12 +991,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
+@@ -968,12 +992,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
        return l10n_util::GetStringUTF16(
            IDS_POLICY_ACTION_BLOCKED_BY_ORGANIZATION);
      case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_SCANNING:
@@ -1146,7 +1071,7 @@ index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31b
      case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_LOCAL_PASSWORD_SCANNING:
        // "Suspicious file blocked • Password needed"
        return l10n_util::GetStringFUTF16(
-@@ -1003,12 +1027,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
+@@ -1004,12 +1028,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
        return l10n_util::GetStringUTF16(
            IDS_DOWNLOAD_BUBBLE_STATUS_LOCAL_DECRYPTING);
      case download::DOWNLOAD_DANGER_TYPE_DEEP_SCANNED_FAILED:
@@ -1165,8 +1090,8 @@ index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31b
      case download::DOWNLOAD_DANGER_TYPE_BLOCKED_SCAN_FAILED:
        // "Blocked • Scan failed"
        return get_blocked_warning(IDS_DOWNLOAD_BUBBLE_STATUS_SCAN_FAILED);
-@@ -1030,8 +1054,9 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
-   DCHECK_EQ(DownloadItem::IN_PROGRESS, model_->GetState());
+@@ -1032,8 +1056,9 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
+            base::NotFatalUntil::M161);
  
    std::u16string warning_status_text = GetBubbleWarningStatusText();
 -  if (!warning_status_text.empty())
@@ -1176,7 +1101,7 @@ index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31b
  
    base::TimeDelta time_remaining;
    // time_remaining is only known if the download isn't paused, and it isn't
-@@ -1086,10 +1111,11 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
+@@ -1088,10 +1113,11 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
    // A download scheduled to be opened when complete: "↓ 100/120 MB • Opening in
    // 10 seconds"
    if (model_->GetOpenWhenComplete()) {
@@ -1189,7 +1114,7 @@ index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31b
  
      // "↓ 100/120 MB • Opening in 10 seconds..."
      return get_active_download_size_ratio_string(l10n_util::GetStringFUTF16(
-@@ -1145,12 +1171,14 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetCompletedStatusText()
+@@ -1147,12 +1173,14 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetCompletedStatusText()
  std::u16string
  DownloadUIModel::BubbleStatusTextBuilder::GetCompletedStatusText() const {
    std::u16string warning_status_text = GetBubbleWarningStatusText();
@@ -1206,7 +1131,7 @@ index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31b
  
    if (model_->GetEndTime().is_null()) {
      // Offline items have these null.
-@@ -1330,8 +1358,9 @@ std::u16string DownloadUIModel::GetInProgressAccessibleAlertText() const {
+@@ -1332,8 +1360,9 @@ std::u16string DownloadUIModel::GetInProgressAccessibleAlertText() const {
    base::TimeDelta remaining;
    if (TimeRemaining(&remaining)) {
      // If complete, skip this round: a completion status update is coming soon.
@@ -2554,7 +2479,7 @@ index 71ae0c1a7626d31b23bed90f8e22d4a1b6505869..bfed41ab5a2178924fbd09834b7aa457
    .description[description-color='grey'] {
      color: var(--google-grey-500);
 diff --git a/chrome/browser/resources/downloads/item.html.ts b/chrome/browser/resources/downloads/item.html.ts
-index 35465838d549f918b793ed5751b61169b8b453d1..a86ab1abd4c2b27a10aee39b55a784d97a6c2e91 100644
+index f06e438b416dfb9f0381fdb52372a11c726605ac..a6a461709fce5e2a67942ce21be4a47e9cd23e35 100644
 --- a/chrome/browser/resources/downloads/item.html.ts
 +++ b/chrome/browser/resources/downloads/item.html.ts
 @@ -47,6 +47,11 @@ export function getHtml(this: DownloadsItemElement) {
@@ -3360,10 +3285,10 @@ index 484ddb0c2c943cf13e177f805ef05061e299f7f3..744b0a50d72a03e7b1d9f3978cd11b4c
        service_observation_{this};
  
 diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
-index 501c60c60e1bbbb101591a706183a4f5a81dc736..d91ccec5fd4eff397ace07333aeaf6a13c61f5c1 100644
+index c529b1c4358394a3ab3ee33347793ff86259df7d..9cfbe2310ece25435827fce8b35c66a344585ca2 100644
 --- a/chrome/browser/ui/webui/downloads/BUILD.gn
 +++ b/chrome/browser/ui/webui/downloads/BUILD.gn
-@@ -62,6 +62,7 @@ source_set("downloads") {
+@@ -63,6 +63,7 @@ source_set("downloads") {
      "//chrome/browser/ui:ui_features",
      "//chrome/browser/ui/webui",
      "//chrome/browser/ui/webui:webui_load_timer",
@@ -3577,7 +3502,7 @@ index 8ddd0ed3b2105d9211c3ab101ce871c50dc5347d..08fdc73b45ace7446e346c007388a9c1
    MockDownloadItem* item = CreateNextItem();
    ON_CALL(*item, GetRequestInitiator())
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index a613ecb70991eb1a2f7b6681b9ba891170ac1ecc..afffe387238c18306c52a3745e716e34aab018c6 100644
+index 8955c4bf86a64e2d30bc34ecb522422e941a1af8..89336bcc3e5935a182c5595aee732d42f33a88eb 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
 @@ -22,6 +22,7 @@
@@ -4674,10 +4599,10 @@ index d016d7fbe3e4b96c308a2aca706d2fbda9c6475a..ce27034f94f2c67c2bf1bf734a0df93f
          byExtName: '',
          dangerType: DangerType.kNoApplicableDangerType,
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
-index b3fa5a032cee9bf422f56a058b53046189c28a25..fb756f798496f5d6583a4c648c4147e2223c921b 100644
+index e5b851a44d644dfd5144ea8e661b546d8c8149a0..54fe4c30829bd01e05d34d6c24f4b63e916c9343 100644
 --- a/chrome/utility/BUILD.gn
 +++ b/chrome/utility/BUILD.gn
-@@ -88,6 +88,7 @@ static_library("utility") {
+@@ -87,6 +87,7 @@ static_library("utility") {
  
    if (is_mac) {
      deps += [
@@ -4686,18 +4611,18 @@ index b3fa5a032cee9bf422f56a058b53046189c28a25..fb756f798496f5d6583a4c648c4147e2
        "//services/proxy_resolver_mac",
      ]
 diff --git a/chrome/utility/services.cc b/chrome/utility/services.cc
-index 5f509ce2d6f0bc2636f328aea054a4ab8fb046d8..4f3eff87dfd7b561972668c61dfb2e602797f77f 100644
+index 14cdd3f48779e59f7a6efe858d30d68bd94c511e..f80bccf5c60e01eb7d265bae1ea22a5154085750 100644
 --- a/chrome/utility/services.cc
 +++ b/chrome/utility/services.cc
-@@ -52,6 +52,7 @@
+@@ -53,6 +53,7 @@
  #endif  // BUILDFLAG(IS_WIN)
  
  #if BUILDFLAG(IS_MAC)
 +#include "chrome/services/aegis_torrent/aegis_torrent_service.h"
  #include "chrome/services/mac_notifications/mac_notification_provider_impl.h"
  #include "chrome/services/system_signals/mac/mac_system_signals_service.h"
- #include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"
-@@ -206,6 +207,12 @@ auto RunWindowsSystemProxyResolver(
+ #include "services/proxy_resolver/public/mojom/system_proxy_resolver.mojom.h"
+@@ -212,6 +213,12 @@ auto RunWindowsSystemProxyResolver(
  #endif  // BUILDFLAG(IS_WIN)
  
  #if BUILDFLAG(IS_MAC)
@@ -4710,7 +4635,7 @@ index 5f509ce2d6f0bc2636f328aea054a4ab8fb046d8..4f3eff87dfd7b561972668c61dfb2e60
  auto RunMacNotificationService(
      mojo::PendingReceiver<mac_notifications::mojom::MacNotificationProvider>
          receiver) {
-@@ -520,6 +527,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
+@@ -535,6 +542,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
  #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
  
  #if BUILDFLAG(IS_MAC)
@@ -5170,6 +5095,3 @@ index 0000000000000000000000000000000000000000..c93f8f512026e85baaf0e91bef6fed6d
 +release-blocking integration item. This mirror is not an official libtorrent
 +distribution channel, so production_qualified and release_eligible remain
 +false until the upstream provenance/signature gate is closed.
--- 
-2.52.0
-

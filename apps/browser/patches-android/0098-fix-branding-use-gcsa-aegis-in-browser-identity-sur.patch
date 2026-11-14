@@ -1,14 +1,12 @@
-From 2140712dc5e116ac7ee5293bb5e150b231dc8210 Mon Sep 17 00:00:00 2001
+From 17bbbf29edb2fb7bf80035d53c66bfe236d7d0cd Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 15:36:40 +0800
 Subject: [PATCH] fix(branding): use GCSA Aegis in browser identity surfaces
 
 ---
- chrome/app/chromium_strings.grd | 52 ++++++++++++++++-----------------
- 1 file changed, 26 insertions(+), 26 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
-index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123f430e3fe 100644
+index 87499190d7614f211d9b9440a360605d8eda1b92..c2a5181515789a7d32bac15ed0d23716517fa3bc 100644
 --- a/chrome/app/chromium_strings.grd
 +++ b/chrome/app/chromium_strings.grd
 @@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
@@ -194,6 +192,3 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
          </message>
        </if>
  
--- 
-2.52.0
-

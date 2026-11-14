@@ -1,4 +1,4 @@
-From 1662c016f24985e5a6841f0059de58b4b97e83d1 Mon Sep 17 00:00:00 2001
+From 36c90427b1694048a9fe9cd0c31e7e02c7b96e7a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 11 Oct 2026 05:51:38 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E5=A2=9E=E5=8A=A0=E6=9C=AC=E6=9C=BA?=
@@ -9,25 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/aegis_prefs.cc           |   2 +
- .../aegis/agent/aegis_agent_browsertest.cc    |  93 +++
- chrome/browser/resources/aegis_agent/BUILD.gn |   1 +
- .../browser/resources/aegis_agent/agent.css   |  16 +
- .../browser/resources/aegis_agent/agent.html  |  30 +
- chrome/browser/resources/aegis_agent/agent.ts |  11 +-
- .../aegis_agent/reading_workspace.ts          | 234 ++++++++
- chrome/browser/ui/webui/aegis_agent/BUILD.gn  |  11 +
- .../ui/webui/aegis_agent/aegis_agent.mojom    |   1 +
- .../aegis_agent/aegis_agent_page_handler.cc   |  10 +
- .../aegis_agent/aegis_agent_page_handler.h    |   4 +
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  34 ++
- .../ui/webui/aegis_agent/reading_workspace.cc | 540 ++++++++++++++++++
- .../ui/webui/aegis_agent/reading_workspace.h  |  68 +++
- .../ui/webui/help/aegis_github_update.h       |   4 +-
- 15 files changed, 1056 insertions(+), 3 deletions(-)
- create mode 100644 chrome/browser/resources/aegis_agent/reading_workspace.ts
- create mode 100644 chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
- create mode 100644 chrome/browser/ui/webui/aegis_agent/reading_workspace.h
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
 index f153f1bca41f4b0d0890b3aecc2f83712e9da4d8..ae4d7ac38e43bf9c0e7c2832991168d766e2311f 100644
@@ -1330,6 +1311,3 @@ index 141267dd4a14f0672db71c73fd90e3ce1dbcc880..8ff9752254219e7b5a0523c1dc4b886f
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

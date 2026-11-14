@@ -1,0 +1,24 @@
+From add2c1f67f6f88503c708f4f6bbc09be75558df7 Mon Sep 17 00:00:00 2001
+From: Aegis CI <aegis-ci@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 11:44:12 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=A1=8C=E9=9D=A2=20Aegis=20?=
+ =?UTF-8?q?=E6=B5=8B=E8=AF=95=E7=9A=84=20BrowserClient=20=E4=BE=9D?=
+ =?UTF-8?q?=E8=B5=96=E5=A3=B0=E6=98=8E?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+---
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 86e7688dd76efa86db60e6b5238f31b179850b39..b4dfe72b6cde081c2f1bb3026ec67ec6220791ca 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -490,6 +490,8 @@ test("aegis_browser_unittests") {
+       "summary_session_unittest.cc",
+     ]
+     deps += [
++      # 桌面测试直接引用 BrowserClient；test_support 的私有依赖不会透传头文件。
++      "//chrome/browser:chrome_content_browser_client",
+       "//chrome/browser/actor",
+       "//chrome/browser/actor/ui:event_dispatcher",
+       "//chrome/browser/actor/ui:test_support",

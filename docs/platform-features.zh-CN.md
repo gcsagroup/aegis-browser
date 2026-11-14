@@ -52,6 +52,12 @@
 | 按站点网站增强 | 部分 | 源码接入 | 未移植 | 部分 |
 | 用户脚本与 AI 草稿 | 部分 | 源码接入 | 未移植 | 部分 |
 | 内置 Markdown 阅读 | 部分 | 源码接入 | 未移植 | 部分 |
+| 统一设置与旧入口迁移 | 源码接入 | 源码接入 | 源码接入 | 源码接入 |
+| P01 控制协议和双跳 TLS 传输 | 源码接入 | 未移植 | 未移植 | 未移植 |
+| Mac本站代理会话与故障恢复 | 源码接入 | 未移植 | 未移植 | 部分 |
+| Mac账户节点、额度和登出隔离 | 源码接入 | 未移植 | 未移植 | 部分 |
+| Mac本地核心诊断隐私与分享 | 源码接入 | 未移植 | 未移植 | 未移植 |
+| Windows卸载提示本地化 | 未移植 | 源码接入 | 未移植 | 未移植 |
 
 ## iOS 范围与依据
 
@@ -406,5 +412,53 @@ iOS 模拟器证据：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 源码：[apps/ios/AegisApp/MarkdownReaderView.swift](../apps/ios/AegisApp/MarkdownReaderView.swift)
 
 iOS 模拟器证据：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md](../docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md)
+
+### 统一设置与旧入口迁移
+
+`unified-settings` — 保留已合入main的SwiftUI分类和表单布局；使用WebKit，本轮未重跑iOS验收。
+
+源码：[apps/ios/AegisApp/BrowserSettings.swift](../apps/ios/AegisApp/BrowserSettings.swift) · [apps/ios/AegisApp/SettingsFormControls.swift](../apps/ios/AegisApp/SettingsFormControls.swift)
+
+本项未完成本轮运行验收。
+
+### P01 控制协议和双跳 TLS 传输
+
+`p01-two-hop-tls` — 此平台的构建目标尚未接入 P01 双跳传输。
+
+源码：[apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn](../apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn)
+
+本项未完成本轮运行验收。
+
+### Mac本站代理会话与故障恢复
+
+`mac-access-site-proxy-session` — iOS保留独立WebKit账户或代理入口；不包含Mac的Chromium连接、子进程和原生测试，不能复用其验收。
+
+源码：[apps/ios/BrowserKit/BrowserSession.swift](../apps/ios/BrowserKit/BrowserSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本项未完成本轮运行验收。
+
+### Mac账户节点、额度和登出隔离
+
+`mac-access-account` — iOS保留独立WebKit账户或代理入口；不包含Mac的Chromium连接、子进程和原生测试，不能复用其验收。
+
+源码：[apps/ios/AegisApp/AccessAccountSession.swift](../apps/ios/AegisApp/AccessAccountSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本项未完成本轮运行验收。
+
+### Mac本地核心诊断隐私与分享
+
+`mac-access-core-diagnostics` — 本项按既有设计仅适用于Mac原生接入；不能将该端源码与测试视为本平台实现。
+
+源码：[apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本项未完成本轮运行验收。
+
+### Windows卸载提示本地化
+
+`windows-uninstall-localization` — 本项按既有设计仅适用于Windows卸载器；不能将该端源码与测试视为本平台实现。
+
+源码：[apps/browser/scripts/windows-uninstall-locales_test.py](../apps/browser/scripts/windows-uninstall-locales_test.py) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本项未完成本轮运行验收。
 
 维护方式：修改 JSON 后运行 `node scripts/check-platform-features.mjs --write` 生成三语页面，再运行 `node scripts/check-platform-features.mjs` 检查。现有发布合同新增功能时，缺少任意一端的说明会使仓库检查失败。

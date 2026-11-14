@@ -1,14 +1,9 @@
-From 3bcd20164ac6a4400c39e62a410764271a446d5c Mon Sep 17 00:00:00 2001
+From 0f17320c43d5546118912b4ecc720973bea21066 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 23:21:49 +0800
 Subject: [PATCH] perf(aegis): speed up local Qwen tool turns
 
 ---
- .../aegis/agent/aegis_agent_service.cc        | 15 +++++++++++++
- .../aegis/agent/agent_model_protocol.cc       |  9 +++++++-
- .../aegis/agent/agent_model_protocol.h        |  5 +++++
- .../agent/agent_model_protocol_unittest.cc    | 21 +++++++++++++++++++
- 4 files changed, 49 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index cbe61a017f0d1a955662ebe3f2c266f964d9ede5..efa25d47da2c985e56f137ec3a8254841804de29 100644
@@ -132,6 +127,3 @@ index 5e9af707343bd60fdb84d9ba988a8392b97ad65c..6ea94c2c09932071359188e438d1ccc9
  TEST(AegisAgentModelProtocolTest, NormalizesThreeNonStreamingProviders) {
    const std::vector<AgentModelToolDefinition> tools = Tools();
    const std::string openai = R"({
--- 
-2.52.0
-

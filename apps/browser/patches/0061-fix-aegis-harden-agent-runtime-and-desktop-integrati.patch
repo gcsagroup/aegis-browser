@@ -1,43 +1,15 @@
-From 466f0c785d613a77e64213d5947f6c61635e3039 Mon Sep 17 00:00:00 2001
+From adb2d1aae6c2d894608b53eda943111f4a826aa6 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 21:01:03 +0800
 Subject: [PATCH] fix(aegis): harden agent runtime and desktop integration
 
 ---
- chrome/browser/actor/execution_engine.cc      |  27 ++++
- .../actor/execution_engine_unittest.cc        |  50 +++++++
- chrome/browser/aegis/BUILD.gn                 |   2 +
- .../browser/aegis/agent/aegis_actor_bridge.cc |  59 +++++++--
- .../aegis/agent/aegis_agent_browsertest.cc    |  19 ++-
- .../agent/aegis_agent_interactive_uitest.cc   |  52 +++++++-
- .../aegis/agent/aegis_agent_service.cc        |  77 +++++++----
- .../browser/aegis/agent/aegis_agent_service.h |   2 +-
- .../agent/aegis_agent_service_unittest.cc     | 122 ++++++++++++++++--
- .../aegis/agent/aegis_browser_tools.cc        | 119 ++++++++++++++---
- .../browser/aegis/agent/aegis_browser_tools.h |  22 +++-
- .../aegis/agent/agent_core_unittest.cc        |  81 ++++++++++++
- chrome/browser/aegis/agent/agent_execution.cc |  43 +++---
- .../aegis/agent/agent_execution_unittest.cc   |  14 ++
- .../agent/agent_model_protocol_fuzzer.cc      |  11 +-
- .../aegis/agent/agent_monitor_scheduler.cc    |   9 ++
- .../aegis/agent/agent_monitor_scheduler.h     |   5 +
- .../aegis/agent/agent_policy_broker.cc        |  12 ++
- .../aegis/agent/agent_result_verifier.cc      |  47 +++++--
- .../browser/aegis/agent/agent_scope_fuzzer.cc |   9 +-
- .../agent/agent_tool_arguments_fuzzer.cc      |  11 +-
- .../aegis/agent/agent_tool_registry.cc        |  10 +-
- .../browser/global_keyboard_shortcuts_mac.mm  |   1 +
- chrome/browser/resources/aegis_agent/agent.ts |   2 +
- .../ui/webui/aegis_agent/aegis_agent.mojom    |  55 +++++---
- .../aegis_agent/aegis_agent_page_handler.cc   |  21 +--
- chrome/chrome_paks.gni                        |   1 +
- 27 files changed, 733 insertions(+), 150 deletions(-)
 
 diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
-index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e02886f9224e 100644
+index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690553c103a 100644
 --- a/chrome/browser/actor/execution_engine.cc
 +++ b/chrome/browser/actor/execution_engine.cc
-@@ -118,6 +118,7 @@ namespace actor {
+@@ -129,6 +129,7 @@ namespace actor {
  // Individual custom predicates that the actor framework supports in addition to
  // those provided by the origin_gating framework.
  enum class ActorCustomPredicate {
@@ -45,7 +17,7 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
    kSafetyList,
    kSensitiveUrl,
    kLookalikeUrl,
-@@ -140,6 +141,8 @@ namespace {
+@@ -152,6 +153,8 @@ namespace {
  constexpr std::string_view ActorCustomPredicateToString(
      ActorCustomPredicate predicate) {
    switch (predicate) {
@@ -54,15 +26,15 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
      case ActorCustomPredicate::kSafetyList:
        return "actor_safety_list_check";
      case ActorCustomPredicate::kSensitiveUrl:
-@@ -464,6 +467,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
+@@ -518,6 +521,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
                                    : origin_gating::Decision::kBlocked;
  }
  
 +origin_gating::Decision BlockIfExplicitlyDenied(
 +    const ActorTask* task,
 +    origin_gating::GatingDecisionContext* context,
-+    const GURL& source,
-+    const GURL& destination) {
++    const GateableEvent& event) {
++  const GURL& destination = event.destination();
 +  // 明确拒绝属于授权边界，必须先于 localhost、测试开关、白名单和缓存。
 +  // 保留旧流程对 about:blank 初始文档的例外，不提前放行其他安全检查。
 +  if (!destination.IsAboutBlank() &&
@@ -75,8 +47,8 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
 +
  origin_gating::Decision AllowIfSafetyChecksDisabled(
      origin_gating::GatingDecisionContext* context,
-     const GURL& source,
-@@ -536,6 +554,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
+     const GateableEvent& event) {
+@@ -610,6 +628,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -85,7 +57,7 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
          case ActorCustomPredicate::kSafetyList:
            return decision.is_allowed
                       ? ExecutionEngine::GatingDecision::kAllowByStaticList
-@@ -596,6 +616,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
+@@ -676,6 +696,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -94,39 +66,30 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
          case ActorCustomPredicate::kSafetyList:
            return MayActOnUrlBlockReason::kBlockedByStaticList;
          case ActorCustomPredicate::kDangerousMimeType:
-@@ -712,6 +734,11 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
-           *this,
-           origin_gating::OriginGatingConfiguration(
-               {
-+                  {CustomPredicate(
-+                       base::BindRepeating(&BlockIfExplicitlyDenied,
-+                                           base::Unretained(task_.get())),
+@@ -784,6 +806,10 @@ std::vector<origin_gating::PredicateConfiguration> CreateOriginGatingPredicates(
+     ActorTask& task,
+     ExecutionEngine::AllowedSchemes allowed_schemes) {
+   std::vector<origin_gating::PredicateConfiguration> predicates({
++      {CustomPredicate(base::BindRepeating(&BlockIfExplicitlyDenied,
++                                          base::Unretained(&task)),
 +                       ActorCustomPredicate::kExplicitPolicyBlock),
-+                   GateableEventSet::All()},
-                   {CustomPredicate(base::BindRepeating(&BlockTabErrorDocument),
-                                    ActorCustomPredicate::kTabErrorDocument),
-                    {GateableEvent::kPageAction}},
++       GateableEventSet::All()},
+       {CustomPredicate(base::BindRepeating(&BlockTabErrorDocument),
+                        ActorCustomPredicate::kTabErrorDocument),
+        {GateableEvent::kPageAction}},
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 782e6653be283a3b4c687ec824dd96f5a6b000cd..4eabe06e463f64c08ca57d4abc18557724b209f7 100644
+index e7647f49fa533e5e54c814800e7386ba6a777faa..1c0e46e76ebe2c4fe8343ded13b8c7f54e6b731d 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -17,6 +17,7 @@
- #include "base/test/gmock_expected_support.h"
+@@ -18,6 +18,7 @@
  #include "base/test/metrics/histogram_tester.h"
+ #include "base/test/scoped_command_line.h"
  #include "base/test/scoped_feature_list.h"
 +#include "base/test/scoped_command_line.h"
  #include "base/test/test_future.h"
  #include "base/time/time.h"
  #include "chrome/browser/actor/actor_keyed_service.h"
-@@ -41,6 +42,7 @@
- #include "chrome/common/webui_url_constants.h"
- #include "chrome/test/base/chrome_render_view_host_test_harness.h"
- #include "components/actor/core/actor_features.h"
-+#include "components/actor/core/actor_switches.h"
- #include "components/actor/core/shared_types.h"
- #include "components/actor/public/mojom/actor_types.mojom.h"
- #include "components/autofill/core/browser/integrators/actor/actor_form_filling_types.h"
-@@ -1172,6 +1174,10 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+@@ -1174,6 +1175,10 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
    }
  
   protected:
@@ -137,7 +100,7 @@ index 782e6653be283a3b4c687ec824dd96f5a6b000cd..4eabe06e463f64c08ca57d4abc185577
    virtual TaskSourceInfo TaskSource() const { return TestTaskSourceInfo(); }
  
    void SetExpectedOptimizationGuideCall(
-@@ -1452,6 +1458,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
+@@ -1457,6 +1462,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
             EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
  }
  
@@ -1794,10 +1757,10 @@ index 6cccfc1ccc0c8b1b6ce523ebcc5f05403ce92692..7dc07d318cfc2a381076dc4c09f9a815
    const bool ok = task && task->mode() == AgentMode::kAutomate &&
                    service_->RemoveMonitor(task_id, monitor_id);
 diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
-index bf4f4183dc28488c6b04370f45f96ae44aefc51f..c156ea62c9441f687adddbe476b12b44d4b4f838 100644
+index 150c570d3ea9756dd068bd919a57b722a4c7e056..56f940aaa840c0d640b1584c2552ea9ae90303a4 100644
 --- a/chrome/chrome_paks.gni
 +++ b/chrome/chrome_paks.gni
-@@ -206,6 +206,7 @@ template("chrome_extra_paks") {
+@@ -222,6 +222,7 @@ template("chrome_extra_paks") {
          "$root_gen_dir/chrome/about_sys_resources.pak",
          "$root_gen_dir/chrome/access_code_cast_resources.pak",
          "$root_gen_dir/chrome/actor_overlay_resources.pak",
@@ -1805,6 +1768,3 @@ index bf4f4183dc28488c6b04370f45f96ae44aefc51f..c156ea62c9441f687adddbe476b12b44
          "$root_gen_dir/chrome/app_service_internals_resources.pak",
          "$root_gen_dir/chrome/autofill_ml_internals_resources.pak",
          "$root_gen_dir/chrome/bookmarks_resources.pak",
--- 
-2.52.0
-

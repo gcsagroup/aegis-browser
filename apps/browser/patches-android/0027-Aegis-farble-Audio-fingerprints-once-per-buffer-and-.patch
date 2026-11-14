@@ -1,4 +1,4 @@
-From a5bb870d766bda4a3a455d17f2add69c4887ab8c Mon Sep 17 00:00:00 2001
+From fd6a9d806363de1538ce81bd2711a909ef20d115 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:30:27 +0800
 Subject: [PATCH] Aegis: farble Audio fingerprints once per buffer and per site
@@ -6,13 +6,6 @@ Subject: [PATCH] Aegis: farble Audio fingerprints once per buffer and per site
 Stop stacking noise on every getChannelData, key the perturbation
 by page host, and apply the same pass on copyFromChannel.
 ---
- chrome/browser/resources/aegis/aegis.ts       | 48 +++++++++++++------
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  8 ++--
- .../blink/renderer/core/aegis/farbling.cc     |  2 +-
- .../blink/renderer/core/aegis/farbling.h      |  3 +-
- .../renderer/modules/webaudio/audio_buffer.cc | 31 +++++++++---
- .../renderer/modules/webaudio/audio_buffer.h  |  4 ++
- 6 files changed, 69 insertions(+), 27 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
 index f8f6eb21c3cf858c305aad151aa7d6515d4d42fc..ff1be2266edc2ad1d0caa1c243357c2c1122c894 100644
@@ -233,6 +226,3 @@ index 0dd11f830ee2829778b6c89ec51edeb1da839f74..0d0d0a857015f45409ff1473c90a2e14
  };
  
  // Shared data that audio threads can hold onto.
--- 
-2.52.0
-

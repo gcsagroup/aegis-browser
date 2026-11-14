@@ -1,4 +1,4 @@
-From 03882c7e2e68d236ca46ffef651f9c3278da1b16 Mon Sep 17 00:00:00 2001
+From 124e010901a3a8a5bd0578a10aad3b646acc2375 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 17:34:38 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E4=BD=BF=E7=94=A8=E7=BC=93?=
@@ -10,24 +10,19 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- ...tools_remote_server_infobar_browsertest.cc | 28 +++++++++++++++++++
- ...devtools_remote_server_infobar_delegate.cc | 10 +++----
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  4 +--
- .../ui/webui/aegis/aegis_ui_handler.cc        |  4 +--
- .../settings_localized_strings_provider.cc    |  3 +-
- 5 files changed, 37 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
-index 8fe70949435a80bda2f20f263e7fc1ef9247046d..9ca1741708f602ea8bb8a4c9276e0e1bd8bde4d2 100644
+index e07da689cd30e6781dea1a472354dab2a9dc5221..5eeab81bfe17236ab55aed42f14f3956d31555cf 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
-@@ -3,14 +3,20 @@
- // found in the LICENSE file.
+@@ -4,11 +4,16 @@
  
  #include "base/command_line.h"
+ #include "base/test/scoped_feature_list.h"
 +#include "base/threading/thread_restrictions.h"
 +#include "chrome/browser/browser_process.h"
  #include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
+ #include "chrome/browser/infobars/infobar_features.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 +#include "chrome/browser/devtools/devtools_remote_server_infobar_delegate.h"
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -35,18 +30,21 @@ index 8fe70949435a80bda2f20f263e7fc1ef9247046d..9ca1741708f602ea8bb8a4c9276e0e1b
  #include "chrome/test/base/in_process_browser_test.h"
 +#include "chrome/test/base/ui_test_utils.h"
  #include "components/infobars/content/content_infobar_manager.h"
+ #include "components/infobars/core/confirm_infobar_delegate.h"
  #include "components/infobars/core/infobar.h"
+@@ -16,6 +21,7 @@
+ #include "content/public/browser/devtools_manager_delegate.h"
  #include "content/public/common/content_switches.h"
  #include "content/public/test/browser_test.h"
 +#include "content/public/test/browser_test_utils.h"
  #include "content/public/test/test_navigation_observer.h"
  #include "url/gurl.h"
  
-@@ -32,6 +38,28 @@ class DevToolsRemoteServerInfobarBrowserTest : public InProcessBrowserTest {
-   }
+@@ -69,6 +75,28 @@ class DevToolsRemoteServerInfobarBrowserTest
+   base::test::ScopedFeatureList feature_list_;
  };
  
-+IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
++IN_PROC_BROWSER_TEST_P(DevToolsRemoteServerInfobarBrowserTest,
 +                      LocalizedLabelsDoNotBlockUIThread) {
 +  // Windows 旧实现会在这里重新读取语言资源并触发线程限制检查。
 +  const base::ScopedDisallowBlocking disallow_blocking;
@@ -57,7 +55,7 @@ index 8fe70949435a80bda2f20f263e7fc1ef9247046d..9ca1741708f602ea8bb8a4c9276e0e1b
 +            delegate.GetButtonLabel(ConfirmInfoBarDelegate::BUTTON_OK));
 +}
 +
-+IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
++IN_PROC_BROWSER_TEST_P(DevToolsRemoteServerInfobarBrowserTest,
 +                      AegisInternalPagesUseCachedLocale) {
 +  for (const char* url : {"chrome://aegis/", "chrome://settings/security"}) {
 +    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(url)));
@@ -68,7 +66,7 @@ index 8fe70949435a80bda2f20f263e7fc1ef9247046d..9ca1741708f602ea8bb8a4c9276e0e1b
 +  }
 +}
 +
- IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
+ IN_PROC_BROWSER_TEST_P(DevToolsRemoteServerInfobarBrowserTest,
                         NoCrashWhenAllBrowsersClosedBeforeDisconnect) {
    ChromeDevToolsManagerDelegate* delegate =
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
@@ -172,10 +170,10 @@ index b7c2900fe376ded75e0f772353219be58c2d3ef6..333d5473c4f27c4505d80d049d07c247
      aegis::SummarizeResult result;
      result.error = "model request already in progress";
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 89d3e438529423331285fb337ce9439ef385cde9..c88da50a589cd9b20f714950a7a875682469cae3 100644
+index b0b52261e48bd6e41241f4f57e27b10d8497418f..14e50dcb8c0e38fda34c4fe24a207a490ddd5eed 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -2882,8 +2882,7 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+@@ -2923,8 +2923,7 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
    html_source->AddLocalizedString("aegisSettingsRowLabel",
                                    IDS_AEGIS_SETTINGS_ROW_LABEL);
    {
@@ -185,6 +183,3 @@ index 89d3e438529423331285fb337ce9439ef385cde9..c88da50a589cd9b20f714950a7a87568
      if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
        html_source->AddString(
            "aegisSettingsRowSublabel",
--- 
-2.52.0
-

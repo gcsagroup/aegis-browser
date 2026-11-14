@@ -1,4 +1,4 @@
-From 282196b55f57f00c346308b399ee5ced641fdaeb Mon Sep 17 00:00:00 2001
+From f69396bfe83a3c311f832136983738712b440995 Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:35:12 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E9=A1=B5=E9=9D=A2=E5=85=B3?=
@@ -9,14 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/app/app-Info.plist                     |   4 +-
- .../settings/about_page/about_page.html.ts    |   2 +-
- .../ui/webui/help/aegis_github_update.cc      | 129 +++++++++++-------
- .../ui/webui/help/aegis_github_update.h       |  10 +-
- .../help/aegis_github_update_unittest.cc      |  55 +++++++-
- .../settings_localized_strings_provider.cc    |   2 +-
- .../data/webui/settings/about_page_test.ts    |   4 +-
- 7 files changed, 139 insertions(+), 67 deletions(-)
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
 index 4d057cee650d317cc7a6ef516c6ac19697c3afcb..ea07226701fcbfc96be924deebd668d678abb626 100644
@@ -377,10 +369,10 @@ index 26a997a9d23e464143857dbb9c71bac3cc73ed5b..1885112f1be706388b2c9cff3ffeb587
    auto release = Release();
    factory_.AddResponse(kReleaseAPI, JSON(release));
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index ab07496994758aaf0a23107916641d210a1e650b..75bf73dd1a90bca0eac649038df925460e964caf 100644
+index e0438c2495407b9b2738d8732ea8a93475e54217..b5793ce563597731815fadc912dec46e9e9a5603 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -364,7 +364,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
    browser_version = VersionUI::GetAnnotatedVersionStringForUi();
  #else
    browser_version = base::StrCat(
@@ -411,6 +403,3 @@ index bbb7cd263ac6601045cf3d9dc2787e0162d98c02..0a469f77da5c2072cee79b91ae7e39db
      assertTrue(page.$.updateStatusMessage.textContent.includes('请退出浏览器后安装'));
    });
  
--- 
-2.52.0
-

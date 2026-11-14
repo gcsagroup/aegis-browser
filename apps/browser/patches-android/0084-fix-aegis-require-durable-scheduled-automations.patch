@@ -1,16 +1,9 @@
-From aafa46334336be62605acafd2d34e46e67aef282 Mon Sep 17 00:00:00 2001
+From ff222464a3da63dca24646ba2253084ce8fe3f9e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 23:41:37 +0800
 Subject: [PATCH] fix(aegis): require durable scheduled automations
 
 ---
- .../aegis/agent/aegis_agent_service.cc        |  3 ++
- chrome/browser/aegis/agent/agent_planner.cc   | 29 ++++++++++++++++
- chrome/browser/aegis/agent/agent_planner.h    |  7 ++++
- .../aegis/agent/agent_planner_unittest.cc     | 33 ++++++++++++++++++-
- chrome/browser/resources/aegis_agent/agent.ts |  4 +++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 31 ++++++++++-------
- 6 files changed, 94 insertions(+), 13 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index efa25d47da2c985e56f137ec3a8254841804de29..ac258eee1d3f0db996aad0b8d911d65d9ab72015 100644
@@ -217,6 +210,3 @@ index 64d9856ea10c59ec96f9aea3b363fc4561b704c8..8a1bb5a17a658807795692d6e344b8a5
    add("relatedPageOpenError",
        "The related page could not be opened. Check the network and retry this "
        "task.",
--- 
-2.52.0
-
