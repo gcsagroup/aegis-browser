@@ -167,11 +167,12 @@ test('search-hidden view rejects a reply even before its visibility observer run
 });
 
 test('snapshot render immediately qualifies stale/unknown data and ages visible expiry', async t => {
-  const dom = new JSDOM('<!doctype html><html lang="en"><main></main></html>',
-      {pretendToBeVisual: true});
-  t.after(() => dom.window.close());
-  const {document, HTMLElement, ShadowRoot, MutationObserver} = dom.window;
-  const root = document.querySelector('main');
+  const {window} = new JSDOM();
+  t.after(() => window.close());
+  const {document, HTMLElement, ShadowRoot, MutationObserver} = window;
+  document.documentElement.lang = 'en';
+  const root = document.createElement('main');
+  document.body.append(root);
   let hidden = false;
   Object.defineProperty(document, 'hidden', {get: () => hidden});
   for (const unknown of [false, true]) {
