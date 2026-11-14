@@ -1,4 +1,4 @@
-From 78ddf783b26d5e8a500bd1a808d3689be449a5de Mon Sep 17 00:00:00 2001
+From fa883c5a61d378d559003a932868da15568d76a1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 22 Sep 2026 19:57:29 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=B8=85=E7=90=86=E4=BB=BB=E5=8A=A1=E6=96=87?=
@@ -10,15 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/agent/agent_execution.cc | 755 ++++++++---------
- .../aegis/agent/agent_execution_unittest.cc   | 802 ++++++++++--------
- chrome/browser/aegis/agent/agent_planner.cc   | 441 +++++-----
- .../aegis/agent/agent_planner_unittest.cc     | 259 +++---
- .../browser/resources/aegis_agent/agent.html  |   4 +-
- chrome/browser/resources/aegis_agent/agent.ts |  65 +-
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 130 ++-
- .../ui/webui/help/aegis_github_update.h       |  27 +-
- 8 files changed, 1361 insertions(+), 1122 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
 index 9794d3740929d0239580ffa6d076d2110c5f68db..6d70c1204d1b990b926d839939e2cd4853c6761c 100644
@@ -5187,6 +5178,3 @@ index 7887b9e75a30f8754942ee689261190864257ce3..9c40db91d6ff245d5dfe392c811ff9c7
 +const ProductUpdateStatus &GetProductUpdateStatus();
 +} // namespace aegis
 +#endif // CHROME_BROWSER_UI_WEBUI_HELP_AEGIS_GITHUB_UPDATE_H_
--- 
-2.52.0
-

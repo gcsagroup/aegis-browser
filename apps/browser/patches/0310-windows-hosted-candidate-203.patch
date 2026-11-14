@@ -1,14 +1,14 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 3bfb476f38f2862e314af7a2198a2f1fdd00e098 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 20:00:00 +0800
 Subject: [PATCH] 递增 Windows 托管构建候选为 203
-
 ---
+
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index eeba71134ac6dfd8c1b5fe41ace64b15dc536457..edcce161cf13d4c954da5b7f3c3dea6257ea1709 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
-@@ -21,8 +21,8 @@
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
  
  namespace aegis {
  // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。

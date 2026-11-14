@@ -1,4 +1,4 @@
-From 3d285a9a07d26cc13d67bf9c4d4181562bccd90f Mon Sep 17 00:00:00 2001
+From 5bc5828774a5b0be070311ea1cf02d0ebecde904 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:01:50 +0800
 Subject: [PATCH] Aegis: strip tracking query params and reject tracker cookies
@@ -6,34 +6,6 @@ Subject: [PATCH] Aegis: strip tracking query params and reject tracker cookies
 Rewrite main-frame navigations to drop known tracking decorations, and
 delete analytics/advertising cookies as they are written.
 ---
- chrome/browser/aegis/BUILD.gn                 |   6 +
- chrome/browser/aegis/aegis_cookie_janitor.cc  | 102 +++++++++++++++++
- chrome/browser/aegis/aegis_cookie_janitor.h   |  46 ++++++++
- ...aegis_link_sanitize_navigation_throttle.cc | 104 ++++++++++++++++++
- .../aegis_link_sanitize_navigation_throttle.h |  39 +++++++
- chrome/browser/aegis/aegis_prefs.cc           |   2 +
- chrome/browser/aegis/aegis_service.cc         |  54 +++++++++
- chrome/browser/aegis/aegis_service.h          |   7 ++
- ...ent_browser_client_navigation_throttles.cc |   2 +
- chrome/browser/resources/aegis/aegis.html     |   8 ++
- chrome/browser/resources/aegis/aegis.ts       |  10 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  10 ++
- .../ui/webui/aegis/aegis_ui_handler.cc        |   6 +
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/cookie_classify.cc        | 100 +++++++++++++++++
- chrome/common/aegis/cookie_classify.h         |  33 ++++++
- chrome/common/aegis/features.cc               |   2 +
- chrome/common/aegis/features.h                |   2 +
- chrome/common/aegis/pref_names.h              |   2 +
- chrome/common/aegis/tracking_query_params.cc  |  65 +++++++++++
- chrome/common/aegis/tracking_query_params.h   |   9 ++
- 21 files changed, 609 insertions(+), 2 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_cookie_janitor.cc
- create mode 100644 chrome/browser/aegis/aegis_cookie_janitor.h
- create mode 100644 chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
- create mode 100644 chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h
- create mode 100644 chrome/common/aegis/cookie_classify.cc
- create mode 100644 chrome/common/aegis/cookie_classify.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index e311e638e0c44060adbf5459af9a9e18b6bd59b4..77140ce2db2b1d81867c70894590ae4569195d7c 100644
@@ -519,7 +491,7 @@ diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.c
 index 79c042a12d3e25a0607f51f0ece1a030766fc5e3..0b136c7e20bf1f75485b61ed7657fda60948af48 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-@@ -22,6 +22,7 @@
+@@ -24,6 +24,7 @@
  #include "chrome/browser/interstitials/enterprise_util.h"
  #include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
  #include "chrome/browser/aegis/aegis_phish_navigation_throttle.h"
@@ -527,7 +499,7 @@ index 79c042a12d3e25a0607f51f0ece1a030766fc5e3..0b136c7e20bf1f75485b61ed7657fda6
  #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
  #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
  #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
-@@ -411,6 +412,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -413,6 +414,7 @@ void CreateAndAddChromeThrottlesForNavigation(
  
    LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);
    aegis::AegisPhishNavigationThrottle::MaybeCreateAndAdd(registry);
@@ -988,6 +960,3 @@ index ae66c7f38cb1057135bc794d9ce60b66a20fc031..cd27c9ac0d2462189b7da471ab0904ea
  }  // namespace aegis
  
  #endif  // CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
--- 
-2.52.0
-

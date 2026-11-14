@@ -1,4 +1,4 @@
-From ecb9e73fc612eead70a3fcda7ecc4fc07e09723f Mon Sep 17 00:00:00 2001
+From 7ab5579e1c17d51faa8afe957da4afa3986855f5 Mon Sep 17 00:00:00 2001
 From: Aegis local development <aegis-local@invalid>
 Date: Tue, 8 Sep 2026 05:05:00 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=B7=B2=E5=90=AF=E7=94=A8?=
@@ -10,10 +10,6 @@ Content-Transfer-Encoding: 8bit
 
 仅在普通资料启动时恢复已启用的 Agent，避免关闭时创建并缓存空服务。
 ---
- .../aegis/agent/aegis_agent_service_factory.cc       | 12 ++++++++++++
- .../aegis/agent/aegis_agent_service_factory.h        |  2 ++
- chrome/browser/chrome_browser_main.cc                |  4 ++++
- 3 files changed, 18 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_factory.cc b/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
 index a1b39d48bf123f1c35d243917a6d013ff12e6dfe..94cd00e8f614220223dccd1cfbb31615e924198c 100644
@@ -63,7 +59,7 @@ index 164c6a3d0a553cba78fe77b8b9e7582a8260bc7f..b68614add8ebe364a3978d157438fa94
  #include "chrome/browser/after_startup_task_utils.h"
  #include "chrome/browser/browser_features.h"
  #include "chrome/browser/browser_process.h"
-@@ -1635,6 +1636,9 @@ void ChromeBrowserMainParts::PostProfileInit(Profile* profile,
+@@ -1626,6 +1627,9 @@ void ChromeBrowserMainParts::PostProfileInit(Profile* profile,
    // renderer request would leave newly loaded Profiles temporarily unguarded.
    aegis::AegisServiceFactory::EnsureIncognitoGuardForProfile(profile);
  
@@ -73,6 +69,3 @@ index 164c6a3d0a553cba78fe77b8b9e7582a8260bc7f..b68614add8ebe364a3978d157438fa94
  #if BUILDFLAG(IS_WIN)
    // Verify that the profile is not on a network share and if so prepare to show
    // notification to the user.
--- 
-2.52.0
-

@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From cf48f35ba1562ff725e3663fb0eb6e2d2051e479 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Wed, 21 Oct 2026 12:00:00 +0800
 Subject: [PATCH] 移除重复设置入口并独立实验功能分类
-
 ---
+
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
 index 70b1e6f954ad61a23458a93d3ef76ccdef881299..0fd4f38462036c6687ea0733e5399d84d877f77f 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css

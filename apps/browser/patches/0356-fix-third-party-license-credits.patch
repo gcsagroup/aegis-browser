@@ -1,36 +1,8 @@
-From 092d3521616ef3e18578d3bc1d2f1edf66b3db95 Mon Sep 17 00:00:00 2001
+From 3e85c96510cd0b3ddd6b44cf18870f43e81b6053 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Tue, 3 Nov 2026 18:24:19 +0800
 Subject: [PATCH] fix(licenses): include Aegis resource and libtorrent credits
-
 ---
- chrome/browser/resources/aegis_agent/BUILD.gn |    1 +
- .../resources/aegis_agent/local_ai/NOTICE.txt |    2 +
- .../aegis_agent/local_ai/asset_manifest.json  |    8 +-
- .../local_ai/vendor/onnxruntime-web-NOTICES   | 6508 +++++++++++++++++
- third_party/aegis_libtorrent/APSL-2.0.txt     |  367 +
- .../aegis_libtorrent/BOOST_LICENSE_1_0.txt    |   23 +
- .../aegis_libtorrent/ED25519_LICENSE.txt      |   22 +
- third_party/aegis_libtorrent/README.chromium  |   54 +
- third_party/aegis_libtorrent/SOURCE_OFFER.txt |   21 +
- .../aegis_libtorrent/TRY_SIGNAL_LICENSE.txt   |   29 +
- .../aegis_libtorrent/UPSTREAM_LICENSE.txt     |  183 +
- .../aegis_libtorrent/UPSTREAM_ROUTE_H.txt     |  478 ++
- third_party/aegis_policy/BUILD.gn             |    1 +
- third_party/aegis_webui_licenses/BUILD.gn     |    5 +
- .../aegis_webui_licenses/README.chromium      |  114 +
- 15 files changed, 7814 insertions(+), 2 deletions(-)
- create mode 100644 chrome/browser/resources/aegis_agent/local_ai/vendor/onnxruntime-web-NOTICES
- create mode 100644 third_party/aegis_libtorrent/APSL-2.0.txt
- create mode 100644 third_party/aegis_libtorrent/BOOST_LICENSE_1_0.txt
- create mode 100644 third_party/aegis_libtorrent/ED25519_LICENSE.txt
- create mode 100644 third_party/aegis_libtorrent/README.chromium
- create mode 100644 third_party/aegis_libtorrent/SOURCE_OFFER.txt
- create mode 100644 third_party/aegis_libtorrent/TRY_SIGNAL_LICENSE.txt
- create mode 100644 third_party/aegis_libtorrent/UPSTREAM_LICENSE.txt
- create mode 100644 third_party/aegis_libtorrent/UPSTREAM_ROUTE_H.txt
- create mode 100644 third_party/aegis_webui_licenses/BUILD.gn
- create mode 100644 third_party/aegis_webui_licenses/README.chromium
 
 diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn
 index f56eb0f0742f52e874c4891e636f4a18e089677e..7c68791b15038f09b36e613c18e9275b9ea0b203 100644

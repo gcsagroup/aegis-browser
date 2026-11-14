@@ -1,31 +1,9 @@
-From fe0401c495de7a0608f7b9413289703dfdf77d4c Mon Sep 17 00:00:00 2001
+From 3400914e7772a195d94f8cd2cacc55d2d0cfb91b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 22:05:44 +0800
 Subject: [PATCH] feat(aegis): simplify browser agent v2 onboarding
 
 ---
- chrome/browser/actor/actor_keyed_service_fake.cc   |  21 +-
- chrome/browser/actor/actor_keyed_service_fake.h    |   4 +-
- chrome/browser/actor/actor_task.cc                 |   3 +-
- chrome/browser/actor/ui/actor_ui_state_manager.cc  |  52 +-
- chrome/browser/actor/ui/actor_ui_state_manager.h   |   7 +
- .../actor/ui/actor_ui_state_manager_unittest.cc    |  54 ++
- chrome/browser/actor/ui/event_dispatcher.cc        |   3 +-
- chrome/browser/actor/ui/event_dispatcher.h         |   1 +
- chrome/browser/actor/ui/ui_event.cc                |   6 +-
- chrome/browser/actor/ui/ui_event.h                 |   4 +-
- .../browser/aegis/agent/aegis_agent_browsertest.cc | 102 +++-
- .../aegis/agent/aegis_agent_interactive_uitest.cc  |  20 +-
- chrome/browser/aegis/agent/aegis_agent_service.cc  |  11 +
- chrome/browser/aegis/agent/aegis_agent_service.h   |   3 +
- chrome/browser/resources/aegis_agent/agent.css     | 620 ++++++++++++++-------
- chrome/browser/resources/aegis_agent/agent.html    | 111 +++-
- chrome/browser/resources/aegis_agent/agent.ts      | 389 +++++++++++--
- .../browser/ui/webui/aegis_agent/aegis_agent.mojom |  16 +
- .../webui/aegis_agent/aegis_agent_page_handler.cc  | 213 +++++--
- .../webui/aegis_agent/aegis_agent_page_handler.h   |  17 +
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  88 ++-
- 21 files changed, 1350 insertions(+), 395 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service_fake.cc b/chrome/browser/actor/actor_keyed_service_fake.cc
 index cbd7b362259965754ea90a1d9209b4365894292d..7b3fe3ccf1d6b67dc3a5ce09dcf8b363dfc2fc30 100644

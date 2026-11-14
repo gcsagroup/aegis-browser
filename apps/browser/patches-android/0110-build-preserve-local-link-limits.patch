@@ -1,4 +1,4 @@
-From f66041e505ef998b64d91ad18e7b7484791a5c5b Mon Sep 17 00:00:00 2001
+From 71333cc26c91eea4815f5ee6ef83e8cc427eb0bc Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:06:52 +0800
 Subject: [PATCH] =?UTF-8?q?build(aegis):=20=E4=BF=9D=E7=95=99=E6=9C=AC?=
@@ -9,10 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/BUILD.gn               | 9 +++++++++
- chrome/browser/aegis/BUILD.gn | 4 ++++
- chrome/test/BUILD.gn          | 4 ++++
- 3 files changed, 17 insertions(+)
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
 index f1d133b6cda978b105c6110b279fdd75a1b2f061..fec79333c9c23c52a043fa2a84f3c39cc6fb79f6 100644

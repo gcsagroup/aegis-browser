@@ -1,19 +1,16 @@
-From 6da60af39d9833f0ba1d0268963d74ee252f9e6a Mon Sep 17 00:00:00 2001
+From 9a8b4c5a3516cad4704734a25edbf598c6cb6c18 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 03:03:22 +0800
 Subject: [PATCH] fix(aegis): migrate WebUI browser selection for Chromium 153
  (028)
 
 ---
- chrome/browser/ui/browser_command_controller.cc    | 2 +-
- chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
- 2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
 index 2d6a161f12988dc0b736bb908da8df7feaef7b36..bae259ec1fadc89849a51b963250f3b1e5e3ae19 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1305,7 +1305,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1342,7 +1342,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
        break;
      case IDC_SHOW_AEGIS:
        if (IsAegisProfileSupported(profile())) {
@@ -39,6 +36,3 @@ index 82e958224f66221b343aab558d3ed38ecc94f578..ce14883c5b99d99fba6074882c9b82c1
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

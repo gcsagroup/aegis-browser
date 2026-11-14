@@ -1,9 +1,11 @@
 import AgentKit
 import BrowserKit
 import SwiftUI
+import UIKit
 
 struct AegisRootView: View {
     @EnvironmentObject private var browser: BrowserSession
+    @EnvironmentObject private var accountSession: AccessAccountSession
     @Environment(\.scenePhase) private var scenePhase
     @State private var externalURL: URL?
     @State private var showsExternalConfirmation = false
@@ -14,6 +16,7 @@ struct AegisRootView: View {
     @State private var showsSettings = false
     @State private var showsFilters = false
     @State private var showsDownloads = false
+    @State private var presentedDownload: (url: URL, access: BrowserAccessDownload?)?
     @State private var showsFind = false
     @State private var showsReading = false
     @State private var findText = ""
@@ -59,9 +62,9 @@ struct AegisRootView: View {
 #endif
         .sheet(isPresented: $showsReading) { ReadingLibraryView() }
         .sheet(item: $browser.pendingMarkdown) { document in MarkdownReaderView(initial: document) }
-        .sheet(isPresented: $showsFilters) { CurrentWebsiteView() }
-        .sheet(isPresented: $showsDownloads, onDismiss: { browser.pendingDownloadURL = nil }) {
-            DownloadsView(initialURL: browser.pendingDownloadURL)
+        .sheet(isPresented: $showsFilters) { CurrentWebsiteView().environmentObject(accountSession) }
+        .sheet(isPresented: $showsDownloads, onDismiss: { presentedDownload = nil; browser.pendingDownloadURL = nil }) {
+            DownloadsView(initialURL: presentedDownload?.url, protectedContext: presentedDownload?.access)
         }
         .sheet(isPresented: $showsFind) {
             NavigationStack {
@@ -82,7 +85,11 @@ struct AegisRootView: View {
                     .toolbar { Button("完成") { showsFind = false }.keyboardShortcut(.escape, modifiers: []) }
             }.presentationDetents([.medium])
         }
-        .onChange(of: browser.pendingDownloadURL) { _, url in if url != nil { showsDownloads = true } }
+        .onChange(of: browser.pendingDownloadURL) { _, url in
+            guard let url, !showsDownloads else { return }
+            presentedDownload = (url, browser.pendingAccessDownload)
+            showsDownloads = true
+        }
         .onChange(of: browser.activeTabID) { _, _ in updateAddress() }
         .onChange(of: browser.profile) { _, profile in
             updateAddress()
@@ -131,7 +138,7 @@ struct AegisRootView: View {
     }
 
     private func updateAddress() {
-        address = browser.activeTab?.url?.absoluteString ?? "aegis://start"
+        address = browser.activeTab?.addressBarURL?.absoluteString ?? "aegis://start"
     }
 
     private func consumeSharedURLIfPresent() {
@@ -221,6 +228,7 @@ private struct BrowserPane: View {
 
     private func editAddress() {
         toolbarCollapsed = false
+        address = tab.addressBarURL?.absoluteString ?? address
         addressFocused = true
         addressSelectionRequest += 1
     }
@@ -240,7 +248,7 @@ private struct BrowserPane: View {
 
     /// 浏览时只显示主机名；输入和辅助功能始终可取得完整网址。
     private var displayedAddress: String {
-        guard let url = tab.url, url.scheme != "aegis" else { return AegisLocalization.string("起始页") }
+        guard let url = tab.addressBarURL, url.scheme != "aegis" else { return AegisLocalization.string("起始页") }
         return url.host(percentEncoded: true) ?? url.absoluteString
     }
 
@@ -271,9 +279,9 @@ private struct BrowserPane: View {
                     .accessibilityIdentifier("page-protection")
                 }
                 BrowserAddressField(address: $address, focused: $addressFocused,
-                                    displayText: displayedAddress, selectionRequest: addressSelectionRequest) { destination in
+                                    displayText: displayedAddress, displayAddress: tab.addressBarURL?.absoluteString,
+                                    selectionRequest: addressSelectionRequest) { destination in
                     browser.navigate(address: destination)
-                    tab.webView.becomeFirstResponder()
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 44)
                 .padding(.horizontal, addressFocused || isCollapsed ? 14 : 0)
@@ -295,7 +303,7 @@ private struct BrowserPane: View {
             .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
             if addressFocused {
                 Button("取消") {
-                    address = tab.url?.absoluteString ?? "aegis://start"
+                    address = tab.addressBarURL?.absoluteString ?? "aegis://start"
                     addressFocused = false
                     tab.webView.becomeFirstResponder()
                 }.frame(minWidth: 44, minHeight: 44)
@@ -386,23 +394,139 @@ private struct BrowserPane: View {
     }
 }
 
+struct ProxyRetryButton: UIViewRepresentable {
+    @Environment(\.isEnabled) private var isEnabled
+    var title: String
+    var action: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.isEnabled = isEnabled
+        button.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.numberOfLines = 0
+        button.accessibilityIdentifier = "page-load-proxy-retry"
+        button.contentHorizontalAlignment = .leading
+        button.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.action() }, for: .touchUpInside)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.setTitle(title, for: .normal)
+        button.isEnabled = isEnabled
+        context.coordinator.action = action
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        let width = proposal.width ?? uiView.intrinsicContentSize.width
+        let content = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: max(44, content.height))
+    }
+
+    final class Coordinator {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+    }
+}
+
+struct PageLoadFailureBanner: View {
+    @Environment(\.locale) private var localizationLocale
+    @ObservedObject var tab: BrowserTab
+    var autoRecoveryOn: Bool = false
+    var autoRecoveryLine: String? = nil
+    var setAutoRecovery: ((BrowserTab, Bool) -> Void)? = nil
+    var addressProxyPreparing = false
+    var openAddressViaProxy: ((BrowserTab, BrowserPendingAddressNavigation) -> Void)? = nil
+    var proxyRetry: (BrowserTab) -> Void
+
+    var body: some View {
+        let _ = localizationLocale
+        if let error = tab.loadingError {
+            VStack(alignment: .leading, spacing: 8) {
+                if let failure = tab.lastMainFrameFailure {
+                    Text(failure.url.host(percentEncoded: true) ?? failure.url.absoluteString)
+                        .font(.callout.weight(.semibold))
+                        .accessibilityIdentifier("page-load-failed-host")
+                        .accessibilityValue(failure.url.absoluteString)
+                }
+                Text("页面加载失败：\(error)").font(.caption)
+                Button("重试") { tab.reload() }
+                if setAutoRecovery != nil {
+                    Toggle(AccessAutoRecoveryCopy.toggleTitle, isOn: Binding(
+                        get: { autoRecoveryOn },
+                        set: { setAutoRecovery?(tab, $0) }
+                    ))
+                    .accessibilityIdentifier("page-load-auto-recovery")
+                    Text(AccessAutoRecoveryCopy.explanation).font(.caption)
+                    Text(AccessAutoRecoveryCopy.scopeWarning).font(.caption)
+                    if let autoRecoveryLine {
+                        Text(autoRecoveryLine)
+                            .font(.caption)
+                            .accessibilityIdentifier("page-load-auto-recovery-status")
+                    }
+                }
+                if tab.loadingErrorAllowsProxyRetry {
+                    ProxyRetryButton(title: AegisLocalization.string("通过代理重试")) { proxyRetry(tab) }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+            }
+            .padding(12)
+            .foregroundStyle(.red)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("page-load-error")
+        } else if let pending = tab.pendingAddressNavigation, tab.matchesPendingAddressNavigation(pending),
+                  let openAddressViaProxy {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(pending.url.host(percentEncoded: true) ?? pending.url.absoluteString)
+                    .font(.callout.weight(.semibold))
+                    .accessibilityIdentifier("page-load-pending-host")
+                    .accessibilityValue(pending.url.absoluteString)
+                Text(AegisLocalization.string(addressProxyPreparing ? "正在准备代理连接…" : "正在连接此网址。你可以选择通过代理打开。"))
+                    .font(.caption)
+                    .accessibilityIdentifier("page-load-pending-status")
+                ProxyRetryButton(title: AegisLocalization.string("通过代理打开")) { openAddressViaProxy(tab, pending) }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .disabled(addressProxyPreparing)
+            }
+            .padding(12)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("page-load-pending-proxy")
+        }
+    }
+}
+
 private struct ActiveTabView: View {
     @ObservedObject var tab: BrowserTab
     @Binding var address: String
     let addressIsEditing: Bool
     let onFind: () -> Void
     let onScroll: (Bool) -> Void
+    @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
 
     @Environment(\.locale) private var localizationLocale
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
-            if let error = tab.loadingError {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("页面加载失败：\(error)").font(.caption)
-                    Button("重试") { tab.reload() }
-                }.padding(12).foregroundStyle(.red).accessibilityIdentifier("page-load-error")
-            }
+            PageLoadFailureBanner(
+                tab: tab,
+                autoRecoveryOn: hostStores.snapshot(for: tab).autoRecoveryEnabled,
+                autoRecoveryLine: hostStores.snapshot(for: tab).autoRecoveryLine,
+                setAutoRecovery: { failed, enabled in
+                    _ = hostStores.setAutoRecoveryEnabled(enabled, for: failed)
+                },
+                addressProxyPreparing: hostStores.isPreparingAddressProxy(tab: tab),
+                openAddressViaProxy: { pendingTab, pending in
+                    _ = hostStores.openPendingAddressViaProxy(tab: pendingTab, pending: pending)
+                },
+                proxyRetry: { failed in
+                    _ = hostStores.retryViaProxy(tab: failed)
+                }
+            )
             if let decision = tab.lastPolicyIntervention {
                 NavigationPolicyBanner(decision: decision) {
                     tab.dismissPolicyIntervention()
@@ -431,12 +555,12 @@ private struct ActiveTabView: View {
                         .font(.caption).padding(8).accessibilityIdentifier("fingerprint-observation")
                 }
                 BrowserWebView(webView: tab.webView, onFind: onFind, onScroll: onScroll)
-                    .id(ObjectIdentifier(tab.webView))
+                    .id("\(tab.webViewGeneration)-\(ObjectIdentifier(tab.webView))")
                     .accessibilityIdentifier("browser-webview")
             }
         }
-        .onChange(of: tab.url) { _, url in
-            if !addressIsEditing { address = url?.absoluteString ?? address }
+        .onChange(of: tab.addressBarURL) { _, url in
+            if !addressIsEditing, let url { address = url.absoluteString }
         }
     }
 }

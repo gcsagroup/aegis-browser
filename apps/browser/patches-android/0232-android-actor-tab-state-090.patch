@@ -1,4 +1,4 @@
-From c1c5613fb95fafa5639583b4ee1a67abcec38ad4 Mon Sep 17 00:00:00 2001
+From 6d0db167923237ead89b0303c5b79dff3b3a9ee9 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 19:43:44 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Android=20=E9=A1=B5?=
@@ -9,15 +9,12 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/android/tab_features.cc             | 5 +++--
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- 2 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/android/tab_features.cc b/chrome/browser/android/tab_features.cc
-index 6d1dd58cd907c114305a880f0c9a97c569ed7284..e808ca7164876d4fa172734346d43a2d131ee7fe 100644
+index 6f10b82e8bcdd16aff8e79ab83f6d34b87b6e65c..d4524f1d7a06aa0df95679074811d732075c1cd5 100644
 --- a/chrome/browser/android/tab_features.cc
 +++ b/chrome/browser/android/tab_features.cc
-@@ -359,7 +359,9 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+@@ -351,7 +351,9 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
      }
    }
  
@@ -28,7 +25,7 @@ index 6d1dd58cd907c114305a880f0c9a97c569ed7284..e808ca7164876d4fa172734346d43a2d
      actor_tab_data_ =
          GetUserDataFactory().CreateInstance<actor::ActorTabData>(*tab, tab);
      actor_surface_tab_helper_ =
-@@ -367,7 +369,6 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+@@ -359,7 +361,6 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
                                                                            *tab);
    }
  

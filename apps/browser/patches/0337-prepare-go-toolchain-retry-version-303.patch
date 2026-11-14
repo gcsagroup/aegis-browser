@@ -1,8 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 74fa1a5bd08934c4b5b60024ee5b1b6cc71bee80 Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Mon, 26 Oct 2026 16:32:00 +0800
 Subject: [PATCH] 为恢复官方Go工具链后的原生重试递增至303
-
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h

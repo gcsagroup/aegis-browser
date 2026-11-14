@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFileSync} from 'node:fs';
+import {readFileSync, mkdtempSync, rmSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {parse} from 'yaml';
 
 const sha = 'a'.repeat(40);
@@ -12,11 +15,62 @@ const load = async () => {
   const {iosReleasePreflight: preflight} = await import('../ios-release-preflight.mjs');
   return {iosReleasePreflight: (source, options) => preflight(source, {authorize: async () => true, ...options})};
 };
+
+test('private Beta inputs stay in the protected manual package step', () => {
+  const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const job = workflow.jobs['ios-package'];
+  assert.equal(job.environment, 'aegis-ios-signing');
+  const step = job.steps.find(item => item.id === 'package');
+  for (const name of ['AEGIS_IOS_TEST_NODE_BASE64', 'AEGIS_IOS_TEST_SUBSCRIPTION_BASE64']) {
+    const expression = step.env[name];
+    assert(expression.includes("outputs.profile == 'beta'"));
+    assert(expression.includes("outputs.signing_mode == 'manual'"));
+    assert(expression.includes("outputs.private_beta == 'true'"));
+    assert(expression.endsWith("|| '' }}"));
+    assert(!JSON.stringify({...job, steps: job.steps.filter(item => item !== step)}).includes(name));
+    for (const [id, other] of Object.entries(workflow.jobs)) {
+      if (id !== 'ios-package') assert(!JSON.stringify(other).includes(name));
+    }
+  }
+});
+
+test('archive gets only non-secret settings from the existing environment', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const archive = jobs['ios-archive'];
+  assert.equal(archive.environment, undefined);
+  assert(!JSON.stringify(archive).includes('secrets.'));
+  assert(archive.needs.includes('archive-settings'));
+  assert.equal(archive.outputs.manifest_sha256, '${{ steps.archive.outputs.manifest_sha256 }}');
+  const build = archive.steps.find(step => step.id === 'archive');
+  assert(build.run.includes('--github-output "$GITHUB_OUTPUT"'));
+  assert.equal(jobs['ios-package'].steps.find(step => step.id === 'package').env.AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256,
+    '${{ needs.ios-archive.outputs.manifest_sha256 }}');
+  const settings = jobs['archive-settings'];
+  assert.equal(settings.environment, 'aegis-ios-signing');
+  assert(!JSON.stringify(settings).includes('actions/checkout'));
+  assert(!JSON.stringify(settings).includes('secrets.'));
+  const code = settings.steps[0].run.replace(/^python3 - <<'PY'\n/u, '').replace(/\nPY\n?$/u, '');
+  const temp = mkdtempSync(join(tmpdir(), 'aegis-settings-'));
+  try {
+    const output = join(temp, 'settings');
+    const env = {...process.env, TEAM: 'ABCDEFGHIJ', FIREBASE_DEV: 'YWJj', FIREBASE_PROD: '', GITHUB_OUTPUT: output};
+    execFileSync('python3', ['-c', code], {env});
+    assert.equal(readFileSync(output, 'utf8'), 'team=ABCDEFGHIJ\nfirebase_dev=YWJj\nfirebase_prod=\n');
+    assert.throws(() => execFileSync('python3', ['-c', code], {env: {...env, FIREBASE_DEV: 'YWJj\nrogue=secret'}, stdio: 'pipe'}));
+    assert(!readFileSync(output, 'utf8').includes('rogue'));
+  } finally {
+    rmSync(temp, {recursive: true, force: true});
+  }
+});
 function apiFixture({moved = false, parent = repository, pending = false} = {}) {
   let reads = 0;
   return async (repo, path) => {
     if (path === '') return repo === repository ? {id: 1348409663, default_branch: 'main'} : {id: 1363949860, fork: true, parent: {full_name: parent}};
-    if (path === '/git/ref/heads/main') return {object: {sha: moved && ++reads > 1 ? 'b'.repeat(40) : sha}};
+    if (path.startsWith('/git/ref/heads/')) {
+      const name = path.slice('/git/ref/heads/'.length);
+      if (name === 'main') return {object: {sha: moved && ++reads > 1 ? 'b'.repeat(40) : sha}};
+      return {object: {sha: 'c'.repeat(40)}};
+    }
     if (path.startsWith('/commits/')) return {sha: moved ? 'b'.repeat(40) : sha};
     const run = {id: 12, run_attempt: 2, head_sha: sha, head_branch: 'codex/ios-release-upstream-20261030',
       repository: {full_name: repo}, event: 'push', path: '.github/workflows/ios-release-validation.yml', status: pending ? 'in_progress' : 'completed', conclusion: pending ? null : 'success'};
@@ -29,7 +83,7 @@ function apiFixture({moved = false, parent = repository, pending = false} = {}) 
 test('upstream admission rechecks main after quality and rejects moving main or tag', async () => {
   const {iosReleasePreflight} = await load();
   assert.equal((await iosReleasePreflight(sha, {environment, api: apiFixture(), quality: async () => true})).admission, 'upstream_quality_verified');
-  await assert.rejects(iosReleasePreflight(sha, {environment, api: apiFixture({moved: true}), quality: async () => true}), /main|changed/u);
+  await assert.rejects(iosReleasePreflight(sha, {environment, api: apiFixture({moved: true}), quality: async () => true}), /release line|changed/u);
   await assert.rejects(iosReleasePreflight(sha, {environment: {...environment, RELEASE_DESTINATION: 'github-draft', RELEASE_TAG: 'candidate/ios/1.0.0-alpha.6'}, api: apiFixture({moved: true}), quality: async () => true}), /tag|main/u);
 });
 test('disabled path and wrong repository identity cannot reach quality', async () => {
@@ -82,6 +136,22 @@ test('iOS workflow credentials and permissions stay in their protected stage', (
   }
 });
 
+test('unsigned archive isolates fork PRs and tolerates missing runner labels', () => {
+  const workflow = parse(readFileSync('.github/workflows/ios-release-validation.yml', 'utf8'));
+  const route = workflow.jobs['ios-archive']['runs-on'];
+  const configured = route.indexOf("vars.AEGIS_IOS_RUNNER_LABEL != ''");
+  const trusted = route.indexOf("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository");
+  const selfHosted = route.indexOf('fromJSON(');
+  assert(configured >= 0 && configured < selfHosted, 'empty labels must select the hosted fallback');
+  assert(trusted >= 0 && trusted < selfHosted, 'fork PRs must select the hosted fallback');
+  assert(route.endsWith("|| 'macos-26' }}"), 'unsigned validation uses the standard hosted Mac fallback');
+  assert(!workflow.jobs['ios-archive'].environment, 'unsigned validation must not require a protected signing environment');
+  const goSetup = workflow.jobs['ios-archive'].steps.find(s => String(s.uses ?? '').startsWith('actions/setup-go@'));
+  assert.equal(goSetup?.with?.['go-version'], '1.27.3', 'hosted archive must install lock Go before prepare');
+  assert.equal(goSetup?.with?.cache, false, 'archive Go install must not rely on module cache restoration');
+  const prepare = workflow.jobs['ios-archive'].steps.find(s => s.name === 'Prepare locked EmbeddedCore XCFramework');
+  assert(String(prepare?.run ?? '').includes('expected go1.27.3'), 'prepare must refuse a mismatched Go toolchain');
+});
 test('every protected delivery route depends on Admin admission and normalized operation', () => {
   const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   for (const id of ['ios-package', 'ios-draft', 'import', 'store']) {
@@ -121,7 +191,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   const simple = workflow('ios-delivery');
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode']);
+  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'private_beta']);
   assert.equal(inputs.signing_mode.default, 'cloud');
   assert.deepEqual(inputs.signing_mode.options, ['cloud', 'manual']);
   assert.equal(simple.name, 'iOS Delivery · Simple');
@@ -141,7 +211,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   assert.equal(inputs.version.required, true);
   assert.equal(inputs.build.required, true);
   assert(!inputs.source && !inputs.advanced);
-  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'package_entrypoint', 'groups', 'stage_input']);
+  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'private_beta', 'package_entrypoint', 'groups', 'stage_input']);
   assert.deepEqual(Object.keys(full.jobs), ['delivery']);
   assert.equal(full.jobs.delivery.uses, './.github/workflows/ios-delivery.yml');
   assert.equal(full.jobs.delivery.with.delivery_mode, 'full');
@@ -157,7 +227,9 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   for (const id of ['ios-package', 'store']) {
     const steps = simple.jobs[id].steps;
     const emit = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py receipt');
-    assert(emit > 0 && !steps[emit].if);
+    assert(emit > 0);
+    assert.equal(steps[emit].if, id === 'ios-package'
+      ? "${{ steps.package.outputs.private_beta == 'false' }}" : undefined);
   }
 });
 
@@ -182,6 +254,36 @@ test('version/build-only status has no artifact, signing or mutation route', () 
   for (const id of ['import', 'store']) assert(doc.jobs[id].if.includes("!= 'status-query'"));
 });
 
+test('maintenance release lines package from their own tip, not current main', async () => {
+  const lines = JSON.parse(readFileSync('scripts/ci/ios-release-lines.json', 'utf8')).lines;
+  const pushed = parse(readFileSync('.github/workflows/quality.yml', 'utf8')).on.push.branches;
+  assert.deepEqual(lines.map(line => line.name), ['main', 'releases/ios/1.0']);
+  for (const line of lines) assert.ok(pushed.includes(line.name));
+  const patchSha = 'd'.repeat(40);
+  const {iosReleasePreflight} = await load();
+  let qualityBranch;
+  const api = async (repo, path) => {
+    if (path === '') return {id: 1348409663, default_branch: 'main'};
+    if (path === '/git/ref/heads/main') return {object: {sha}};
+    if (path === '/git/ref/heads/releases/ios/1.0') return {object: {sha: patchSha}};
+    throw new Error(`Unexpected fixture endpoint ${path}`);
+  };
+  const admitted = await iosReleasePreflight(patchSha, {
+    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
+    api, quality: async (_repo, branch) => { qualityBranch = branch; return true; },
+  });
+  assert.equal(admitted.line, 'releases/ios/1.0');
+  assert.equal(qualityBranch, 'releases/ios/1.0');
+  await assert.rejects(iosReleasePreflight(sha, {
+    environment: {...environment, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
+    api, quality: async () => true,
+  }), /release line/u);
+  await assert.rejects(iosReleasePreflight(patchSha, {
+    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/foreign'},
+    api, quality: async () => { throw new Error('credential boundary crossed'); },
+  }), /dispatch/u);
+});
+
 test('candidate admission bounds version components and rejects trailing data before tag lookup', async () => {
   const {iosReleasePreflight} = await load();
   const run = async tag => iosReleasePreflight(sha, {environment: {...environment, RELEASE_DESTINATION: 'github-draft', RELEASE_TAG: tag}, api: apiFixture(), quality: async () => true});
@@ -193,7 +295,7 @@ test('candidate admission bounds version components and rejects trailing data be
   }
 });
 
-test('new-package upload is bound to the successful same-run producer and never loads ASC secrets while signing', () => {
+test('public package upload is bound to the successful same-run producer', () => {
   const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const packageJob = doc.jobs['ios-package'];
   assert(packageJob.needs.includes('check-unused'));
@@ -205,8 +307,8 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert.equal(fresh.env.RELEASE_QUERY_MODE, 'unused');
   assert.equal(fresh.environment, 'aegis-ios-store');
   const upload = doc.jobs['upload-new'];
-  assert.deepEqual(upload.needs, ['admission', 'ios-package']);
-  assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' }}");
+  assert.deepEqual(upload.needs, ['admission', 'ios-package', 'seal-package']);
+  assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' && needs.ios-package.outputs.private_beta == 'false' }}");
   assert.equal(upload.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
   assert.equal(upload.env.PACKAGE_RUN_ID, '${{ github.run_id }}');
   assert.equal(upload.env.IMPORT_KIND, 'new-upload');
@@ -216,13 +318,58 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert.equal(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py receipt').if, undefined);
 });
 
+test('private Beta crosses the store gate without publishing its package', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const steps = jobs['ios-package'].steps;
+  const pack = steps.findIndex(s => s.id === 'package');
+  const cleanup = steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
+  const retain = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py retain-private-beta');
+  assert(pack >= 0 && pack < cleanup && cleanup < retain);
+  assert(!steps.some(s => s.run === 'python3 scripts/release/ios-action.py private-beta-upload'));
+  const store = jobs['private-beta-store'];
+  assert.equal(store.environment, 'aegis-ios-store');
+  assert(store.needs.includes('ios-package'));
+  assert(store.if.includes("needs.ios-package.result == 'success'"));
+  assert(store.if.includes("needs.ios-package.outputs.private_beta == 'true'"));
+  assert.equal(store.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
+  const restore = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py restore-private-beta');
+  const upload = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-upload');
+  const quota = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-preflight');
+  assert(restore >= 0 && restore < quota && quota < upload);
+  assert.equal(store.steps[quota].env, undefined);
+  const authorize = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py require-private-beta-preflight');
+  assert(quota < authorize && authorize < upload);
+  assert.equal(store.steps[authorize].env.AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256, '${{ steps.quota.outputs.manifest_sha256 }}');
+  assert(!Object.keys(store.steps[authorize].env).some(key => key.startsWith('AEGIS_ASC_')));
+  assert.equal(store.steps[upload].if, undefined);
+  assert.equal(store.steps[upload].env.AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256, '${{ steps.quota.outputs.manifest_sha256 }}');
+  assert.equal(store.steps[upload].env.AEGIS_ASC_KEY_BASE64, '${{ secrets.AEGIS_ASC_KEY_BASE64 }}');
+  assert(!Object.keys(store.steps[upload].env).some(key => key.includes('TEST_NODE') || key.includes('DISTRIBUTION')));
+  const archive = steps.find(s => s.with?.path === '.artifacts/ios-delivery/package.zip');
+  assert.equal(archive.if, "${{ steps.package.outputs.private_beta == 'false' }}");
+  const uploads = store.steps.filter(s => s.uses?.startsWith('actions/upload-artifact@'));
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].with.path, '${{ steps.private-evidence.outputs.receipt_path }}');
+  assert(store.steps.some(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-handoff'));
+  const cancelledRestoreCleanup = store.steps.find(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-restore');
+  assert.equal(cancelledRestoreCleanup.if, "${{ always() && steps.restore.outcome != 'skipped' }}");
+  assert.equal(cancelledRestoreCleanup.id, 'restore-cleanup');
+  assert(!store.steps.some(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta'));
+  assert(store.steps.find(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-handoff').if.includes("steps.restore-cleanup.outcome == 'success'"));
+  for (const job of ['seal-package', 'upload-new', 'ios-draft']) {
+    assert(jobs[job].if.includes("needs.ios-package.outputs.private_beta == 'false'"));
+  }
+});
+
 test('Full explicitly forwards named secrets while protected jobs resolve environment values', () => {
   const simple = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const full = parse(readFileSync('.github/workflows/ios-delivery-full.yml', 'utf8'));
   const expected = ['AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64'];
   const signing = ['AEGIS_IOS_DISTRIBUTION_P12_BASE64', 'AEGIS_IOS_DISTRIBUTION_P12_PASSWORD',
     'AEGIS_IOS_APP_PROFILE_BASE64', 'AEGIS_IOS_SAFARI_PROFILE_BASE64', 'AEGIS_IOS_SHARE_PROFILE_BASE64'];
-  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), [...expected, ...signing]);
+  const privateBeta = ['AEGIS_IOS_TEST_NODE_BASE64', 'AEGIS_IOS_TEST_SUBSCRIPTION_BASE64'];
+  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), [...privateBeta, ...expected, ...signing]);
+  for (const name of privateBeta) assert.equal(simple.on.workflow_call.secrets[name].required, false);
   assert.deepEqual(Object.keys(full.jobs.delivery.secrets), [...expected, ...signing]);
   for (const name of expected) {
     assert.equal(simple.on.workflow_call.secrets[name].required, true);
@@ -241,15 +388,19 @@ test('Full explicitly forwards named secrets while protected jobs resolve enviro
 test('hosted signing loads only environment secrets after source admission and cleans up before artifact upload', () => {
   const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const job = doc.jobs['ios-package'];
-  assert.equal(job['runs-on'], 'macos-26');
+  assert.equal(job['runs-on'], "${{ fromJSON(format('[\"self-hosted\",\"macOS\",\"ARM64\",\"{0}\"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}");
   assert.equal(job.environment, 'aegis-ios-signing');
   assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
+  const ruby = job.steps.findIndex(s => s.uses === './.github/actions/ensure-ios-ruby');
+  assert(ruby >= 0);
+  assert(!job.steps.some(s => s.uses?.startsWith('ruby/setup-ruby@')),
+    'ios-package must not call ruby/setup-ruby directly; it hard-codes /Users/runner on macOS');
   const setup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py setup');
   const source = job.steps.findIndex(s => s.run?.includes('ios-release-preflight.mjs'));
   const pack = job.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py package');
   const cleanup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
   const upload = job.steps.findIndex(s => s.uses?.startsWith('actions/upload-artifact@'));
-  assert(source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
+  assert(ruby < source && source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
   assert.equal(job.steps[cleanup].if, "${{ always() && needs.admission.outputs.signing_mode == 'manual' }}");
   assert.equal(Object.keys(job.steps[setup].env).length, 5);
   assert(Object.values(job.steps[setup].env).every(v => v.startsWith('${{ secrets.AEGIS_IOS_')));

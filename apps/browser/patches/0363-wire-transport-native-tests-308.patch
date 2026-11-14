@@ -1,8 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 82b6f8e261ba637a67afe081548bef884a29a9e0 Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Mon, 09 Nov 2026 16:20:10 +0800
 Subject: [PATCH] 接通双跳TLS原生回归入口并递增308
-
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

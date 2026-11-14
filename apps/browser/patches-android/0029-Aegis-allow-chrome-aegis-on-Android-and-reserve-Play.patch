@@ -1,4 +1,4 @@
-From 9af5b5ad2b2df44f88101104dc53746c3187dd7a Mon Sep 17 00:00:00 2001
+From 93221818e2f32d691ede99802c9bdb2fdadab32b Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:56:53 +0800
 Subject: [PATCH] Aegis: allow chrome://aegis on Android and reserve Play
@@ -7,12 +7,6 @@ Subject: [PATCH] Aegis: allow chrome://aegis on Android and reserve Play
 Ship the settings WebUI in the Android pak, skip desktop tab-strip
 lookups, and show GCSA-aegis instead of Chromium on the launcher.
 ---
- .../values/channel_constants.xml                  | 15 +++++++--------
- chrome/browser/resources/BUILD.gn                 |  4 ++--
- chrome/browser/resources/aegis/BUILD.gn           |  2 --
- chrome/browser/ui/webui/aegis/BUILD.gn            |  8 ++++++--
- chrome/browser/ui/webui/aegis/aegis_ui_handler.cc |  9 +++++++++
- 5 files changed, 24 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/android/java/res_chromium_base/values/channel_constants.xml b/chrome/android/java/res_chromium_base/values/channel_constants.xml
 index cc1f2a30cb3c543044ad3bd603570fe2b7333176..d5270195b1aa9b26c478dec02fa5ad3ed8f89a7d 100644
@@ -44,7 +38,7 @@ diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.
 index dd75dcbb2ce723869d8502a438cc0588d9f59f9e..7c4d2c5fc3ffab24d8eb6341db11b0efe803fe9e 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
-@@ -425,6 +425,7 @@ group("dev_ui_resources") {
+@@ -437,6 +437,7 @@ group("dev_ui_resources") {
      "subresource_filter:resources",
      "suggest_internals:resources",
      "usb_internals:resources",
@@ -52,7 +46,7 @@ index dd75dcbb2ce723869d8502a438cc0588d9f59f9e..7c4d2c5fc3ffab24d8eb6341db11b0ef
      "//components/actor/core/internals/resources",
      "//components/autofill/core/browser/autofill_and_password_manager_internals:resources",
      "//components/commerce/core/internals/resources",
-@@ -480,7 +481,6 @@ group("dev_ui_resources") {
+@@ -492,7 +493,6 @@ group("dev_ui_resources") {
        "user_education_internals:resources",
        "webnn_internals:resources",
        "webui_js_error:resources",
@@ -60,7 +54,7 @@ index dd75dcbb2ce723869d8502a438cc0588d9f59f9e..7c4d2c5fc3ffab24d8eb6341db11b0ef
      ]
    }
  
-@@ -519,6 +519,7 @@ repack("dev_ui_paks") {
+@@ -531,6 +531,7 @@ repack("dev_ui_paks") {
      "$root_gen_dir/chrome/subresource_filter_internals_resources.pak",
      "$root_gen_dir/chrome/suggest_internals_resources.pak",
      "$root_gen_dir/chrome/usb_internals_resources.pak",
@@ -68,7 +62,7 @@ index dd75dcbb2ce723869d8502a438cc0588d9f59f9e..7c4d2c5fc3ffab24d8eb6341db11b0ef
      "$root_gen_dir/components/actor_internals_resources.pak",
      "$root_gen_dir/components/autofill_and_password_manager_internals_resources.pak",
      "$root_gen_dir/components/commerce_internals_resources.pak",
-@@ -573,7 +574,6 @@ repack("dev_ui_paks") {
+@@ -585,7 +586,6 @@ repack("dev_ui_paks") {
        "$root_gen_dir/chrome/page_action_internals_resources.pak",
        "$root_gen_dir/chrome/user_education_internals_resources.pak",
        "$root_gen_dir/chrome/webui_js_error_resources.pak",
@@ -151,6 +145,3 @@ index 04a45b1a418902b3196a4c0f9d42cf64e889394c..1951137b669b429bb0b9191adeaea042
  }
  
  base::DictValue SummarizeToDict(const aegis::SummarizeResult& result) {
--- 
-2.52.0
-

@@ -1,8 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From e05c0f56982ef274255cb47c5eec8212cf605fbb Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Mon, 9 Nov 2026 00:35:00 +0800
 Subject: [PATCH] 适配Chromium157的Actor操作接口并递增307
-
 ---
 
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc

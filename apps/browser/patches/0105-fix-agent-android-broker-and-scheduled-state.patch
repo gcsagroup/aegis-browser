@@ -1,4 +1,4 @@
-From a5538864bc2d6e9222b86e5e5c5aad9eb957596d Mon Sep 17 00:00:00 2001
+From 6ee6cba501452dd72ae733abff71756ddb24d634 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 15:06:02 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E4=BF=AE=E5=A4=8D=20Android=20?=
@@ -10,20 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/agent/aegis_agent_service.cc  |  86 ++++++++++------
- .../aegis/agent/aegis_agent_service_unittest.cc    |  54 ++++++++++
- chrome/browser/aegis/agent/aegis_browser_tools.cc  |  10 +-
- chrome/browser/aegis/agent/agent_core_unittest.cc  |  38 +++++++
- .../browser/aegis/agent/agent_monitor_scheduler.h  |   4 +
- .../browser/aegis/agent/agent_result_verifier.cc   |  19 ++--
- .../chrome_browser_interface_binders_webui.cc      |   4 +
- .../chrome_browser_interface_binders_webui_parts.h |   2 +
- ...rowser_interface_binders_webui_parts_android.cc |   9 ++
- chrome/browser/resources/aegis_agent/agent.ts      | 113 +++++++++++++++++----
- .../browser/ui/webui/aegis_agent/aegis_agent.mojom |   1 +
- .../webui/aegis_agent/aegis_agent_page_handler.cc  |   1 +
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  46 +++++++++
- 13 files changed, 326 insertions(+), 61 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index 8baa30f81180007d8163e46574d54d93fddff6f8..5d4815fb5e808e27237889815ceba084ac8c2ff5 100644

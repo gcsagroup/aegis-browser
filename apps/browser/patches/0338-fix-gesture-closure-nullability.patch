@@ -1,4 +1,4 @@
-From 9643c3ad6b3376895407d19ce231124f8cbe86df Mon Sep 17 00:00:00 2001
+From f6f0f4d39c69db5579ddcc653b1e48d1b5f3da5e Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 15:55:30 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E4=BF=9D=E7=95=99=E6=89=8B=E5=8A=BF?=
@@ -8,10 +8,7 @@ Subject: [PATCH] =?UTF-8?q?fix:=20=E4=BF=9D=E7=95=99=E6=89=8B=E5=8A=BF?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- .../overlay/chrome/browser/resources/aegis/gestures.ts       | 5 +++--
- 1 file changed, 3 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
 index 309b4d946913ea566588c381fb463dcb6dd5cd9b..84104256672477570036e1a237f8f14c4c106911 100644
@@ -29,6 +26,3 @@ index 309b4d946913ea566588c381fb463dcb6dd5cd9b..84104256672477570036e1a237f8f14c
  let saved: Settings|null = null, defaults: Settings|null = null, actions: Action[] = [];
  function savedSettings(): Settings {
    if (!saved) throw Error('手势设置尚未加载');
--- 
-2.52.0
-

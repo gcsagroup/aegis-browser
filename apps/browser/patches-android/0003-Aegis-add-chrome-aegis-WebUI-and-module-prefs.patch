@@ -1,4 +1,4 @@
-From e56d14a99ff47f5a158444e10889aaa98734eb4f Mon Sep 17 00:00:00 2001
+From d96a939d76d458aba754a1ea0abd2d64ef5c11c8 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 17:06:36 +0800
 Subject: [PATCH] Aegis: add chrome://aegis WebUI and module prefs
@@ -6,51 +6,6 @@ Subject: [PATCH] Aegis: add chrome://aegis WebUI and module prefs
 Expose tracker/phish/fingerprint toggles via chrome://aegis, persist
 prefs, and sync tracker blocking to renderers through DynamicParams.
 ---
- chrome/browser/aegis/BUILD.gn                 |  5 ++
- chrome/browser/aegis/aegis_prefs.cc           | 19 +++++
- chrome/browser/aegis/aegis_prefs.h            | 19 +++++
- chrome/browser/aegis/aegis_service.cc         | 56 +++++++++++++-
- chrome/browser/aegis/aegis_service.h          | 12 ++-
- .../browser/chrome_content_browser_client.cc  | 10 ++-
- chrome/browser/prefs/browser_prefs.cc         |  2 +
- chrome/browser/profiles/BUILD.gn              |  1 +
- chrome/browser/profiles/renderer_updater.cc   | 10 ++-
- chrome/browser/profiles/renderer_updater.h    |  1 +
- chrome/browser/resources/BUILD.gn             |  2 +
- chrome/browser/resources/aegis/BUILD.gn       | 19 +++++
- chrome/browser/resources/aegis/aegis.css      | 74 +++++++++++++++++++
- chrome/browser/resources/aegis/aegis.html     | 30 ++++++++
- chrome/browser/resources/aegis/aegis.ts       | 54 ++++++++++++++
- chrome/browser/ui/webui/BUILD.gn              |  1 +
- chrome/browser/ui/webui/aegis/BUILD.gn        | 21 ++++++
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 63 ++++++++++++++++
- chrome/browser/ui/webui/aegis/aegis_ui.h      | 37 ++++++++++
- .../ui/webui/aegis/aegis_ui_handler.cc        | 63 ++++++++++++++++
- .../browser/ui/webui/aegis/aegis_ui_handler.h | 25 +++++++
- .../browser/ui/webui/chrome_web_ui_configs.cc |  2 +
- chrome/common/aegis/BUILD.gn                  |  1 +
- chrome/common/aegis/aegis_net_throttle.cc     | 17 +++--
- chrome/common/aegis/aegis_net_throttle.h      |  9 ++-
- chrome/common/aegis/pref_names.h              | 19 +++++
- chrome/common/renderer_configuration.mojom    |  1 +
- chrome/common/webui_url_constants.cc          |  1 +
- chrome/common/webui_url_constants.h           |  2 +
- .../url_loader_throttle_provider_impl.cc      |  9 ++-
- tools/gritsettings/resource_ids.spec          |  4 +
- ui/webui/resources/tools/build_webui.gni      |  1 +
- 32 files changed, 571 insertions(+), 19 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_prefs.cc
- create mode 100644 chrome/browser/aegis/aegis_prefs.h
- create mode 100644 chrome/browser/resources/aegis/BUILD.gn
- create mode 100644 chrome/browser/resources/aegis/aegis.css
- create mode 100644 chrome/browser/resources/aegis/aegis.html
- create mode 100644 chrome/browser/resources/aegis/aegis.ts
- create mode 100644 chrome/browser/ui/webui/aegis/BUILD.gn
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui.cc
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui.h
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui_handler.h
- create mode 100644 chrome/common/aegis/pref_names.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 7af9ba36640c49a22bc39f73f53cfac7f0860c72..1ef0295be6d24892fddd752b94959d08b16ff45c 100644

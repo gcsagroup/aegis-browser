@@ -1,4 +1,4 @@
-From 179f115ba672602c3bd787f0b824591ba657d8d8 Mon Sep 17 00:00:00 2001
+From 18115a77ca738f91c5aa55036d3cc8b918df0270 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 3 Nov 2026 11:46:56 +0800
 Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Windows=20=E4=BA=A4?=
@@ -7,27 +7,7 @@ Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Windows=20=E4=BA=A4?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/installer/mini_installer/BUILD.gn      |  10 +
- .../mini_installer/aegis_install_ui.cc        | 218 ++++++++++++++++++
- .../mini_installer/aegis_install_ui.h         |  46 ++++
- .../aegis_install_ui_unittest.cc              |  68 ++++++
- .../installer/mini_installer/configuration.cc |  10 +
- .../installer/mini_installer/configuration.h  |   4 +
- .../mini_installer/configuration_test.cc      |  16 ++
- .../mini_installer/mini_installer.cc          |  12 +
- .../mini_installer/mini_installer.rc          |   2 +-
- chrome/installer/setup/BUILD.gn               |   3 +
- chrome/installer/setup/aegis_launch_policy.h  |  20 ++
- .../setup/aegis_launch_policy_unittest.cc     |  25 ++
- chrome/installer/setup/setup_main.cc          |  40 +++-
- 13 files changed, 463 insertions(+), 11 deletions(-)
- create mode 100644 chrome/installer/mini_installer/aegis_install_ui.cc
- create mode 100644 chrome/installer/mini_installer/aegis_install_ui.h
- create mode 100644 chrome/installer/mini_installer/aegis_install_ui_unittest.cc
- create mode 100644 chrome/installer/setup/aegis_launch_policy.h
- create mode 100644 chrome/installer/setup/aegis_launch_policy_unittest.cc
 
 diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
 index df9408bb1666cce96dd4fa716205b446164641de..d64b564ea828fce56168eafaf0ffca001876d615 100644

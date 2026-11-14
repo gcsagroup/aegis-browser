@@ -1,4 +1,4 @@
-From 6d0a9e70e4d59e6fec090b74dc7ddbb746013a88 Mon Sep 17 00:00:00 2001
+From 6cbafb24a8b36e520e1e05255d885bf9410f9a32 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 20:42:59 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E8=AE=BE=E7=BD=AE=E5=86=85?=
@@ -8,14 +8,7 @@ Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E8=AE=BE=E7=BD=AE=E5=86=85?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/browser/resources/aegis/aegis.html                | 2 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc                | 2 ++
- chrome/browser/ui/webui/aegis_agent/reading_workspace.cc | 7 +++++++
- chrome/browser/ui/webui/aegis_agent/reading_workspace.h  | 2 ++
- chrome/browser/ui/webui/help/aegis_github_update.h       | 4 ++--
- 5 files changed, 14 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
 index 1623ee9b5b016f6bc5247b046dbbda5571be1676..024a24d9345d7b4f7f1207d5198dc1afc9302ede 100644

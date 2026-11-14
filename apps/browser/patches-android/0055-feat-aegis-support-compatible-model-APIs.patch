@@ -1,37 +1,9 @@
-From 2d99dacc05ece2b569d1f370005673617e3b3f2b Mon Sep 17 00:00:00 2001
+From 0da42f92476fe41a3a7faea638736b12f2f42b83 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 18:46:48 +0800
 Subject: [PATCH] feat(aegis): support compatible model APIs
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   7 +-
- chrome/browser/aegis/aegis_prefs.cc           |   7 +
- chrome/browser/aegis/aegis_service.cc         | 574 +++++++++++---
- chrome/browser/aegis/aegis_service.h          |  85 +-
- .../browser/aegis/aegis_service_unittest.cc   | 269 +++++++
- chrome/browser/aegis/model_provider_client.cc | 717 +++++++++++++++++
- chrome/browser/aegis/model_provider_client.h  |  89 +++
- .../aegis/model_provider_client_unittest.cc   | 384 +++++++++
- chrome/browser/aegis/ollama_sidecar.cc        | 188 -----
- chrome/browser/aegis/ollama_sidecar.h         |  64 --
- .../browser/aegis/ollama_sidecar_unittest.cc  | 108 ---
- chrome/browser/aegis/summary_policy.cc        |  73 +-
- chrome/browser/aegis/summary_policy.h         |  14 +-
- .../browser/aegis/summary_policy_unittest.cc  | 123 ++-
- chrome/browser/resources/aegis/aegis.css      |  12 +
- chrome/browser/resources/aegis/aegis.html     |  57 +-
- chrome/browser/resources/aegis/aegis.ts       | 734 +++++++++++++++---
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 163 ++--
- .../ui/webui/aegis/aegis_ui_handler.cc        |  90 ++-
- .../browser/ui/webui/aegis/aegis_ui_handler.h |  11 +-
- chrome/common/aegis/pref_names.h              |   6 +
- 21 files changed, 3020 insertions(+), 755 deletions(-)
- create mode 100644 chrome/browser/aegis/model_provider_client.cc
- create mode 100644 chrome/browser/aegis/model_provider_client.h
- create mode 100644 chrome/browser/aegis/model_provider_client_unittest.cc
- delete mode 100644 chrome/browser/aegis/ollama_sidecar.cc
- delete mode 100644 chrome/browser/aegis/ollama_sidecar.h
- delete mode 100644 chrome/browser/aegis/ollama_sidecar_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 39fd2d5b441db464dd56e4b73fff2826cf8ee4d0..8f8c5cbee25d00c87528ada36a2518f528e93c02 100644
@@ -4601,6 +4573,3 @@ index e402c6b71d4623d09a241cb5e8b7076095452731..5a3e39c56783ea48cc148953746da182
  inline constexpr char kOllamaBaseUrl[] = "aegis.ollama_base_url";
  inline constexpr char kOllamaModel[] = "aegis.ollama_model";
  inline constexpr char kAiControlEnabled[] = "aegis.ai_control_enabled";
--- 
-2.52.0
-

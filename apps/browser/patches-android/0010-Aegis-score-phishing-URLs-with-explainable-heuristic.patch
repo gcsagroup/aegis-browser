@@ -1,4 +1,4 @@
-From 5afb74eae91e14cf215c99056545a85381ca039d Mon Sep 17 00:00:00 2001
+From 0a44dd0b2e6f832c50a1811abed342d7730d23cd Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:25:25 +0800
 Subject: [PATCH] Aegis: score phishing URLs with explainable heuristics
@@ -7,18 +7,6 @@ Port packages/core scorePhishingUrl() into C++ so the interstitial
 blocks brand-spoof / suspicious-TLD / punycode hosts, not only seed
 rules, and show reason codes on the warning page.
 ---
- .../aegis/aegis_phish_blocking_page.cc        |  68 +++++++++-
- .../browser/aegis/aegis_phish_blocking_page.h |   8 +-
- .../aegis/aegis_phish_navigation_throttle.cc  |  15 ++-
- .../aegis/aegis_phish_navigation_throttle.h   |   8 +-
- chrome/browser/aegis/aegis_service.cc         |  27 +++-
- chrome/browser/aegis/aegis_service.h          |   6 +-
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/phish_score.cc            | 127 ++++++++++++++++++
- chrome/common/aegis/phish_score.h             |  35 +++++
- 9 files changed, 275 insertions(+), 21 deletions(-)
- create mode 100644 chrome/common/aegis/phish_score.cc
- create mode 100644 chrome/common/aegis/phish_score.h
 
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 index c9f06c47b83eec969976a03193f8bb6071a712f7..73d90e9bea4ce9c5eb1dcde42e289252bc4f4a6e 100644
@@ -524,6 +512,3 @@ index 0000000000000000000000000000000000000000..c4d97a08ac714807e62c8caf941a906a
 +}  // namespace aegis
 +
 +#endif  // CHROME_COMMON_AEGIS_PHISH_SCORE_H_
--- 
-2.52.0
-

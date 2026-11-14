@@ -1,20 +1,9 @@
-From 7103a3e56593742c3e6932b35cc173d2348443da Mon Sep 17 00:00:00 2001
+From 546d776d53865730144de6feb79b6701496153a0 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 19:11:41 +0800
 Subject: [PATCH] feat(aegis): simplify tasks and add scheduled automations
 
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    | 143 ++++++++----
- .../agent/aegis_agent_interactive_uitest.cc   |  59 ++---
- .../aegis/agent/aegis_agent_service.cc        |  41 +++-
- .../browser/resources/aegis_agent/agent.css   | 105 +++++----
- .../browser/resources/aegis_agent/agent.html  |  67 +++---
- chrome/browser/resources/aegis_agent/agent.ts | 220 ++++++++++--------
- .../ui/webui/aegis_agent/aegis_agent.mojom    |   3 +-
- .../aegis_agent/aegis_agent_page_handler.cc   | 150 ++++++------
- .../aegis_agent/aegis_agent_page_handler.h    |  16 +-
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 197 ++++++++++------
- 10 files changed, 597 insertions(+), 404 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index bd55a7abefe4b1f65a98a5034110592fbd4ecf88..07fcf5669ab166e327f48bd360a2c4068c222e1e 100644
@@ -1714,6 +1703,3 @@ index a4f18d61703ddfb00701670416e3da98a6ebd3dd..eef03f0f8e13bc78c9ca999e1271bb7f
    add("timelineBrowserActionFailed",
        "A browser action still failed after retrying",
        "浏览器操作重试后仍未成功", "瀏覽器操作重試後仍未成功");
--- 
-2.52.0
-

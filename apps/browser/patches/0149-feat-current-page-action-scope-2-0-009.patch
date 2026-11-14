@@ -1,4 +1,4 @@
-From 3edf7fc9c9fda494b95244f5fcbcf1cdf25d4905 Mon Sep 17 00:00:00 2001
+From b1e9f06f34be1459d454c57c26f89056edc0406a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 04:29:50 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E9=80=90=E6=AC=A1=E5=AE=A1=E6=89=B9?=
@@ -10,25 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../browser/aegis/agent/aegis_actor_bridge.cc | 55 ++++++++++--
- .../browser/aegis/agent/aegis_actor_bridge.h  |  3 +
- .../aegis/agent/aegis_agent_service.cc        | 17 ++++
- .../browser/aegis/agent/aegis_agent_service.h |  2 +
- .../aegis/agent/agent_core_unittest.cc        | 58 +++++++++++++
- chrome/browser/aegis/agent/agent_planner.cc   | 83 +++++++++++++++++--
- .../aegis/agent/agent_planner_unittest.cc     | 60 ++++++++++++++
- .../aegis/agent/agent_policy_broker.cc        |  3 +
- .../browser/aegis/agent/agent_task_store.cc   | 21 +++--
- .../aegis/agent/agent_task_store_unittest.cc  | 42 ++++++++++
- chrome/browser/aegis/agent/agent_types.cc     | 11 +++
- chrome/browser/aegis/agent/agent_types.h      |  4 +
- chrome/browser/aegis/agent/agent_workflow.cc  | 26 ++++++
- chrome/browser/aegis/agent/agent_workflow.h   |  1 +
- chrome/browser/resources/aegis_agent/agent.ts |  8 +-
- .../ui/webui/aegis_agent/aegis_agent.mojom    |  1 +
- .../aegis_agent/aegis_agent_page_handler.cc   | 11 ++-
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- 18 files changed, 382 insertions(+), 28 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 index 2203c3f880081838275f8ae555e6da7b9f02a257..6dccd20f88cb129a7255534d780fefff2e0e609d 100644
@@ -814,6 +795,3 @@ index a7b48f251d614df3bc391aca3a7dbcb17eecfa30..27d131ffca3519353ce3bae89e1b29bc
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

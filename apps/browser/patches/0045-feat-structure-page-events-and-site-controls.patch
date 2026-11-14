@@ -1,47 +1,9 @@
-From e7a7fcda6054d7ce5e99aeb8c1f5d49a5340e762 Mon Sep 17 00:00:00 2001
+From 4b9d686c119bbcd8a73426c2eb686069d55aaba2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 20:12:31 +0800
 Subject: [PATCH] feat(aegis): structure page events and site controls
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   3 +
- chrome/browser/aegis/aegis_bounce_observer.cc |   3 +
- chrome/browser/aegis/aegis_cookie_janitor.cc  |   3 +
- ...aegis_link_sanitize_navigation_throttle.cc |  32 +-
- chrome/browser/aegis/aegis_prefs.cc           |   5 +-
- chrome/browser/aegis/aegis_service.cc         | 367 +++++++++++++-----
- chrome/browser/aegis/aegis_service.h          | 110 ++++--
- chrome/browser/aegis/privacy_event_store.cc   | 113 ++++++
- chrome/browser/aegis/privacy_event_store.h    |  59 +++
- .../aegis/privacy_event_store_unittest.cc     |  76 ++++
- .../browser/chrome_content_browser_client.cc  |  26 +-
- chrome/browser/profiles/renderer_updater.cc   |  29 +-
- chrome/browser/profiles/renderer_updater.h    |   6 +-
- chrome/browser/resources/aegis/aegis.ts       |  39 +-
- .../ui/webui/aegis/aegis_ui_handler.cc        |  84 ++--
- .../browser/ui/webui/aegis/aegis_ui_handler.h |  10 +-
- chrome/common/aegis/BUILD.gn                  |   3 +
- chrome/common/aegis/aegis_block_reporter.cc   |  21 +-
- chrome/common/aegis/aegis_block_reporter.h    |  30 +-
- .../aegis/aegis_block_reporter_unittest.cc    |  55 ++-
- chrome/common/aegis/aegis_net_throttle.cc     |  71 +++-
- chrome/common/aegis/aegis_net_throttle.h      |  22 +-
- .../aegis/aegis_net_throttle_unittest.cc      |  22 ++
- chrome/common/aegis/pref_names.h              |   2 +
- chrome/common/aegis/site_control.cc           |  98 +++++
- chrome/common/aegis/site_control.h            |  30 ++
- chrome/common/aegis/site_control_unittest.cc  |  31 ++
- chrome/common/renderer_configuration.mojom    |  10 +-
- .../renderer/chrome_render_thread_observer.cc |  37 +-
- .../renderer/chrome_render_thread_observer.h  |  17 +-
- .../url_loader_throttle_provider_impl.cc      |  12 +-
- 31 files changed, 1138 insertions(+), 288 deletions(-)
- create mode 100644 chrome/browser/aegis/privacy_event_store.cc
- create mode 100644 chrome/browser/aegis/privacy_event_store.h
- create mode 100644 chrome/browser/aegis/privacy_event_store_unittest.cc
- create mode 100644 chrome/common/aegis/site_control.cc
- create mode 100644 chrome/common/aegis/site_control.h
- create mode 100644 chrome/common/aegis/site_control_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 055c8dc00d15cb50a1c14306831cef221979bd3d..2951ccc0e77aee858e6c7a02ed79800a9ba753ea 100644

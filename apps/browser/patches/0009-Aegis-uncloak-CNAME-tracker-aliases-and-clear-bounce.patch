@@ -1,4 +1,4 @@
-From 2d3e78a5c022564e058bf70f88674a01d40c5be1 Mon Sep 17 00:00:00 2001
+From 4cd8ec791c563c63251ab79fd28bbe4b26506bab Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:16:20 +0800
 Subject: [PATCH] Aegis: uncloak CNAME tracker aliases and clear bounce-tracker
@@ -8,34 +8,6 @@ Block first-party subresources whose DNS CNAME chain points at a known
 tracker, and immediately delete cookies on BTM bounce hops that match
 Aegis tracker rules instead of waiting for the default grace period.
 ---
- chrome/browser/aegis/BUILD.gn                 |   2 +
- chrome/browser/aegis/aegis_bounce_observer.cc | 106 ++++++++++++++++++
- chrome/browser/aegis/aegis_bounce_observer.h  |  49 ++++++++
- chrome/browser/aegis/aegis_prefs.cc           |   2 +
- chrome/browser/aegis/aegis_service.cc         |  43 ++++++-
- chrome/browser/aegis/aegis_service.h          |   4 +
- .../browser/chrome_content_browser_client.cc  |  14 ++-
- chrome/browser/profiles/renderer_updater.cc   |   8 +-
- chrome/browser/profiles/renderer_updater.h    |   1 +
- chrome/browser/resources/aegis/aegis.html     |   8 ++
- chrome/browser/resources/aegis/aegis.ts       |  12 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  10 ++
- .../ui/webui/aegis/aegis_ui_handler.cc        |   6 +
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/aegis_net_throttle.cc     |  64 +++++++++--
- chrome/common/aegis/aegis_net_throttle.h      |  25 +++--
- chrome/common/aegis/cname_uncloak.cc          |  93 +++++++++++++++
- chrome/common/aegis/cname_uncloak.h           |  50 +++++++++
- chrome/common/aegis/features.cc               |   2 +
- chrome/common/aegis/features.h                |   2 +
- chrome/common/aegis/pref_names.h              |   3 +
- chrome/common/renderer_configuration.mojom    |   1 +
- .../url_loader_throttle_provider_impl.cc      |   6 +-
- 23 files changed, 490 insertions(+), 23 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_bounce_observer.cc
- create mode 100644 chrome/browser/aegis/aegis_bounce_observer.h
- create mode 100644 chrome/common/aegis/cname_uncloak.cc
- create mode 100644 chrome/common/aegis/cname_uncloak.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 77140ce2db2b1d81867c70894590ae4569195d7c..c18d4021e0140a39c39a30110eaba69fcf046d77 100644

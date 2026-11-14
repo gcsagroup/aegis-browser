@@ -1,4 +1,4 @@
-From ca06047e6d0eaaf0b0ccee4924fc5a1d46361524 Mon Sep 17 00:00:00 2001
+From 8675ee5a07c641fb5a1333dda4431ec96bf9657a Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 29 Sep 2026 19:20:01 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=89=8B=E6=9C=BA=E4=BF=9D?=
@@ -10,37 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../values/channel_constants.xml              |   8 +-
- .../about_settings/AboutChromeSettings.java   |   8 +
- ...ion_permission_rationale_dialog_header.xml | 162 +++++++-----------
- ...ion_permission_rationale_dialog_header.xml | 162 +++++++-----------
- chrome/browser/resources/aegis/BUILD.gn       |   1 +
- chrome/browser/resources/aegis/aegis.css      |  35 ++++
- chrome/browser/resources/aegis/aegis.html     |   8 +-
- .../browser/resources/aegis/product_logo.svg  |  27 +++
- .../browser/resources/aegis_agent/agent.css   |  16 ++
- .../browser/resources/aegis_agent/agent.html  |   1 +
- chrome/browser/resources/aegis_agent/agent.ts |   1 +
- .../java/res/drawable/chrome_sync_logo.xml    | 127 +++++++-------
- .../strings/android_chrome_strings.grd        |  10 +-
- .../android_chrome_strings_zh-CN.xtb          |   4 +
- .../android_chrome_strings_zh-TW.xtb          |   4 +
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |   5 +
- .../ui/webui/help/aegis_github_update.h       |   4 +-
- chrome/browser/ui/webui/version/version_ui.cc |   3 +
- .../drawable-hdpi/fre_product_logo.png        | Bin 3912 -> 9241 bytes
- .../drawable-mdpi/fre_product_logo.png        | Bin 2490 -> 4789 bytes
- .../drawable-xhdpi/fre_product_logo.png       | Bin 5151 -> 14656 bytes
- .../drawable-xxhdpi/fre_product_logo.png      | Bin 7720 -> 28006 bytes
- .../drawable-xxxhdpi/fre_product_logo.png     | Bin 10740 -> 45244 bytes
- components/webui/version/resources/BUILD.gn   |   1 +
- .../webui/version/resources/about_version.css |   4 +
- .../version/resources/about_version.html      |  23 +--
- .../resources/about_version_mobile.css        |  12 ++
- .../webui/version/resources/product_logo.svg  |  27 +++
- 28 files changed, 362 insertions(+), 291 deletions(-)
- create mode 100644 chrome/browser/resources/aegis/product_logo.svg
- create mode 100644 components/webui/version/resources/product_logo.svg
 
 diff --git a/chrome/android/java/res_chromium_base/values/channel_constants.xml b/chrome/android/java/res_chromium_base/values/channel_constants.xml
 index d5270195b1aa9b26c478dec02fa5ad3ed8f89a7d..77dc41bde53681eaaa0bcd765f5886525e07f8a1 100644
@@ -719,7 +688,7 @@ diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chro
 index e5524adca20a9ce2537683da05ae4b84f244c7dd..9075a6498fbfabf1c5c9393498587a1866c5990c 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -2144,7 +2144,7 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -2190,7 +2190,7 @@ Your Google account may have other forms of browsing history like searches and a
  
        <!-- About Chrome preferences -->
        <message name="IDS_PREFS_ABOUT_CHROME" desc="Title for the About Chrome page. [CHAR_LIMIT=32]">
@@ -728,7 +697,7 @@ index e5524adca20a9ce2537683da05ae4b84f244c7dd..9075a6498fbfabf1c5c9393498587a18
        </message>
        <message name="IDS_LEGAL_INFORMATION_SUMMARY" desc="Summary for legal information" meaning="Android">
          Copyright <ph name="year">%1$d<ex>2014</ex></ph> Google LLC. All rights reserved.
-@@ -3551,7 +3551,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3600,7 +3600,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Accept &amp; continue
        </message>
        <message name="IDS_FRE_WELCOME" desc="Text for greeting the user on Chrome First Run">
@@ -737,7 +706,7 @@ index e5524adca20a9ce2537683da05ae4b84f244c7dd..9075a6498fbfabf1c5c9393498587a18
        </message>
        <message name="IDS_FRE_BROWSER_MANAGED_BY_ORGANIZATION" desc="Text that indicates the browser is managed by policy">
          Your browser is managed by your organization
-@@ -3592,7 +3592,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3641,7 +3641,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Info is sent to Google about your Chrome usage, but it isn\u2019t tied to you\n\nIf Chrome crashes, details about the crash may include some personal info\n\nIf you sync your history to your Google Account, metrics may also include info about URLs you visit
        </message>
        <message name="IDS_SIGNIN_FRE_TITLE" desc="This string is the the title of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account. The tone should be informative and lightweight.">
@@ -746,7 +715,7 @@ index e5524adca20a9ce2537683da05ae4b84f244c7dd..9075a6498fbfabf1c5c9393498587a18
        </message>
        <message name="IDS_SIGNIN_FRE_SUBTITLE" desc="This string is the body of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account. The tone should be informative and lightweight.">
          Sign in to get your bookmarks, passwords, and more on all your devices
-@@ -3601,7 +3601,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3650,7 +3650,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Welcome back, <ph name="USER_NAME">%s<ex>Alice</ex></ph>!
        </message>
        <message name="IDS_SIGNIN_FRE_SUBTITLE_WITHOUT_SYNC" desc="This string is the body of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). However, we introduce a caveat, because the user has a managed account (such as Enterprise); this means that, depending on their organization's settings, the user might not be able to save all types of data in their Google Account. We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account.">
@@ -755,7 +724,7 @@ index e5524adca20a9ce2537683da05ae4b84f244c7dd..9075a6498fbfabf1c5c9393498587a18
        </message>
        <message name="IDS_SIGNIN_FRE_TITLE_SIGNIN_FORCED_BY_POLICY" meaning="Title" desc="Title of a dialog to sign in to Chrome when sign-in is required because of an enterprise policy.">
          Sign in to Chrome
-@@ -6901,7 +6901,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -6908,7 +6908,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
  
        <!-- Notification Permission Rationale Dialog Strings-->
        <message name="IDS_NOTIFICATION_PERMISSION_RATIONALE_DIALOG_TITLE" desc="The title of a dialog shown to users before asking for notification permission.">
@@ -765,10 +734,10 @@ index e5524adca20a9ce2537683da05ae4b84f244c7dd..9075a6498fbfabf1c5c9393498587a18
        <message name="IDS_NOTIFICATION_PERMISSION_RATIONALE_DIALOG_MESSAGE" desc="The body text of a dialog explaining the benefits of enabling Chrome notifications.">
          You’ll be able to easily manage media controls, Incognito sessions, downloads and more
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index 341aad4da9aef043c73eb6802e3c4606ab392ccc..6a26313e907dbacff69e99676569b7e60b729df3 100644
+index 87d2937b3b86fe124367ea04d53e3879806b4046..79303fcabcfcd0196efdea954d71f3058586b36e 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -2175,4 +2175,8 @@
+@@ -2170,4 +2170,8 @@
  <translation id="7514699437829597595">请先告诉 Aegis 你想要什么结果。</translation>
  <translation id="8100004066096796740">使用 Aegis 处理此页面</translation>
  <translation id="9106704778223749968">说出你想要的结果。Aegis 会先理解、制定计划、执行并检查结果。</translation>
@@ -781,7 +750,7 @@ diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strin
 index 9dc7294441ce30ca4e6154e1f0472772b979de6e..9bd0ab3b1321df5ea022dfc0dac5395001072bbd 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -2177,4 +2177,8 @@
+@@ -2172,4 +2172,8 @@
  <translation id="7514699437829597595">請先告訴 Aegis 你想要什麼結果。</translation>
  <translation id="8100004066096796740">使用 Aegis 處理此頁面</translation>
  <translation id="9106704778223749968">說出你想要的結果。Aegis 會先理解、制定計畫、執行並檢查結果。</translation>
@@ -3537,6 +3506,3 @@ index 0000000000000000000000000000000000000000..4bb68d7322f63c4e274ca3dd8833663f
 +    </g>
 +  </g>
 +</svg>
--- 
-2.52.0
-

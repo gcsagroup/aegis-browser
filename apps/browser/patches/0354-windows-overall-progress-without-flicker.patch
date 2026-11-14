@@ -1,17 +1,9 @@
-From bc100b4b5b7b61cf42aea553b569d2bc2be4cf9d Mon Sep 17 00:00:00 2001
+From 46734c5e90438fcfd0e3b7f8db483da44dcd0a1c Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@example.invalid>
 Date: Tue, 3 Nov 2026 15:40:14 +0800
 Subject: [PATCH] Show overall installer progress without repainting the whole
  window
-
 ---
- chrome/installer/mini_installer/BUILD.gn      |   1 +
- .../mini_installer/aegis_install_ui.cc        | 142 +++++++---------
- .../mini_installer/aegis_install_ui.h         |  13 +-
- .../aegis_install_ui_unittest.cc              | 160 ++++++++++++++++--
- .../mini_installer/aegis_overall_progress.h   | 116 +++++++++++++
- 5 files changed, 335 insertions(+), 97 deletions(-)
- create mode 100644 chrome/installer/mini_installer/aegis_overall_progress.h
 
 diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
 index fbd3c864a9c09c15fa66f771314a0bbcdef851d7..af3c5bc5917691abd2cc6a471793d0cef7beebcf 100644
@@ -635,6 +627,3 @@ index 0000000000000000000000000000000000000000..a71691a2bc735555cc4c4e32957335ff
 +}  // namespace mini_installer
 +
 +#endif  // CHROME_INSTALLER_MINI_INSTALLER_AEGIS_OVERALL_PROGRESS_H_
--- 
-2.56.0.windows.4
-

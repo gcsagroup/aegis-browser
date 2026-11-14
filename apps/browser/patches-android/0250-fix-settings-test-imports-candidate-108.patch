@@ -1,4 +1,4 @@
-From 70f62b0ef2588991bd9642b702ca328bfd0cf288 Mon Sep 17 00:00:00 2001
+From c359748a3e67da01db4719f3f0ab1c16d52209b1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 5 Oct 2026 19:13:31 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E8=AE=BE=E7=BD=AE=E9=A1=B5?=
@@ -10,11 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h            | 4 ++--
- chrome/test/data/webui/settings/google_services_page_test.ts  | 2 --
- chrome/test/data/webui/settings/people_page_sync_page_test.ts | 3 ---
- chrome/test/data/webui/settings/sync_account_control_test.ts  | 2 +-
- 4 files changed, 3 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 3d3e94b4eff93853c9138cd00f21cd1224d269d4..0e504ed62f2f5f97e23c25d8efbda8bac729c80a 100644
@@ -74,6 +69,3 @@ index 51ed2bfda2292ae602b0d7b33a4cd1ec40cbf733..f8265e3544ee97c5f195ae8ef8bb9c72
  import {assertTrue} from 'chrome://webui-test/chai_assert.js';
  import {isChildVisible, microtasksFinished} from 'chrome://webui-test/test_util.js';
  
--- 
-2.52.0
-

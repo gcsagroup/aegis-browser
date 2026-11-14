@@ -1,4 +1,4 @@
-From 2c6225d85c44406b3ada22fb96c64fe530f104a5 Mon Sep 17 00:00:00 2001
+From 9b068959a8d25d58c321d1e2468449c4d7381e3e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 29 Sep 2026 20:36:40 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=94=B6=E6=95=9B=E7=A7=BB=E5=8A=A8=E7=AB=AF?=
@@ -10,11 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../chrome/browser/about_settings/AboutChromeSettings.java    | 2 +-
- chrome/browser/aegis/agent/aegis_agent_service_unittest.cc    | 2 ++
- chrome/browser/ui/webui/help/aegis_github_update.h            | 4 ++--
- components/webui/version/resources/about_version_mobile.css   | 1 +
- 4 files changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
 index ae026a7273b8b18225c0084364b91acec6d6bdd4..2c93e793f3e1fbf967029d21c9da6a2f7318bbc8 100644
@@ -69,6 +64,3 @@ index 4711b2b46cedc419d1d278fb6ce561c60ad3bc7f..55eea97185a3f62ff7105923b26c0501
      font-weight: 600;
    }
  
--- 
-2.52.0
-

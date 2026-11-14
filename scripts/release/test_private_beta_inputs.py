@@ -1,0 +1,213 @@
+import base64
+from email.message import Message
+import importlib.util
+import io
+import http.client
+import json
+from pathlib import Path
+import plistlib
+import runpy
+import sys
+import tempfile
+import time
+import unittest
+from unittest.mock import MagicMock, patch
+import zipfile
+
+spec = importlib.util.spec_from_file_location('private_beta', Path(__file__).with_name('private-beta-inputs.py'))
+beta = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(beta)
+
+NODE = b'vless://fixture@192.0.2.1:443?security=reality&type=tcp'
+QUOTA = json.dumps({'subscriptionInfoURL': 'https://example.invalid/sub/test?format=info',
+                    'allowedTestClient': 'fixture', 'expectedQuotaBytes': 10000000000,
+                    'trafficReset': 'daily'}).encode()
+
+
+class PrivateBetaTests(unittest.TestCase):
+    def quota_response(self, value=None):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.geturl.return_value = json.loads(QUOTA)['subscriptionInfoURL']
+        response.headers = Message()
+        response.headers['Content-Type'] = 'application/json'
+        response.read.return_value = json.dumps(value or {
+            'sId': 'test', 'emails': ['fixture'], 'uploadByte': 123, 'downloadByte': 456,
+            'totalByte': 10000000000, 'expire': 0, 'enabled': True}).encode()
+        response.headers['Content-Length'] = str(len(response.read.return_value))
+        return response
+
+    def test_live_quota_requires_identity_available_allowance_and_valid_transport(self):
+        configuration = json.loads(QUOTA)
+        valid = json.loads(self.quota_response().read.return_value)
+        with patch.object(beta.urllib.request, 'build_opener') as factory:
+            factory.return_value.open.return_value = self.quota_response()
+            beta.check_live_quota(configuration)
+            request = factory.return_value.open.call_args.args[0]
+            self.assertEqual(request.full_url, configuration['subscriptionInfoURL'])
+            self.assertEqual(request.get_header('User-agent'), 'Aegis-Alpha/1.0')
+            self.assertEqual(factory.return_value.open.call_args.kwargs, {'timeout': 20})
+            invalid = [dict(valid, **{key: value}) for key, value in (
+                ('sId', 'other'), ('emails', ['fixture', 'other']), ('totalByte', 1),
+                ('enabled', False), ('enabled', 1), ('uploadByte', -1),
+                ('downloadByte', True), ('downloadByte', 1 << 64),
+                ('downloadByte', 10000000000), ('expire', 1), ('expire', 253402300800))]
+            for value in invalid:
+                factory.return_value.open.return_value = self.quota_response(value)
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    beta.check_live_quota(configuration)
+            for change in ('status', 'redirect', 'mime', 'oversized', 'malformed', 'array'):
+                response = self.quota_response()
+                if change == 'status': response.status = 403
+                if change == 'redirect': response.geturl.return_value = 'https://other.invalid/'
+                if change == 'mime': response.headers.replace_header('Content-Type', 'text/html')
+                if change == 'oversized': response.read.return_value = b' ' * 65537
+                if change == 'malformed': response.read.return_value = b'not json'
+                if change == 'array': response.read.return_value = b'[]'
+                factory.return_value.open.return_value = response
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    beta.check_live_quota(configuration)
+            with self.assertRaises(ValueError):
+                beta.check_live_quota(dict(configuration, subscriptionInfoURL='http://example.invalid/sub/test'))
+        with self.assertRaises(ValueError):
+            beta.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://other.invalid/')
+
+    def environment(self):
+        return {'AEGIS_IOS_TEST_NODE_BASE64': base64.b64encode(NODE).decode(),
+                'AEGIS_IOS_TEST_SUBSCRIPTION_BASE64': base64.b64encode(QUOTA).decode()}
+
+    def test_exact_export_is_required_and_inputs_are_private(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            beta.stage(directory, self.environment())
+            for path in directory.iterdir():
+                self.assertEqual(path.stat().st_mode & 0o077, 0)
+            for change in ('none', 'missing', 'different', 'release', 'external', 'missing-audience'):
+                ipa = directory / (change + '.ipa')
+                with zipfile.ZipFile(ipa, 'w') as archive:
+                    root = 'Payload/Aegis.app/'
+                    archive.writestr(root + 'Info.plist', plistlib.dumps({
+                        'AegisAccessReleaseChannel': 'beta',
+                        'AegisReleaseProfile': 'release' if change == 'release' else 'beta',
+                        **({} if change == 'missing-audience' else {'TFInternalTestingOnly': change != 'external'})}))
+                    archive.writestr(root + 'AegisPrivateTestNode.vless',
+                                     b'wrong' if change == 'different' else NODE)
+                    if change != 'missing':
+                        archive.writestr(root + 'AegisPrivateTestSubscription.json',
+                                         (directory / 'expected-subscription').read_bytes())
+                if change == 'none':
+                    with patch.object(beta, 'run_live_quota') as query:
+                        beta.verify(directory, ipa, live_quota=True)
+                        query.assert_called_once_with(json.loads((directory / 'expected-subscription').read_bytes()))
+                        query.reset_mock()
+                        beta.verify_live_ipa(ipa)
+                        query.assert_called_once_with(json.loads((directory / 'expected-subscription').read_bytes()))
+                else:
+                    with self.assertRaises((ValueError, KeyError)):
+                        beta.verify(directory, ipa)
+                    with patch.object(beta, 'run_live_quota') as query:
+                        with self.assertRaises((ValueError, KeyError)):
+                            beta.verify_live_ipa(ipa)
+                        query.assert_not_called()
+
+    def test_missing_partial_malformed_and_invalid_quota_fail_before_build(self):
+        cases = [{}, {'AEGIS_IOS_TEST_NODE_BASE64': base64.b64encode(NODE).decode()},
+                 dict(self.environment(), AEGIS_IOS_TEST_NODE_BASE64='!invalid!'),
+                 dict(self.environment(), AEGIS_IOS_TEST_SUBSCRIPTION_BASE64=base64.b64encode(b'{}').decode()),
+                 dict(self.environment(), AEGIS_IOS_TEST_NODE_BASE64='A' * 11001)]
+        for environment in cases:
+            with tempfile.TemporaryDirectory() as temp, self.assertRaises((ValueError, KeyError)):
+                beta.stage(Path(temp), environment)
+
+    def test_http_protocol_failures_do_not_expose_private_values_in_cli_errors(self):
+        helper = str(Path(beta.__file__))
+        source = MagicMock(buffer=io.BytesIO(QUOTA))
+        with (patch.object(sys, 'argv', [helper, 'quota']), patch.object(sys, 'stdin', source),
+              patch.object(beta.urllib.request, 'build_opener') as factory):
+            factory.return_value.open.side_effect = beta.http.client.BadStatusLine('private-response-marker')
+            with self.assertRaises(SystemExit) as failure:
+                runpy.run_path(helper, run_name='__main__')
+            self.assertEqual(str(failure.exception),
+                             'Private Beta input validation failed; no private values are logged.')
+            factory.return_value.open.assert_called_once()
+
+    def test_worker_deadline_and_failures_stop_delivery_without_forwarding_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for behavior in ('success', 'failure', 'timeout'):
+                helper = Path(temp) / (behavior + '.py')
+                helper.write_text(
+                    'import json, sys, time\n'
+                    'assert sys.argv[1:] == ["quota"]\n'
+                    'assert json.load(sys.stdin)["allowedTestClient"] == "fixture"\n'
+                    'print("private-response-marker", file=sys.stderr)\n' +
+                    ('time.sleep(5)\n' if behavior == 'timeout' else '') +
+                    ('sys.exit(1)\n' if behavior == 'failure' else ''))
+                started = time.monotonic()
+                with (patch.object(beta, '__file__', str(helper)),
+                      patch.object(beta, 'QUOTA_TIMEOUT_SECONDS', 0.5)):
+                    if behavior == 'success':
+                        beta.run_live_quota(json.loads(QUOTA))
+                    else:
+                        with self.assertRaisesRegex(ValueError, '^Live quota verification failed$'):
+                            beta.run_live_quota(json.loads(QUOTA))
+                self.assertLess(time.monotonic() - started, 3)
+
+    def test_truncated_framing_and_ambiguous_json_are_rejected(self):
+        with patch.object(beta.urllib.request, 'build_opener') as factory:
+            response = self.quota_response()
+            raw = response.read.return_value
+            response.headers.replace_header('Content-Length', str(len(raw)))
+            factory.return_value.open.return_value = response
+            beta.check_live_quota(json.loads(QUOTA))
+            for length in (str(len(raw) + 1), '65537', '-1', 'garbage'):
+                response.headers.replace_header('Content-Length', length)
+                with self.subTest(length=length), self.assertRaises(ValueError):
+                    beta.check_live_quota(json.loads(QUOTA))
+            response.headers.replace_header('Content-Length', str(len(raw)))
+            response.headers['Content-Length'] = str(len(raw))
+            with self.assertRaises(ValueError):
+                beta.check_live_quota(json.loads(QUOTA))
+            for content in (raw.replace(b'"enabled": true', b'"enabled": false, "enabled": true'),
+                            raw[:-1] + b', "ignored": NaN}', raw[:-1] + b', "ignored": Infinity}'):
+                response = self.quota_response()
+                response.read.return_value = content
+                response.headers.replace_header('Content-Length', str(len(content)))
+                factory.return_value.open.return_value = response
+                with self.subTest(content=content), self.assertRaises(ValueError):
+                    beta.check_live_quota(json.loads(QUOTA))
+
+    def test_real_http_parser_requires_complete_explicit_length_framing(self):
+        payload = self.quota_response().read.return_value
+        class Socket:
+            def __init__(self, wire): self.wire = wire
+            def makefile(self, *_args): return io.BytesIO(self.wire)
+        chunks = hex(len(payload))[2:].encode() + b'\r\n' + payload + b'\r\n0\r\n'
+        for name, framing, body, valid in (
+                ('length', b'Content-Length: ' + str(len(payload)).encode(), payload, True),
+                ('truncated-length', b'Content-Length: ' + str(len(payload) + 1).encode(), payload, False),
+                ('truncated-chunk-trailer', b'Transfer-Encoding: chunked', chunks, False),
+                ('complete-chunked', b'Transfer-Encoding: chunked', chunks + b'\r\n', False),
+                ('close-delimited', b'Connection: close', payload, False)):
+            wire = b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n' + framing + b'\r\n\r\n' + body
+            response = http.client.HTTPResponse(Socket(wire))
+            response.begin()
+            response.geturl = lambda: json.loads(QUOTA)['subscriptionInfoURL']
+            with self.subTest(name=name), patch.object(beta.urllib.request, 'build_opener') as factory:
+                factory.return_value.open.return_value = response
+                if valid:
+                    beta.check_live_quota(json.loads(QUOTA))
+                else:
+                    with self.assertRaises(ValueError): beta.check_live_quota(json.loads(QUOTA))
+
+    def test_existing_input_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            (directory / 'node.vless').write_bytes(b'preserve')
+            with self.assertRaises(FileExistsError):
+                beta.stage(directory, self.environment())
+            self.assertEqual((directory / 'node.vless').read_bytes(), b'preserve')
+
+
+if __name__ == '__main__':
+    unittest.main()

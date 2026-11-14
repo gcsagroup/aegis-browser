@@ -1,52 +1,9 @@
-From 25a4bee0bd15f13794a815b145b12f1c1c5568f3 Mon Sep 17 00:00:00 2001
+From c5b9a94dcecaeae5d40b1738ea40b0b7dffc971c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 20:06:50 +0800
 Subject: [PATCH] checkpoint: preserve remote CDP security integration
 
 ---
- chrome/browser/aegis/aegis_phish_tab_helper.cc     |  65 +++++-
- chrome/browser/aegis/aegis_phish_tab_helper.h      |  14 +-
- .../aegis/aegis_phish_tab_helper_unittest.cc       |  90 ++++++++
- chrome/browser/android/BUILD.gn                    |   1 +
- .../android/devtools_manager_delegate_android.cc   |  64 ++++++
- .../android/devtools_manager_delegate_android.h    |   4 +
- chrome/browser/devtools/BUILD.gn                   |   1 +
- .../devtools/chrome_devtools_manager_delegate.cc   |  59 +++--
- .../devtools/chrome_devtools_manager_delegate.h    |  10 +-
- chrome/browser/devtools/chrome_devtools_session.cc |   3 +-
- .../devtools/chrome_devtools_session_android.cc    |   4 +-
- chrome/browser/devtools/devtools_browsertest.cc    |  22 ++
- .../protocol/devtools_protocol_browsertest.cc      | 190 ++++++++++++++++
- chrome/browser/devtools/protocol/target_handler.cc |  38 +++-
- chrome/browser/devtools/protocol/target_handler.h  |  11 +-
- .../devtools/protocol/target_handler_android.cc    |  35 +++
- .../devtools/protocol/target_handler_android.h     |  11 +-
- chrome/common/aegis/cdp_target_filter.cc           |  10 +
- chrome/common/aegis/cdp_target_filter.h            |   7 +-
- chrome/common/aegis/cdp_target_filter_unittest.cc  |   8 +
- .../browser/devtools/devtools_agent_host_impl.cc   |  28 ++-
- content/browser/devtools/devtools_http_handler.cc  | 149 ++++++++++--
- content/browser/devtools/devtools_http_handler.h   |   8 +
- .../devtools/devtools_http_handler_unittest.cc     | 226 +++++++++++++++++-
- content/browser/devtools/devtools_pipe_handler.cc  |  26 +++
- content/browser/devtools/devtools_pipe_handler.h   |  12 +
- content/browser/devtools/devtools_session.cc       |  27 +++
- content/browser/devtools/devtools_session.h        |   6 +
- .../browser/devtools/devtools_session_unittest.cc  |  28 +++
- .../protocol/devtools_protocol_browsertest.cc      |  34 +++
- .../browser/devtools/protocol/target_handler.cc    | 252 ++++++++++++++++++++-
- content/browser/devtools/protocol/target_handler.h |   2 +
- .../devtools/render_frame_devtools_agent_host.cc   |  49 +++-
- .../devtools/render_frame_devtools_agent_host.h    |   3 +
- .../devtools/web_contents_devtools_agent_host.cc   |  16 ++
- .../public/browser/devtools_agent_host_client.cc   |  20 ++
- .../public/browser/devtools_agent_host_client.h    |  13 ++
- .../public/browser/devtools_external_agent_proxy.h |  10 +
- .../public/browser/devtools_manager_delegate.cc    |   7 +
- content/public/browser/devtools_manager_delegate.h |  25 ++
- .../public/test/test_devtools_protocol_client.cc   |   4 +
- .../public/test/test_devtools_protocol_client.h    |   5 +
- 42 files changed, 1524 insertions(+), 73 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
 index 74cf1900c66ebd7eca21388afc8d2531a5de100a..01671ebd20450086aa0a9d1877d52e94b428d879 100644

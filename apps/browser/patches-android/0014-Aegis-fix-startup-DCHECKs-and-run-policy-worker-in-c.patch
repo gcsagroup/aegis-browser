@@ -1,4 +1,4 @@
-From 655d3920c82812bcd3caec317addc40c02b09dd2 Mon Sep 17 00:00:00 2001
+From adfa4a9616b38e60ea84bfae8a9a804d69820d3d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 17:03:00 +0800
 Subject: [PATCH] Aegis: fix startup DCHECKs and run policy worker in
@@ -8,18 +8,6 @@ Skip gin V8 init in the browser process (no snapshot_blob.bin) and
 evaluate packages/core in the WebUI renderer instead. Move filter-list
 disk IO off the UI thread and cap EasyList downloads at 5 MiB.
 ---
- chrome/browser/aegis/aegis_service.cc         | 25 +++++-
- chrome/browser/aegis/aegis_service.h          |  4 +
- chrome/browser/aegis/filter_list_updater.cc   | 41 +++++++--
- chrome/browser/aegis/filter_list_updater.h    |  3 +-
- chrome/browser/aegis/policy_worker.cc         | 39 +++-----
- chrome/browser/resources/aegis/BUILD.gn       |  5 +-
- chrome/browser/resources/aegis/aegis.ts       | 89 +++++++++++++++++-
- .../browser/resources/aegis/policy_worker.ts  |  7 ++
- .../ui/webui/aegis/aegis_ui_handler.cc        | 90 +++++++++++++++++++
- .../browser/ui/webui/aegis/aegis_ui_handler.h |  8 ++
- 10 files changed, 268 insertions(+), 43 deletions(-)
- create mode 100644 chrome/browser/resources/aegis/policy_worker.ts
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index fd97df38b0dd63d7c8a6154a081e6d8620c995ad..3836e1bff3df9f22a4907e60ff288ec80e4a85b0 100644
@@ -543,6 +531,3 @@ index 7e2f2aedbc7e511df38004c4e6f42236d3d915f2..a18deb434dc573ad3dd49bb92dc44177
    void OnSummarized(std::string callback_id, aegis::SummarizeResult result);
  
    base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
--- 
-2.52.0
-

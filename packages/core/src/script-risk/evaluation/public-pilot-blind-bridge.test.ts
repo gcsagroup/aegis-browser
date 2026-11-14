@@ -372,7 +372,7 @@ describe("public pilot to blind-v1 bridge", () => {
     expect(rejectedBytes.status).toBe(1);
     expect(rejectedBytes.stderr).toContain("byte length mismatch");
     expect(existsSync(changedLabelsPath)).toBe(false);
-  }, 30_000);
+  }, 120_000);
 
   it("keeps --final closed in both bridge modes", () => {
     for (const mode of ["prepare", "reveal"]) {

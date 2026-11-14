@@ -1,8 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 038ef08401eceafc92f797a4b06b461ccac738e1 Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Mon, 26 Oct 2026 16:00:00 +0800
 Subject: [PATCH] 为整合最新主线的156候选递增至301
-
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h

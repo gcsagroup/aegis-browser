@@ -1,11 +1,8 @@
-From 22619ad59645818a72b60a0d94e8c09d6b657329 Mon Sep 17 00:00:00 2001
+From e7af10f42cd940b3914e93a7e67855068c3654bb Mon Sep 17 00:00:00 2001
 From: Aegis Native Fix <native-fixture@localhost>
 Date: Tue, 27 Oct 2026 17:10:55 +0000
 Subject: [PATCH] fix: use index access for reading research manifest
-
 ---
- chrome/browser/resources/aegis_agent/reading_workspace.ts | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
 index fb5b1e9f0ed078d7181a5b9e858f5810cfb65945..b1f9c0a34621c249cf4aac27b4eb93a2abe9b695 100644

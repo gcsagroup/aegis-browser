@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 845cd1866623dbc55e337dc9b61723cc3ab0814a Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 13 Oct 2026 03:56:18 +0800
 Subject: [PATCH] 移除启动 Google 密钥提示，改为操作时说明不可用 189
@@ -8,6 +8,7 @@ Content-Transfer-Encoding: 8bit
 
 未提交工作区补丁，接续 0304。零值标记表示尚无对应提交。
 ---
+
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 2453e927c85b8a82755083db8d8f81796b05f122..fb8233cbc2ed31036f4d001239678ea8dd94fdd8 100644
 --- a/chrome/browser/aegis/BUILD.gn
@@ -341,20 +342,37 @@ index c232dd0c7ab94325ce933d5ab096dedd87965862..1113d4ed2ef35db7000378a4410baaa9
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/components/translate/core/browser/translate_manager.cc b/components/translate/core/browser/translate_manager.cc
-index de791aedd35d0fb4f8a8447336425db0324cb9d2..e41d76b30a5c0a3954c1d991a2d3fe6255ffaea8 100644
+index b2943db6e1e020a222ef522d4d4ec1d8af64180e..73e6e4f8e7b04db6ca534e69463fa5eb99b3d308 100644
 --- a/components/translate/core/browser/translate_manager.cc
 +++ b/components/translate/core/browser/translate_manager.cc
-@@ -186,7 +186,8 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
+@@ -186,18 +186,22 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
    GetActiveTranslateMetricsLogger()->LogInitialState();
  }
  
 -bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
 +bool TranslateManager::CanManuallyTranslate(bool menu_logging,
 +                                            bool allow_missing_key) {
+   return CanManuallyTranslateInternal(menu_logging,
+-                                      /*is_partial_translate=*/false);
++                                      /*is_partial_translate=*/false,
++                                      allow_missing_key);
+ }
+ 
+ bool TranslateManager::CanPartiallyTranslate() {
+   return CanManuallyTranslateInternal(/*menu_logging=*/false,
+-                                      /*is_partial_translate=*/true);
++                                      /*is_partial_translate=*/true,
++                                      /*allow_missing_key=*/false);
+ }
+ 
+ bool TranslateManager::CanManuallyTranslateInternal(bool menu_logging,
+-                                                    bool is_partial_translate) {
++                                                    bool is_partial_translate,
++                                                    bool allow_missing_key) {
    bool can_translate = true;
  
    if (net::NetworkChangeNotifier::IsOffline()) {
-@@ -199,7 +200,7 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
+@@ -210,7 +214,7 @@ bool TranslateManager::CanManuallyTranslateInternal(bool menu_logging,
      can_translate = false;
    }
  
@@ -364,7 +382,7 @@ index de791aedd35d0fb4f8a8447336425db0324cb9d2..e41d76b30a5c0a3954c1d991a2d3fe62
      if (!menu_logging) {
        return false;
 diff --git a/components/translate/core/browser/translate_manager.h b/components/translate/core/browser/translate_manager.h
-index fe02c855fc5e846bb3bb31f4bcc4e62675d626af..e632e7a4c5856a47512e4e998e63592fa5b37703 100644
+index a504f3a0562663c8aabbc88c4e771379d6196d4b..8a059c166fbe456e9fe07a173715e4afe6a67f61 100644
 --- a/components/translate/core/browser/translate_manager.h
 +++ b/components/translate/core/browser/translate_manager.h
 @@ -141,7 +141,9 @@ class TranslateManager {
@@ -376,5 +394,15 @@ index fe02c855fc5e846bb3bb31f4bcc4e62675d626af..e632e7a4c5856a47512e4e998e63592f
 +  bool CanManuallyTranslate(bool menu_logging = false,
 +                            bool allow_missing_key = false);
  
-   // Whether or not partial translation is supported for the current target
-   // language. Partial translate supports a subset of translation languages,
+   // Returns true iff a selection on the current page could be partially
+   // translated.
+@@ -253,7 +255,8 @@ class TranslateManager {
+ 
+   // Shared helper for CanManuallyTranslate() and CanPartiallyTranslate().
+   bool CanManuallyTranslateInternal(bool menu_logging,
+-                                    bool is_partial_translate);
++                                    bool is_partial_translate,
++                                    bool allow_missing_key);
+ 
+   // Sends a translation request to the TranslateDriver.
+   void DoTranslatePage(std::string_view translate_script,

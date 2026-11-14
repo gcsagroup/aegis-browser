@@ -1,4 +1,4 @@
-From f6894af4358e0a579807bcc821d6dc0d374f94df Mon Sep 17 00:00:00 2001
+From b370a751715b58b7831557a52e89eb57d39df00d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:56:23 +0800
 Subject: [PATCH] Aegis: make phish, AI, and cleanup actions visible
@@ -9,19 +9,6 @@ cookies in chrome://aegis so the privacy claims can be checked.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ---
- chrome/browser/aegis/aegis_cookie_janitor.cc  |   2 +
- ...aegis_link_sanitize_navigation_throttle.cc |   8 +-
- .../aegis/aegis_phish_blocking_page.cc        | 102 +++++++++++++-----
- chrome/browser/aegis/aegis_service.cc         |  51 +++++++++
- chrome/browser/aegis/aegis_service.h          |  20 ++++
- chrome/browser/resources/aegis/aegis.css      |  30 +++++-
- chrome/browser/resources/aegis/aegis.html     |   6 ++
- chrome/browser/resources/aegis/aegis.ts       |  77 +++++++++++--
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  18 ++++
- .../ui/webui/aegis/aegis_ui_handler.cc        |  13 +++
- chrome/common/aegis/cookie_classify.cc        |  16 +++
- chrome/common/aegis/cookie_classify.h         |   2 +
- 12 files changed, 313 insertions(+), 32 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
 index 8a964067ed6f90ffceca9ab689ea65d919aa08cb..9d569541b182d82199874bfe3e8f4bfc7f5de560 100644
@@ -693,6 +680,3 @@ index 05d0aac23cef494add2ea6597dbe73c205bf5aab..0e89a6783cc9750e8a2b06978fb1ff66
  }  // namespace aegis
  
  #endif  // CHROME_COMMON_AEGIS_COOKIE_CLASSIFY_H_
--- 
-2.52.0
-

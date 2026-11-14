@@ -1,11 +1,8 @@
-From 430334e894ffb216527a57e31a88990120927ff2 Mon Sep 17 00:00:00 2001
+From cc9b76c1622ca521bb3f32d9953ec46fb948a483 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Mon, 26 Oct 2026 16:56:24 +0800
 Subject: [PATCH] test(mac): guard native evidence and draft teardown
-
 ---
- .../enhancements/enhancement_browsertest.cc   | 79 +++++++++++--------
- 1 file changed, 46 insertions(+), 33 deletions(-)
 
 diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
 index c6c9051d5c7f1e12ed6e879bf16a6bf2af9df805..f54fb3fb337d7adb3680ddb43e90a6697e63266f 100644
@@ -183,6 +180,3 @@ index c6c9051d5c7f1e12ed6e879bf16a6bf2af9df805..f54fb3fb337d7adb3680ddb43e90a669
  
 -} // namespace aegis
 +}  // namespace aegis
--- 
-2.54.0 (Apple Git-157)
-

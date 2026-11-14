@@ -1,4 +1,4 @@
-From 89c0f77d85318c4505a26dbe04d253fc731ecff9 Mon Sep 17 00:00:00 2001
+From 70284480aee851a62363b9f666af9bf26e3d49fc Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Thu, 1 Oct 2026 00:22:38 +0800
 Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Windows=20=E5=9B=BA?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h |  4 +-
- chrome/install_static/install_util_unittest.cc     | 49 ++++++++++------------
- 2 files changed, 25 insertions(+), 28 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 129120ba49512585ea1d55c73b23c3250c3d5af0..55213a3dfd12c8201e2595bf16a2b05b97bd7aa1 100644

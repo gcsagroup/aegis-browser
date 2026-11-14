@@ -1,4 +1,4 @@
-From ef530792de529cc8a0c7403d10a2f57c65344cb3 Mon Sep 17 00:00:00 2001
+From 292d05a7a59001db8a796b2aed2075d334774707 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 05:10:11 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=AF=B9=E9=BD=90=E5=8E=86=E5=8F=B2=E9=A1=B5?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h     | 6 +++---
- chrome/test/data/webui/history/history_routing_test.ts | 2 ++
- 2 files changed, 5 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 5041b16867fad1d40d9bac5228b06441eb2d9141..60c94969861156afab9f7357520658a33983a749 100644
@@ -44,6 +41,3 @@ index 51d5a50a101b7ebdd09556e09ae274220aa79263..b1e68a8eaf55ab40414783201d9435b4
  import {TestMock} from 'chrome://webui-test/test_mock.js';
  import {eventToPromise, isVisible, microtasksFinished} from 'chrome://webui-test/test_util.js';
  
--- 
-2.52.0
-

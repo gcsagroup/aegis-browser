@@ -1,18 +1,9 @@
-From a1a77bf583f26034e9202308aaa4b23a41e1c547 Mon Sep 17 00:00:00 2001
+From 1b23f1e3e59217189f6e1b3c9d34c6955defe745 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 13 Sep 2026 05:01:21 +0800
 Subject: [PATCH] Fix GitHub updater Chromium style and bump Ver 1.1 (003)
 
 ---
- chrome/app/app-Info.plist                           |  4 ++--
- chrome/browser/ui/webui/help/BUILD.gn               | 13 +++++++------
- chrome/browser/ui/webui/help/aegis_github_update.h  |  6 +++---
- .../ui/webui/help/aegis_github_update_unittest.cc   |  2 +-
- chrome/browser/ui/webui/help/version_updater.cc     |  6 ++++++
- chrome/browser/ui/webui/help/version_updater.h      |  2 +-
- .../settings/settings_localized_strings_provider.cc |  2 +-
- 7 files changed, 21 insertions(+), 14 deletions(-)
- create mode 100644 chrome/browser/ui/webui/help/version_updater.cc
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
 index ea07226701fcbfc96be924deebd668d678abb626..77fcd36f3abec402d7adb0e02edc1ce26e5bc727 100644
@@ -155,7 +146,7 @@ diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provide
 index b5793ce563597731815fadc912dec46e9e9a5603..9004bffd8bd4548b932546d768f1382d79ce328b 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -364,7 +364,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
    browser_version = VersionUI::GetAnnotatedVersionStringForUi();
  #else
    browser_version = base::StrCat(
@@ -164,6 +155,3 @@ index b5793ce563597731815fadc912dec46e9e9a5603..9004bffd8bd4548b932546d768f1382d
         l10n_util::GetStringUTF16(VersionUI::VersionProcessorVariation())});
  #endif
  
--- 
-2.52.0
-

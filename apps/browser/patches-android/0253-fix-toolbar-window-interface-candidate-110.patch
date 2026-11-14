@@ -1,4 +1,4 @@
-From ce821c402e868c69655dc63ccdd0312f45323379 Mon Sep 17 00:00:00 2001
+From cc8057ea2cc5d30b78f4563e0e551f798abb05d2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 6 Oct 2026 16:46:30 +0800
 Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Chromium=20154=20=E5=B7=A5?=
@@ -10,10 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    |  4 ++-
- .../ui/views/toolbar/aegis_toolbar_button.cc  | 29 ++++++++++---------
- .../ui/views/toolbar/aegis_toolbar_button.h   |  6 ++--
- 3 files changed, 22 insertions(+), 17 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index 2b92e7dc9a37ae2b983f61c683963260d83e5f38..b9f0acfebe6d8c36b90e9182027c4dc8a2bf53aa 100644
@@ -181,6 +177,3 @@ index cf6aa3125d18310669e1d11a6d4c2829c195dde8..b2c99912fd9640351280afd88d701862
    // 页面可先于窗口及工具栏销毁；缓存引用必须随页面生命周期自动失效。
    base::WeakPtr<content::WebContents> web_contents_;
    raw_ptr<aegis::AegisService> observed_service_ = nullptr;
--- 
-2.52.0
-

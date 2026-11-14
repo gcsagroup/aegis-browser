@@ -1,4 +1,4 @@
-From 1592cc8d8b0ecd4bb130b6149659b58d989d2a95 Mon Sep 17 00:00:00 2001
+From 5816b580f12b23c04204710e8272d73ec66d3c72 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 12 Oct 2026 01:00:16 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E6=8E=A5=E5=85=A5=E6=9C=AC=E6=9C=BA?=
@@ -10,6 +10,7 @@ Content-Transfer-Encoding: 8bit
 
 
 Public source export omits local-only research weights and vocabulary.
+---
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
 index ae4d7ac38e43bf9c0e7c2832991168d766e2311f..72f2ca7aa9acab0ac2f3a08c90e0a46dca564b16 100644
@@ -114107,6 +114108,3 @@ index 23448226782854b8e16f06a4661b951926a71680..3b5a05b752d491f34f4302b9368d4dd3
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

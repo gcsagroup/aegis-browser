@@ -1,47 +1,9 @@
-From f5d86732c8fc6c44ed49540623c06d04c0b7d035 Mon Sep 17 00:00:00 2001
+From 3db113eebcd5863899ab3186d940873e0ee8f9c4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 21:10:29 +0800
 Subject: [PATCH] feat: close remote CDP target isolation gaps
 
 ---
- chrome/browser/aegis/aegis_phish_tab_helper.cc     |  35 +-
- chrome/browser/aegis/aegis_phish_tab_helper.h      |   2 +-
- .../aegis/aegis_phish_tab_helper_unittest.cc       |  60 +++-
- .../android/devtools_manager_delegate_android.cc   |  26 +-
- chrome/browser/devtools/chrome_devtools_session.cc |   7 +-
- .../devtools/chrome_devtools_session_android.cc    |   2 +-
- .../devtools/device/devtools_device_discovery.cc   |   7 +-
- .../browser/devtools/protocol/browser_handler.cc   |  25 +-
- chrome/browser/devtools/protocol/browser_handler.h |  12 +-
- .../devtools/protocol/browser_handler_android.cc   |   7 +-
- .../devtools/protocol/browser_handler_android.h    |   5 +-
- .../protocol/devtools_protocol_browsertest.cc      | 353 ++++++++++++++++++++-
- .../devtools/protocol/extensions_handler.cc        |   9 +-
- .../browser/devtools/protocol/extensions_handler.h |  14 +-
- chrome/browser/devtools/protocol/target_handler.cc |  11 +-
- .../devtools/protocol/target_handler_android.cc    |   9 +-
- .../browser/devtools/devtools_agent_host_impl.cc   | 215 +++++++++++--
- .../browser/devtools/devtools_agent_host_impl.h    |  27 ++
- .../devtools/devtools_agent_host_impl_unittest.cc  |   1 +
- content/browser/devtools/devtools_http_handler.cc  | 250 +++++++++++++--
- content/browser/devtools/devtools_http_handler.h   |   5 +
- .../devtools/devtools_http_handler_unittest.cc     | 132 +++++++-
- content/browser/devtools/devtools_pipe_handler.cc  | 141 +++++++-
- content/browser/devtools/devtools_pipe_handler.h   |  20 +-
- content/browser/devtools/devtools_session.cc       |  24 +-
- content/browser/devtools/devtools_session.h        |  12 +-
- content/browser/devtools/forwarding_agent_host.cc  |  16 +-
- content/browser/devtools/forwarding_agent_host.h   |   6 +-
- content/browser/devtools/protocol/page_handler.cc  |  47 ++-
- .../browser/devtools/protocol/target_handler.cc    | 110 ++++---
- .../devtools/render_frame_devtools_agent_host.cc   |  58 +++-
- .../devtools/render_frame_devtools_agent_host.h    |   2 +
- content/public/browser/devtools_agent_host.h       |  21 ++
- .../public/browser/devtools_agent_host_client.cc   |  15 +-
- .../public/browser/devtools_agent_host_client.h    |  17 +-
- .../public/browser/devtools_external_agent_proxy.h |  15 +-
- .../devtools_external_agent_proxy_delegate.h       |   8 +-
- 37 files changed, 1544 insertions(+), 182 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
 index 01671ebd20450086aa0a9d1877d52e94b428d879..eef77b5444b5d2042274ae8f8092b002afc9b7ea 100644

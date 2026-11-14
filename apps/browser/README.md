@@ -1,3 +1,5 @@
+> **2026-11-14 · 新主线整合候选**　桌面 `157.0.8103.79`、Android `157.0.8103.78`，产品准备为 Ver 7.0 (310)。已纳入主线账户、代理、诊断及Windows卸载文案，并保留既有功能；真实构建与发行尚未完成。详见[本轮说明](../../docs/audit/upstream-157-79-main-2026-11-14.zh-CN.md)。
+
 [**English**](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
 # GCSA-aegis Browser
@@ -28,7 +30,7 @@ The [2026-09-10 audit](../../docs/audit/main-consolidation-2026-09-10.md) record
 
 | File | Meaning |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `157.0.8103.51`，尚未正式发布 |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `157.0.8103.79`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | Exact Chromium commit used as the patch base |
 
 The pin is a fixed snapshot. It does not track newer Stable releases automatically.
@@ -179,4 +181,4 @@ Always review the exact command and candidate identity before using network, sig
 
 ### Browser updates
 
-About GCSA Aegis checks official GitHub Releases, downloads a matching installer and verifies it. Installation is manual. See [update behavior](../../docs/github-browser-updates.zh-CN.md) and [Ver 1.1 (018) local acceptance](../../docs/ui-copy-acceptance.zh-CN.md).
+About Aegis Browser checks official GitHub Releases, downloads a matching installer and verifies it. Installation is manual. See [update behavior](../../docs/github-browser-updates.zh-CN.md) and [Ver 1.1 (018) local acceptance](../../docs/ui-copy-acceptance.zh-CN.md).

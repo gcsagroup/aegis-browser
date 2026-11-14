@@ -1,31 +1,8 @@
-From 15ddcd4d1f64a6cfff2bfddea41960869fce070b Mon Sep 17 00:00:00 2001
+From 999211219013e0a6c7305add33f1a44eaf3bd897 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@example.invalid>
 Date: Tue, 3 Nov 2026 15:17:25 +0800
 Subject: [PATCH] Refine frameless installer and report measured stage progress
-
 ---
- chrome/installer/BUILD.gn                     |   8 +
- chrome/installer/aegis_install_progress.h     | 139 +++++++
- chrome/installer/mini_installer/BUILD.gn      |   7 +-
- .../mini_installer/aegis_install_ui.cc        | 346 +++++++++++++-----
- .../mini_installer/aegis_install_ui.h         |  23 +-
- .../aegis_install_ui_unittest.cc              |  64 +++-
- .../mini_installer/mini_installer.cc          |  54 ++-
- chrome/installer/setup/BUILD.gn               |   2 +
- .../setup/aegis_install_progress_unittest.cc  | 259 +++++++++++++
- chrome/installer/setup/install.cc             |   5 +
- chrome/installer/setup/installer_state.cc     |  59 +++
- chrome/installer/setup/installer_state.h      |   8 +
- chrome/installer/setup/unpack_archive.cc      |  44 ++-
- chrome/installer/util/lzma_util.cc            |  20 +-
- chrome/installer/util/lzma_util.h             |  14 +-
- chrome/installer/util/work_item_list.cc       |  13 +
- chrome/installer/util/work_item_list.h        |  10 +-
- .../lzma_sdk/google/seven_zip_reader.cc       | 152 +++++++-
- .../lzma_sdk/google/seven_zip_reader.h        |   9 +
- 19 files changed, 1088 insertions(+), 148 deletions(-)
- create mode 100644 chrome/installer/aegis_install_progress.h
- create mode 100644 chrome/installer/setup/aegis_install_progress_unittest.cc
 
 diff --git a/chrome/installer/BUILD.gn b/chrome/installer/BUILD.gn
 index a4ad87db54e3c5a6b6022f3d9c1878db0b74e3ad..f0e54d69bfbf9a47efc64b3ec965370d0b5ece20 100644
@@ -1034,7 +1011,7 @@ diff --git a/chrome/installer/setup/BUILD.gn b/chrome/installer/setup/BUILD.gn
 index 108073f05ccf18c8732426f7b38ead58016091d8..ffeb32f977e3ba2e10fe915b0ebf7cd856be105c 100644
 --- a/chrome/installer/setup/BUILD.gn
 +++ b/chrome/installer/setup/BUILD.gn
-@@ -104,6 +104,7 @@ if (is_win) {
+@@ -109,6 +109,7 @@ if (is_win) {
  
      public_deps = [
        "//base",
@@ -1042,7 +1019,7 @@ index 108073f05ccf18c8732426f7b38ead58016091d8..ffeb32f977e3ba2e10fe915b0ebf7cd8
        "//chrome/installer/util:with_rc_strings",
      ]
  
-@@ -154,6 +155,7 @@ if (is_win) {
+@@ -160,6 +161,7 @@ if (is_win) {
    # This test covers the mini installer and setup tests.
    test("setup_unittests") {
      sources = [
@@ -1327,7 +1304,7 @@ index a1e330eba12530018a2b312adb083f8aa8ecce3b..2ecf3e50bfec51ebeb14b1a09ef49f07
  #include "base/logging.h"
  #include "base/process/launch.h"
  #include "base/rand_util.h"
-@@ -205,6 +206,10 @@ InstallStatus InstallNewVersion(const InstallParams& install_params,
+@@ -214,6 +215,10 @@ InstallStatus InstallNewVersion(const InstallParams& install_params,
    std::unique_ptr<WorkItemList> install_list(WorkItem::CreateWorkItemList());
  
    AddInstallWorkItems(install_params, install_list.get());
@@ -1355,7 +1332,7 @@ index fda0a2e9f4fce57dee696b44d7f6825de9c6fcf3..2cf129f5047636c85df1df927e36afb6
  
    set_level(GetMasterPreference(prefs, initial_preferences::kSystemLevel, false)
                  ? SYSTEM_LEVEL
-@@ -154,6 +160,8 @@ base::FilePath InstallerState::GetInstallerDirectory(
+@@ -155,6 +161,8 @@ base::FilePath InstallerState::GetInstallerDirectory(
  }
  
  void InstallerState::Clear() {
@@ -1364,7 +1341,7 @@ index fda0a2e9f4fce57dee696b44d7f6825de9c6fcf3..2cf129f5047636c85df1df927e36afb6
    operation_ = UNINITIALIZED;
    target_path_.clear();
    state_key_.clear();
-@@ -165,10 +173,61 @@ void InstallerState::Clear() {
+@@ -166,10 +174,61 @@ void InstallerState::Clear() {
  }
  
  void InstallerState::SetStage(InstallerStage stage) const {
@@ -1728,7 +1705,7 @@ diff --git a/chrome/installer/util/work_item_list.cc b/chrome/installer/util/wor
 index 70923bf42b87949182fa4ed6a428745096f09d44..daf74c3b12b84a421be021e31c0ad49df43854b2 100644
 --- a/chrome/installer/util/work_item_list.cc
 +++ b/chrome/installer/util/work_item_list.cc
-@@ -28,10 +28,20 @@ WorkItemList::~WorkItemList() {
+@@ -29,10 +29,20 @@ WorkItemList::~WorkItemList() {
  
  WorkItemList::WorkItemList() = default;
  
@@ -1749,7 +1726,7 @@ index 70923bf42b87949182fa4ed6a428745096f09d44..daf74c3b12b84a421be021e31c0ad49d
    while (!list_.empty()) {
      WorkItem* work_item = list_.front();
      list_.pop_front();
-@@ -47,6 +57,9 @@ bool WorkItemList::DoImpl() {
+@@ -48,6 +58,9 @@ bool WorkItemList::DoImpl() {
        result = false;
        break;
      }
@@ -2052,6 +2029,3 @@ index f4992dfc8f5ab4866f8e453b9692f103978bead7..e5595ac86bc43eddce924ecacd3b0d60
   private:
    SevenZipReader(std::unique_ptr<internal::SevenZipReaderImpl> impl,
                   Delegate& delegate);
--- 
-2.56.0.windows.4
-

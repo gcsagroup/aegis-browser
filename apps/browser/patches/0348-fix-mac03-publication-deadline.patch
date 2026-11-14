@@ -1,12 +1,9 @@
-From 36bdf50b2a4b0388783a26a2ae3112a8e01f1d92 Mon Sep 17 00:00:00 2001
+From a76f2bfb0a361e05b1943a2d47a2a819e2a2f849 Mon Sep 17 00:00:00 2001
 From: quinn521 <287940781+quinn521@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 17:36:39 +0800
 Subject: [PATCH] fix(mac): enforce MAC03 deadlines through evidence
  publication
-
 ---
- chrome/browser/aegis/agent/aegis_agent_browsertest.cc | 11 +++++++++++
- 1 file changed, 11 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index b6b7f80a3fdc4f67efafa85300a92a4d7a2eb5bc..85d3d7df90318d687ebd2a61ea708eb425b393d9 100644
@@ -48,6 +45,3 @@ index b6b7f80a3fdc4f67efafa85300a92a4d7a2eb5bc..85d3d7df90318d687ebd2a61ea708eb4
    // External consumer performs post-child file+directory sync and stable reads.
  }
  
--- 
-2.54.0 (Apple Git-157)
-

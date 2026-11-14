@@ -1,12 +1,9 @@
-From 41f621c5a7547e13837acf9d3a1678c8babe1bab Mon Sep 17 00:00:00 2001
+From 92f1c746d3b688d0d34ee4a2eea879e8ae4a8158 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:46:40 +0800
 Subject: [PATCH] fix(aegis): recover named-site searches from weak routing
 
 ---
- chrome/browser/aegis/agent/agent_planner.cc          | 12 +++++++++---
- chrome/browser/aegis/agent/agent_planner_unittest.cc | 10 ++++++++++
- 2 files changed, 19 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
 index a8d4774a3ce803005e647e6a5b570576926bbb28..ef716ddfff6f54f854b883ea73f8b72d935bccfb 100644
@@ -56,6 +53,3 @@ index b795469f1b39952ee5f4b08c86f07722ee401ee7..1189d48036d0898cc9b00ba86f826ea5
    AgentGoalRoute purchase;
    purchase.workflow = AgentWorkflowKind::kShopping;
    purchase.entry_kind = AgentGoalEntryKind::kOpenUrl;
--- 
-2.52.0
-

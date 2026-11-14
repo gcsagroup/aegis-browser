@@ -1,4 +1,4 @@
-From e95df1356a93e95df533d900c96b30eb40c24dd0 Mon Sep 17 00:00:00 2001
+From 79e08882cc8ac18c49633d22a46be05821200360 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Fri, 9 Oct 2026 02:10:52 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E5=A2=9E=E5=8A=A0=E6=A1=8C=E9=9D=A2?=
@@ -9,31 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/BUILD.gn                      |  49 +-
- chrome/browser/aegis/aegis_prefs.cc                |   3 +
- .../aegis/gestures/gesture_interactive_uitest.cc   | 490 +++++++++++++++++++
- .../browser/aegis/gestures/gesture_recognizer.cc   |  57 +++
- chrome/browser/aegis/gestures/gesture_recognizer.h |  31 ++
- chrome/browser/aegis/gestures/gesture_settings.cc  | 136 ++++++
- chrome/browser/aegis/gestures/gesture_settings.h   |  54 +++
- chrome/browser/aegis/gestures/gesture_unittest.cc  | 116 +++++
- chrome/browser/resources/aegis/BUILD.gn            |   3 +
- chrome/browser/resources/aegis/gestures.css        | 346 ++++++++++++++
- chrome/browser/resources/aegis/gestures.html       |  46 ++
- chrome/browser/resources/aegis/gestures.ts         | 287 ++++++++++++
- chrome/browser/resources/pdf/pdf_viewer.ts         |  20 +-
- .../settings/settings_menu/settings_menu.html      |   7 +-
- .../settings/settings_menu/settings_menu.ts        |   2 +-
- chrome/browser/ui/BUILD.gn                         |   3 +
- .../browser/ui/aegis_mouse_gesture_tab_helper.cc   | 517 +++++++++++++++++++++
- chrome/browser/ui/aegis_mouse_gesture_tab_helper.h | 102 ++++
- chrome/browser/ui/tab_helpers.cc                   |   6 +
- chrome/browser/ui/webui/aegis/BUILD.gn             |  10 +-
- .../ui/webui/aegis/aegis_gesture_handler.cc        | 126 +++++
- .../browser/ui/webui/aegis/aegis_gesture_handler.h |  22 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc          |   6 +
- chrome/browser/ui/webui/help/aegis_github_update.h |   4 +-
- 24 files changed, 2429 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index c853991eba4a7bb36092d144253e4731c82aa7dd..f3dd8f230c35e911211fda1df1b93e7c2278c519 100644
@@ -2590,7 +2565,7 @@ index 56fb112cfd17e84369b36579cf4b539a9ed2667b..a1a35c63aa1778206122afe3c4a59126
        ":tab_model",
        ":tab_strip",
 diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
-index 8bfe1859e3e8944c18979b7105c0701dbef4d306..86c077dc4ad13ccdd8b781cccdb0333415bf60ed 100644
+index bddc9b13a4c8aa6c91bb40584aea2ff567004a44..eea1761fc4c3cf61162e5d3b2001e9da710d1f87 100644
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
 @@ -14,6 +14,7 @@
@@ -2609,7 +2584,7 @@ index 8bfe1859e3e8944c18979b7105c0701dbef4d306..86c077dc4ad13ccdd8b781cccdb03334
  
    // In tests you may want to disable TabFeatures initialization.
    // See tabs::TabModel::PreventFeatureInitializationForTesting
-@@ -1480,6 +1482,7 @@ void TabFeatures::WillDiscardContents(tabs::TabInterface* tab,
+@@ -1481,6 +1483,7 @@ void TabFeatures::WillDiscardContents(tabs::TabInterface* tab,
                                        content::WebContents* new_contents) {
    DCHECK_EQ(old_contents, tab->GetContents());
    aegis::PhishTabHelper::CreateForWebContents(new_contents);

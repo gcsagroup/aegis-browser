@@ -1,4 +1,4 @@
-From 757ce1b20d71d67a54c940ff5b9ebbd8eaa1c749 Mon Sep 17 00:00:00 2001
+From de2b428f098bb3149369f5d9785146cb66780a06 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 7 Oct 2026 03:08:51 +0800
 Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D155=E5=AE=89=E5=85=A8?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../settings/safety_hub/safety_hub_page.ts       | 16 ++++++++--------
- .../browser/ui/webui/help/aegis_github_update.h  |  4 ++--
- 2 files changed, 10 insertions(+), 10 deletions(-)
 
 diff --git a/chrome/browser/resources/settings/safety_hub/safety_hub_page.ts b/chrome/browser/resources/settings/safety_hub/safety_hub_page.ts
 index 2394c1c86fb11b4cec38ba16ceb56bc933b89a3b..6f0972c38858fad291435b200917fbe6166bde28 100644
@@ -62,6 +59,3 @@ index 8cf9538c0d499b6938640097819a4c6886cbaf3e..36023c6fad53448d0eef50cef8c064d5
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

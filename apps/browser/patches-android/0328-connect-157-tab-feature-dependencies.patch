@@ -1,4 +1,4 @@
-From 783038c672911ec27a84bcb67a5e1cbcb9195cbd Mon Sep 17 00:00:00 2001
+From 2beb65952406ad56a972a7e98745db379360b554 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sat, 7 Nov 2026 09:30:04 +0800
 Subject: [PATCH] =?UTF-8?q?build:=20=E6=8E=A5=E9=80=9A=20Chromium=20157=20?=
@@ -6,14 +6,7 @@ Subject: [PATCH] =?UTF-8?q?build:=20=E6=8E=A5=E9=80=9A=20Chromium=20157=20?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/browser/android/BUILD.gn                   | 1 +
- chrome/browser/renderer_context_menu/BUILD.gn     | 1 -
- chrome/browser/ui/BUILD.gn                        | 4 ++--
- chrome/browser/ui/tabs/BUILD.gn                   | 1 +
- chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn | 1 -
- 5 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/android/BUILD.gn b/chrome/browser/android/BUILD.gn
 index b42156222ccfcddc5858d9a22179f0171561972f..252d8fea4681f5251878d421772ef88dafe49bcb 100644

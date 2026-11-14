@@ -1,4 +1,4 @@
-From ff58983ffa1bb07dc38c63f9cd8648dc45ddc5c8 Mon Sep 17 00:00:00 2001
+From f02792ab1f090871fdeb9b4f08e93f23e30f3117 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 6 Oct 2026 14:59:02 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Lit=20=E6=B5=8B=E8=AF=95?=
@@ -10,9 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h  | 4 ++--
- chrome/test/data/webui/settings/people_page_test.ts | 2 +-
- 2 files changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 0e504ed62f2f5f97e23c25d8efbda8bac729c80a..bcec3390f53e8bdbb2520b337fedc014e0a076df 100644
@@ -42,6 +39,3 @@ index 16e8000188a7ad494179e67d0662dd1efec48de4..60e9730e3aa5effaa8f07d0c1f55a4a4
      }
    });
  
--- 
-2.52.0
-

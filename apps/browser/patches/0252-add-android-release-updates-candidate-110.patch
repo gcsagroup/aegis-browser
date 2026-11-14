@@ -1,4 +1,4 @@
-From de1f240c8a1202bb0842cb2fb5df598efe3f84f7 Mon Sep 17 00:00:00 2001
+From 20cb123e6c90e9689c260286a3603f2d63bec5a1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 6 Oct 2026 15:22:40 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=B7=BB=E5=8A=A0=20Android=20=E6=AD=A3?=
@@ -11,20 +11,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/android/chrome_java_sources.gni        |   3 +
- .../java/res_template/xml/file_paths.xml      |   2 +
- .../about_settings/AboutChromeSettings.java   |  23 +-
- .../about_settings/AegisAndroidUpdate.java    | 189 +++++++++++
- .../about_settings/AegisUpdatePolicy.java     | 234 ++++++++++++++
- .../about_settings/AegisUpdatePreference.java | 208 ++++++++++++
- chrome/android/junit/BUILD.gn                 |   1 +
- .../about_settings/AegisUpdatePolicyTest.java | 298 ++++++++++++++++++
- .../ui/webui/help/aegis_github_update.h       |   4 +-
- 9 files changed, 958 insertions(+), 4 deletions(-)
- create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
- create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicy.java
- create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePreference.java
- create mode 100644 chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 index 6c7345209b0baa341d02ab6903b61fcd1ca23625..49614da069b39e59a57db72b77795be95a3b5deb 100644
@@ -755,7 +741,7 @@ diff --git a/chrome/android/junit/BUILD.gn b/chrome/android/junit/BUILD.gn
 index e68eff9dc3bd1a8bfa90220de7c0e51cd85a17c7..3c8100b240242308c22b1207ed61ae181ec5653a 100644
 --- a/chrome/android/junit/BUILD.gn
 +++ b/chrome/android/junit/BUILD.gn
-@@ -1660,6 +1660,7 @@ if (is_android) {
+@@ -1728,6 +1728,7 @@ if (is_android) {
        "//chrome/browser/commerce/subscriptions/test/android/java/src/org/chromium/chrome/browser/subscriptions/CommerceSubscriptionsServiceFactoryUnitTest.java",
        "//chrome/browser/commerce/subscriptions/test/android/java/src/org/chromium/chrome/browser/subscriptions/CommerceSubscriptionsServiceUnitTest.java",
        "src/org/chromium/chrome/browser/about_settings/AboutSettingsBridgeTest.java",
@@ -1082,6 +1068,3 @@ index bcec3390f53e8bdbb2520b337fedc014e0a076df..3e2b321481892ff0401f24fe3f444424
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

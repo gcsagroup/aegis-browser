@@ -1,11 +1,11 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From f24d140a250388d2cd339cd9271eb9cdffb2d5d1 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 21:00:00 +0800
 Subject: [PATCH] 修复下载保存冲突与阅读语言包入口
 
 保存失败后取消本轮待执行草稿，允许阅读侧栏主动展开语言包，并同步 Worker 资源摘要。
-
 ---
+
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
 index 667657b4cc3e4eb6cf550f7ce19017fcbba2315e..ec39cd4ff5247d6af534b75fd347d84b9f97dac5 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css

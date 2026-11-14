@@ -1,115 +1,9 @@
-From 81af32ed674813b669489dba08295ea1cb1fccf3 Mon Sep 17 00:00:00 2001
+From 37a4f9af86d0400f0701c73cdae4cea597e0de3b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 01:41:32 +0800
 Subject: [PATCH] feat(aegis): isolate primary incognito profiles
 
 ---
- chrome/browser/BUILD.gn                            |   1 +
- chrome/browser/actor/BUILD.gn                      |   1 +
- chrome/browser/actor/actor_keyed_service.cc        |   9 +-
- .../browser/actor/actor_keyed_service_factory.cc   |  24 +-
- chrome/browser/actor/tools/attempt_login_tool.cc   |   7 +
- chrome/browser/actor/tools/tool_controller.cc      |  78 ++-
- chrome/browser/actor/ui/BUILD.gn                   |   2 +
- chrome/browser/actor/ui/actor_overlay_ui.cc        |  23 +-
- chrome/browser/actor/ui/actor_ui_state_manager.cc  |  10 +-
- chrome/browser/actor/ui/actor_ui_tab_controller.cc |  10 +-
- chrome/browser/actor/ui/event_dispatcher.cc        |  74 ++-
- chrome/browser/actor/ui/event_dispatcher.h         |   5 +-
- .../actor/ui/event_dispatcher_computations.cc      |  38 +-
- .../browser/actor/ui/event_dispatcher_unittest.cc  |   3 +-
- chrome/browser/aegis/BUILD.gn                      |  26 +
- .../aegis/actor_journal_privacy_unittest.cc        | 321 ++++++++++++
- chrome/browser/aegis/aegis_ai_control.cc           |  37 +-
- chrome/browser/aegis/aegis_ai_control.h            |  10 +-
- chrome/browser/aegis/aegis_bounce_observer.cc      |  13 +-
- chrome/browser/aegis/aegis_cookie_janitor.cc       |  11 +-
- .../aegis_link_sanitize_navigation_throttle.cc     |  33 +-
- .../aegis/aegis_phish_navigation_throttle.cc       |  39 +-
- chrome/browser/aegis/aegis_phish_tab_helper.cc     |  23 +-
- chrome/browser/aegis/aegis_profile_support.cc      |  27 +
- chrome/browser/aegis/aegis_profile_support.h       |  17 +
- chrome/browser/aegis/aegis_service.cc              | 502 +++++++++++++++---
- chrome/browser/aegis/aegis_service.h               |  57 +-
- chrome/browser/aegis/aegis_service_factory.cc      |  75 +++
- chrome/browser/aegis/aegis_service_factory.h       |  42 ++
- .../aegis/aegis_service_factory_unittest.cc        |  51 ++
- chrome/browser/aegis/aegis_service_unittest.cc     | 226 +++++++-
- chrome/browser/aegis/aegis_torrent_client.cc       | 202 +++++++-
- chrome/browser/aegis/aegis_torrent_client.h        |  69 ++-
- .../browser/aegis/aegis_torrent_client_unittest.cc |  73 +++
- chrome/browser/aegis/aegis_ui_handler_unittest.cc  | 123 +++++
- .../browser/aegis/agent/aegis_agent_browsertest.cc | 575 ++++++++++++++++++++-
- chrome/browser/aegis/agent/aegis_agent_service.cc  |  46 +-
- chrome/browser/aegis/agent/aegis_agent_service.h   |   7 +
- .../aegis/agent/aegis_agent_service_factory.cc     |  10 +-
- .../aegis/agent/aegis_agent_service_unittest.cc    |  74 ++-
- chrome/browser/aegis/agent/aegis_browser_tools.cc  | 168 +++++-
- chrome/browser/aegis/agent/agent_task_store.cc     |   9 +-
- chrome/browser/aegis/agent/agent_task_store.h      |   4 +-
- .../aegis/agent/agent_task_store_unittest.cc       |  22 +
- chrome/browser/aegis/summary_session.cc            |  38 +-
- chrome/browser/aegis/summary_session.h             |   1 +
- .../android/devtools_manager_delegate_android.cc   |   4 +
- .../android/devtools_manager_delegate_android.h    |   1 +
- chrome/browser/android/devtools_server.cc          |  12 +-
- chrome/browser/chrome_browser_main.cc              |  11 +-
- chrome/browser/chrome_content_browser_client.cc    |  78 ++-
- chrome/browser/devtools/BUILD.gn                   |   2 +
- .../devtools/chrome_devtools_manager_delegate.cc   |   4 +
- .../devtools/chrome_devtools_manager_delegate.h    |   1 +
- chrome/browser/devtools/remote_debugging_server.cc |  46 +-
- chrome/browser/devtools/remote_debugging_server.h  |   7 +
- .../devtools/remote_debugging_server_unittest.cc   |  41 ++
- chrome/browser/profiles/BUILD.gn                   |   5 +-
- chrome/browser/profiles/renderer_updater.cc        |  54 +-
- chrome/browser/profiles/renderer_updater.h         |   9 +
- .../browser/profiles/renderer_updater_unittest.cc  | 150 ++++++
- chrome/browser/renderer_context_menu/BUILD.gn      |   2 +
- .../render_view_context_menu.cc                    |   7 +-
- chrome/browser/resources/aegis/aegis.ts            |  24 +-
- .../downloads/aegis_download_panel.html.ts         |  21 +-
- .../resources/downloads/aegis_download_panel.ts    |  31 +-
- chrome/browser/ui/BUILD.gn                         |   2 +
- chrome/browser/ui/browser_actions.cc               |   3 +-
- chrome/browser/ui/browser_command_controller.cc    |  25 +-
- chrome/browser/ui/tabs/BUILD.gn                    |   2 +
- chrome/browser/ui/tabs/tab_features.cc             |  12 +-
- chrome/browser/ui/toolbar/BUILD.gn                 |   6 +-
- chrome/browser/ui/toolbar/app_menu_model.cc        |  23 +-
- chrome/browser/ui/views/side_panel/BUILD.gn        |   1 +
- .../aegis_agent/aegis_agent_side_panel.cc          |   3 +-
- .../ui/views/toolbar/aegis_toolbar_button.cc       |  28 +-
- .../ui/views/toolbar/aegis_toolbar_button.h        |   4 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc          |  11 +
- chrome/browser/ui/webui/aegis/aegis_ui.h           |   2 +
- chrome/browser/ui/webui/aegis/aegis_ui_handler.cc  | 161 ++++--
- chrome/browser/ui/webui/aegis/aegis_ui_handler.h   |   1 +
- chrome/browser/ui/webui/aegis_agent/BUILD.gn       |   1 +
- .../webui/aegis_agent/aegis_agent_page_handler.cc  |   5 +-
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  12 +-
- chrome/common/aegis/BUILD.gn                       |   1 +
- chrome/common/aegis/aegis_net_throttle.cc          |  46 +-
- chrome/common/aegis/aegis_net_throttle.h           |   7 +-
- chrome/common/aegis/aegis_net_throttle_unittest.cc | 149 +++++-
- chrome/common/aegis/cdp_target_filter.cc           |  16 +
- chrome/common/aegis/cdp_target_filter.h            |   7 +
- chrome/common/aegis/cdp_target_filter_unittest.cc  |  13 +
- chrome/common/aegis/cname_cache_partition.h        |  23 +
- chrome/common/aegis/cname_uncloak.cc               |  49 +-
- chrome/common/aegis/cname_uncloak.h                |  25 +-
- chrome/common/renderer_configuration.mojom         |   6 +-
- .../renderer/url_loader_throttle_provider_impl.cc  |   7 +
- components/actor/core/aggregated_journal.cc        |  88 +++-
- components/actor/core/aggregated_journal.h         |  13 +
- .../browser/devtools/devtools_agent_host_impl.cc   |   3 +
- .../devtools/devtools_agent_host_impl_unittest.cc  |  44 ++
- .../devtools/render_frame_devtools_agent_host.cc   |   3 +
- .../public/browser/devtools_manager_delegate.cc    |   4 +
- content/public/browser/devtools_manager_delegate.h |   6 +
- net/http/http_log_util.cc                          |   2 +
- net/http/http_log_util_unittest.cc                 |  12 +
- 105 files changed, 4080 insertions(+), 472 deletions(-)
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
 index a5320523509414ec000d9964a3af8a4bd7ddf720..42f7820ca4efe9be81bc8acba1e6b25f28c16b3a 100644
@@ -6007,7 +5901,7 @@ index 70663c19059c839a6485c04b4d0f9245f96bb20e..d66c9ebf0f1d094e76b165d27a9ae00a
        "//components/compose/core/browser:features",
        "//components/guest_view/browser",
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-index 1c6d5ccb115e0668c7d0b086d9ea0da65d8e49f3..06d7eed104d34f5b30427e5314abb91aaf244a36 100644
+index 9ea551a7564d768260b64faa9b4a3e1ad9ade45f..ee9acc91ca8048a3ebe0e723af53de16558c7819 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 @@ -40,6 +40,7 @@
@@ -6018,7 +5912,7 @@ index 1c6d5ccb115e0668c7d0b086d9ea0da65d8e49f3..06d7eed104d34f5b30427e5314abb91a
  #include "chrome/browser/aegis/agent/aegis_agent_service.h"
  #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
  #include "chrome/browser/app_mode/app_mode_utils.h"
-@@ -2981,7 +2982,7 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
+@@ -2974,7 +2975,7 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
  void RenderViewContextMenu::AppendAegisAgentItem() {
    Profile* profile = GetProfile();
    const GURL page_url = source_web_contents_->GetLastCommittedURL();
@@ -6027,7 +5921,7 @@ index 1c6d5ccb115e0668c7d0b086d9ea0da65d8e49f3..06d7eed104d34f5b30427e5314abb91a
        !page_url.SchemeIsHTTPOrHTTPS() ||
        !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
        !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
-@@ -3004,7 +3005,7 @@ void RenderViewContextMenu::ExecuteAegisAgentContext() {
+@@ -2997,7 +2998,7 @@ void RenderViewContextMenu::ExecuteAegisAgentContext() {
    aegis::agent::AegisAgentService* service =
        profile ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
                : nullptr;
@@ -6036,7 +5930,7 @@ index 1c6d5ccb115e0668c7d0b086d9ea0da65d8e49f3..06d7eed104d34f5b30427e5314abb91a
        !service || !service->IsEnabled()) {
      return;
    }
-@@ -3664,7 +3665,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
+@@ -3657,7 +3658,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
  
    switch (id) {
      case IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT:
@@ -6386,7 +6280,7 @@ index bb4b18f7dc2c0757abdea80882975186618a38fb..56fb112cfd17e84369b36579cf4b539a
        "//components/breadcrumbs/core",
        "//components/breadcrumbs/core:status",
 diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
-index a9d393f4e60e14e7cc97850d6e9e53f091f3e8ba..8bfe1859e3e8944c18979b7105c0701dbef4d306 100644
+index b4b0f792890e434975d5909e9dc2b5619608ca12..bddc9b13a4c8aa6c91bb40584aea2ff567004a44 100644
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
 @@ -19,6 +19,7 @@

@@ -1,13 +1,9 @@
-From 2b30937eddabbd82a1f0262f63da28b5d1acba4f Mon Sep 17 00:00:00 2001
+From 5f01c5e24c67251feff2ead5014abb62ed97b673 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 23:35:13 +0800
 Subject: [PATCH] fix: stabilize Aegis browser unit gates
 
 ---
- chrome/browser/aegis/BUILD.gn                              | 2 +-
- chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc | 5 ++++-
- chrome/browser/aegis/summary_policy.cc                     | 2 +-
- 3 files changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 2c9dc6910bc001839a04fc3c93915efb555305d9..5b0dd4dfe26eebdf98ec5d03a87f641888573bc8 100644
@@ -52,6 +48,3 @@ index 786c048184db2bc04114b89b635fbff38adef6a4..927e64c7a86a906cfdd237d47307008e
    return *pattern;
  }
  
--- 
-2.52.0
-

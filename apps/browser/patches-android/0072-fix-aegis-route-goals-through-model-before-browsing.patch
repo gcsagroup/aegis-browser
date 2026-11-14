@@ -1,31 +1,9 @@
-From 0b2280aed6a591ea61c73cac96068b2384cdd37d Mon Sep 17 00:00:00 2001
+From f0d676c5924e897a37a8fac021979a09c6d0a4f4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 01:30:31 +0800
 Subject: [PATCH] fix(aegis): route goals through model before browsing
 
 ---
- .../actor/ui/actor_ui_tab_controller.cc       |  23 +++
- .../actor/ui/actor_ui_tab_controller.h        |   1 +
- .../ui/actor_ui_tab_controller_interface.h    |   4 +
- .../actor/ui/handoff_button_controller.cc     |  12 +-
- .../ui/handoff_button_controller_unittest.cc  |   1 +
- .../mock_actor_ui_tab_controller.h            |   1 +
- .../aegis/agent/aegis_agent_browsertest.cc    |  53 ++++-
- .../aegis/agent/aegis_agent_service.cc        |  98 ++++++++-
- .../browser/aegis/agent/aegis_agent_service.h |  15 ++
- .../aegis/agent/agent_core_unittest.cc        |   9 +
- chrome/browser/aegis/agent/agent_execution.cc |  12 +-
- chrome/browser/aegis/agent/agent_execution.h  |   4 +-
- .../aegis/agent/agent_execution_unittest.cc   |   9 +
- chrome/browser/aegis/agent/agent_planner.cc   | 190 +++++++++++++++++-
- chrome/browser/aegis/agent/agent_planner.h    |  28 ++-
- .../aegis/agent/agent_planner_unittest.cc     |  82 +++++++-
- chrome/browser/aegis/agent/agent_workflow.cc  |  12 ++
- chrome/browser/resources/aegis_agent/agent.ts |  32 ++-
- .../aegis_agent/aegis_agent_page_handler.cc   | 169 ++++++++++------
- .../aegis_agent/aegis_agent_page_handler.h    |  20 ++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  43 ++--
- 21 files changed, 718 insertions(+), 100 deletions(-)
 
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.cc b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 index f58d2393ba9a602d00fb86a7638ff141f2476d7b..0f9fed9c47eda1f8302198160bd601e10f1af403 100644

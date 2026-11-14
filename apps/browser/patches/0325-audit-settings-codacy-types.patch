@@ -1,11 +1,11 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0ce07de35e934c6fe0b0aba65cff914e6654f243 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 21:25:00 +0800
 Subject: [PATCH] 明确设置回调与空值类型并规范选择器
 
 保留现有错误处理、界面状态和访问边界，补齐 Codacy 逐条审查中的类型与表达式约束。
-
 ---
+
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
 index cb3f7f1a72cf07377326a3cc7079085493ba864b..cf4d1da0aa9e058f5e6e61439cd55bd58b2158cb 100644
 --- a/chrome/browser/resources/aegis/aegis.ts

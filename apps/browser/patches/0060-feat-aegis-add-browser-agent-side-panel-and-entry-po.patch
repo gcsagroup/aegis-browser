@@ -1,56 +1,9 @@
-From cd40706abbf8c7320a473a461cd5d4a2a3bbe553 Mon Sep 17 00:00:00 2001
+From 7fc051c6e2088df78e54a288dd7f9087934f7a53 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 18:30:48 +0800
 Subject: [PATCH] feat(aegis): add browser agent side panel and entry points
 
 ---
- chrome/app/chrome_command_ids.h                    |   2 +
- chrome/browser/BUILD.gn                            |   6 +-
- ...rowser_interface_binders_webui_parts_desktop.cc |   6 +-
- .../render_view_context_menu.cc                    | 160 ++++-
- .../render_view_context_menu.h                     |   2 +
- chrome/browser/resources/BUILD.gn                  |   5 +-
- chrome/browser/resources/aegis/aegis.html          |  17 +
- chrome/browser/resources/aegis/aegis.ts            | 174 ++++--
- chrome/browser/resources/aegis_agent/BUILD.gn      |  24 +
- chrome/browser/resources/aegis_agent/agent.css     | 330 +++++++++++
- chrome/browser/resources/aegis_agent/agent.html    |  92 +++
- chrome/browser/resources/aegis_agent/agent.ts      | 398 +++++++++++++
- .../browser/resources/aegis_agent/browser_proxy.ts |  25 +
- chrome/browser/ui/BUILD.gn                         |   7 +
- chrome/browser/ui/actions/chrome_action_id.h       |   1 +
- chrome/browser/ui/browser_actions.cc               |  18 +
- chrome/browser/ui/browser_command_controller.cc    |  14 +
- chrome/browser/ui/cocoa/accelerators_cocoa.mm      |   3 +-
- chrome/browser/ui/side_panel/side_panel_entry_id.h |   1 +
- chrome/browser/ui/side_panel/side_panel_enums.h    |   3 +-
- .../browser/ui/side_panel/side_panel_enums_utils.h |   2 +
- chrome/browser/ui/toolbar/toolbar_pref_names.cc    |  10 +
- chrome/browser/ui/views/side_panel/BUILD.gn        |   4 +
- .../aegis_agent/aegis_agent_side_panel.cc          |  71 +++
- .../aegis_agent/aegis_agent_side_panel.h           |  19 +
- .../ui/views/side_panel/side_panel_helper.cc       |   3 +
- chrome/browser/ui/webui/BUILD.gn                   |   3 +-
- chrome/browser/ui/webui/aegis/BUILD.gn             |   5 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc          |  32 +
- chrome/browser/ui/webui/aegis/aegis_ui_handler.cc  | 109 +++-
- chrome/browser/ui/webui/aegis/aegis_ui_handler.h   |   1 +
- chrome/browser/ui/webui/aegis_agent/BUILD.gn       |  52 ++
- .../browser/ui/webui/aegis_agent/aegis_agent.mojom | 133 +++++
- .../webui/aegis_agent/aegis_agent_page_handler.cc  | 658 +++++++++++++++++++++
- .../webui/aegis_agent/aegis_agent_page_handler.h   | 110 ++++
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc | 205 +++++++
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.h  |  48 ++
- .../ui/webui/chrome_untrusted_web_ui_configs.cc    |   2 +
- chrome/common/webui_url_constants.h                |   3 +
- chrome/test/BUILD.gn                               |   2 +
- tools/gritsettings/resource_ids.spec               |   4 +
- tools/metrics/histograms/enums.xml                 |   3 +-
- .../histograms/metadata/page/histograms.xml        |   1 +
- .../metrics/histograms/metadata/sql/histograms.xml |   1 +
- tools/metrics/histograms/metadata/ui/enums.xml     |   6 +-
- .../metrics/histograms/metadata/ui/histograms.xml  |   1 +
- 46 files changed, 2695 insertions(+), 81 deletions(-)
 
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
 index 5d6f8bc73193a375a21e73a726dee45e9d1b5e44..4999ea287ec8b26c6bfb1931a36e68e71649fca4 100644
@@ -169,7 +122,7 @@ index 710da547b7e7d47f725beb60912a63e3bae34b73..70663c19059c839a6485c04b4d0f9245
        "//chrome/app:generated_resources",
        "//chrome/browser:browser_features",
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-index cd1fc2e4db79b41e843f4f30a8a6814210dc5a88..1c6d5ccb115e0668c7d0b086d9ea0da65d8e49f3 100644
+index 59f77334c4e33b29bfa7cac1df6612dffd259fef..9ea551a7564d768260b64faa9b4a3e1ad9ade45f 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 @@ -10,6 +10,7 @@
@@ -284,7 +237,7 @@ index cd1fc2e4db79b41e843f4f30a8a6814210dc5a88..1c6d5ccb115e0668c7d0b086d9ea0da6
    // LINT.ThenChange(//tools/metrics/histograms/metadata/ui/enums.xml:ContextMenuOptionDesktop)
  
    switch (type) {
-@@ -1547,6 +1588,8 @@ void RenderViewContextMenu::InitMenu() {
+@@ -1536,6 +1577,8 @@ void RenderViewContextMenu::InitMenu() {
      AppendCurrentExtensionItems();
    }
  
@@ -293,7 +246,7 @@ index cd1fc2e4db79b41e843f4f30a8a6814210dc5a88..1c6d5ccb115e0668c7d0b086d9ea0da6
    // Accessibility label items are appended to all menus (with the exception of
    // within the dev tools and PDF Viewer) when a screen reader is enabled. It
    // can be difficult to open a specific context menu with a screen reader, so
-@@ -2935,6 +2978,101 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
+@@ -2928,6 +2971,101 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
    }
  }
  
@@ -395,7 +348,7 @@ index cd1fc2e4db79b41e843f4f30a8a6814210dc5a88..1c6d5ccb115e0668c7d0b086d9ea0da6
  void RenderViewContextMenu::AppendGlicItems() {
    if (IsAnyGlicWebContents(this)) {
      menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_RELOAD_GLIC,
-@@ -3525,6 +3663,13 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
+@@ -3518,6 +3656,13 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
        enterprise_isolated_mode::IsolatedModeReplacesIncognito(GetProfile());
  
    switch (id) {
@@ -409,7 +362,7 @@ index cd1fc2e4db79b41e843f4f30a8a6814210dc5a88..1c6d5ccb115e0668c7d0b086d9ea0da6
      case IDC_BACK:
        return embedder_web_contents_->GetController().CanGoBack();
  
-@@ -3839,6 +3984,9 @@ ui::ImageModel RenderViewContextMenu::GetIconForCommandId(
+@@ -3832,6 +3977,9 @@ ui::ImageModel RenderViewContextMenu::GetIconForCommandId(
  }
  
  bool RenderViewContextMenu::IsCommandIdVisible(int id) const {
@@ -419,7 +372,7 @@ index cd1fc2e4db79b41e843f4f30a8a6814210dc5a88..1c6d5ccb115e0668c7d0b086d9ea0da6
    if (ContextMenuMatcher::IsExtensionsCustomCommandId(id)) {
      return extension_items_.IsCommandIdVisible(id);
    }
-@@ -3891,6 +4039,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
+@@ -3884,6 +4032,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
    }
  
    switch (id) {
@@ -431,7 +384,7 @@ index cd1fc2e4db79b41e843f4f30a8a6814210dc5a88..1c6d5ccb115e0668c7d0b086d9ea0da6
        WindowOpenDisposition new_tab_disposition =
            WindowOpenDisposition::NEW_BACKGROUND_TAB;
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.h b/chrome/browser/renderer_context_menu/render_view_context_menu.h
-index 4734822d3777401dab1bc4ce4499ffb334bd41c2..e872faa7c8db879a566393a92d47ef41c8e51e90 100644
+index 62f3497f95ac2ad9ddb5e381cfed40206242c8fa..118adf95300aebc5d2de063c1ae6891170f2a7cd 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
 @@ -351,6 +351,7 @@ class RenderViewContextMenu

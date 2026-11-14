@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From dd5b4c08520e9fb681e1504a9b1472d8f9189762 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Thu, 22 Oct 2026 16:00:00 +0800
 Subject: [PATCH] 对齐移动端设置与展开表单
-
 ---
+
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
 index 19cfdbb252af12539c120cf111626f3371e1c828..96118db9328ee4c3f3a92cb8f48a97a0aae85c92 100644
 --- a/chrome/browser/resources/aegis/aegis.css

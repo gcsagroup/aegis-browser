@@ -26,6 +26,86 @@ enum AegisLanguageFamily: String, CaseIterable, Sendable {
     }
 }
 
+/// A language family follows regional preferences; an explicit variant pins its dialect.
+enum AegisLanguageChoice: RawRepresentable, Hashable, Identifiable, Sendable {
+    case family(AegisLanguageFamily)
+    case traditionalChineseTaiwan
+    case traditionalChineseHongKong
+    case englishUnitedStates
+    case englishUnitedKingdom
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "zh-Hant-TW": self = .traditionalChineseTaiwan
+        case "zh-Hant-HK": self = .traditionalChineseHongKong
+        case "en-US": self = .englishUnitedStates
+        case "en-GB": self = .englishUnitedKingdom
+        default:
+            guard let family = AegisLanguageFamily(rawValue: rawValue) else { return nil }
+            self = .family(family)
+        }
+    }
+
+    var family: AegisLanguageFamily {
+        switch self {
+        case .family(let family): family
+        case .traditionalChineseTaiwan, .traditionalChineseHongKong: .traditionalChinese
+        case .englishUnitedStates, .englishUnitedKingdom: .en
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .family(let family): family.rawValue
+        case .traditionalChineseTaiwan: "zh-Hant-TW"
+        case .traditionalChineseHongKong: "zh-Hant-HK"
+        case .englishUnitedStates: "en-US"
+        case .englishUnitedKingdom: "en-GB"
+        }
+    }
+
+    var id: String { rawValue }
+
+    var autonym: String {
+        switch self {
+        case .family(.simplifiedChinese): "中文"
+        case .family(let family): family.autonym
+        case .traditionalChineseTaiwan: "中文（台湾）"
+        case .traditionalChineseHongKong: "中文（香港）"
+        case .englishUnitedStates: "English (US)"
+        case .englishUnitedKingdom: "English (UK)"
+        }
+    }
+
+    /// Legacy manual English/Traditional preferences use the menu's US/Taiwan defaults.
+    /// System language resolution remains independent of these manual defaults.
+    var selectableChoice: Self {
+        switch self {
+        case .family(.en): .englishUnitedStates
+        case .family(.traditionalChinese): .traditionalChineseTaiwan
+        default: self
+        }
+    }
+
+    var regionOverride: String? {
+        switch self {
+        case .traditionalChineseTaiwan: "TW"
+        case .traditionalChineseHongKong: "HK"
+        case .englishUnitedStates: "US"
+        case .englishUnitedKingdom: "GB"
+        case .family: nil
+        }
+    }
+
+    /// Match HomeGuard iOS; the order and regional labels stay stable across app languages.
+    static let displayOrder: [Self] = [
+        .family(.simplifiedChinese), .traditionalChineseTaiwan, .traditionalChineseHongKong,
+        .englishUnitedStates, .englishUnitedKingdom,
+        .family(.id), .family(.th), .family(.ja), .family(.ko), .family(.vi), .family(.ms),
+        .family(.de), .family(.fr), .family(.es), .family(.it), .family(.pt),
+    ]
+}
+
 protocol AegisLanguageDefaults {
     func string(forKey defaultName: String) -> String?
     func set(_ value: Any?, forKey defaultName: String)
@@ -40,12 +120,18 @@ struct AegisLanguagePreferenceStore {
     static let testSuite = "com.gcsa.aegis.ios.ui-tests"
     let defaults: any AegisLanguageDefaults
 
-    var family: AegisLanguageFamily? {
-        defaults.string(forKey: Self.key).flatMap(AegisLanguageFamily.init(rawValue:))
+    var choice: AegisLanguageChoice? {
+        defaults.string(forKey: Self.key).flatMap(AegisLanguageChoice.init(rawValue:))?.selectableChoice
     }
 
+    var family: AegisLanguageFamily? { choice?.family }
+
     func setFamily(_ family: AegisLanguageFamily?) {
-        if let family { defaults.set(family.rawValue, forKey: Self.key) }
+        setChoice(family.map(AegisLanguageChoice.family))
+    }
+
+    func setChoice(_ choice: AegisLanguageChoice?) {
+        if let choice { defaults.set(choice.selectableChoice.rawValue, forKey: Self.key) }
         else { defaults.removeObject(forKey: Self.key) }
     }
 
@@ -76,11 +162,16 @@ struct AegisLocalizationSnapshot: Equatable, Sendable {
 
     static func resolve(family selected: AegisLanguageFamily?, preferences: [String],
                         systemLocale: Locale) -> Self {
+        resolve(choice: selected.map(AegisLanguageChoice.family), preferences: preferences, systemLocale: systemLocale)
+    }
+
+    static func resolve(choice selected: AegisLanguageChoice?, preferences: [String],
+                        systemLocale: Locale) -> Self {
         let preferences = preferences.compactMap { Preference($0, systemRegion: systemLocale.region?.identifier) }
-        let family = selected ?? preferences.first?.family ?? .simplifiedChinese
+        let family = selected?.family ?? preferences.first?.family ?? .simplifiedChinese
         // Explicit regional preferences precede generic ones, preserving their order.
         let explicit = preferences.first { $0.family == family && $0.region != nil }
-        let region = explicit?.region ?? systemLocale.region?.identifier
+        let region = selected?.regionOverride ?? explicit?.region ?? systemLocale.region?.identifier
         let dialect: String
         switch family {
         case .en:
@@ -138,7 +229,7 @@ enum AegisLocalization {
     static func snapshot(store: AegisLanguagePreferenceStore,
                          preferences: [String] = preferredLanguages,
                          systemLocale: Locale = .current) -> AegisLocalizationSnapshot {
-        .resolve(family: store.family, preferences: preferences, systemLocale: systemLocale)
+        .resolve(choice: store.choice, preferences: preferences, systemLocale: systemLocale)
     }
 
     static var preferredLanguages: [String] {

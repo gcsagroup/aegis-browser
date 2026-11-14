@@ -1,15 +1,14 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 4f2b2d36347cd2c12df36a0246211ed44feb302a Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Sun, 8 Nov 2026 22:00:00 +0800
 Subject: [PATCH] 为固定路径 Chromium 157 原生候选递增至304
-
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index eedb7f02580ef90d457109af946489546b08932e..854156892137caabf2b1f38937002cfed1a4e98c 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
-@@ -21,8 +21,8 @@
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
  
  namespace aegis {
  // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。

@@ -1,4 +1,4 @@
-From edf15d832e8ae9c16b9bfa2ec45e6db22b78ca73 Mon Sep 17 00:00:00 2001
+From f3e759e83d736d78bf437ae042c237749dffbaeb Mon Sep 17 00:00:00 2001
 From: Aegis integration <aegis-integration@users.noreply.github.com>
 Date: Sat, 3 Oct 2026 05:13:41 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=20Mock=20?=
@@ -9,21 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../aegis/aegis_ui_handler_unittest.cc        |  12 +-
- .../aegis/agent/aegis_browser_tools.cc        |   2 +-
- .../browser/aegis/agent/agent_task_store.cc   |  12 +-
- chrome/browser/resources/aegis_agent/agent.ts | 213 ++++++++++--------
- .../ui/webui/help/aegis_github_update.h       |   4 +-
- chrome/browser/ui/webui/version/version_ui.cc |   4 +
- .../product_install_details_unittest.cc       |   2 +-
- .../webui/history/history_routing_test.ts     |   6 +
- .../data/webui/settings/about_page_test.ts    |   4 +
- .../policy/tools/generate_policy_source.py    |  71 +++---
- .../writers/reg_writer_unittest.py            |   8 +-
- .../prefetch_network_context_unittest.cc      |   6 +-
- .../prefetch/prefetch_test_util_internal.h    |  31 ++-
- ...refetch_url_loader_interceptor_unittest.cc |  16 +-
- 14 files changed, 241 insertions(+), 150 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 index f51e80dc247061d925c5c013a4f727d2f3203d2d..c3003bc190f0b9dd82cb754499ea032e032eb7ff 100644

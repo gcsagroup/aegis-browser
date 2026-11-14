@@ -1,15 +1,9 @@
-From 8612819b81878bb7252d50831ac1cb309865cb5a Mon Sep 17 00:00:00 2001
+From f6178b76180815b3accf4a86e459bb2e50543b90 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 00:59:03 +0800
 Subject: [PATCH] fix: disable Google AIM eligibility requests
 
 ---
- .../aim_eligibility_service_factory.cc        | 15 ++++++---
- .../aim_eligibility_service_factory.h         |  3 +-
- .../browser/aim_eligibility_service.cc        |  8 +++++
- .../omnibox/browser/aim_eligibility_service.h |  3 ++
- .../aim_eligibility_service_unittest.cc       | 32 ++++++++++++++++++-
- 5 files changed, 55 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/autocomplete/aim_eligibility_service_factory.cc b/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
 index db99292ecd82008b1d6f067f3b99f2f8516eee10..50fee56f066c1404d5b8d86f4fbe11dca4e53437 100644
@@ -98,7 +92,7 @@ index 4f1ee1e285066fb2d382e0dde970bd67ae280d72..eecda0bbe11d8df229c261373bc0ebd1
    if (IsManualOverrideActive()) {
      base::Time override_time =
          pref_service_->GetTime(kManualOverrideTimestampPrefName);
-@@ -1101,6 +1105,10 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
+@@ -1100,6 +1104,10 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
  void AimEligibilityService::StartServerEligibilityRequest(
      RequestSource request_source,
      const std::string& locale) {
@@ -127,7 +121,7 @@ diff --git a/components/omnibox/browser/aim_eligibility_service_unittest.cc b/co
 index d85815ab351e1a27ddb0ea972377d5ff575de1ee..4eaffe9cb146037f117733d5063cd62464b105a3 100644
 --- a/components/omnibox/browser/aim_eligibility_service_unittest.cc
 +++ b/components/omnibox/browser/aim_eligibility_service_unittest.cc
-@@ -55,6 +55,10 @@ class AimEligibilityServiceFriend {
+@@ -56,6 +56,10 @@ class AimEligibilityServiceFriend {
    static bool IsIetfBcp47(const std::string& locale) {
      return AimEligibilityService::IsIetfBcp47(locale);
    }
@@ -138,7 +132,7 @@ index d85815ab351e1a27ddb0ea972377d5ff575de1ee..4eaffe9cb146037f117733d5063cd624
  };
  
  namespace {
-@@ -104,7 +108,9 @@ class AimEligibilityServiceTest : public testing::Test {
+@@ -106,7 +110,9 @@ class AimEligibilityServiceTest : public testing::Test {
    void SetUp() override {
      AimEligibilityService::RegisterProfilePrefs(
          search_engines_test_environment_.pref_service().registry());
@@ -149,7 +143,7 @@ index d85815ab351e1a27ddb0ea972377d5ff575de1ee..4eaffe9cb146037f117733d5063cd624
    }
  
    void CreateService(
-@@ -410,6 +416,27 @@ TEST_F(AimEligibilityServiceTest, ClientLocaleParam) {
+@@ -415,6 +421,27 @@ TEST_F(AimEligibilityServiceTest, ClientLocaleParam) {
    EXPECT_EQ(value, "es-419");
  }
  
@@ -177,7 +171,7 @@ index d85815ab351e1a27ddb0ea972377d5ff575de1ee..4eaffe9cb146037f117733d5063cd624
  TEST_F(AimEligibilityServiceTest, ClientCountryParam_Enabled) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(
-@@ -734,6 +761,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader) {
+@@ -739,6 +766,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader) {
        omnibox::kAimServerEligibilitySendFullVersionListEnabled);
  
    AimEligibilityService::Configuration config;
@@ -185,7 +179,7 @@ index d85815ab351e1a27ddb0ea972377d5ff575de1ee..4eaffe9cb146037f117733d5063cd624
    config.full_version_list = "Test Brand List";
    CreateService(config);
  
-@@ -757,6 +785,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader_Disabled) {
+@@ -762,6 +790,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader_Disabled) {
        omnibox::kAimServerEligibilitySendFullVersionListEnabled);
  
    AimEligibilityService::Configuration config;
@@ -193,7 +187,7 @@ index d85815ab351e1a27ddb0ea972377d5ff575de1ee..4eaffe9cb146037f117733d5063cd624
    config.full_version_list = "Test Brand List";
    CreateService(config);
  
-@@ -777,6 +806,7 @@ TEST_F(AimEligibilityServiceTest, CoBrowseUserAgentSuffix) {
+@@ -782,6 +811,7 @@ TEST_F(AimEligibilityServiceTest, CoBrowseUserAgentSuffix) {
        omnibox::kAimServerEligibilitySendCoBrowseUserAgentSuffixEnabled);
  
    AimEligibilityService::Configuration config;
@@ -201,6 +195,3 @@ index d85815ab351e1a27ddb0ea972377d5ff575de1ee..4eaffe9cb146037f117733d5063cd624
    config.user_agent_with_cobrowse_suffix = "UA with Suffix";
    CreateService(config);
  
--- 
-2.52.0
-

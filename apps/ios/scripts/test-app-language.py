@@ -126,7 +126,8 @@ def main():
                    check=True, shell=False, env=env)
     extracted = "\n".join(p.read_text() for p in extraction.glob("*.stringsdata"))
     require("Aegis typed extraction" in extracted and "Aegis typed count %lld" in extracted, 'Guard failed: "Aegis typed extraction" in extracted and "Aegis typed count %lld" in extracted')
-    (work / "results.json").write_text(json.dumps({"status": "passed", "policyCases": 45,
+    cases = json.loads((fixture / "language-policy.json").read_text())
+    (work / "results.json").write_text(json.dumps({"status": "passed", "policyCases": len(cases),
         "resourceMode": "binary plist fixtures" if args.plist_fixtures else "xcstringstool compiled catalogs",
         "checks": ["catalog preservation and rejection guards", "four target memberships", "native Foundation lookup",
                    "pure persistence", "system formatting", "argument-domain isolation", "typed extraction",

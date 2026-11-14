@@ -1,19 +1,15 @@
-From 584d8adf9ca03a0fc8d5f88dc52d19f5b4dd9dd3 Mon Sep 17 00:00:00 2001
+From f4829f5a8e36f09a93d6c07b1939491435b33971 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 21:11:56 +0800
 Subject: [PATCH] fix: preserve initial blank ownership across hash navigation
 
 ---
- .../protocol/devtools_protocol_browsertest.cc         | 11 +++++++++++
- content/browser/devtools/devtools_agent_host_impl.cc  |  2 +-
- .../devtools/render_frame_devtools_agent_host.cc      |  3 +--
- 3 files changed, 13 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 index 29a1912ed6e6d56236ea77f0b8add7dbae261066..b2bb92378f247c357d4e9a5404285477a78f21a8 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -784,6 +784,17 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -788,6 +788,17 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    const std::string* target_id = create_result->FindString("targetId");
    ASSERT_TRUE(target_id);
  
@@ -48,7 +44,7 @@ diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/cont
 index a59440cabfbbc05c03dab0706f190da0adadd143..42723b104a5f4c5e2a13039039aad532a645f6a5 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
-@@ -1191,8 +1191,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+@@ -1209,8 +1209,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
      return true;
    }
    const bool is_initial_blank_target =
@@ -58,6 +54,3 @@ index a59440cabfbbc05c03dab0706f190da0adadd143..42723b104a5f4c5e2a13039039aad532
        (agent_host->GetType() == DevToolsAgentHost::kTypePage ||
         agent_host->GetType() == DevToolsAgentHost::kTypeTab);
    if (is_initial_blank_target &&
--- 
-2.52.0
-

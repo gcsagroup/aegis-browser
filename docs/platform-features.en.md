@@ -54,6 +54,10 @@ Source: supported by source or the product contract. Partial: defined difference
 | Built-in Markdown reader | Partial | Source | Not ported | Partial |
 | Unified settings and legacy routes | Source | Source | Source | Source |
 | P01 control protocol and two-hop TLS transport | Source | Not ported | Not ported | Not ported |
+| Mac site proxy session and recovery | Source | Not ported | Not ported | Partial |
+| Mac account nodes, quota and sign-out isolation | Source | Not ported | Not ported | Partial |
+| Mac local core diagnostic privacy and sharing | Source | Not ported | Not ported | Not ported |
+| Windows uninstall prompt localization | Not ported | Source | Not ported | Not ported |
 
 ## iOS scope and evidence
 
@@ -219,11 +223,11 @@ Runtime acceptance not completed for this item in this work。
 
 ### Network access rules and permissions
 
-`aegis-access` — Per-origin display, script, camera and microphone settings; no Aegis Access proxy routing.
+`aegis-access` — Keeps per-origin display, script, camera and microphone settings; AccessKit also covers loopback HTTP/HTTPS inbound, reality_vision outbound contracts, and ProxyConfiguration wiring. This round records Simulator unit/UI coverage only (I1–I9 and REALITY ±); physical device and TestFlight remain NOT_RUN. Not a full Chromium Access routing port, and unit green is not a product five-step PASS.
 
-Source：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift)
+Source：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift) · [apps/ios/AccessKit/AccessInboundTransport.swift](../apps/ios/AccessKit/AccessInboundTransport.swift) · [apps/ios/AccessKit/AccessHTTPRealityPath.swift](../apps/ios/AccessKit/AccessHTTPRealityPath.swift) · [apps/ios/AccessKit/AccessHTTPSRealityPath.swift](../apps/ios/AccessKit/AccessHTTPSRealityPath.swift) · [apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift](../apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift) · [apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift](../apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift)
 
-Runtime acceptance not completed for this item in this work。
+iOS Simulator evidence：[docs/audit/ios-access-simulator-evidence-2026-11-08.md](../docs/audit/ios-access-simulator-evidence-2026-11-08.md)
 
 ### Profile and restart compatibility
 
@@ -422,6 +426,38 @@ Runtime acceptance not completed for this item in this work。
 `p01-two-hop-tls` — The build for this platform does not include the P01 two-hop transport.
 
 Source：[apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn](../apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn)
+
+Runtime acceptance not completed for this item in this work。
+
+### Mac site proxy session and recovery
+
+`mac-access-site-proxy-session` — iOS retains separate WebKit account or proxy entry points. Mac Chromium connections, child processes and native tests do not establish iOS acceptance.
+
+Source：[apps/ios/BrowserKit/BrowserSession.swift](../apps/ios/BrowserKit/BrowserSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
+
+### Mac account nodes, quota and sign-out isolation
+
+`mac-access-account` — iOS retains separate WebKit account or proxy entry points. Mac Chromium connections, child processes and native tests do not establish iOS acceptance.
+
+Source：[apps/ios/AegisApp/AccessAccountSession.swift](../apps/ios/AegisApp/AccessAccountSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
+
+### Mac local core diagnostic privacy and sharing
+
+`mac-access-core-diagnostics` — This item is scoped to the Mac native integration; its source and tests do not establish implementation on this platform.
+
+Source：[apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
+
+### Windows uninstall prompt localization
+
+`windows-uninstall-localization` — This item is scoped to the Windows uninstaller; its source and tests do not establish implementation on this platform.
+
+Source：[apps/browser/scripts/windows-uninstall-locales_test.py](../apps/browser/scripts/windows-uninstall-locales_test.py) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
 
 Runtime acceptance not completed for this item in this work。
 

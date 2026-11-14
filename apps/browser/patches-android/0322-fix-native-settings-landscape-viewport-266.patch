@@ -1,4 +1,4 @@
-From f2ad9ede0b934efcdcaebd2cf46b44d1c5a8e943 Mon Sep 17 00:00:00 2001
+From 6214527090ed7d22536ffa624df7d533b3819ec8 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 20:52:09 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=E8=AE=BE?=
@@ -7,13 +7,7 @@ Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=E8=AE=BE?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- .../org/chromium/chrome/browser/settings/AegisSettings.java    | 10 ++--------
- .../chrome/browser/settings/WideDisplayPaddingApplier.java     |  3 +++
- chrome/browser/ui/webui/aegis/aegis_ui.cc                      |  7 +++++--
- chrome/browser/ui/webui/help/aegis_github_update.h             |  4 ++--
- 4 files changed, 12 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java
 index 83a05a406acef5aa7d1643eb72f9e7c4c44481c7..e0c1f282fd5d0bf608950efc1614b8db8b3bb549 100644

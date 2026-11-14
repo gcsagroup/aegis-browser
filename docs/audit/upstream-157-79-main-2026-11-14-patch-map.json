@@ -1,0 +1,647 @@
+[
+  {
+    "old": "0349-brand-windows-uninstall-prompts.patch",
+    "new": "0365-brand-windows-uninstall-prompts.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0350-feat-access-socks5-inbound-no-auth.patch",
+    "new": "0366-feat-access-socks5-inbound-no-auth.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0351-feat-access-site-intent-api.patch",
+    "new": "0367-feat-access-site-intent-api.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0352-feat-access-toolbar-bubble.patch",
+    "new": "0368-feat-access-toolbar-bubble.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0353-feat-access-bubble-session.patch",
+    "new": "0369-feat-access-bubble-session.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0354-feat-access-fault-no-direct.patch",
+    "new": "0370-feat-access-fault-no-direct.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0355-feat-access-dev-allow-block-panel.patch",
+    "new": "0371-feat-access-dev-allow-block-panel.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0356-feat-access-phase1-evidence.patch",
+    "new": "0372-feat-access-phase1-evidence.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0357-fix-access-site-publication-state.patch",
+    "new": "0373-fix-access-site-publication-state.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0358-fix-access-native-session-recovery.patch",
+    "new": "0374-fix-access-native-session-recovery.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0359-feat-access-navigation-retry-identity.patch",
+    "new": "0375-feat-access-navigation-retry-identity.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0360-feat-access-route-isolation-identity.patch",
+    "new": "0376-feat-access-route-isolation-identity.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0361-feat-access-route-pool-isolation.patch",
+    "new": "0377-feat-access-route-pool-isolation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0362-test-access-live-tcp-pool-isolation.patch",
+    "new": "0378-test-access-live-tcp-pool-isolation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0363-feat-access-route-proxy-auth-context.patch",
+    "new": "0379-feat-access-route-proxy-auth-context.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0364-feat-access-http-stream-route-context.patch",
+    "new": "0380-feat-access-http-stream-route-context.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0365-feat-access-http-proxy-auth-binding.patch",
+    "new": "0381-feat-access-http-proxy-auth-binding.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0366-feat-access-proxy-connect-params.patch",
+    "new": "0382-feat-access-proxy-connect-params.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0367-feat-access-connect-job-route-dispatch.patch",
+    "new": "0383-feat-access-connect-job-route-dispatch.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0368-feat-access-original-navigation-retry.patch",
+    "new": "0384-feat-access-original-navigation-retry.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0369-feat-access-socket-pool-route-dispatch.patch",
+    "new": "0385-feat-access-socket-pool-route-dispatch.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0370-feat-access-managed-http-route-execution.patch",
+    "new": "0386-feat-access-managed-http-route-execution.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0371-feat-access-url-request-route-binding.patch",
+    "new": "0387-feat-access-url-request-route-binding.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0372-feat-access-private-factory-terminal.patch",
+    "new": "0388-feat-access-private-factory-terminal.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0373-feat-access-network-route-registry.patch",
+    "new": "0389-feat-access-network-route-registry.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0374-feat-access-private-request-hop-state.patch",
+    "new": "0390-feat-access-private-request-hop-state.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0375-feat-access-network-url-loader-route.patch",
+    "new": "0391-feat-access-network-url-loader-route.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0376-feat-access-cors-private-route.patch",
+    "new": "0392-feat-access-cors-private-route.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0377-feat-access-private-channel-contract.patch",
+    "new": "0393-feat-access-private-channel-contract.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0378-feat-access-private-request-factory.patch",
+    "new": "0394-feat-access-private-request-factory.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0379-feat-access-full-route-snapshot-decode.patch",
+    "new": "0395-feat-access-full-route-snapshot-decode.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0380-feat-access-context-route-state.patch",
+    "new": "0396-feat-access-context-route-state.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0381-feat-access-network-context-private-api.patch",
+    "new": "0397-feat-access-network-context-private-api.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0382-fix-access-private-test-gn-comments.patch",
+    "new": "0398-fix-access-private-test-gn-comments.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0383-fix-access-generation-test-unsafe-buffer.patch",
+    "new": "0399-fix-access-generation-test-unsafe-buffer.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0384-fix-access-network-context-test-compatibility.patch",
+    "new": "0400-fix-access-network-context-test-compatibility.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0385-fix-access-test-context-callback-definitions.patch",
+    "new": "0401-fix-access-test-context-callback-definitions.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0386-feat-access-retained-context-capability.patch",
+    "new": "0402-feat-access-retained-context-capability.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0387-fix-access-context-capability-test-callback.patch",
+    "new": "0403-fix-access-context-capability-test-callback.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0388-feat-access-browser-private-context-client.patch",
+    "new": "0404-feat-access-browser-private-context-client.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0389-feat-access-restoration-publication-generation.patch",
+    "new": "0405-feat-access-restoration-publication-generation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0390-feat-access-restored-browser-policy-publication.patch",
+    "new": "0406-feat-access-restored-browser-policy-publication.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0391-feat-access-typed-private-policy-publication.patch",
+    "new": "0407-feat-access-typed-private-policy-publication.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0392-feat-access-async-profile-rule-store.patch",
+    "new": "0408-feat-access-async-profile-rule-store.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0393-feat-access-unavailable-proxy-groups.patch",
+    "new": "0409-feat-access-unavailable-proxy-groups.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0394-feat-access-managed-local-core-readiness.patch",
+    "new": "0410-feat-access-managed-local-core-readiness.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0395-feat-access-error-page-proxy-retry-entry.patch",
+    "new": "0411-feat-access-error-page-proxy-retry-entry.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0396-feat-access-async-profile-bootstrap-and-core-registration.patch",
+    "new": "0412-feat-access-async-profile-bootstrap-and-core-registration.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0397-feat-access-browser-private-request-routing.patch",
+    "new": "0413-feat-access-browser-private-request-routing.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0398-fix-access-network-terminals-and-unavailable-errors.patch",
+    "new": "0414-fix-access-network-terminals-and-unavailable-errors.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0399-test-access-real-core-product-sessions.patch",
+    "new": "0415-test-access-real-core-product-sessions.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0400-test-access-native-config-source-for-product-sessions.patch",
+    "new": "0416-test-access-native-config-source-for-product-sessions.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0401-fix-access-native-request-ownership.patch",
+    "new": "0417-fix-access-native-request-ownership.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0402-chore-access-retry-admission-tracing.patch",
+    "new": "0418-chore-access-retry-admission-tracing.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0403-chore-access-retry-ticket-tracing.patch",
+    "new": "0419-chore-access-retry-ticket-tracing.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0404-fix-access-explicit-error-page-recovery.patch",
+    "new": "0420-fix-access-explicit-error-page-recovery.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0405-fix-access-subdomain-site-identity.patch",
+    "new": "0421-fix-access-subdomain-site-identity.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0406-fix-access-subdomain-cancellation-selector.patch",
+    "new": "0422-fix-access-subdomain-cancellation-selector.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0407-fix-access-reviewed-request-lifecycle.patch",
+    "new": "0423-fix-access-reviewed-request-lifecycle.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0408-fix-access-async-store-fault-test-access.patch",
+    "new": "0424-fix-access-async-store-fault-test-access.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0409-test-access-network-change-observer-publication.patch",
+    "new": "0425-test-access-network-change-observer-publication.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0410-feat-access-alpha-builtin-test-resources.patch",
+    "new": "0426-feat-access-alpha-builtin-test-resources.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0411-fix-access-alpha-channel-dependency-cycle.patch",
+    "new": "0427-fix-access-alpha-channel-dependency-cycle.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0412-fix-access-alpha-generated-resource-dependency.patch",
+    "new": "0428-fix-access-alpha-generated-resource-dependency.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0413-test-access-alpha-input-branch-compilation.patch",
+    "new": "0429-test-access-alpha-input-branch-compilation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0414-fix-access-alpha-output-boundary-and-path-test.patch",
+    "new": "0430-fix-access-alpha-output-boundary-and-path-test.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0415-feat-access-restored-request-core-readiness.patch",
+    "new": "0431-feat-access-restored-request-core-readiness.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0416-feat-access-trusted-website-context.patch",
+    "new": "0432-feat-access-trusted-website-context.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0417-test-access-website-cors-and-migration-boundaries.patch",
+    "new": "0433-test-access-website-cors-and-migration-boundaries.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0418-fix-access-chromium-sqlite-migration.patch",
+    "new": "0434-fix-access-chromium-sqlite-migration.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0419-fix-access-current-private-ack-ready-ui.patch",
+    "new": "0435-fix-access-current-private-ack-ready-ui.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0420-fix-access-reconnection-copy.patch",
+    "new": "0436-fix-access-reconnection-copy.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0421-test-access-core-faults-and-retry-cancellation.patch",
+    "new": "0437-test-access-core-faults-and-retry-cancellation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0422-fix-access-boundary-test-fixtures.patch",
+    "new": "0438-fix-access-boundary-test-fixtures.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0423-test-access-durable-retry-failures.patch",
+    "new": "0439-test-access-durable-retry-failures.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0424-fix-access-stored-snapshot-assertion.patch",
+    "new": "0440-fix-access-stored-snapshot-assertion.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0425-test-access-canceled-retry-completion.patch",
+    "new": "0441-test-access-canceled-retry-completion.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0426-fix-access-retry-fixture-teardown.patch",
+    "new": "0442-fix-access-retry-fixture-teardown.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0427-test-access-private-context-legacy-config.patch",
+    "new": "0443-test-access-private-context-legacy-config.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0428-fix-access-private-routing-legacy-config.patch",
+    "new": "0444-fix-access-private-routing-legacy-config.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0429-fix-access-pending-test-annotation.patch",
+    "new": "0445-fix-access-pending-test-annotation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0430-fix-access-pending-request-cancellation.patch",
+    "new": "0446-fix-access-pending-request-cancellation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0431-test-access-ipv6-site-normalization.patch",
+    "new": "0447-test-access-ipv6-site-normalization.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0432-fix-access-ipv6-site-normalization.patch",
+    "new": "0448-fix-access-ipv6-site-normalization.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0433-test-access-inflight-factory-reset.patch",
+    "new": "0449-test-access-inflight-factory-reset.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0434-fix-access-reset-http-fixture.patch",
+    "new": "0450-fix-access-reset-http-fixture.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0435-fix-access-inflight-factory-reset.patch",
+    "new": "0451-fix-access-inflight-factory-reset.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0436-test-access-browser-redirect-debug-isolation.patch",
+    "new": "0452-test-access-browser-redirect-debug-isolation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0437-fix-access-browser-redirect-debug-isolation.patch",
+    "new": "0453-fix-access-browser-redirect-debug-isolation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0438-test-access-failed-redirect-site.patch",
+    "new": "0454-test-access-failed-redirect-site.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0439-fix-access-retry-site-cold-redirect-regression.patch",
+    "new": "0455-fix-access-retry-site-cold-redirect-regression.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0440-fix-access-redirect-regression-navigation-handle.patch",
+    "new": "0456-fix-access-redirect-regression-navigation-handle.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0441-fix-access-cold-redirect-ready-gate.patch",
+    "new": "0457-fix-access-cold-redirect-ready-gate.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0442-test-access-queued-redirect-cancellation.patch",
+    "new": "0458-test-access-queued-redirect-cancellation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0443-fix-access-queued-redirect-caller-closure.patch",
+    "new": "0459-fix-access-queued-redirect-caller-closure.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0444-access-off-during-core-verification-regression.patch",
+    "new": "0460-access-off-during-core-verification-regression.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0445-access-off-race-test-callback-fixture.patch",
+    "new": "0461-access-off-race-test-callback-fixture.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0446-access-off-race-posted-location-fixture.patch",
+    "new": "0462-access-off-race-posted-location-fixture.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0447-access-off-race-committed-state-fixture.patch",
+    "new": "0463-access-off-race-committed-state-fixture.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0448-access-retry-fixture-current-network-context.patch",
+    "new": "0464-access-retry-fixture-current-network-context.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0449-access-off-supersedes-verify-and-platform-core.patch",
+    "new": "0465-access-off-supersedes-verify-and-platform-core.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0450-fix-access-core-session-ending-cleanup.patch",
+    "new": "0466-fix-access-core-session-ending-cleanup.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0451-fix-store-retry-website-migration-integration.patch",
+    "new": "0467-fix-store-retry-website-migration-integration.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0452-fix-migration-retry-fixture-string-view.patch",
+    "new": "0468-fix-migration-retry-fixture-string-view.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0453-test-unresponsive-core-session-ending-deadline.patch",
+    "new": "0469-test-unresponsive-core-session-ending-deadline.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0454-fix-unresponsive-child-observation-wakeup.patch",
+    "new": "0470-fix-unresponsive-child-observation-wakeup.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0455-fix-session-ending-owned-core-termination-deadline.patch",
+    "new": "0471-fix-session-ending-owned-core-termination-deadline.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0456-fix-managed-https-and-error-page-cancellation.patch",
+    "new": "0472-fix-managed-https-and-error-page-cancellation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0457-fix-explicit-retry-after-stop.patch",
+    "new": "0473-fix-explicit-retry-after-stop.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0458-enable-stop-during-error-page-proxy-preparation.patch",
+    "new": "0474-enable-stop-during-error-page-proxy-preparation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0459-serialize-explicit-retry-after-stop.patch",
+    "new": "0475-serialize-explicit-retry-after-stop.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0460-hide-proxy-retry-after-redirected-post.patch",
+    "new": "0476-hide-proxy-retry-after-redirected-post.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0461-feat-macos-private-test-node-channels.patch",
+    "new": "0477-feat-macos-private-test-node-channels.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0462-fix-private-ack-timeout-and-retry-admission.patch",
+    "new": "0478-fix-private-ack-timeout-and-retry-admission.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0463-macos-current-access-account-query.patch",
+    "new": "0479-macos-current-access-account-query.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0464-fix-macos-entitlement-delivery.patch",
+    "new": "0480-fix-macos-entitlement-delivery.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0465-fix-macos-entitlement-expiry-anchor.patch",
+    "new": "0481-fix-macos-entitlement-expiry-anchor.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0466-fix-access-gn-dependencies.patch",
+    "new": "0482-fix-access-gn-dependencies.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0467-fix-macos-account-byte-parsing.patch",
+    "new": "0483-fix-macos-account-byte-parsing.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0468-feat-access-local-core-diagnostic-logs.patch",
+    "new": "0484-feat-access-local-core-diagnostic-logs.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0469-fix-macos-dev-diagnostic-default.patch",
+    "new": "0485-fix-macos-dev-diagnostic-default.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0470-fix-core-log-severity-buffer.patch",
+    "new": "0486-fix-core-log-severity-buffer.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0471-fix-diagnostic-history-privacy-boundaries.patch",
+    "new": "0487-fix-diagnostic-history-privacy-boundaries.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0472-fix-diagnostic-clear-and-share-confirmation.patch",
+    "new": "0488-fix-diagnostic-clear-and-share-confirmation.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0473-fix-diagnostic-archive-cleanup-retry.patch",
+    "new": "0489-fix-diagnostic-archive-cleanup-retry.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0474-fix-diagnostic-pipe-read-bounds.patch",
+    "new": "0490-fix-diagnostic-pipe-read-bounds.patch",
+    "sourceCommit": "27ee45a9f76d8eed959de28db3d59227c4fc7c3e"
+  },
+  {
+    "old": "0475-macos-account-node-scoped-connect.patch",
+    "new": "0492-macos-account-node-scoped-connect.patch",
+    "sourceCommit": "d6b2214160c4832a639dd462fb4396572902b691"
+  },
+  {
+    "old": "0476-fix-paid-site-test-transport-dependency.patch",
+    "new": "0493-fix-paid-site-test-transport-dependency.patch",
+    "sourceCommit": "d6b2214160c4832a639dd462fb4396572902b691"
+  },
+  {
+    "old": "0477-fix-account-fence-client-disconnect.patch",
+    "new": "0494-fix-account-fence-client-disconnect.patch",
+    "sourceCommit": "d6b2214160c4832a639dd462fb4396572902b691"
+  }
+]

@@ -1,4 +1,4 @@
-From 8d3d082e7712722caa80e9e909aa948f3fb9e155 Mon Sep 17 00:00:00 2001
+From a46a7abe276e3973d997cd6ba19d6731e27cec72 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 17:34:38 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E4=BD=BF=E7=94=A8=E7=BC=93?=
@@ -10,12 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- ...tools_remote_server_infobar_browsertest.cc | 28 +++++++++++++++++++
- ...devtools_remote_server_infobar_delegate.cc | 10 +++----
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  4 +--
- .../ui/webui/aegis/aegis_ui_handler.cc        |  4 +--
- .../settings_localized_strings_provider.cc    |  3 +-
- 5 files changed, 37 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 index e07da689cd30e6781dea1a472354dab2a9dc5221..5eeab81bfe17236ab55aed42f14f3956d31555cf 100644

@@ -1,16 +1,9 @@
-From 3705a23c7be10226511cb618968b5b313401ebfb Mon Sep 17 00:00:00 2001
+From 2f5106a006d6d17c97356e62ffe008e43ae44262 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 03:02:09 +0800
 Subject: [PATCH] fix(aegis): signal agent side panel readiness
 
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    | 26 +++++++++++++++++++
- chrome/browser/resources/aegis_agent/agent.ts |  5 +++-
- .../ui/webui/aegis_agent/aegis_agent.mojom    |  2 ++
- .../aegis_agent/aegis_agent_page_handler.cc   |  9 +++++++
- .../aegis_agent/aegis_agent_page_handler.h    |  4 +++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  2 +-
- 6 files changed, 46 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index 489ba392d25901238e176a5c16b9c3d729386bad..354f418e54a008319211f38b7b04318e82c4336d 100644
@@ -169,6 +162,3 @@ index 9ad9678911d8193ad16f16ffd5b175d5473e35b6..0da7b17209cc8f797a49c67a1b9efa45
 +      webui::GetBrowserWindowInterface(web_ui()->GetWebContents()), this,
        std::move(page), std::move(receiver));
  }
--- 
-2.52.0
-

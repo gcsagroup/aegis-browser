@@ -1,4 +1,4 @@
-From 74670b0c5d553637fb72c106a7a33194e3b03f08 Mon Sep 17 00:00:00 2001
+From 8f008184df64a8e7a414f15a677abc053a58236a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 14 Sep 2026 06:15:10 +0800
 Subject: [PATCH] =?UTF-8?q?fix(build):=20=E8=A1=A5=E9=BD=90=20M153=20?=
@@ -9,26 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/actor/BUILD.gn                      |  1 +
- chrome/browser/aegis/BUILD.gn                      | 22 +++++++++++++++++++---
- chrome/browser/devtools/BUILD.gn                   |  1 +
- chrome/browser/download/BUILD.gn                   |  1 +
- chrome/browser/download/download_ui_model.cc       |  2 +-
- chrome/browser/policy/BUILD.gn                     |  1 +
- chrome/browser/prefs/BUILD.gn                      |  1 +
- .../profile_resetter/reset_report_uploader.cc      |  2 --
- chrome/browser/profiles/BUILD.gn                   |  3 +++
- chrome/browser/ui/toolbar/BUILD.gn                 |  1 +
- chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn  |  1 +
- chrome/browser/ui/webui/aegis/BUILD.gn             |  1 +
- chrome/browser/ui/webui/downloads/BUILD.gn         |  2 ++
- .../ui/webui/downloads/downloads_list_tracker.cc   |  2 +-
- chrome/browser/ui/webui/help/BUILD.gn              |  9 +++++----
- chrome/browser/ui/webui/help/aegis_github_update.h |  6 +++---
- chrome/browser/ui/webui/settings/BUILD.gn          |  2 ++
- .../internal/common/parallel_download_utils.h      |  4 +---
- .../download/public/common/download_features.h     |  4 ++++
- 19 files changed, 49 insertions(+), 17 deletions(-)
 
 diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
 index d87a16643df5446c1de2cb759713c6c7ed549c1a..9336197d20fd2094f98dca1a4ee88eb30cd7156d 100644

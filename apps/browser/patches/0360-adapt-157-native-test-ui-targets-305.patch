@@ -1,8 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0c98653ebbb776a1c7a98ed0f025f16e4aff6831 Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Sun, 8 Nov 2026 22:24:00 +0800
 Subject: [PATCH] 适配157拆分后的原生测试UI依赖并递增至305
-
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

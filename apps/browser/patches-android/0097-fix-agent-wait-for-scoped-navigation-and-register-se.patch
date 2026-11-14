@@ -1,13 +1,10 @@
-From 30c31df22846fd713cd7fa1e95234bdec206522d Mon Sep 17 00:00:00 2001
+From fc35d21a174cd586c005164f9c20373ef7fca12b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 14:58:47 +0800
 Subject: [PATCH] fix(agent): wait for scoped navigation and register services
  early
 
 ---
- .../aegis/agent/aegis_agent_service.cc        | 42 ++++++++++++++++++-
- ...hrome_browser_main_extra_parts_profiles.cc |  4 ++
- 2 files changed, 44 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index 48e6bd16294d6e52e94b07af33d571760e7fbd06..f00307ab854bb4a210523e485f9bc4241b89e907 100644
@@ -107,7 +104,7 @@ index a281709c54cd71589a57e0360ec757c0c38efb08..9d1bcf9b8b55968fcdfdbf490f925735
  #include "chrome/browser/affiliations/affiliation_service_factory.h"
  #include "chrome/browser/ai/ai_data_keyed_service_factory.h"
  #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
-@@ -747,6 +749,8 @@ void ChromeBrowserMainExtraPartsProfiles::
+@@ -738,6 +740,8 @@ void ChromeBrowserMainExtraPartsProfiles::
    search_integrity::SearchIntegrityFactory::GetInstance();
  #endif
    actor::ActorKeyedServiceFactory::GetInstance();
@@ -116,6 +113,3 @@ index a281709c54cd71589a57e0360ec757c0c38efb08..9d1bcf9b8b55968fcdfdbf490f925735
  #if BUILDFLAG(IS_ANDROID)
    AndroidSessionDurationsServiceFactory::GetInstance();
  #endif
--- 
-2.52.0
-

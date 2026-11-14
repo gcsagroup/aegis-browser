@@ -1,13 +1,9 @@
-From 9bdb15682bbf66f93337c530639e753f24235e83 Mon Sep 17 00:00:00 2001
+From 2e35fbfa9af23271ce0935c612fc45ee4dd540fb Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Mon, 26 Oct 2026 16:35:02 +0800
 Subject: [PATCH] test(mac): cover WebUI trial consent across native async
  saves
-
 ---
- chrome/browser/aegis/BUILD.gn                 |   4 +
- .../enhancements/enhancement_browsertest.cc   | 259 +++++++++++++++++-
- 2 files changed, 262 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index fb8233cbc2ed31036f4d001239678ea8dd94fdd8..2c749ed858d92c6cc179abf97938ba411133f32f 100644
@@ -307,6 +303,3 @@ index 4d3aa2342e310c53f048c200f412a1c4e02bd00a..c6c9051d5c7f1e12ed6e879bf16a6bf2
 +                         });
 +
 +} // namespace aegis
--- 
-2.54.0 (Apple Git-157)
-

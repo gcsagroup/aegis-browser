@@ -1,4 +1,4 @@
-From e3c15e92c7429887d0a6ea0a10be2c5f53900a9e Mon Sep 17 00:00:00 2001
+From ea7bebed55e7797863e9362c37ca7ec3fa7d0faa Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@example.invalid>
 Date: Tue, 3 Nov 2026 13:59:00 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BC=98=E5=8C=96=20Windows=20=E5=AE=89?=
@@ -7,12 +7,7 @@ Subject: [PATCH] =?UTF-8?q?=E4=BC=98=E5=8C=96=20Windows=20=E5=AE=89?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- .../mini_installer/aegis_install_ui.cc        | 331 +++++++++++++++---
- .../mini_installer/aegis_install_ui.h         |  22 ++
- .../aegis_install_ui_unittest.cc              |  92 ++++-
- 3 files changed, 383 insertions(+), 62 deletions(-)
 
 diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
 index dbf8ed40e0af0c480b523e7095312c80d415996f..3d3e2bd8dcd36a8a82a4aac8e75feeb9173928ed 100644
@@ -636,6 +631,3 @@ index 72798c08cfbe3fc6bf86d3fdd5383afb403f13a3..5ca37807e01a82d406c8b1b1eef4e3bc
 +  ::SendMessage(window, WM_COMMAND, IDOK, 0);
 +}
  }  // namespace mini_installer
--- 
-2.56.0.windows.4
-

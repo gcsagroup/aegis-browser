@@ -1,12 +1,12 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 3ea55546e85f9238f270362697abd6b6cb9ecc1b Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 06:55:00 +0800
 Subject: [PATCH] 补齐 Android 更新请求说明并递增候选版本
 
 使用 Chromium 网络适配接口记录手动检查及下载请求，保留原超时、跳转和安装校验。
 修复当前 Error Prone 网络规则报错，不关闭检查或压制告警。候选递增至 Ver 6.0 (249)。
-
 ---
+
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
 index de7c941ee1a056df210cad6a1a5b4cada2121fa0..f666cb1d6d75994d80f4a5ec9ea1a78aae3397ac 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java

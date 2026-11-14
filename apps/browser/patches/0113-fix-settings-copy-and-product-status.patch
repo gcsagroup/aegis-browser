@@ -1,4 +1,4 @@
-From 6475c54289c0626525b9b7ee60b43005a014ed5b Mon Sep 17 00:00:00 2001
+From 38ca39fb05911a62598719b0f18ca3a53b6bf5ff Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 13 Sep 2026 18:26:42 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=20GCSA=20=E8=AE=BE=E7=BD=AE?=
@@ -9,63 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/app/chromium_strings.grd                    |  74 ++---
- chrome/app/generated_resources.grd                 |   4 +-
- chrome/app/resources/chromium_strings_zh-CN.xtb    | 147 ++++++++-
- chrome/app/resources/chromium_strings_zh-HK.xtb    | 145 +++++++++
- chrome/app/resources/chromium_strings_zh-TW.xtb    | 145 +++++++++
- chrome/app/resources/generated_resources_zh-CN.xtb |  19 +-
- chrome/app/resources/generated_resources_zh-HK.xtb |  17 +
- chrome/app/resources/generated_resources_zh-TW.xtb |  17 +
- chrome/app/settings_chromium_strings.grdp          | 236 +++++++-------
- chrome/app/settings_strings.grdp                   |  30 +-
- chrome/browser/aegis/aegis_phish_blocking_page.cc  | 120 ++++---
- .../aegis/aegis_phish_blocking_page_unittest.cc    |   4 +-
- .../profile_resetter/reset_report_uploader.cc      |   9 +-
- chrome/browser/resources/aegis/aegis.html          |  29 +-
- chrome/browser/resources/aegis/aegis.ts            | 236 +++++++-------
- chrome/browser/resources/aegis_agent/agent.css     |   1 -
- chrome/browser/resources/aegis_agent/agent.html    |  14 +-
- chrome/browser/resources/aegis_agent/agent.ts      |   2 +-
- .../downloads/aegis_download_panel.html.ts         |  52 +--
- .../resources/downloads/aegis_download_panel.ts    | 117 ++++---
- chrome/browser/resources/downloads/downloads.html  |   2 +-
- chrome/browser/resources/history/side_bar.html.ts  |   2 +
- chrome/browser/resources/history/side_bar.ts       |   2 +
- .../resources/settings/about_page/about_page.css   |  14 +
- .../settings/about_page/about_page.html.ts         |  14 +
- .../resources/settings/about_page/about_page.ts    |   4 +
- .../collapsible_autofill_settings_card.html        |   5 +-
- .../settings/downloads_page/downloads_page.html.ts |  10 +-
- .../settings/downloads_page/downloads_page.ts      |  44 ++-
- .../privacy_guide_msbb_fragment.html.ts            |   4 +-
- .../reset_page/reset_profile_dialog.html.ts        |   2 +
- .../settings/reset_page/reset_profile_dialog.ts    |   5 +-
- .../settings/safety_hub/safety_hub_page.ts         |  21 ++
- chrome/browser/resources/settings/settings.html    |   2 +-
- .../settings_page/settings_subpage.html.ts         |   1 +
- .../settings/settings_page/settings_subpage.ts     |   4 +-
- chrome/browser/ui/browser_actions.cc               |   4 +-
- chrome/browser/ui/safety_hub/BUILD.gn              |   7 +-
- chrome/browser/ui/safety_hub/safety_hub_util.cc    |  30 ++
- .../ui/views/toolbar/aegis_toolbar_button.cc       | 214 +++++++-----
- chrome/browser/ui/webui/aegis/aegis_ui.cc          | 362 ++++++++++-----------
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  74 +++--
- chrome/browser/ui/webui/downloads/downloads_ui.cc  |   7 +-
- chrome/browser/ui/webui/help/BUILD.gn              |   9 +
- .../browser/ui/webui/help/aegis_github_update.cc   | 171 ++++++++--
- chrome/browser/ui/webui/help/aegis_github_update.h |  30 +-
- .../ui/webui/help/aegis_github_update_unittest.cc  |  72 +++-
- .../webui/help/aegis_settings_safety_unittest.cc   |  24 ++
- .../browser/ui/webui/help/version_updater_basic.cc |   7 +-
- .../settings_localized_strings_provider.cc         |  56 ++--
- chrome/browser/ui/webui/settings/settings_ui.cc    |  29 +-
- components/new_or_sad_tab_strings.grdp             |   2 +-
- components/security_interstitials_strings.grdp     |   2 +-
- components/strings/components_strings_zh-CN.xtb    |   7 +
- components/strings/components_strings_zh-HK.xtb    |   7 +
- components/strings/components_strings_zh-TW.xtb    |   7 +
- 56 files changed, 1814 insertions(+), 861 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
 index c2a5181515789a7d32bac15ed0d23716517fa3bc..472c35430b3561f922da809a0bed4b8df7fc89e4 100644
@@ -299,7 +242,7 @@ index c2a5181515789a7d32bac15ed0d23716517fa3bc..472c35430b3561f922da809a0bed4b8d
          </if>
        </if>
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
-index 66d8dcfacc07898eac4abdd88a4b4ee17245c6e9..fd5d0b528d6aa70da34766266539c18eafa72f45 100644
+index d316176853ef86a5d6d3f966438349681cf848e2..89136d7b69252b2f11a7e4aeabd3095ed5e7c9cc 100644
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
 @@ -1898,9 +1898,7 @@ are declared in tools/grit/grit_args.gni.
@@ -788,7 +731,7 @@ index 23dcfba04da919241ca9ce93287d29d98e448b5b..fdd553b2f0597f9e0c93f8a65a39af51
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
-index 58382e3135ebe6e579ffc157e0d02718a92df25a..95ac7dcf0a58580dc148f00e965f1fc42a495877 100644
+index 690d923a50815bc90bfb8bb361d23f75333b1315..3a68669ebf426b3be729dc9c14a2d8e3f429be33 100644
 --- a/chrome/app/resources/generated_resources_zh-CN.xtb
 +++ b/chrome/app/resources/generated_resources_zh-CN.xtb
 @@ -8815,7 +8815,7 @@
@@ -849,7 +792,7 @@ index ef7822eee5286bc44fdded509740eb68fddb06dd..7cb003a3426b90e61ba79b581cde4077
 +<translation id="4763381216067908866">自動將新建標籤頁分組固定到書籤欄</translation>
  </translationbundle>
 diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
-index c77966f83d14dbfdaf0374593c967f79dc97b5ea..3624d9eabc93ef2b28d041353804998cdfd3a411 100644
+index 0d95c91b6f5bf791d5fae4cdabd8ef8ae26b881a..beb226b0bb69004f2bdc7698b78bd2a929270e04 100644
 --- a/chrome/app/resources/generated_resources_zh-TW.xtb
 +++ b/chrome/app/resources/generated_resources_zh-TW.xtb
 @@ -10894,4 +10894,21 @@
@@ -5617,7 +5560,7 @@ index 690bb1b9a5e2db36e7b96e6eb8991bff980d7d0b..89e1b560bf152ee1efc51798646b8c46
  
    <!-- Harmful download interstitial -->
 diff --git a/components/strings/components_strings_zh-CN.xtb b/components/strings/components_strings_zh-CN.xtb
-index 342faba5c0d5039cbd93698cb11af59a0d35e6c3..c1d683d345d93908a73baad15a465683a890ff6f 100644
+index 0b3fa3ed5304c4a04b233e992afc937a9c09d5f5..37520b26b200a6622e6c731274c433fe437287fe 100644
 --- a/components/strings/components_strings_zh-CN.xtb
 +++ b/components/strings/components_strings_zh-CN.xtb
 @@ -4935,4 +4935,11 @@

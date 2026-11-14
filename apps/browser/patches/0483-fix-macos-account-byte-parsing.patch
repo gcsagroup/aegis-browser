@@ -1,0 +1,27 @@
+From 504c4683877a4bd4a6eb286af41ca7ef2073f631 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 15:25:41 +0800
+Subject: [PATCH] fix(access-account): use the string-view end iterator
+---
+
+diff --git a/chrome/browser/aegis/access/access_account_mac.mm b/chrome/browser/aegis/access/access_account_mac.mm
+index 74957b620c96503d56202fc91878b3ce0a63f9fc..541b24be705b7454834dac9b3a9fe72ad126e8dd 100644
+--- a/chrome/browser/aegis/access/access_account_mac.mm
++++ b/chrome/browser/aegis/access/access_account_mac.mm
+@@ -9,6 +9,7 @@
+ #include <algorithm>
+ #include <charconv>
+ #include <cmath>
++#include <memory>
+ #include <optional>
+ #include <string_view>
+ 
+@@ -86,7 +87,7 @@ std::optional<uint64_t> Bytes(id value) {
+   std::string_view text(utf8, [string lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+   if (text.size() > 1 && text.front() == '0') return std::nullopt;
+   uint64_t result;
+-  const char* end = text.data() + text.size();
++  const char* end = std::to_address(text.end());
+   auto parsed = std::from_chars(text.data(), end, result);
+   if (parsed.ec != std::errc{} || parsed.ptr != end) return std::nullopt;
+   return result;

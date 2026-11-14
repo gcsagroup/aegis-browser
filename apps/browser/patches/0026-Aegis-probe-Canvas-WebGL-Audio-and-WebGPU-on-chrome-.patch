@@ -1,4 +1,4 @@
-From 62c2112d257aff2b6a7ff4e298778f4f32bbd8de Mon Sep 17 00:00:00 2001
+From f974b840de1719afe83d845a0511e7bded667836 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 17:47:47 +0800
 Subject: [PATCH] Aegis: probe Canvas, WebGL, Audio, and WebGPU on
@@ -7,10 +7,6 @@ Subject: [PATCH] Aegis: probe Canvas, WebGL, Audio, and WebGPU on
 One button reads all four Fingerprint Guard surfaces so a user can
 see Aegis-stable WebGL/WebGPU strings when the guard is on.
 ---
- chrome/browser/resources/aegis/aegis.css  |   4 +
- chrome/browser/resources/aegis/aegis.ts   | 143 +++++++++++++++++++---
- chrome/browser/ui/webui/aegis/aegis_ui.cc |   6 +-
- 3 files changed, 136 insertions(+), 17 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
 index 0bc988854e87f5af934943b05e5091fbb702d79b..5c1274444258eb2483a30b5817030d44bfa74a02 100644
@@ -233,6 +229,3 @@ index 8e10165872ec3b88a21565c08898c62991fd37b6..a52a292dfeedd2ca0d5e976e125c8123
        .filter_list_title = "EasyList rules",
        .filter_list_auto_update = "Auto-update filter lists",
        .filter_list_auto_update_hint =
--- 
-2.52.0
-

@@ -1,21 +1,15 @@
-From 34c8192fc21e659331994fc17c36fc56b5832095 Mon Sep 17 00:00:00 2001
+From cb8773267fb74340f9b0a29c7804de4f04d794f3 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 06:34:27 +0800
 Subject: [PATCH] feat(aegis): add V8 bytecode shadow observation
 
 ---
- chrome/browser/chrome_content_browser_client.cc  | 11 +++++++++++
- chrome/common/aegis/features.cc                  |  6 ++++++
- chrome/common/aegis/features.h                   |  2 ++
- chrome/common/aegis/features_unittest.cc         | 14 ++++++++++++++
- .../renderer_host/render_process_host_impl.cc    | 16 ++++++++++++++++
- 5 files changed, 49 insertions(+)
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 index ad83860ff32551b40638e2d18ebebd44ab51bb22..b1866c83c558163052e2147f1e1f8ca2ebd38916 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -2965,6 +2965,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -3166,6 +3166,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
  #endif
  
    if (process_type == switches::kRendererProcess) {
@@ -103,7 +97,7 @@ diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content
 index cf64747dbc2a2800d42a8993d8f0b856c7ba1822..b07ee9612043d7892ba31213fa297e5e2a5b5822 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -4038,7 +4038,23 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+@@ -4087,7 +4087,23 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
        switches::kSchedulerBoostUrgent,
  #endif
    };
@@ -127,6 +121,3 @@ index cf64747dbc2a2800d42a8993d8f0b856c7ba1822..b07ee9612043d7892ba31213fa297e5e
  
    // Propagate WebNN switches needed by backends that run in the renderer.
    renderer_cmd->CopySwitchesFrom(
--- 
-2.52.0
-

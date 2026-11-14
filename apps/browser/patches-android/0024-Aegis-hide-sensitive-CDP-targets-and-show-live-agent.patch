@@ -1,4 +1,4 @@
-From c07d379110df10790896ba586167eeafe452dedf Mon Sep 17 00:00:00 2001
+From 4d4a34d0486f30ac0850c46f861983571404e76d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:59:10 +0800
 Subject: [PATCH] Aegis: hide sensitive CDP targets and show live agent
@@ -7,27 +7,6 @@ Subject: [PATCH] Aegis: hide sensitive CDP targets and show live agent
 Remote CDP lists only the browser target and http(s) pages. Loopback
 agent WebSocket counts appear on chrome://aegis.
 ---
- chrome/browser/aegis/aegis_service.cc         | 39 +++++++++++++++-
- chrome/browser/aegis/aegis_service.h          |  3 ++
- chrome/browser/devtools/BUILD.gn              |  1 +
- .../chrome_devtools_manager_delegate.cc       | 19 ++++++++
- .../chrome_devtools_manager_delegate.h        |  2 +
- chrome/browser/resources/aegis/aegis.ts       | 14 +++++-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 25 ++++++-----
- .../ui/webui/aegis/aegis_ui_handler.cc        |  2 +
- chrome/common/aegis/BUILD.gn                  | 16 +++++++
- chrome/common/aegis/cdp_target_filter.cc      | 19 ++++++++
- chrome/common/aegis/cdp_target_filter.h       | 20 +++++++++
- .../aegis/cdp_target_filter_unittest.cc       | 37 ++++++++++++++++
- chrome/common/aegis/cdp_ws_hook.cc            | 44 +++++++++++++++++++
- chrome/common/aegis/cdp_ws_hook.h             | 25 +++++++++++
- .../browser/devtools/devtools_http_handler.cc | 11 ++---
- 15 files changed, 256 insertions(+), 21 deletions(-)
- create mode 100644 chrome/common/aegis/cdp_target_filter.cc
- create mode 100644 chrome/common/aegis/cdp_target_filter.h
- create mode 100644 chrome/common/aegis/cdp_target_filter_unittest.cc
- create mode 100644 chrome/common/aegis/cdp_ws_hook.cc
- create mode 100644 chrome/common/aegis/cdp_ws_hook.h
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 9c6887281abe883a19fba50e7249a0d810543e09..0f0b0db49a5b8dfdefc3c2799b937f0f29576038 100644

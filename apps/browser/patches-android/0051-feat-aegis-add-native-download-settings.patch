@@ -1,34 +1,9 @@
-From d0e0f805f407e8cb8b5278dbc7791d566f995741 Mon Sep 17 00:00:00 2001
+From de12e7939c468d3217641198f716758bbc2b066b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 26 Aug 2026 21:39:06 +0800
 Subject: [PATCH] feat(aegis): add native download settings
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   3 +
- chrome/browser/aegis/aegis_download_prefs.cc  |  83 ++++++++
- chrome/browser/aegis/aegis_download_prefs.h   |  52 +++++
- .../aegis/aegis_download_prefs_unittest.cc    |  85 +++++++++
- .../chrome_download_manager_delegate.cc       |   4 +
- chrome/browser/prefs/browser_prefs.cc         |   2 +
- .../downloads/aegis_download_panel.html.ts    |  10 +-
- .../downloads/aegis_download_panel.ts         |  13 ++
- .../downloads_page/downloads_browser_proxy.ts |  26 ++-
- .../downloads_page/downloads_page.css         |  29 +++
- .../downloads_page/downloads_page.html.ts     |  71 +++++++
- .../settings/downloads_page/downloads_page.ts | 180 +++++++++++++++++-
- .../ui/webui/downloads/downloads_ui.cc        |  13 ++
- .../ui/webui/settings/downloads_handler.cc    |  98 ++++++++++
- .../ui/webui/settings/downloads_handler.h     |   4 +
- .../settings/downloads_handler_unittest.cc    |  52 +++++
- .../webui/settings/downloads_page_test.ts     |  45 +++++
- .../common/parallel_download_utils.cc         |  16 +-
- .../parallel_download_utils_unittest.cc       |  16 ++
- .../public/common/download_features.cc        |  36 ++++
- .../public/common/download_features.h         |  10 +
- 21 files changed, 838 insertions(+), 10 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_download_prefs.cc
- create mode 100644 chrome/browser/aegis/aegis_download_prefs.h
- create mode 100644 chrome/browser/aegis/aegis_download_prefs_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index da0c389d215b785baa7dbe81ae5dfbdee6080902..a0f44386ef68fa674ef1e6f38c538f0ced31c2bb 100644
@@ -301,7 +276,7 @@ index 5d999436c7e7c5440198fa1d2fd7e7fbad3156e6..458c01105bf0a0602524ac3858864c11
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/download/download_core_service.h"
  #include "chrome/browser/download/download_core_service_factory.h"
-@@ -709,6 +710,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
+@@ -710,6 +711,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
        download_message_bridge_(std::make_unique<DownloadMessageBridge>()),
  #endif
        download_prefs_(std::make_unique<DownloadPrefs>(profile)) {
@@ -323,7 +298,7 @@ index 609feae3334e551e8a71f765fa8d6317ef62bd37..a0f4ce2a6a230f1d00b8140bb31a319d
  #include "chrome/browser/aegis/aegis_prefs.h"
  #include "chrome/browser/accessibility/accessibility_labels_service.h"
  #include "chrome/browser/accessibility/invert_bubble_prefs.h"
-@@ -1421,6 +1422,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -1664,6 +1665,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
    accessibility::AccessibilityPrefsController::RegisterLocalStatePrefs(
        registry);
  #endif
@@ -1279,6 +1254,3 @@ index 1523fb89e5fec509c5b4b062b9749831a3df45b2..01ee84be65fc124d5860dc0ccf2d548c
  // Whether we allow the download job resume in a backoff.
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
  COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kBackoffInDownloading);
--- 
-2.52.0
-

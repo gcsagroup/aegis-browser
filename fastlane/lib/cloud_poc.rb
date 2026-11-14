@@ -12,8 +12,9 @@ module AegisRelease
     end
 
     def admission!
-      AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted' &&
-                            ENV['RUNNER_OS'] == 'macOS', 'Cloud PoC upload only runs on the admitted hosted runner')
+      runtime = ENV['RUNNER_ENVIRONMENT'].to_s
+      AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && %w[github-hosted self-hosted].include?(runtime) &&
+                            ENV['RUNNER_OS'] == 'macOS', 'Cloud PoC upload only runs on an admitted Actions macOS runner')
       AegisRelease.command('node', File.join(@root, 'scripts/ci/ios-cloud-poc-admission.mjs'), cwd: @root)
       current = AegisRelease.source(@root)
       AegisRelease.require!(current['sha'] == ENV['GITHUB_SHA'], 'Cloud PoC checkout differs from admitted source')
@@ -54,16 +55,20 @@ module AegisRelease
     end
 
     def verify_package(source)
+      runtime = ENV['RUNNER_ENVIRONMENT'].to_s
       receipt_path = File.join(directory, 'poc-receipt.json')
       receipt = JSON.parse(File.read(AegisRelease.file!(receipt_path)))
       AegisRelease.require!(receipt['source'] == source && receipt['status'] == 'ipa_verified' &&
-                            receipt['runtime'] == 'github-hosted' && receipt['signingMode'] == 'cloud' &&
+                            receipt['runtime'] == runtime && receipt['signingMode'] == 'cloud' &&
                             receipt.values_at('version', 'build', 'profile') == [identity.version, identity.build, 'beta'] &&
                             receipt['runId'] == ENV['GITHUB_RUN_ID'] && receipt['runAttempt'] == ENV['GITHUB_RUN_ATTEMPT'] &&
                             receipt['distributionP12Imported'] == false && receipt['keychainRestored'] == true &&
-                            receipt['cleanRunnerDistributionIdentityAbsent'] == true &&
                             receipt['distributionIdentityAbsentAfterExport'] == true && !receipt.key?('reusedArchiveFrom'),
                             'Fresh hosted cloud package evidence differs from the admitted request')
+      if runtime == 'github-hosted'
+        AegisRelease.require!(receipt['cleanRunnerDistributionIdentityAbsent'] == true,
+                              'Fresh GitHub-hosted cloud package must start without Distribution identity')
+      end
       assets = receipt.fetch('assets')
       AegisRelease.require!(assets.is_a?(Array) && assets.size == 4 && assets.map { |a| a['name'] }.uniq.size == 4 &&
                             %w[signature-verification.json dsym-verification.json].all? { |name| assets.any? { |a| a['name'] == name } }, 'Incomplete cloud assets')

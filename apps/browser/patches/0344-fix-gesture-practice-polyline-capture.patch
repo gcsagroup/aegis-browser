@@ -1,8 +1,8 @@
-From 51c8bdaf26e147151bd8689dfcaa983bd0944f90 Mon Sep 17 00:00:00 2001
+From 5326eedcd8ee37dc694dd4d2717151ad630b82a4 Mon Sep 17 00:00:00 2001
 From: Aegis Source Export Fixture <aegis-source-export@example.invalid>
 Date: Tue, 27 Oct 2026 19:14:25 +0800
 Subject: [PATCH] Preserve checked gesture polyline across callbacks
-
+---
 
 diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
 index 84104256672477570036e1a237f8f14c4c106911..e87473571f12e54c44b25ac3ff0042160fd103ef 100644

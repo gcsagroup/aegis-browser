@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From b509b596e0ceb968ac7792d0cb2d3bcc2a674e12 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Wed, 21 Oct 2026 23:45:00 +0800
 Subject: [PATCH] 统一设置卡片与表单对齐
-
 ---
+
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
 index 21249b5df748c98caaf20d868cbb2b055174c38c..f968a35042850a978ad19da5c9dc0c52cc4cd0f2 100644
 --- a/chrome/browser/resources/aegis/aegis.css

@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 94cc11725e7a870500ba17a88e96ae1e32e546df Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Wed, 21 Oct 2026 18:00:00 +0800
 Subject: [PATCH] 整改八类设置流程并扩充本机翻译语言包
-
 ---
+
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 09ad60ba98d59a515d2fe27023428546139aa33f..317b4d4da6ee7d97c8db58f321d5bb940aa9d0e0 100644
 --- a/chrome/browser/aegis/aegis_service.cc
@@ -5926,7 +5926,7 @@ diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui
 index 7ea82132a5dcea9536dac190656e5537fc3793ad..95c33a6761664c458aa03ea319c6e4048ecdab82 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -259,19 +259,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -263,19 +263,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
    html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
    html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");

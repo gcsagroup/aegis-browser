@@ -1,21 +1,9 @@
-From f5e29a108fe1e83397e92d358f27394c2d587ad2 Mon Sep 17 00:00:00 2001
+From 77f82e82f8d30f7a08dc710d88ee57979549a56c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 00:34:20 +0800
 Subject: [PATCH] fix(aegis): harden browser agent planning flow
 
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    |  32 ++++
- .../aegis/agent/aegis_agent_service.cc        |  35 +++--
- .../browser/aegis/agent/aegis_agent_service.h |   3 +
- .../agent/aegis_agent_service_unittest.cc     |  24 +--
- chrome/browser/aegis/agent/agent_planner.cc   | 142 +++---------------
- .../aegis/agent/agent_planner_unittest.cc     |  50 +++---
- .../browser/resources/aegis_agent/agent.css   |   9 +-
- .../browser/resources/aegis_agent/agent.html  |   3 +-
- chrome/browser/resources/aegis_agent/agent.ts |  47 +++++-
- .../aegis_agent/aegis_agent_page_handler.cc   |  70 ++++++++-
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  36 +++++
- 11 files changed, 256 insertions(+), 195 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index 829ec1aba6b449e98fb1f8530f1042912771bc46..54e3e57bcecd12cf11e54932d45680e59515ea78 100644
@@ -843,6 +831,3 @@ index 90d9a7f3dc8a01b973c639f7d59d70d9b9c5312e..84703e61665077c1cdb6b34a49e11a40
    add("resultTitle", "Result", "任务结果", "任務結果");
    add("resultSources", "Sources", "来源", "來源");
    add("unfinishedItems", "Not finished", "未完成事项", "未完成事項");
--- 
-2.52.0
-

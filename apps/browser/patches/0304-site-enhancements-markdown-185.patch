@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 68c417a1ab6d33ec691dd84687e097336a8c46e7 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 13 Oct 2026 02:43:00 +0800
 Subject: [PATCH] 网站增强、用户脚本与 Markdown 阅读 185
@@ -9,57 +9,6 @@ Content-Transfer-Encoding: 8bit
 未提交工作区补丁，基于 07c1d76177c3f3525ad12d7eee74988ef3691d48。
 零值标记表示尚无对应提交，不变更源仓库分支或索引。
 ---
- chrome/app/chrome_command_ids.h                    |    2 +
- chrome/browser/aegis/BUILD.gn                      |    7 +
- .../aegis/enhancements/enhancement_browsertest.cc  |  246 +
- .../aegis/enhancements/enhancement_store.cc        |  572 ++
- .../browser/aegis/enhancements/enhancement_store.h |   65 +
- .../enhancements/enhancement_store_unittest.cc     |  189 +
- .../aegis/enhancements/enhancement_tab_helper.cc   |  720 +++
- .../aegis/enhancements/enhancement_tab_helper.h    |  103 +
- chrome/browser/resources/aegis/BUILD.gn            |   35 +
- chrome/browser/resources/aegis/aegis.html          |    1 +
- chrome/browser/resources/aegis/aegis.ts            |    3 +
- chrome/browser/resources/aegis/enhancements.css    |  191 +
- chrome/browser/resources/aegis/enhancements.html   |  106 +
- chrome/browser/resources/aegis/enhancements.js     |  358 ++
- .../resources/aegis/enhancements_shared/core.js    |  201 +
- .../aegis/enhancements_shared/script_runtime.js    |   93 +
- .../aegis/enhancements_shared/site_rules.js        |  151 +
- .../tests/matching-vectors.json                    |   21 +
- .../enhancements_shared/vendor/DOMPurify-LICENSE   |  202 +
- .../aegis/enhancements_shared/vendor/NOTICE.txt    |    8 +
- .../aegis/enhancements_shared/vendor/acorn-LICENSE |   21 +
- .../aegis/enhancements_shared/vendor/acorn.js      | 6262 ++++++++++++++++++++
- .../enhancements_shared/vendor/highlight-LICENSE   |   29 +
- .../enhancements_shared/vendor/highlight.min.js    |    3 +
- .../aegis/enhancements_shared/vendor/manifest.json |   42 +
- .../enhancements_shared/vendor/markdown-it-LICENSE |   22 +
- .../enhancements_shared/vendor/markdown-it.min.js  |   14 +
- .../aegis/enhancements_shared/vendor/purify.min.js |    7 +
- .../enhancements_shared/vendor/task-lists-LICENSE  |   13 +
- .../enhancements_shared/vendor/task-lists.min.js   |    2 +
- .../resources/aegis/enhancements_shared/viewer.css |  342 ++
- .../aegis/enhancements_shared/viewer.html          |   53 +
- .../resources/aegis/enhancements_shared/viewer.js  |  305 +
- chrome/browser/resources/aegis/markdown.html       |   54 +
- chrome/browser/resources/aegis/markdown.js         |  253 +
- chrome/browser/resources/aegis_agent/agent.html    |    2 +
- chrome/browser/resources/aegis_agent/agent.ts      |    6 +
- chrome/browser/ui/browser_command_controller.cc    |    9 +
- chrome/browser/ui/tab_helpers.cc                   |    2 +
- chrome/browser/ui/toolbar/app_menu_model.cc        |    3 +
- chrome/browser/ui/webui/aegis/BUILD.gn             |    7 +
- .../ui/webui/aegis/aegis_enhancement_handler.cc    |  288 +
- .../ui/webui/aegis/aegis_enhancement_handler.h     |   24 +
- chrome/browser/ui/webui/aegis/aegis_markdown_ui.cc |   38 +
- chrome/browser/ui/webui/aegis/aegis_markdown_ui.h  |   16 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc          |    5 +
- .../ui/webui/aegis_agent/reading_workspace.cc      |   12 +-
- .../ui/webui/chrome_untrusted_web_ui_configs.cc    |    6 +
- chrome/browser/ui/webui/help/aegis_github_update.h |    4 +-
- tools/gritsettings/resource_ids.spec               |    2 +-
- 50 files changed, 11116 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
 index 4999ea287ec8b26c6bfb1931a36e68e71649fca4..d940417c74f478db600b6ffd31f6323577b50450 100644
@@ -11105,7 +11054,7 @@ index 25225650497183a20795c5b542baed4d7f780d08..ee0e789f2cc034e05f1f904f1f4b1a64
    // AutofillClientProvider initializes ContentAutofillClient for web_contents,
    // which is gated by enable_browser_autofill.
 diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
-index 86c077dc4ad13ccdd8b781cccdb0333415bf60ed..9943fabca847d446b9c6006e67bbb53ef01fd49c 100644
+index eea1761fc4c3cf61162e5d3b2001e9da710d1f87..9b6f0b56e26ed13bb3ecf3b76f93d36c43e2c312 100644
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
 @@ -15,6 +15,7 @@
@@ -11124,7 +11073,7 @@ index 86c077dc4ad13ccdd8b781cccdb0333415bf60ed..9943fabca847d446b9c6006e67bbb53e
  
    // In tests you may want to disable TabFeatures initialization.
    // See tabs::TabModel::PreventFeatureInitializationForTesting
-@@ -1483,6 +1485,7 @@ void TabFeatures::WillDiscardContents(tabs::TabInterface* tab,
+@@ -1484,6 +1486,7 @@ void TabFeatures::WillDiscardContents(tabs::TabInterface* tab,
    DCHECK_EQ(old_contents, tab->GetContents());
    aegis::PhishTabHelper::CreateForWebContents(new_contents);
    aegis::MouseGestureTabHelper::CreateForWebContents(new_contents);

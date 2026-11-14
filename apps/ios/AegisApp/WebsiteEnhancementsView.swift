@@ -472,13 +472,24 @@ private func scriptStatusText(_ item: ScriptRunStatus) -> String {
 
 struct CurrentWebsiteView: View {
   @EnvironmentObject private var browser: BrowserSession
+  @EnvironmentObject private var accessRegistry: AccessSiteProxyStoreRegistry
+  @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
   @Environment(\.dismiss) private var dismiss
   @Environment(\.locale) private var localizationLocale
   var body: some View {
       let _ = localizationLocale
+      let _ = accessRegistry.revision
     NavigationStack {
       if let tab = browser.activeTab {
-        CurrentWebsitePanel(tab: tab, store: browser.enhancements, isPrivate: browser.profile.isPrivate)
+        CurrentWebsitePanel(
+          tab: tab,
+          store: browser.enhancements,
+          isPrivate: browser.profile.isPrivate,
+          accessSiteProxy: accessRegistry.store(
+            for: tab.websiteDataStore,
+            isPrivate: tab.profile.isPrivate
+          )
+        )
           .id(tab.id)
           .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
           .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
@@ -491,6 +502,10 @@ private struct CurrentWebsitePanel: View {
   @ObservedObject var tab: BrowserTab
   @ObservedObject var store: WebsiteEnhancementStore
   let isPrivate: Bool
+  @ObservedObject var accessSiteProxy: AccessSiteProxySessionStore
+  @EnvironmentObject private var accountSession: AccessAccountSession
+  @EnvironmentObject private var subscriptionUsage: AccessSubscriptionUsageSession
+  @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
   @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var markdownDocument: MarkdownDocument?
   @State private var readingPage = false
@@ -501,6 +516,22 @@ private struct CurrentWebsitePanel: View {
   var body: some View {
       let _ = localizationLocale
     Form {
+      AccessSiteProxyToggleView(store: accessSiteProxy, url: tab.url, tab: tab)
+        .onAppear { accessSiteProxy.hostRouting = hostStores }
+        .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
+      if !isPrivate {
+        if subscriptionUsage.isSelected {
+          AccessSubscriptionUsageView(session: subscriptionUsage)
+        } else {
+          AccessAccountUsageView(session: accountSession)
+        }
+      } else {
+        Section("Access 账户额度") {
+          Text("私密会话不显示普通账户的额度；请在普通窗口查询。")
+            .font(.footnote).foregroundStyle(.secondary)
+        }
+      }
+      AccessDevAllowBlockSectionView(store: accessSiteProxy, url: tab.url)
       if let url = tab.url, ScriptMatch.origin(url) != nil {
         Section {
           Text(url.host ?? url.absoluteString).font(.headline).textSelection(.enabled)

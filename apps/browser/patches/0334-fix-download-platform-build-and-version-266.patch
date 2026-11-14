@@ -1,12 +1,8 @@
-From f2ad9ede0b934efcdcaebd2cf46b44d1c5a8e943 Mon Sep 17 00:00:00 2001
+From ed578c8d13bb3cb245db1db9901d6c7cee766582 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 20:52:09 +0800
 Subject: [PATCH] 修复平台说明编译条件并更新版本
-
 ---
- chrome/browser/ui/webui/aegis/aegis_ui.cc          | 7 +++++--
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- 2 files changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 index 070133ce61784a43b423fa1ce39adbef093ffda2..86603291a0e5408b90fc6ec2605870af13ad8e3a 100644

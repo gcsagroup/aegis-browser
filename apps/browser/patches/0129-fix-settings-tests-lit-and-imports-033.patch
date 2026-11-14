@@ -1,4 +1,4 @@
-From 046e2d10f00ba57253129e9dc5a9af4f5684d2cc Mon Sep 17 00:00:00 2001
+From 28b7a6d0a920106c5a12fa8333bdd1811437123a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 05:15:22 +0800
 Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=E8=AE=BE=E7=BD=AE=E9=A1=B5?=
@@ -10,10 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h          | 6 +++---
- chrome/test/data/webui/settings/about_page_test.ts          | 2 +-
- .../webui/settings/settings_menu_interactive_ui_test.ts     | 2 +-
- 3 files changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 60c94969861156afab9f7357520658a33983a749..b75faad465f20c36f5f95e15cb16f888ecf6b595 100644
@@ -58,6 +54,3 @@ index 11dfdfe887e062903a7956d8511f1f32a7acc28d..6e49c995c3fb1bb32d7de941476a57db
  import {assertEquals} from 'chrome://webui-test/chai_assert.js';
  
  suite('SettingsMenuInteractiveUITest', () => {
--- 
-2.52.0
-

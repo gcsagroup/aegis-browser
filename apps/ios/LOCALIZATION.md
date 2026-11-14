@@ -1,6 +1,6 @@
 # iOS catalog localization
 
-All **1,085 catalog entries** are translated in each of the **14 resource
+All **1,086 catalog entries** are translated in each of the **14 resource
 languages**. The original 1,068-entry completion covered the 937 previously untranslated entries in each of
 the 11 added languages: **10,307 new translations**, with no `needs_review`
 English prose fallbacks. The existing 131 translations in each added language
@@ -8,8 +8,8 @@ and all English, Simplified Chinese and Traditional Chinese entries are preserve
 
 | Resource languages | Translated per language | English fallback (`needs_review`) | Total per language |
 | --- | ---: | ---: | ---: |
-| de, es, fr, id, it, ja, ko, ms, pt, th, vi | 1,085 | 0 | 1,085 |
-| en, zh-Hans, zh-Hant | 1,085 | 0 | 1,085 |
+| de, es, fr, id, it, ja, ko, ms, pt, th, vi | 1,086 | 0 | 1,086 |
+| en, zh-Hans, zh-Hant | 1,086 | 0 | 1,086 |
 
 The preservation baseline is `c7f45b21972bfc33c53c0c90bc0a48e9e517103e`.
 Changes are confined to `apps/ios`. Catalog completion does not establish full-app

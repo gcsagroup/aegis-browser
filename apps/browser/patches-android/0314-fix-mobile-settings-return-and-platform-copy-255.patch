@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From a10d1b83680937359cb74a8d0874f0209ea0d4c0 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 18:40:00 +0800
 Subject: [PATCH] 修复移动设置返回导航与平台说明
-
 ---
+
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
 index 0f3f40358543f22fcbefaca44bcae298ddf39c67..73d69bfb850d5dd59660f78fbfe8db67f6dc3652 100644
 --- a/chrome/browser/resources/aegis/aegis.css

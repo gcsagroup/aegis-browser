@@ -54,6 +54,10 @@
 | 內建 Markdown 閱讀 | 部分 | 原始碼接入 | 未移植 | 部分 |
 | 統一設定與舊入口遷移 | 原始碼接入 | 原始碼接入 | 原始碼接入 | 原始碼接入 |
 | P01 控制協議和雙跳 TLS 傳輸 | 原始碼接入 | 未移植 | 未移植 | 未移植 |
+| Mac本站代理工作階段與故障恢復 | 原始碼接入 | 未移植 | 未移植 | 部分 |
+| Mac帳戶節點、額度與登出隔離 | 原始碼接入 | 未移植 | 未移植 | 部分 |
+| Mac本地核心診斷隱私與分享 | 原始碼接入 | 未移植 | 未移植 | 未移植 |
+| Windows解除安裝提示在地化 | 未移植 | 原始碼接入 | 未移植 | 未移植 |
 
 ## iOS 範圍與依據
 
@@ -219,11 +223,11 @@ iOS 模擬器證據：[docs/audit/ios-portable-features-2026-10-11.zh-CN.md](../
 
 ### 網絡訪問規則和權限
 
-`aegis-access` — 按來源的網站顯示、腳本、相機和麥克風設置；未移植 Aegis Access 代理路由。
+`aegis-access` — 保留按來源的顯示/腳本/相機麥克風設置；另有 AccessKit loopback HTTP/HTTPS 入站、reality_vision 出站合同與 ProxyConfiguration 接線。本輪僅登記模擬器單元/UI 覆蓋（見 I1–I9 與 REALITY 正反）；實機與 TestFlight 為 NOT_RUN。不等於桌面 Chromium Access 全路由移植，也不把單測綠升為產品五步 PASS。
 
-原始碼：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift)
+原始碼：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift) · [apps/ios/AccessKit/AccessInboundTransport.swift](../apps/ios/AccessKit/AccessInboundTransport.swift) · [apps/ios/AccessKit/AccessHTTPRealityPath.swift](../apps/ios/AccessKit/AccessHTTPRealityPath.swift) · [apps/ios/AccessKit/AccessHTTPSRealityPath.swift](../apps/ios/AccessKit/AccessHTTPSRealityPath.swift) · [apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift](../apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift) · [apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift](../apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift)
 
-本項未完成本輪執行驗收。
+iOS 模擬器證據：[docs/audit/ios-access-simulator-evidence-2026-11-08.md](../docs/audit/ios-access-simulator-evidence-2026-11-08.md)
 
 ### 舊資料、隱私模式和重啓兼容
 
@@ -422,6 +426,38 @@ iOS 模擬器證據：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 `p01-two-hop-tls` — 此平台的建置目標尚未接入 P01 雙跳傳輸。
 
 原始碼：[apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn](../apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn)
+
+本項未完成本輪執行驗收。
+
+### Mac本站代理工作階段與故障恢復
+
+`mac-access-site-proxy-session` — iOS保留獨立WebKit帳戶或代理入口；不包含Mac的Chromium連線、子程序與原生測試，不能複用其驗收。
+
+原始碼：[apps/ios/BrowserKit/BrowserSession.swift](../apps/ios/BrowserKit/BrowserSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本項未完成本輪執行驗收。
+
+### Mac帳戶節點、額度與登出隔離
+
+`mac-access-account` — iOS保留獨立WebKit帳戶或代理入口；不包含Mac的Chromium連線、子程序與原生測試，不能複用其驗收。
+
+原始碼：[apps/ios/AegisApp/AccessAccountSession.swift](../apps/ios/AegisApp/AccessAccountSession.swift) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本項未完成本輪執行驗收。
+
+### Mac本地核心診斷隱私與分享
+
+`mac-access-core-diagnostics` — 本項依既有設計僅適用於Mac原生接入；不能將該端原始碼與測試視為本平台實作。
+
+原始碼：[apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_core_log_share.cc) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本項未完成本輪執行驗收。
+
+### Windows解除安裝提示在地化
+
+`windows-uninstall-localization` — 本項依既有設計僅適用於Windows解除安裝程式；不能將該端原始碼與測試視為本平台實作。
+
+原始碼：[apps/browser/scripts/windows-uninstall-locales_test.py](../apps/browser/scripts/windows-uninstall-locales_test.py) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
 
 本項未完成本輪執行驗收。
 

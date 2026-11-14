@@ -2,6 +2,7 @@
 import importlib.util
 import inspect
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,6 +15,20 @@ spec.loader.exec_module(ci)
 
 
 class CandidateTests(unittest.TestCase):
+    def test_candidate_workflow_routes_to_supported_host_architectures(self):
+        workflow = (ci.ROOT / '.github/workflows/chromium-candidate.yml').read_text()
+        routes = dict(re.findall(r"- platform: (\w+)\s+labels: '([^']+)'", workflow))
+        self.assertEqual(set(routes), set(ci.PLATFORMS))
+        label_architectures = {'X64': {'amd64', 'x86_64'},
+                               'ARM64': {'arm64', 'aarch64'}}
+        for platform, route in routes.items():
+            labels = json.loads(route)
+            with self.subTest(platform=platform):
+                self.assertIn('self-hosted', labels)
+                self.assertTrue(any(architectures & ci.PLATFORMS[platform][2]
+                                    for label, architectures in label_architectures.items()
+                                    if label in labels), labels)
+
     def test_workflow_output_is_not_mistaken_for_dirty_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

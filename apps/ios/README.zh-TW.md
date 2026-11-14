@@ -69,6 +69,8 @@ bash apps/ios/scripts/run-simulator-tests.sh \
 
 腳本自動遞增 `project.yml` 的建置編號並產生工程，建置一次後，在兩部具名模擬器測試相同產物。建置目錄固定為倉庫同層的 `GCSA-aegis-build/ios/DerivedData`，App 固定於其下 `Build/Products/Debug-iphonesimulator/Aegis.app`。每次證據使用新的目錄，不清除既有模擬器或覆寫舊證據。
 
+輸入雜湊涵蓋 `apps/ios`、`packages/core` 以及 iOS 工程引用的瀏覽器 `enhancements_shared` 資源，分別保留工程產生前、產生後及測試後的清單。中繼資料記錄原始 Git 狀態和工程產生後的狀態。測試前核對 App 的 `CFBundleVersion` 與本次遞增的建置編號，Swift coverage 報告也記錄該編號。
+
 驗收服務僅監聽 `127.0.0.1:8768`。網頁、檔案和模型回答皆為合成資料，透過真實 HTTP、WebKit 和檔案操作驗證流程；這不代表外部模型品質通過。腳本只管理自己啟動的服務程序，已有的相同服務會重用。
 
 手動體驗時，執行 `python3 apps/ios/scripts/simulator-fixture-server.py --port 8768`，瀏覽 `http://127.0.0.1:8768/article`，將相容介面設為 `http://127.0.0.1:8768/v1`，選取 `aegis-simulator-fixture` 模型。

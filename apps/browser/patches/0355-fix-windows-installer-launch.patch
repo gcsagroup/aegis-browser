@@ -1,17 +1,9 @@
-From d1aa37eafda7100395e08f8d14af84713e2d3f39 Mon Sep 17 00:00:00 2001
+From b2e904806816f41d089623b45450a78a42c29de9 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 3 Nov 2026 16:52:45 +0800
 Subject: [PATCH] Integrate safe desktop launch and existing-version outcome
  with measured installer UI
-
 ---
- .../mini_installer/aegis_install_ui.cc        | 15 +++--
- .../mini_installer/aegis_install_ui.h         |  3 +-
- .../aegis_install_ui_unittest.cc              | 62 +++++++++++++++++++
- chrome/installer/setup/aegis_launch_policy.h  | 12 ++++
- .../setup/aegis_launch_policy_unittest.cc     | 31 ++++++++++
- chrome/installer/setup/setup_main.cc          | 21 +++++--
- 6 files changed, 132 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
 index f683cbcfdc46376625705c91b7b8ba839f3c8914..d2d248b3a6c3cf0282dd6ac8d3812b9e55296e95 100644
@@ -226,7 +218,7 @@ diff --git a/chrome/installer/setup/setup_main.cc b/chrome/installer/setup/setup
 index 34af694e21b13b24481cfe6efb5ab16661dc0d68..53d311071150b29f595811b3ec42ad5f7888d2ab 100644
 --- a/chrome/installer/setup/setup_main.cc
 +++ b/chrome/installer/setup/setup_main.cc
-@@ -1431,12 +1431,21 @@ InstallStatus InstallProductsHelper(InstallationState& original_state,
+@@ -1439,12 +1439,21 @@ InstallStatus InstallProductsHelper(InstallationState& original_state,
        if (ShouldLaunchAegisAfterInstall(install_status, interactive, silent,
                                          do_not_launch_chrome)) {
          // 仅使用已验证的安装目录；系统级/提升安装也必须以桌面用户权限启动。
@@ -254,6 +246,3 @@ index 34af694e21b13b24481cfe6efb5ab16661dc0d68..53d311071150b29f595811b3ec42ad5f
            ::MessageBoxW(nullptr,
                          L"安装已完成，但未能自动打开浏览器。请从桌面快捷方式启"
                          L"动 GCSA Aegis。",
--- 
-2.54.0 (Apple Git-157)
-

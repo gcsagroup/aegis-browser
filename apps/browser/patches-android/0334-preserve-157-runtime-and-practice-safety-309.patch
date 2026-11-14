@@ -1,3 +1,6 @@
+
+---
+
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 17efd0d17d274fe8e84dfbabeb06a02e9171c369..bf2a017348276c2dac896d8e7c8aff4e37039526 100644
 --- a/chrome/browser/aegis/BUILD.gn
@@ -459,7 +462,7 @@ index c52c8003770479aedea0d3640d40a57081f28a36..16ef07b2415b300a1f8d21687464cbf1
        actions::ActionItem::Builder(
            base::BindRepeating(
 diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
-index 86c077dc4ad13ccdd8b781cccdb0333415bf60ed..80ef75c2417774c75a1e66a2ac3de8df0dcb080c 100644
+index eea1761fc4c3cf61162e5d3b2001e9da710d1f87..ba531c94a9f4642f8e5166a9ab0c3772e971a605 100644
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
 @@ -736,7 +736,10 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {

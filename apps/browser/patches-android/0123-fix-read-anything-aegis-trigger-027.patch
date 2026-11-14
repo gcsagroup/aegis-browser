@@ -1,18 +1,15 @@
-From 1efba1f46d70de5c535dd0aa1f9c49ac1383d84b Mon Sep 17 00:00:00 2001
+From bc161d3e0e4cb060f2e391ee1f19144465b65131 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 02:02:45 +0800
 Subject: [PATCH] fix(reading): classify Aegis side-panel trigger on M153
 
 ---
- chrome/browser/ui/read_anything/read_anything_enums.h | 1 +
- chrome/browser/ui/webui/help/aegis_github_update.h    | 6 +++---
- 2 files changed, 4 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/read_anything/read_anything_enums.h b/chrome/browser/ui/read_anything/read_anything_enums.h
 index 7232f8fb7f437fab1b721ffd83c637e1a2d257a9..44c644ee5da191e39e12aa2b32ba997a317658df 100644
 --- a/chrome/browser/ui/read_anything/read_anything_enums.h
 +++ b/chrome/browser/ui/read_anything/read_anything_enums.h
-@@ -118,6 +118,7 @@ inline ReadAnythingOpenTrigger SidePanelToReadAnythingOpenTrigger(
+@@ -116,6 +116,7 @@ inline ReadAnythingOpenTrigger SidePanelToReadAnythingOpenTrigger(
  #endif
      case SidePanelOpenTrigger::kGlicOpened:
      case SidePanelOpenTrigger::kContextualTasks:
@@ -37,6 +34,3 @@ index 9de22790626297464aad394f90c9cd9fec6750e5..82e958224f66221b343aab558d3ed38e
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

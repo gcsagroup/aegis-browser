@@ -42,6 +42,17 @@ setup 返回 3（已打开现有版本）时显示“已打开现有版本（本
 兼容 `/silent`、`/S`；`--update` 与卸载模式也不显示交互安装窗口。
 `--do-not-launch-chrome` 和安装首选项中的禁止启动设置始终优先。
 
+## 卸载确认
+
+从 Windows 发起交互卸载时，简体中文窗口标题为“卸载 GCSA Aegis”，正文询问“确定要卸载 GCSA Aegis 吗？”删除浏览数据的选项默认未勾选。浏览器仍在运行时，窗口会提示用户先关闭所有 GCSA Aegis 窗口。
+
+构建 Windows 语言包后，在产品仓库根目录运行以下回归。它读取浏览器使用的英文、简体中文及繁体中文 `.pak` 文件。
+
+```powershell
+$src = Join-Path $env:CHROMIUM_ROOT 'src'
+python -B apps/browser/scripts/windows-uninstall-locales_test.py $src (Join-Path $src 'out/AegisRelease')
+```
+
 ## 开发验证
 
 实现位于 `chrome/installer/mini_installer/aegis_install_ui.*`，窗口仅负责展示状态；

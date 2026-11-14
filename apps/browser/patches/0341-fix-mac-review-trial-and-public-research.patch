@@ -1,10 +1,11 @@
-From 3c9dd0ae48a516f2db4630fb98db11a07fdbad9a Mon Sep 17 00:00:00 2001
+From 4d833f414355f8a7caf6801083b3e791b638afb8 Mon Sep 17 00:00:00 2001
 From: Aegis Patch Export <aegis-patch-export@invalid>
 Date: Mon, 26 Oct 2026 12:48:37 +0800
 Subject: [PATCH] fix: bind trial consent and validate public research
  unavailability
 
 Keep the desktop patch payload aligned with the overlay.
+---
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index f2565336cdb2a7f489904a573ae5961daaf7b0e9..6412a5cf70a637b2076c4e4f95c55fad441a1563 100644

@@ -1,15 +1,14 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From a3409bd5d0036f3a4b16d54170f3ae9577f221fc Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Wed, 14 Oct 2026 09:07:40 +0800
 Subject: [PATCH] 更新安全候选产品版本至 208
-
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 0fb42c8fed1b6a23e339a43f251db3e20c4cc70b..a6a38aebbd745e95a86c8ecff18906f159eba582 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
-@@ -20,9 +20,9 @@
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
  } // namespace network
  
  namespace aegis {

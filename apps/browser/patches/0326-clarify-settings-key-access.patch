@@ -1,11 +1,11 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 3476ac3b6492543429499e12e2701614bb98609b Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 23:20:00 +0800
 Subject: [PATCH] 明确设置键访问与事件绑定并保留翻译标记行为
 
 将受控字典和字段访问写为显式结构；保留现有保存队列、失败回退及消息来源检查。
-
 ---
+
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
 index cf4d1da0aa9e058f5e6e61439cd55bd58b2158cb..b08e6c42a55054d5ced3413c583bff3e3dabd5bb 100644
 --- a/chrome/browser/resources/aegis/aegis.ts

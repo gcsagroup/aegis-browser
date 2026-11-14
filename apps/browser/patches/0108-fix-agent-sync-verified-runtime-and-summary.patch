@@ -1,4 +1,4 @@
-From 4e8096e785aaddba7224401fc1921e1ae6e0eb9c Mon Sep 17 00:00:00 2001
+From 87a47e2b5a7e3046651fddf84ca611197767a648 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 10 Sep 2026 19:59:36 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=90=8C=E6=AD=A5=E5=BD=93=E5=89=8D=20Agent=20?=
@@ -10,69 +10,12 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../actor/actor_navigation_throttle.cc        |    7 +-
- .../actor/ui/actor_ui_state_manager.cc        |    7 +
- chrome/browser/aegis/BUILD.gn                 |    9 +
- .../aegis/aegis_phish_blocking_page.cc        |    6 +
- .../browser/aegis/agent/aegis_actor_bridge.cc |  222 +-
- .../browser/aegis/agent/aegis_actor_bridge.h  |    4 +
- .../aegis/agent/aegis_agent_browsertest.cc    | 3997 ++++++++++++++++-
- .../aegis/agent/aegis_agent_service.cc        | 1416 +++++-
- .../browser/aegis/agent/aegis_agent_service.h |   82 +-
- .../agent/aegis_agent_service_unittest.cc     |  525 +++
- .../aegis/agent/aegis_browser_tools.cc        |  195 +-
- .../browser/aegis/agent/aegis_browser_tools.h |    9 +
- .../aegis/agent/agent_core_unittest.cc        |  427 ++
- chrome/browser/aegis/agent/agent_execution.cc |  892 +++-
- chrome/browser/aegis/agent/agent_execution.h  |   69 +-
- .../aegis/agent/agent_execution_unittest.cc   | 1443 +++++-
- .../aegis/agent/agent_model_protocol.cc       |   41 +-
- .../aegis/agent/agent_model_protocol.h        |    7 +
- .../agent/agent_model_protocol_unittest.cc    |  103 +
- .../aegis/agent/agent_monitor_scheduler.cc    |  357 +-
- .../aegis/agent/agent_monitor_scheduler.h     |   52 +-
- .../aegis/agent/agent_monitor_summary.cc      |  311 ++
- .../aegis/agent/agent_monitor_summary.h       |   47 +
- .../agent/agent_monitor_summary_unittest.cc   |  182 +
- chrome/browser/aegis/agent/agent_planner.cc   |  255 +-
- chrome/browser/aegis/agent/agent_planner.h    |   16 +
- .../aegis/agent/agent_planner_unittest.cc     |  460 +-
- .../aegis/agent/agent_policy_broker.cc        |    8 +
- .../aegis/agent/agent_result_verifier.cc      |   51 +-
- .../browser/aegis/agent/agent_task_store.cc   |   69 +-
- .../aegis/agent/agent_task_store_unittest.cc  |  269 ++
- .../aegis/agent/agent_tool_registry.cc        |   11 +-
- chrome/browser/aegis/agent/agent_types.cc     |    8 +-
- chrome/browser/aegis/agent/agent_types.h      |    2 +
- chrome/browser/aegis/agent/agent_workflow.cc  |   40 +-
- chrome/browser/aegis/agent/agent_workflow.h   |    7 +
- chrome/browser/aegis/summary_policy.cc        |   11 +-
- .../browser/aegis/summary_policy_unittest.cc  |   23 +
- .../browser/resources/aegis_agent/agent.css   |   42 +-
- .../browser/resources/aegis_agent/agent.html  |    6 +-
- chrome/browser/resources/aegis_agent/agent.ts |  159 +-
- .../ui/views/toolbar/aegis_toolbar_button.cc  |   19 +-
- .../ui/views/toolbar/aegis_toolbar_button.h   |    4 +-
- .../ui/webui/aegis_agent/aegis_agent.mojom    |    5 +
- .../aegis_agent/aegis_agent_page_handler.cc   |   85 +-
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |   96 +-
- chrome/common/aegis/BUILD.gn                  |   10 +
- chrome/common/aegis/phish_score.cc            |   10 +-
- chrome/common/aegis/phish_score_unittest.cc   |   64 +
- chrome/common/aegis/security_text.cc          |   55 +
- chrome/common/aegis/security_text.h           |   24 +
- 51 files changed, 11762 insertions(+), 457 deletions(-)
- create mode 100644 chrome/browser/aegis/agent/agent_monitor_summary.cc
- create mode 100644 chrome/browser/aegis/agent/agent_monitor_summary.h
- create mode 100644 chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
- create mode 100644 chrome/common/aegis/security_text.cc
- create mode 100644 chrome/common/aegis/security_text.h
 
 diff --git a/chrome/browser/actor/actor_navigation_throttle.cc b/chrome/browser/actor/actor_navigation_throttle.cc
 index 051b87f0b7c863f97ab4f407581b5ece2729a9e7..37f6ef98a466a6a8c63af4cd5426191dba363ff6 100644
 --- a/chrome/browser/actor/actor_navigation_throttle.cc
 +++ b/chrome/browser/actor/actor_navigation_throttle.cc
-@@ -30,11 +30,8 @@ namespace actor {
+@@ -31,11 +31,8 @@ namespace actor {
  // static
  void ActorNavigationThrottle::MaybeCreateAndAdd(
      content::NavigationThrottleRegistry& registry) {
@@ -90,7 +33,7 @@ diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/
 index 80380ec931f26c522875b4c973b7aaccd836f211..97f71fbf2e74892c6f48ba494875bfa68330b0c2 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-@@ -337,6 +337,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
+@@ -350,6 +350,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
                &ActorUiTabControllerInterface::OnUiTabStateChange,
                tab_controller->GetWeakPtr(), update.ui_tab_state,
                base::BindOnce(&OnUiChangeComplete, std::move(callback))));
@@ -14894,6 +14837,3 @@ index 0000000000000000000000000000000000000000..7b3da751d26735046c909bb089919187
 +}  // namespace aegis
 +
 +#endif  // CHROME_COMMON_AEGIS_SECURITY_TEXT_H_
--- 
-2.52.0
-

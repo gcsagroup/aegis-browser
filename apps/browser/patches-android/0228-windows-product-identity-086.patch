@@ -1,4 +1,4 @@
-From 03d090339f267809c31a18d09f456a57bfc2459b Mon Sep 17 00:00:00 2001
+From 39f4feec28f00390ebc596665122d7b82e5f07f8 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 06:04:55 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=88=86=E7=A6=BB=20Windows=20=E5=AE=89?=
@@ -8,20 +8,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/elevation_service/BUILD.gn                  |   7 ++
- chrome/install_static/chromium_install_modes.h     |  85 +++++++-------
- chrome/install_static/install_util_unittest.cc     |   6 +-
- .../product_install_details_unittest.cc            |   5 +-
- .../install_static/user_data_dir_win_unittest.cc   |   4 +-
- .../elevated_tracing_service/BUILD.gn              |   7 ++
- components/policy/tools/generate_policy_source.py  |   2 +-
- .../tools/generate_policy_source_test_data.py      |   2 +-
- .../tools/template_writers/writer_configuration.py |  14 +--
- .../writers/adm_writer_unittest.py                 | 124 ++++++++++-----------
- .../writers/plist_strings_writer_unittest.py       |  30 ++---
- .../writers/plist_writer_unittest.py               |  26 ++---
- .../writers/reg_writer_unittest.py                 |  16 +--
- 13 files changed, 166 insertions(+), 162 deletions(-)
 
 diff --git a/chrome/elevation_service/BUILD.gn b/chrome/elevation_service/BUILD.gn
 index 0ce72b243f2460ef0bbf353b20d5cd8010b17972..b3d9f4e447f3f2d4784adeca92778246238d68c6 100644

@@ -1,44 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From cb328c9cf1de0522dd4bbbd028f065264339c5d0 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 17:52:00 +0800
 Subject: [PATCH] 统一当前网站、原生设置与 Markdown 阅读界面，候选 202
-
 ---
- .../aegis/enhancements/enhancement_store.cc        |   57 +-
- .../browser/aegis/enhancements/enhancement_store.h |    1 +
- .../enhancements/enhancement_store_unittest.cc     |   43 +
- .../aegis/enhancements/enhancement_tab_helper.cc   |   19 +-
- chrome/browser/resources/aegis/BUILD.gn            |    2 +
- chrome/browser/resources/aegis/enhancements.css    |  248 +---
- chrome/browser/resources/aegis/enhancements.html   |  150 +--
- chrome/browser/resources/aegis/enhancements.js     |  182 +--
- .../resources/aegis/enhancements_shared/i18n.js    | 1293 ++++++++++++++++++++
- .../resources/aegis/enhancements_shared/viewer.css |   22 +-
- .../aegis/enhancements_shared/viewer.html          |    6 +-
- .../resources/aegis/enhancements_shared/viewer.js  |   73 +-
- chrome/browser/resources/aegis/gestures.ts         |   19 +-
- chrome/browser/resources/aegis/markdown.css        |   24 +
- chrome/browser/resources/aegis/markdown.html       |   93 +-
- chrome/browser/resources/aegis/markdown.js         |  137 ++-
- chrome/browser/resources/settings/BUILD.gn         |    1 +
- .../resources/settings/aegis_page/aegis_page.html  |  112 ++
- .../resources/settings/aegis_page/aegis_page.ts    |  147 +++
- .../settings/privacy_page/privacy_page.html        |    7 +-
- .../settings/privacy_page/privacy_page.ts          |    2 +-
- chrome/browser/resources/settings/route.ts         |    4 +
- chrome/browser/resources/settings/router.ts        |    4 +
- .../settings/settings_main/settings_main.html      |    4 +
- .../settings/settings_main/settings_main.ts        |    1 +
- .../settings/settings_menu/settings_menu.html      |   10 +-
- chrome/browser/ui/browser_command_controller.cc    |    2 +-
- chrome/browser/ui/toolbar/app_menu_model.cc        |   14 +-
- .../ui/views/toolbar/aegis_toolbar_button.cc       |  683 ++++-------
- .../ui/webui/aegis/aegis_enhancement_handler.cc    |   36 +-
- .../ui/webui/aegis/aegis_gesture_handler.cc        |    5 +-
- chrome/browser/ui/webui/help/aegis_github_update.h |    4 +-
- chrome/browser/ui/webui/settings/BUILD.gn          |    2 +
- chrome/browser/ui/webui/settings/settings_ui.cc    |   17 +
- 34 files changed, 2477 insertions(+), 947 deletions(-)
 
 diff --git a/chrome/browser/aegis/enhancements/enhancement_store.cc b/chrome/browser/aegis/enhancements/enhancement_store.cc
 index de6bfddc349a7faae47b793bce8ba376a43d1e83..5039dab4165287b0e572b179b7c995ca0b1cc6f3 100644

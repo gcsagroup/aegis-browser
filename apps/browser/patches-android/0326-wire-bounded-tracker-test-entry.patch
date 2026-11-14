@@ -1,4 +1,4 @@
-From c8f4bbaeafe6622f8d41072d514ffeca2bebaa10 Mon Sep 17 00:00:00 2001
+From 92b3a5cedcb65d45b1fc0f8325b2c00c390d9b77 Mon Sep 17 00:00:00 2001
 From: Aegis Packaging Proposal <aegis-proposal@invalid>
 Date: Fri, 9 Oct 2026 14:00:00 +0800
 Subject: [PATCH] test: wire bounded tracker test entry and support
@@ -7,8 +7,8 @@ Private packaging proposal sourced from frozen product H c8f4bbaeafe6622f8d41072
 Append-only transport of exact overlay bytes; no native execution or acceptance.
 Keep the bounded option default off and require Darwin when enabled.
 Both process controls remain REQUIRED/BLOCKED pending a loss-safe executor.
-
 ---
+
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
 index 05cc690b6d5301b79ffc9c1ce11c10e5ee269b38..d02cf73589ac0f99617841698cbd73cd9abf2615 100644
 --- a/components/aegis_access/BUILD.gn
@@ -2323,5 +2323,3 @@ index 0000000000000000000000000000000000000000..26328238a2325de03abd7a43af5b60bd
 +
 +if __name__ == "__main__":
 +    unittest.main(verbosity=2)
--- 
-2.50.1

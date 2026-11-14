@@ -1,15 +1,9 @@
-From 0fb00c8e955c3e8e8522a8a43c4c30a90812324b Mon Sep 17 00:00:00 2001
+From 6d7b255c30343559f10acc856900af6e169ce00a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 11 Oct 2026 07:01:00 +0800
 Subject: [PATCH] fix(mac): validate pinned GCSA distribution signing category
 
 ---
- base/mac/process_requirement.cc               |  9 +++
- chrome/browser/aegis/BUILD.gn                 |  5 +-
- .../aegis/aegis_mac_signing_unittest.cc       | 76 +++++++++++++++++++
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- 4 files changed, 91 insertions(+), 3 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_mac_signing_unittest.cc
 
 diff --git a/base/mac/process_requirement.cc b/base/mac/process_requirement.cc
 index 188023e09b744c46ceb3c2a05bd9a9cb07f3053b..8caec397ac543778abe506089433d26cf59267e7 100644
@@ -150,6 +144,3 @@ index c03153f92c21bb44fc32865f34419fd59c89b9a2..0e132eddd9b0cff64c3a0833516f78a4
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

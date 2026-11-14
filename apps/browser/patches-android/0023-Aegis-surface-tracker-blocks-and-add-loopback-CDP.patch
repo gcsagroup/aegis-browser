@@ -1,4 +1,4 @@
-From d7fe11a962d59cd2f1441a11b670ba6a24466462 Mon Sep 17 00:00:00 2001
+From 56d83c000bc54239734099a775206ab55d7f8b53 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:34:08 +0800
 Subject: [PATCH] Aegis: surface tracker blocks and add loopback CDP
@@ -9,48 +9,6 @@ loopback-only DevTools endpoint for local AI agents.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ---
- chrome/browser/aegis/BUILD.gn                 |   4 +
- chrome/browser/aegis/aegis_ai_control.cc      | 165 ++++++++++++++++++
- chrome/browser/aegis/aegis_ai_control.h       |  39 +++++
- chrome/browser/aegis/aegis_cookie_janitor.cc  |   3 +-
- .../aegis/aegis_phish_navigation_throttle.cc  |  12 ++
- chrome/browser/aegis/aegis_prefs.cc           |   1 +
- chrome/browser/aegis/aegis_service.cc         | 154 ++++++++++++++++
- chrome/browser/aegis/aegis_service.h          |  36 +++-
- .../browser/chrome_content_browser_client.cc  |  14 +-
- chrome/browser/profiles/renderer_updater.cc   |  19 +-
- chrome/browser/profiles/renderer_updater.h    |   5 +
- chrome/browser/resources/aegis/aegis.css      |   7 +-
- chrome/browser/resources/aegis/aegis.html     |  14 ++
- chrome/browser/resources/aegis/aegis.ts       |  49 +++++-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  82 +++++++--
- .../ui/webui/aegis/aegis_ui_handler.cc        |   7 +
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/aegis_block_reporter.cc   |  92 ++++++++++
- chrome/common/aegis/aegis_block_reporter.h    |  43 +++++
- chrome/common/aegis/aegis_net_throttle.cc     | 125 +++++++++++--
- chrome/common/aegis/aegis_net_throttle.h      |  20 ++-
- chrome/common/aegis/cname_uncloak.cc          |  27 ++-
- chrome/common/aegis/cname_uncloak.h           |  11 +-
- chrome/common/aegis/cookie_classify.cc        |  67 +++++++
- chrome/common/aegis/cookie_classify.h         |  11 ++
- chrome/common/aegis/features.cc               |   1 +
- chrome/common/aegis/features.h                |   1 +
- chrome/common/aegis/filter_list_matcher.cc    |  29 ++-
- chrome/common/aegis/filter_list_matcher.h     |   9 +
- chrome/common/aegis/first_party_collect.cc    |  14 +-
- .../generated/first_party_collect_paths.inc   |   2 +
- chrome/common/aegis/pref_names.h              |   1 +
- chrome/common/renderer_configuration.mojom    |  11 ++
- .../renderer/chrome_render_thread_observer.cc |  44 ++++-
- .../renderer/chrome_render_thread_observer.h  |   5 +
- .../url_loader_throttle_provider_impl.cc      |   4 +-
- third_party/aegis_policy/policy_snapshot.json |   6 +-
- 37 files changed, 1077 insertions(+), 59 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_ai_control.cc
- create mode 100644 chrome/browser/aegis/aegis_ai_control.h
- create mode 100644 chrome/common/aegis/aegis_block_reporter.cc
- create mode 100644 chrome/common/aegis/aegis_block_reporter.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 01eaeed6bff7e4c10ced7215c18bbbdacd54527a..534d44c2ab2fff260440457506c3e101caf3490b 100644

@@ -1,4 +1,4 @@
-From 69e69d984a2391a05cbac72d656cab30afaac928 Mon Sep 17 00:00:00 2001
+From 0d4ecffde57c5483f44c437b909b7df4fa18dd47 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 17:56:06 +0800
 Subject: [PATCH] Aegis: add FingerprintGuard canvas/WebGL/audio farbling
@@ -6,32 +6,6 @@ Subject: [PATCH] Aegis: add FingerprintGuard canvas/WebGL/audio farbling
 Seed farbling from session salt + host, sync the toggle via
 DynamicParams, and apply Chromium NoisePixels on canvas readbacks.
 ---
- chrome/browser/aegis/aegis_prefs.cc           |   4 +-
- chrome/browser/aegis/aegis_service.cc         |   2 +-
- .../browser/chrome_content_browser_client.cc  |   4 +-
- chrome/browser/profiles/renderer_updater.cc   |   9 +-
- chrome/browser/profiles/renderer_updater.h    |   1 +
- chrome/common/aegis/features.cc               |   2 +-
- chrome/common/renderer_configuration.mojom    |   1 +
- .../renderer/chrome_render_thread_observer.cc |   4 +
- third_party/blink/common/BUILD.gn             |   1 +
- .../blink/common/aegis/fingerprint_guard.cc   |  49 ++++++
- third_party/blink/public/common/BUILD.gn      |   1 +
- .../public/common/aegis/fingerprint_guard.h   |  24 +++
- third_party/blink/renderer/core/BUILD.gn      |   4 +
- .../blink/renderer/core/aegis/build.gni       |   7 +
- .../blink/renderer/core/aegis/farbling.cc     | 151 ++++++++++++++++++
- .../blink/renderer/core/aegis/farbling.h      |  40 +++++
- .../core/html/canvas/html_canvas_element.cc   |   5 +
- .../canvas2d/base_rendering_context_2d.cc     |   2 +
- .../renderer/modules/webaudio/audio_buffer.cc |   9 +-
- .../webgl/webgl_rendering_context_base.cc     |  10 ++
- 20 files changed, 323 insertions(+), 7 deletions(-)
- create mode 100644 third_party/blink/common/aegis/fingerprint_guard.cc
- create mode 100644 third_party/blink/public/common/aegis/fingerprint_guard.h
- create mode 100644 third_party/blink/renderer/core/aegis/build.gni
- create mode 100644 third_party/blink/renderer/core/aegis/farbling.cc
- create mode 100644 third_party/blink/renderer/core/aegis/farbling.h
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
 index 66ed177ba75c75474809a1ff8dac8f359ea4fc20..75ab3cc2dec55b154705803f91972e1d862ca6c5 100644

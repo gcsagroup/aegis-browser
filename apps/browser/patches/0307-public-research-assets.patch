@@ -1,4 +1,4 @@
-From 5541cc985620eb43f1a3232a3947a4171eaee5ea Mon Sep 17 00:00:00 2001
+From ddefb5032ed92e0ca1aaf9d202cb430e162c0db4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 13 Oct 2026 05:25:52 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=85=AC=E5=BC=80=E6=9E=84=E5=BB=BA=E4=B8=8D?=
@@ -7,16 +7,7 @@ Subject: [PATCH] =?UTF-8?q?=E5=85=AC=E5=BC=80=E6=9E=84=E5=BB=BA=E4=B8=8D?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/browser/resources/aegis_agent/BUILD.gn |  3 ---
- .../resources/aegis_agent/local_ai/NOTICE.txt |  3 +++
- .../aegis_agent/local_ai/asset_manifest.json  | 24 +++++--------------
- .../aegis_agent/local_ai/research.js          |  3 +++
- .../local_ai/research_manifest.json           |  6 +++--
- .../aegis_agent/reading_workspace.ts          |  1 +
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  1 +
- 7 files changed, 18 insertions(+), 23 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn
 index d969789c91b8c1384ffcdd9b548faa4876cd53b7..b4546be3a9b5d09e29ef7696b03d64b7b064411f 100644
@@ -149,6 +140,3 @@ index f9ac23091c082e237c9c242dff4af65be942e728..8d685377dc3f9be2755944e09178a3bd
    add("readingResearchFlagged", "flagged by experimental model", "实验模型提示风险", "實驗模型提示風險");
    add("readingResearchUnflagged", "not flagged; not a safety guarantee", "实验模型未提示，不代表安全", "實驗模型未提示，不代表安全");
    add("readingResearchWindows", "windows", "个窗口", "個視窗");
--- 
-2.52.0
-

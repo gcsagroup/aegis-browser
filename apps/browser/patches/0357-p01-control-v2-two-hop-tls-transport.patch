@@ -1,9 +1,10 @@
-From dd95ffe125fc77991dfe78b21554688027387d56 Mon Sep 17 00:00:00 2001
+From acf97e4eb878a7b0c4464aa39754c7f4ff1142b6 Mon Sep 17 00:00:00 2001
 From: P01 source owner <p01-source@localhost>
 Date: Wed, 4 Nov 2026 09:49:03 +0800
 Subject: [PATCH] feat(proxy): package P01 control v2 and two-hop TLS transport
 
 Source-only draft. GN, compilation, fourteen test definitions and independent review await separate admission.
+---
 
 diff --git a/chrome/browser/aegis/proxy/BUILD.gn b/chrome/browser/aegis/proxy/BUILD.gn
 new file mode 100644

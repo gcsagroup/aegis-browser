@@ -1,4 +1,4 @@
-From 145f788a349de6ff821f13354f964ab2d515a999 Mon Sep 17 00:00:00 2001
+From 4b91ff887f038d3ec0419efe9215ecbd017032a9 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 12 Oct 2026 01:39:14 +0800
 Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E4=B8=8B=E8=BD=BD?=
@@ -6,10 +6,7 @@ Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E4=B8=8B=E8=BD=BD?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/browser/aegis/agent/aegis_agent_browsertest.cc | 5 +++--
- 1 file changed, 3 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index e529bae06cfa767969a73dadd9450f84f7049364..a6da87faad751bb91705e75df93934a8a266267d 100644
@@ -39,6 +36,3 @@ index e529bae06cfa767969a73dadd9450f84f7049364..a6da87faad751bb91705e75df93934a8
          EXPECT_EQ(params->url_request.url.path(), "/main-workspace/translations-models-v2/900beaed-2dba-4a88-ad7c-852ec9e73f6a.zst");
          // 长度正确但内容损坏；浏览器不得把这个文件标记为已安装。
          content::URLLoaderInterceptor::WriteResponse("HTTP/1.1 200 OK\nContent-Type: application/octet-stream\n\n",
--- 
-2.52.0
-

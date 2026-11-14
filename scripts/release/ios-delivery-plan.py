@@ -13,12 +13,25 @@ spec.loader.exec_module(receipt)
 
 STAGE_INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
-          'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input', 'signing_mode', 'package_entrypoint'}
+          'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input', 'signing_mode', 'package_entrypoint', 'private_beta'}
 
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def admitted_line_refs():
+    path = Path(__file__).resolve().parents[1] / 'ci' / 'ios-release-lines.json'
+    lines = json.loads(path.read_text())['lines']
+    refs = [line['ref'] for line in lines]
+    require(refs and len(refs) == len(set(refs)) and 'refs/heads/main' in refs, 'iOS release lines are invalid')
+    return set(refs)
+
+
+def require_admitted_dispatch(event, ref):
+    require(event == 'workflow_dispatch' and ref in admitted_line_refs(),
+            'Delivery requires an admitted release line or exact candidate tag')
 
 
 def unique_object(pairs):
@@ -34,7 +47,7 @@ def reject_constant(_value):
 
 
 def normalize(event, ref, inputs, mode='simple'):
-    allowed = {'operation', 'product', 'version', 'build', 'signing_mode'}
+    allowed = {'operation', 'product', 'version', 'build', 'signing_mode', 'private_beta'}
     if mode == 'full':
         allowed |= {'source', 'groups', 'stage_input', 'package_entrypoint'}
     require(mode in {'simple', 'full'}, 'Unknown delivery mode')
@@ -43,10 +56,15 @@ def normalize(event, ref, inputs, mode='simple'):
     if event == 'push':
         require(mode == 'simple', 'Only the canonical entrypoint accepts candidate tags')
         return _normalize_stage(event, ref, inputs)
-    require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
+    require_admitted_dispatch(event, ref)
     operation = receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
     new_package = operation in {'package', 'package-upload', 'draft'}
     signing_mode = inputs.get('signing_mode') or 'cloud'
+    private_beta = inputs.get('private_beta') or 'no'
+    require(private_beta in {'no', 'yes'}, 'Invalid private Beta selection')
+    require(private_beta == 'no' or (operation == 'package-upload' and signing_mode == 'manual'
+            and receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS) == 'beta'),
+            'Private Beta requires Beta, manual signing, and Package and upload')
     entrypoint = inputs.get('package_entrypoint') or 'actions'
     require(entrypoint in {'actions', 'fastlane'}, 'Unknown package entrypoint')
     require(entrypoint == 'actions' or operation in {'package', 'package-upload', 'draft'}, 'Entrypoint applies only to a new package')
@@ -87,6 +105,7 @@ def normalize(event, ref, inputs, mode='simple'):
     # actual signing verifier from the retained manifest, not this new-package input.
     values['signing_mode'] = signing_mode if new_package else ''
     values['package_entrypoint'] = entrypoint
+    values['private_beta'] = 'true' if private_beta == 'yes' else 'false'
     if package_upload:
         values.update(operation='package-upload', destination='testflight')
     return values
@@ -104,8 +123,9 @@ def _normalize_stage(event, ref, inputs):
         values.update(operation='package', profile=profile, version=version, build=build, destination='github-draft', tag=tag)
         values['signing_mode'] = 'cloud'
         values['package_entrypoint'] = 'actions'
+        values['private_beta'] = 'false'
     else:
-        require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
+        require_admitted_dispatch(event, ref)
         operation = receipt.canonical(values['operation'] or 'package', receipt.OPERATION_LABELS)
         profile = receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS)
         identity = values['version']

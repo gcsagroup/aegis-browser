@@ -1,15 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0e656469811197714256da4fd253024e05abf001 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 20:10:57 +0800
 Subject: [PATCH] 完善 Android 阅读工作区和下载表单的手机界面
-
 ---
- chrome/browser/resources/aegis_agent/agent.css     | 30 ++++++++++++++++++++--
- .../resources/aegis_agent/mobile_settings.ts       | 11 ++++++++
- chrome/browser/ui/webui/help/aegis_github_update.h |  4 +--
- .../aegis_downloads/aegis_download_panel.css       | 22 ++++++++++++++--
- .../aegis_downloads/aegis_download_panel.ts        | 24 ++++++++++++-----
- 5 files changed, 79 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
 index 25f6414f71d2bd39ecfd537156125052edb2ae8d..6421ccca598b9ff5b67e412d0b1caa2e28133005 100644

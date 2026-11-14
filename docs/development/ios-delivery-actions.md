@@ -9,11 +9,11 @@ In the upstream `gcsagroup/aegis-browser` repository, open **Actions**, select *
 New packages default to **cloud** in both forms, the CLI, Fastlane and candidate
 tags. Use **manual** explicitly for the existing certificate/profile fallback:
 Actions **Signing mode → manual**, CLI `--signing-mode manual`, Fastlane
-`signing_mode:manual`. Cloud packaging runs on an admitted GitHub-hosted macOS
-runner without importing a Distribution P12. Cloud failure stops the attempt;
+`signing_mode:manual`. Cloud packaging uses the admitted macOS runners configured
+in the workflow without importing a Distribution P12. Cloud failure stops the attempt;
 manual is an operator selection, with a new run ID and an unused build.
 
-两个表单、CLI、Fastlane 和 candidate tag 的新包均默认 **cloud**。显式回退选择：Actions 的 **Signing mode → manual**、CLI 的 `--signing-mode manual`、Fastlane 的 `signing_mode:manual`。cloud 使用获准的 GitHub-hosted macOS runner，不导入分发 P12；失败后停止，由操作者核对状态并选择 manual、未占用 build 与新 run ID。
+两个表单、CLI、Fastlane 和 candidate tag 的新包均默认 **cloud**。显式回退选择：Actions 的 **Signing mode → manual**、CLI 的 `--signing-mode manual`、Fastlane 的 `signing_mode:manual`。cloud 使用工作流指定且通过准入的 macOS runner，不导入分发 P12；失败后停止，由操作者核对状态并选择 manual、未占用 build 与新 run ID。
 
 Signing mode applies only to **Package**, **Package and upload**, and **Draft**.
 Leave it at the default for **Status**, **Wait** and existing-package stages;
@@ -39,9 +39,54 @@ Enter **Version** and **Build** separately. For a new package, choose **Product*
 
 **Status** 和不使用凭据的 **Wait** 均为只读查询，只需填写准确的版本和构建号。
 
+For an authorized internal test-node Beta, select **Beta**, **manual**, **Package and upload**
+and **private_beta → yes**. The signing environment supplies the private node and subscription
+descriptor. Before uploading, the exported IPA must contain the exact validated resources,
+and its HTTPS quota endpoint must return the matching client, expected allowance, enabled
+state, unexpired access and positive remaining traffic. Redirects and invalid responses stop
+delivery. Private inputs and the IPA are not published as Actions artifacts.
+
+已授权的内置测试节点 Beta 使用 **Beta / manual / Package and upload / private_beta → yes**。
+节点及额度描述由签名环境注入。上传前核对 IPA 内资源与输入完全一致，并通过包内 HTTPS
+入口验证客户端身份、额度、启用状态、有效期和剩余流量。重定向或无效响应会停止交付；
+私密配置及 IPA 不作为 Actions artifact 公开。
+
 If **Wait** times out, the run fails and retains the last observed Apple state in its Summary and status artifact. Use **Status** or **Wait** again to check that same build; do not upload it again.
 
 **Wait** 超时仍会失败，并在 Summary 和状态 artifact 中保留最后一次 Apple 状态。使用 **Status** 或 **Wait** 再次查询同一构建，不要重新上传。
+
+### Private TestFlight Beta / 私有测试包
+
+For a Beta that embeds the shared test node and reads its 3X-UI quota, choose
+**Package and upload**, **Beta**, **manual**, and **Private Beta: yes**. Store
+`AEGIS_IOS_TEST_NODE_BASE64` and `AEGIS_IOS_TEST_SUBSCRIPTION_BASE64` in the
+upstream `aegis-ios-signing` Environment. The signing job checks both resources
+in the signed IPA, removes signing materials and retains an owner-only copy outside
+the runner workspace. The separate `private-beta-store` job requires the protected
+`aegis-ios-store` Environment and the same runner. It verifies the source, manifest,
+IPA hashes and live quota again before uploading to TestFlight for internal testing.
+Only that store job receives ASC upload credentials. Actions retains a redacted receipt. If the result is uncertain, query
+**Status** with the original version and build before scheduling another attempt.
+
+内置共享测试节点并查询 3X-UI 实际额度时，选择 **Package and upload**、**Beta**、
+**manual** 和 **Private Beta: yes**。两项输入只存入上游的
+`aegis-ios-signing` 环境。签名作业检查 IPA 中的两份资源，清除签名材料，将包保留在
+runner 工作区之外的当前用户私有目录。独立的 `private-beta-store` 作业经过
+`aegis-ios-store` 受保护环境，在同一 runner 上重新校验源码身份、清单、包哈希及实时
+额度，随后加载 ASC 凭据并上传 TestFlight 内测。Actions 只保留脱敏回执。结果不明时
+先用原版本和构建号执行 **Status** 查询。
+
+The private handoff is bound to the repository, run, first attempt, runner, source
+and manifest. It is removed after upload processing. If the store job never starts,
+the owner-only copy remains for reconciliation. A cancelled restore cleans its
+run-bound staging or restored workspace copy and retains that original copy. Cleanup
+checks the directory identity recorded before copying and keeps its ownership marker
+until the private copy is removed, including after an interrupted cleanup. It is not a public artifact or a
+reusable upload token. Runner admission must explicitly allow `private-beta-store`.
+
+私有交接绑定仓库、run、首次 attempt、runner、源码与清单，上传处理后清除。若商店
+作业未能启动，私有副本保留用于核对，不作为公开工件或可复用上传令牌。runner 准入
+须明确允许 `private-beta-store`。
 
 ## Full / 分阶段交付
 
@@ -57,10 +102,151 @@ If **Wait** times out, the run fails and retains the last observed Apple state i
 | **Metadata** or **Compliance** | Supply the **Delivery receipt** and the reviewed **Stage JSON**. | 填写 **Delivery receipt** 和已审核的 **Stage JSON**。 |
 | **Distribute internal** or **Distribute external** | Supply the **Delivery receipt** and existing **Existing TestFlight groups**. External distribution requests Beta App Review and requires separate authorization. | 填写 **Delivery receipt** 和已有的 **Existing TestFlight groups**。外测分发会发起 Beta App Review，须另行授权。 |
 
-For existing-package stages, wait for the whole previous run to succeed, copy the complete **Delivery receipt** from its **Summary**, leave **Product** on **Auto**, and leave **Version** and **Build** blank. Retain the original receipt and use the latest successful receipt for the next stage.
+For a new sealed package, successful **ios-package** and **seal-package** jobs establish the original package receipt even if a later job fails. Existing upload intents still require reconciliation. Legacy unsealed packages and later state receipts require their whole source run to succeed. Copy the complete **Delivery receipt**, leave **Product** on **Auto**, and leave **Version** and **Build** blank.
 
-操作已有包时，先确认上一轮运行整体成功，再从其 **Summary** 复制完整 **Delivery receipt**。将 **Product** 保持为 **Auto**，留空 **Version** 和 **Build**。保留原始凭据，后续阶段使用同一包最新成功运行的凭据。
+新封存包的 **ios-package** 和 **seal-package** 均成功后，可保留原包 **Delivery receipt**，后续作业失败时仍可核验原件。已有上传意图须先对账。旧未封存包和后续状态回执仍要求来源运行整体成功。复制完整回执，将 **Product** 保持为 **Auto**，留空 **Version** 和 **Build**。
 
 For protected environment setup, stage JSON examples and recovery steps, see the [iOS release operations reference](ios-release.md).
 
 受保护环境配置、阶段 JSON 示例及故障恢复步骤见 [iOS 发布操作参考](ios-release.zh-CN.md)。
+
+The [Aegis central export PoC](ios-central-signing.md) describes the separately gated private archive and central export-only integration.
+
+## Product-owned archive, receipts and Downloads
+
+Cloud packages use a Development-only archive job and a separate protected export job.
+The settings job passes only validated team and Firebase variables from the existing
+signing Environment. It checks out no product code. The archive job receives no ASC
+secret and uses the existing Development identity and profiles.
+
+Automatic archive signing uses Xcode-managed Development profiles. On a host with
+dedicated manually created Development profiles, explicitly configure the owner-only
+`~/.config/gcsa-aegis-signing/development-archive.json` (directory `0700`, file `0600`,
+both owned by the runner account with no extended ACLs):
+
+```json
+{
+  "schema": "aegis-development-signing-v1",
+  "team": "YOURTEAMID",
+  "certificateSha1": "UPPERCASE_SHA1_OF_DEVELOPMENT_CERTIFICATE",
+  "profiles": {
+    "com.gcsa.aegis": "APP_PROFILE_UUID",
+    "com.gcsa.aegis.safari": "SAFARI_PROFILE_UUID",
+    "com.gcsa.aegis.share": "SHARE_PROFILE_UUID"
+  }
+}
+```
+
+This file contains public identifiers only. The archive verifies Apple CMS trust,
+Development entitlements, team, exact bundle IDs, certificate membership and expiry;
+it then pins each target's profile and the Development identity. The archive transfer
+records this selection and checks actual embedded profiles and signer fingerprints.
+An invalid configured selection fails without falling back. With no configuration,
+the existing automatic Development selection remains in use; existing path components
+must be physical directories, including when a linked destination is missing. Lookup
+compares full profile filenames without case assumptions, allows at most eight matching
+copies across the approved directories, and rejects the first content conflict. The dedicated keychain
+must be available to headless `codesign`. An optional owned `0600`
+`development-keychain.password` companion in the same private configuration
+directory enables activation in the actual runner session. The archive worker
+finds the unique owned non-login keychain containing the pinned certificate,
+rejects Distribution identities, and passes the password directly to
+Security.framework. It never passes that password to a command or build phase.
+Without the companion file, the existing pre-unlocked-keychain contract applies.
+
+Before building the app, the isolated worker compiles a fixed trivial probe,
+signs it with the configured Development identity and verifies the signature.
+The probe's environment contains only public toolchain/home/temp settings.
+Activation and probe diagnostics are retained separately from the archive;
+`find-identity` success alone is not evidence that the private signing operation
+works in a background runner. Direct inline Development archives use the same
+preparation before isolation and the same probe inside it.
+
+Private configuration ancestors must be owned by the runner account or root and
+exclude directory mutation by other accounts, including extended ACL grants.
+Writable ancestor ACL entries are accepted only when native membership lookup
+identifies their principal as the runner account or root; groups and unknown principals fail closed.
+Root/account-owned sticky temporary ancestors are allowed; the private signing
+directory and configuration file still require their exact private modes and no ACLs.
+Direct Fastlane/PoC inline Development archives apply the same explicit selection
+and signed archive verification. The production transfer workflow provides the
+separate archive/export jobs.
+
+This selection changes only Development archive signing. Xcode 26.6's installed
+`xcodebuild -help` explicitly supports a manually signed archive followed by automatic
+distribution, including managed cloud signing certificates. Cloud export remains
+`signingStyle=automatic` and imports no Distribution P12. Archive transfer v2 requires
+the matching producer source and includes the Development signing evidence. The
+producer job publishes the whole manifest SHA-256 separately as a job output; export
+requires that pin and verifies the ZIP digest before permanently allocating the
+export coordinate. The producer serializes the manifest once and binds its output
+digest to those exact written bytes; import repeats the integrity checks. Relative
+transfer paths are resolved once from the request repository root, and the verified
+arguments pass to export without a second Ruby ZIP read.
+Older source-bound transfers remain with their original implementation.
+
+Successful package jobs are sealed independently of later upload results. Small
+create-only records under `refs/heads/ios-delivery/` retain the Apple allocation,
+original package job, artifact ID/digest and upload intent/result. A successful
+package and seal can therefore supply the original receipt after a later job
+fails. Downloaded original bytes and the exact producer are verified again.
+Binary artifacts retain their 30-day limit. Missing originals or ambiguous records
+require read-only reconciliation. Repository administrators retain their ability
+to change Git refs. Local artifact-only manual packaging keeps its read-only
+GitHub admission. New Apple uploads require Contents write for their permanent
+intent, including uploads made by the local CLI.
+
+Status and receipt-free Wait use independent read-only concurrency groups.
+Signing, uploading, Draft creation and distribution share the existing mutation
+queue.
+
+Verified deliverables are also copied to
+`~/Downloads/artifacts/aegis/VERSION/alpha`, `Beta`, `Release` or `Draft`.
+Each filename includes its build number and content digest. Existing bytes are
+checked before reuse, and different builds cannot overwrite one another.
+`GCSA_DELIVERY_ROOT` overrides the catalogue root. A failed catalogue copy leaves
+the verified source package available. Retry only the copy with:
+
+```sh
+python3 scripts/release/ios-publish.py --directory .artifacts/release/ios/RUN_ID --manifest-sha256 MANIFEST_SHA256
+```
+
+Use `--draft` for the Draft folder. The catalogue contains IPA, dSYM and delivery
+evidence. On a self-hosted runner the default root belongs to that runner's user.
+Use the same copy command on downloaded, verified original files for a local
+catalogue.
+
+## Routine execution without AI / 无 AI 日常执行
+
+The checked-in Actions, release scripts and Fastlane lanes execute independently
+of an AI assistant. Once the exact current main has passed admission and signing
+materials are configured, an Admin selects **Simple → Package and upload**, fills
+in **Version**, **Build** and **Product**, and keeps **cloud** as the signing mode.
+The read-only precheck queries whether Apple already has that version/build.
+After the Development archive and its handoff pass verification, the package job
+records permanent `export-start`. Cloud export then checks capacity and exports;
+a failure at that point leaves the coordinate occupied. Package verification,
+sealing and upload of the original follow. If a protected Environment has approval
+rules, its jobs wait for that approval.
+
+日常发包无需 AI 参与。已通过准入的当前 main 和签名材料就绪后，管理员选择
+**Simple → Package and upload**，填写版本、build 和包型，沿用 **cloud**。
+只读预检查询 Apple 是否已有该版本/build。Development 归档和交接文件验证通过后，
+打包作业写入永久 `export-start`，随后云导出检查容量并导出；此时失败仍保留占号。
+后续验包、封存并上传原件。如受保护环境配置了审批，相关作业会等待批准。
+
+Use **Status** or **Wait** for the same version/build to read Apple's processing
+result. A timeout or uncertain transport result requires query and reconciliation;
+it does not authorize another upload. Certificate renewal, permission changes and
+source review are separate maintenance work. The package job currently runs on
+self-hosted macOS and attempts to copy verified deliverables to that account's
+Downloads catalogue, or the configured `GCSA_DELIVERY_ROOT`. Check the target for
+the required files first. If the copy is missing, download and verify the retained
+original artifact, then run the copy command above with its independently retained
+manifest digest on the machine that needs the catalogue.
+
+上传后用相同版本/build 的 **Status** 或 **Wait** 回读 Apple 处理结果；超时或运输结果
+不明时先查询对账。证书续期、权限变更和源码审查另行处理。当前打包使用 self-hosted
+macOS，自动尝试复制到该运行账号的 Downloads 或配置的 `GCSA_DELIVERY_ROOT`。
+先核对目标所需文件；缺少副本时，再下载并验证原始 artifact，使用独立保留的 manifest
+摘要，在需要归档的机器上运行上述复制命令。

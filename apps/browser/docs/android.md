@@ -1,3 +1,5 @@
+> **2026-11-14**：本轮Android源码为正式 Stable `157.0.8103.78`，桌面为 `157.0.8103.79`；使用独立335项补丁，含310产品版本准备。原主线新增账户、本地核心及诊断功能按既定Mac平台设计验证，不宣称Android已实现。APK、原签名及真机验收仍待完成。
+
 [**English**](./android.md) | [简体中文](./android.zh-CN.md) | [繁體中文](./android.zh-TW.md)
 
 # Android status: No-Go

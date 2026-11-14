@@ -1,55 +1,9 @@
-From a07abbda66fcdf340c9596507c0c4771a50f3bf6 Mon Sep 17 00:00:00 2001
+From fa5dc6982bc209cc778bf6b98f5d2905db68b227 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 04:22:21 +0800
 Subject: [PATCH] feat(aegis): complete cross-platform v2 runtime
 
 ---
- chrome/android/BUILD.gn                            |   1 +
- chrome/android/chrome_java_resources.gni           |   2 +
- chrome/android/chrome_java_sources.gni             |   2 +
- .../java/res/layout/aegis_agent_bottom_sheet.xml   | 135 ++++++++++++++
- .../java/res/layout/aegis_agent_ntp_card.xml       |  60 ++++++
- .../java/res/layout/new_tab_page_layout.xml        |   4 +
- chrome/android/java/res/values/ids.xml             |   2 +
- .../chrome/browser/ChromeTabbedActivity.java       |  27 +++
- .../aegis/AegisAgentBottomSheetCoordinator.java    | 156 ++++++++++++++++
- .../aegis/AegisAgentNotificationBridge.java        |  72 ++++++++
- .../chromium/chrome/browser/ntp/NewTabPage.java    |  26 +++
- .../TabbedAppMenuPropertiesDelegate.java           |  44 +++++
- chrome/app/generated_resources.grd                 |   3 +
- chrome/app/resources/generated_resources_zh-CN.xtb |   1 +
- chrome/app/resources/generated_resources_zh-HK.xtb |   1 +
- chrome/app/resources/generated_resources_zh-TW.xtb |   1 +
- chrome/browser/BUILD.gn                            |   2 +-
- chrome/browser/aegis/BUILD.gn                      |  84 +++++----
- .../browser/aegis/agent/aegis_agent_browsertest.cc | 138 ++++++++++++++
- chrome/browser/aegis/agent/aegis_agent_service.cc  | 154 +++++++++++++++-
- chrome/browser/aegis/agent/aegis_agent_service.h   |  24 ++-
- .../aegis/agent/aegis_agent_service_unittest.cc    | 201 +++++++++++++++++++++
- chrome/browser/aegis/agent/aegis_browser_tools.cc  | 131 +++++++++-----
- chrome/browser/aegis/agent/agent_model_client.cc   |   8 +-
- .../aegis/agent/agent_model_client_unittest.cc     |  18 ++
- chrome/browser/aegis/agent/agent_planner.cc        | 186 ++++++++++++++++++-
- chrome/browser/aegis/agent/agent_planner.h         |   6 +
- .../browser/aegis/agent/agent_planner_unittest.cc  |  90 ++++++++-
- chrome/browser/aegis/agent/agent_workflow.cc       |  17 +-
- chrome/browser/resources/BUILD.gn                  |   2 +-
- chrome/browser/resources/aegis/aegis.ts            |   6 +-
- chrome/browser/resources/aegis_agent/agent.ts      |  38 +++-
- chrome/browser/ui/BUILD.gn                         |   1 +
- .../ui/android/strings/android_chrome_strings.grd  |  75 ++++++++
- .../translations/android_chrome_strings_zh-CN.xtb  |  26 ++-
- .../translations/android_chrome_strings_zh-TW.xtb  |  26 ++-
- chrome/browser/ui/toolbar/app_menu_model.cc        |  13 +-
- chrome/browser/ui/webui/BUILD.gn                   |   2 +-
- chrome/browser/ui/webui/aegis/aegis_ui_handler.cc  |  34 ++--
- chrome/browser/ui/webui/aegis_agent/BUILD.gn       |  16 +-
- .../webui/aegis_agent/aegis_agent_page_handler.cc  |  59 ++++--
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  29 ++-
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.h  |  18 +-
- .../ui/webui/chrome_untrusted_web_ui_configs.cc    |  10 +-
- chrome/chrome_paks.gni                             |   2 +-
- 45 files changed, 1765 insertions(+), 188 deletions(-)
 
 diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
 index 271801af5323ad07e60e701d575e3f16b7d2f58f..a44f804eea5a2bb7ee1816e02e3ea654d68bceb2 100644
@@ -751,7 +705,7 @@ index 6d2f9de7c5418cc5e779efa826952b8e8f8c33a4..b193217a4d22955b8c88bc4f86e41593
      private boolean shouldShowListenToFeedItem(@Nullable Tab currentTab) {
          if (currentTab == null
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
-index f8535695034d553b9a3a85f7a0e6cdaa7515e70a..66d8dcfacc07898eac4abdd88a4b4ee17245c6e9 100644
+index 0643b115efafdf30d1e52b6309d6a862fcd10aae..d316176853ef86a5d6d3f966438349681cf848e2 100644
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
 @@ -1898,6 +1898,9 @@ are declared in tools/grit/grit_args.gni.
@@ -765,7 +719,7 @@ index f8535695034d553b9a3a85f7a0e6cdaa7515e70a..66d8dcfacc07898eac4abdd88a4b4ee1
  
          <message name="IDS_PROFILING_ENABLED" desc="The toggle to turn profiling on / off">
 diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
-index 6acef2e538f0f02a3d2a2f15c1c50f4a00e83269..58382e3135ebe6e579ffc157e0d02718a92df25a 100644
+index 0f34f7d39520e1b75be6268a901dd17c7e2e6ad0..690d923a50815bc90bfb8bb361d23f75333b1315 100644
 --- a/chrome/app/resources/generated_resources_zh-CN.xtb
 +++ b/chrome/app/resources/generated_resources_zh-CN.xtb
 @@ -7466,6 +7466,7 @@
@@ -789,7 +743,7 @@ index 972ff54411eee4454d46ccb2ba54477c69879f3a..ef7822eee5286bc44fdded509740eb68
  <translation id="670431355064244920">小焦點</translation>
  <translation id="6706210727756204531">範圍</translation>
 diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
-index 2b0f68b37d191df82bd25c51203c640ad51a9d70..c77966f83d14dbfdaf0374593c967f79dc97b5ea 100644
+index dfeab744965b3369424e1eae28ded5d59536dfae..0d95c91b6f5bf791d5fae4cdabd8ef8ae26b881a 100644
 --- a/chrome/app/resources/generated_resources_zh-TW.xtb
 +++ b/chrome/app/resources/generated_resources_zh-TW.xtb
 @@ -7462,6 +7462,7 @@
@@ -2767,7 +2721,7 @@ index 44fd34b19468d2465c2a2f7290227b883e50787c..e5524adca20a9ce2537683da05ae4b84
          Customize new tab page
        </message>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index b538166ce6a9281668ab1e1bae94268bc95a194e..341aad4da9aef043c73eb6802e3c4606ab392ccc 100644
+index 1a67a8e97b0e291f276d61013f03a20fd0cf9e85..87d2937b3b86fe124367ea04d53e3879806b4046 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 @@ -2146,4 +2146,28 @@

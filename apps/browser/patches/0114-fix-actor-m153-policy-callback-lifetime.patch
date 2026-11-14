@@ -1,4 +1,4 @@
-From bb799cbae09d01534e42f86c0a78ddd95d33ad09 Mon Sep 17 00:00:00 2001
+From 61175ecb4ec77ff86b35b4f269a62f1ea52581d6 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 14 Sep 2026 04:25:57 +0800
 Subject: [PATCH] =?UTF-8?q?fix(actor):=20=E5=AE=8C=E6=88=90=20M153=20?=
@@ -9,12 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/actor/actor_keyed_service.cc       |  6 ++++--
- chrome/browser/actor/actor_task.cc                |  6 +++---
- chrome/browser/actor/actor_task.h                 | 12 ++++++------
- chrome/browser/actor/execution_engine.cc          |  5 +++--
- chrome/browser/actor/execution_engine_unittest.cc | 10 +++++-----
- 5 files changed, 21 insertions(+), 18 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
 index cfae9343eddccc3fa1786098576768256ddc8487..fd3052491a59d7aea6a45515cb23dac087cb5af3 100644

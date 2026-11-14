@@ -1,0 +1,365 @@
+From 4c6ed92efee365b04ebab8998b3fcf839f8ec1a6 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 19:53:17 +0800
+Subject: [PATCH] fix(access-log): preserve fresh events and confirm archive
+ sharing
+---
+
+diff --git a/chrome/browser/aegis/access/access_core_log_disk_unittest.cc b/chrome/browser/aegis/access/access_core_log_disk_unittest.cc
+index 9ff812eebeb4530fa4018b550ed3fe45bd92e37a..a96e97eac7da51e4390248a0b429122fd222a15e 100644
+--- a/chrome/browser/aegis/access/access_core_log_disk_unittest.cc
++++ b/chrome/browser/aegis/access/access_core_log_disk_unittest.cc
+@@ -1,6 +1,10 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/aegis/access/access_core_log_store.h"
+ 
++#include <unistd.h>
++
++#include <array>
++
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/functional/callback_helpers.h"
+@@ -106,6 +110,36 @@ TEST_F(AccessCoreLogDiskTest, ClearAndNoneDefeatOlderRestoreAndQueuedWrites) {
+   environment_.RunUntilIdle();
+   EXPECT_TRUE(reopened->Snapshot().empty());
+ }
++TEST_F(AccessCoreLogDiskTest, ClearSnapshotsThePipeBeforeTheNextRead) {
++  auto store = Open();
++  base::ScopedFD reader, writer;
++  ASSERT_TRUE(base::CreatePipe(&reader, &writer, /*non_blocking=*/true));
++  const auto original_epoch = store->RegisterPipe(reader.get());
++  std::array<char, 64> buffer;
++  auto write_record = [&](std::string_view text) {
++    ASSERT_EQ(::write(writer.get(), text.data(), text.size()),
++              static_cast<ssize_t>(text.size()));
++  };
++  store->Clear();
++  write_record("fresh\n");
++  const auto idle = store->ReadPipe(reader.get(), buffer);
++  ASSERT_EQ(idle.count, 6);
++  EXPECT_EQ(idle.clear_epoch, original_epoch + 1);
++  EXPECT_EQ(idle.clear_prefix, 0u);
++  EXPECT_EQ(std::string_view(buffer.data(), idle.count), "fresh\n");
++
++  write_record("stale\n");
++  store->Clear();
++  write_record("first after clear\n");
++  const auto buffered = store->ReadPipe(reader.get(), buffer);
++  EXPECT_EQ(buffered.clear_epoch, original_epoch + 2);
++  EXPECT_EQ(buffered.clear_prefix, 6u);
++  ASSERT_EQ(buffered.count, 24);
++  EXPECT_EQ(std::string_view(buffer.data(), buffered.count),
++            "stale\nfirst after clear\n");
++  store->UnregisterPipe(reader.get());
++}
++
+ TEST_F(AccessCoreLogDiskTest, RefiltersQueuedAndLoadedHistoryForNewCredentials) {
+   auto store = Open();
+   store->Add(0, 0, Entry("abcdef12.example"), {});
+diff --git a/chrome/browser/aegis/access/access_core_log_store.cc b/chrome/browser/aegis/access/access_core_log_store.cc
+index 1b7ed8e123da73e59b9d8af4e8b43c82e2990de9..f34a1c6f9756db81a241feecaee97702b330b3d5 100644
+--- a/chrome/browser/aegis/access/access_core_log_store.cc
++++ b/chrome/browser/aegis/access/access_core_log_store.cc
+@@ -4,7 +4,14 @@
+ #include "base/strings/string_split.h"
+ 
+ #if BUILDFLAG(IS_MAC)
++#include <sys/ioctl.h>
++#include <unistd.h>
++
++#include <cerrno>
++
++#include "base/check.h"
+ #include "base/functional/bind.h"
++#include "base/posix/eintr_wrapper.h"
+ #include "base/task/lazy_thread_pool_task_runner.h"
+ #endif
+ 
+@@ -68,11 +75,43 @@ void AccessCoreLogStore::Clear() {
+   ++clear_epoch_;
+   log_.Clear();
+ #if BUILDFLAG(IS_MAC)
++  // Reads share this lock. Only bytes already in each pipe at Clear belong
++  // to the old history, even if the worker has no pending readability event.
++  for (auto& [fd, prefix] : pipes_) {
++    int pending = 0;
++    if (HANDLE_EINTR(ioctl(fd, FIONREAD, &pending)) == 0) {
++      prefix = static_cast<size_t>(std::max(pending, 0));
++    } else {
++      prefix.reset();
++    }
++  }
+   ScheduleClearLocked();
+ #endif
+ }
+ 
+ #if BUILDFLAG(IS_MAC)
++uint64_t AccessCoreLogStore::RegisterPipe(int fd) {
++  base::AutoLock guard(lock_);
++  CHECK(pipes_.try_emplace(fd, 0).second);
++  return clear_epoch_;
++}
++
++void AccessCoreLogStore::UnregisterPipe(int fd) {
++  base::AutoLock guard(lock_);
++  const size_t erased = pipes_.erase(fd);
++  CHECK(erased == 1);
++}
++
++AccessCoreLogStore::PipeRead AccessCoreLogStore::ReadPipe(
++    int fd,
++    base::span<char> buffer) {
++  base::AutoLock guard(lock_);
++  auto pipe = pipes_.find(fd);
++  CHECK(pipe != pipes_.end());
++  const auto count = HANDLE_EINTR(read(fd, buffer.data(), buffer.size()));
++  return {count, count < 0 ? errno : 0, clear_epoch_, pipe->second};
++}
++
+ namespace {
+ // A shared sequence also orders disk access across closing and reopened
+ // profile windows at the same path.
+diff --git a/chrome/browser/aegis/access/access_core_log_store.h b/chrome/browser/aegis/access/access_core_log_store.h
+index 246387b5ba5346c8bd63154bfffd01b749a95949..665ab5e1c0fa1924578d7edcc9059bf5796e1286 100644
+--- a/chrome/browser/aegis/access/access_core_log_store.h
++++ b/chrome/browser/aegis/access/access_core_log_store.h
+@@ -4,6 +4,12 @@
+ 
+ #include "build/build_config.h"
+ #if BUILDFLAG(IS_MAC)
++#include <sys/types.h>
++
++#include <map>
++#include <optional>
++
++#include "base/containers/span.h"
+ #include "base/functional/callback.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "chrome/browser/aegis/access/access_core_log_disk.h"
+@@ -27,6 +33,15 @@ class AccessCoreLogStore
+   // queued saves/deletions, without a reply to the blocked Browser sequence.
+   static void FlushAllForSessionEnding(base::OnceClosure completion);
+   DiskStatus disk_status();
++  struct PipeRead {
++    ssize_t count;
++    int error;
++    uint64_t clear_epoch;
++    std::optional<size_t> clear_prefix;
++  };
++  uint64_t RegisterPipe(int fd);
++  void UnregisterPipe(int fd);
++  PipeRead ReadPipe(int fd, base::span<char> buffer);
+ #endif
+   void SetLevel(std::string_view level);
+   std::string Level() {
+@@ -79,6 +94,7 @@ class AccessCoreLogStore
+   uint64_t disk_epoch_ GUARDED_BY(lock_) = 0;
+   bool save_pending_ GUARDED_BY(lock_) = false;
+   DiskStatus disk_status_ GUARDED_BY(lock_) = DiskStatus::kReady;
++  std::map<int, std::optional<size_t>> pipes_ GUARDED_BY(lock_);
+ #endif
+   uint64_t view_version_ GUARDED_BY(lock_) = 0;
+   uint64_t generation_ GUARDED_BY(lock_) = 0;
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index 2ee40beaceff7578e28733649490b498676e8766..56a5a07114a14fc3d12960fa53500f658058aa99 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -2,10 +2,10 @@
+ #include "chrome/browser/aegis/access/access_local_core_manager.h"
+ 
+ #include <signal.h>
+-#include <sys/ioctl.h>
+ #include <unistd.h>
+ 
+ #include <algorithm>
++#include <array>
+ #include <atomic>
+ #include <cerrno>
+ #include <vector>
+@@ -14,7 +14,6 @@
+ #include "base/strings/string_util.h"
+ 
+ #include "base/files/file_descriptor_watcher_posix.h"
+-#include "base/posix/eintr_wrapper.h"
+ #include "base/base64.h"
+ #include "chrome/browser/aegis/access/access_core_log_share.h"
+ #include "base/command_line.h"
+@@ -330,7 +329,6 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     if (input_.log_store) {
+       input_.log_store->SetProtectedValues(protected_values_);
+       std::tie(level, log_generation_) = input_.log_store->LaunchConfig();
+-      log_clear_epoch_ = input_.log_store->clear_epoch();
+     }
+     auto log = base::DictValue().Set("loglevel", level);
+     if (CoreLogRank(level) >= 2) log.Set("access", "none");
+@@ -369,6 +367,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     if (level != "none" && create_log_pipe(&log_read_, &write_end, /*non_blocking=*/true)) {
+       // Diagnostic capture is optional; a failed pipe keeps /dev/null.
+       output = write_end.get();
++      log_clear_epoch_ = input_.log_store->RegisterPipe(log_read_.get());
+       log_watch_ = base::FileDescriptorWatcher::WatchReadable(
+           log_read_.get(), base::BindRepeating(&Worker::DrainLog, base::Unretained(this)));
+     }
+@@ -377,32 +376,26 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     return process_.IsValid();
+   }
+   void DrainLog() {
+-    if (!log_read_.is_valid())
+-      return;
+-    // A clear invalidates any batch already in flight. On this sequence,
+-    // discard the unread prefix and any partial line at that boundary.
+-    const uint64_t epoch = input_.log_store->clear_epoch();
+-    if (epoch != log_clear_epoch_) {
+-      log_clear_epoch_ = epoch;
+-      framer_.DiscardPartial();
+-      int pending = 0;
+-      discard_until_empty_ = HANDLE_EINTR(ioctl(log_read_.get(), FIONREAD, &pending)) < 0;
+-      discard_bytes_ = discard_until_empty_ ? 0 : std::max(pending, 0);
+-    }
+-    char chunk[4096];
++    std::array<char, 4096> chunk;
+     for (int i = 0; i < 16 && log_read_.is_valid(); ++i) {
+-      auto count = HANDLE_EINTR(read(log_read_.get(), chunk, sizeof(chunk)));
+-      if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
++      const auto [count, error, epoch, prefix] =
++          input_.log_store->ReadPipe(log_read_.get(), chunk);
++      if (epoch != log_clear_epoch_) {
++        log_clear_epoch_ = epoch;
++        framer_.DiscardPartial();
++        discard_until_empty_ = !prefix.has_value();
++        discard_bytes_ = prefix.value_or(0);
++      }
++      if (error == EAGAIN || error == EWOULDBLOCK) {
+         discard_until_empty_ = false;
+         discard_bytes_ = 0;
+         return;
+       }
+       if (count <= 0) {
+-        log_watch_.reset();
+-        log_read_.reset();
++        CloseLogPipe();
+         break;
+       }
+-      std::string_view bytes(chunk, count);
++      std::string_view bytes(chunk.data(), count);
+       const size_t discard = discard_until_empty_
+                                  ? bytes.size() : std::min(discard_bytes_, bytes.size());
+       if (discard) {
+@@ -416,6 +409,13 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+       });
+     }
+   }
++  void CloseLogPipe() {
++    log_watch_.reset();
++    if (log_read_.is_valid()) {
++      input_.log_store->UnregisterPipe(log_read_.get());
++      log_read_.reset();
++    }
++  }
+   void StartProbe() {
+     if (!Running()) {
+       Complete(false, "The local proxy exited before becoming ready.");
+@@ -531,8 +531,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+       process_.Close();
+     }
+     DrainLog();
+-    log_watch_.reset();
+-    log_read_.reset();
++    CloseLogPipe();
+     framer_ = CoreLogFramer();
+     discard_bytes_ = 0;
+     discard_until_empty_ = false;
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index bd6b803c64db37bbc07cf9ac9e8f6db8185511e3..9802f7574f9b73f86616e9e96499672378908d6a 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -291,6 +291,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   }
+   void Expand(const std::string& key) {
+     if (!expanded_.erase(key)) expanded_.insert(key);
++#if BUILDFLAG(IS_MAC)
++    if (key == "core-logs")
++      log_share_confirmation_.reset();
++#endif
+     RefreshSoon();
+   }
+   void Mutate(base::DictValue request) {
+@@ -441,26 +445,58 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+           }, base::Unretained(this)));
+     const auto [text, version] = controller->core_logs()->ViewSnapshot();
+     log_view_version_ = version;
++    if (log_share_confirmation_ &&
++        (text.empty() || log_share_confirmation_->second != version)) {
++      log_share_confirmation_.reset();
++    }
+     if (text.empty()) {
+       AddLabel(parent, Copy(u"暂无日志", u"No log entries", u"目前沒有日誌"));
+     } else {
+       AddLabel(parent, base::UTF8ToUTF16(text))->SetSelectable(true);
+-      Button(parent, Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…"),
+-          base::BindRepeating([](AegisPageBubble* self, std::string preview, uint64_t version) {
+-            if (!self->Valid()) return;
+-            if (auto* c = self->AccessBubble()) c->ShareCoreLogs(self->source_.get(), std::move(preview), version,
+-                base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
+-                  if (self && !ok) {
+-                    self->log_notice_ = Copy(u"未能分享日志。请检查磁盘权限，重启可重试清理上次的临时文件。", u"Could not share the logs. Check disk permissions and restart to retry temporary file cleanup.", u"未能分享日誌。請檢查磁碟權限，重啟可重試清理上次的暫存檔。");
+-                    self->RefreshSoon();
+-                  }
+-                }, self->weak_.GetWeakPtr()));
+-          }, base::Unretained(this), text, version));
++      if (!log_share_confirmation_) {
++        Button(parent, Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…"),
++            base::BindRepeating([](AegisPageBubble* self, std::string preview, uint64_t version) {
++              if (!self->Valid()) return;
++              self->log_notice_.clear();
++              self->log_share_confirmation_.emplace(std::move(preview), version);
++              self->RefreshSoon();
++            }, base::Unretained(this), text, version));
++      } else {
++        AddLabel(parent, Copy(u"此压缩包可能包含普通或隐私浏览的目标地址。确认分享给可信的接收方？",
++            u"This archive may contain regular or private browsing destinations. Share it with a trusted recipient?",
++            u"此壓縮檔可能包含一般或私密瀏覽的目標位址。確認分享給可信的接收方？"));
++        Button(parent, Copy(u"确认分享", u"Confirm share", u"確認分享"),
++               base::BindRepeating(&AegisPageBubble::ConfirmCoreLogShare,
++                                   base::Unretained(this)));
++        Button(parent, Copy(u"取消", u"Cancel", u"取消"),
++               base::BindRepeating([](AegisPageBubble* self) {
++                 self->log_share_confirmation_.reset();
++                 self->RefreshSoon();
++               }, base::Unretained(this)));
++      }
+     }
+     Button(parent, Copy(u"刷新日志", u"Refresh logs", u"重新整理日誌"),
+            base::BindRepeating(&AegisPageBubble::RefreshSoon, base::Unretained(this)));
+     if (!log_notice_.empty()) AddLabel(parent, log_notice_);
+   }
++  void ConfirmCoreLogShare() {
++    auto confirmation = std::exchange(log_share_confirmation_, std::nullopt);
++    if (!Valid() || !confirmation)
++      return;
++    RefreshSoon();
++    if (auto* controller = AccessBubble()) {
++      auto [preview, version] = std::move(*confirmation);
++      controller->ShareCoreLogs(source_.get(), std::move(preview), version,
++          base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
++            if (self && !ok) {
++              self->log_notice_ = Copy(u"未能分享日志。请检查磁盘权限，重启可重试清理上次的临时文件。",
++                  u"Could not share the logs. Check disk permissions and restart to retry temporary file cleanup.",
++                  u"未能分享日誌。請檢查磁碟權限，重啟可重試清理上次的暫存檔。");
++              self->RefreshSoon();
++            }
++          }, weak_.GetWeakPtr()));
++    }
++  }
+ #endif
+   void AppendSiteProxySection(views::View* parent) {
+     AddLabel(parent, Copy(u"本站代理", u"Site proxy", u"本站代理"),
+@@ -697,6 +733,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   std::u16string notice_;
+ #if BUILDFLAG(IS_MAC)
+   std::u16string log_notice_;
++  std::optional<std::pair<std::string, uint64_t>> log_share_confirmation_;
+   uint64_t log_view_version_ = 0;
+   std::optional<aegis::access::AccessCoreLogStore::DiskStatus> log_disk_status_;
+ #endif

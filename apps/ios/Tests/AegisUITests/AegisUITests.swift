@@ -433,7 +433,7 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(url.waitForExistence(timeout: 5))
         url.tap(); url.clearAndType("http://127.0.0.1:8768/download.bin")
         let hash = app.textFields["download-hash"]
-        hash.tap(); hash.clearAndType("e05bc4162ba70780d59dc6831e0981cf70e317c6ee9825afa5c6915e3a77126c")
+        hash.tap(); hash.clearAndType("098e36bb4a85fa669a62d326a22df3f7faf838741b9d1e5f81ee3056dad58436")
         app.buttons["start-download"].tap()
         XCTAssertTrue(scrollUntilVisible(app.buttons["save-download-file"].firstMatch, in: app))
         XCTAssertTrue(app.staticTexts["与预期 SHA-256 一致。"].waitForExistence(timeout: 20))
@@ -518,8 +518,8 @@ final class AegisUITests: XCTestCase {
         let save = app.buttons.matching(NSPredicate(format: "label == '保存' OR label == '存储' OR label == 'Save' OR label == '儲存'")).firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 8))
         attachScreenshot("工作区系统文件导出", app)
-        let filename = app.textFields["DOCPicker.filenameTextField"]
-        XCTAssertTrue(filename.waitForExistence(timeout: 5))
+        let filename = systemExportFilenameField(in: app)
+        XCTAssertTrue(filename.waitForExistence(timeout: 5), "系统导出文件名控件未出现")
         filename.tap(); filename.clearAndType("Aegis-workspace-test-" + UUID().uuidString)
         save.tap()
         XCTAssertTrue(app.staticTexts["工作区文件已保存。"].waitForExistence(timeout: 8))
@@ -1268,6 +1268,16 @@ final class AegisUITests: XCTestCase {
         address.tap(); address.clearAndType(url); address.typeText("\n")
     }
 
+    /// The system exporter still has to expose a filename field. iOS 26 no longer
+    /// always uses `DOCPicker.filenameTextField`; the default name remains the field.
+    private func systemExportFilenameField(in app: XCUIApplication) -> XCUIElement {
+        let identified = app.textFields["DOCPicker.filenameTextField"]
+        if identified.exists { return identified }
+        let named = app.textFields.matching(NSPredicate(format: "value BEGINSWITH 'Aegis'")).firstMatch
+        if named.exists { return named }
+        return identified
+    }
+
     private func attachScreenshot(_ name: String, _ app: XCUIApplication) {
         // 整屏截图保留设备方向，避免横屏时按 App 坐标裁剪出黑边和残缺内容。
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
@@ -1306,5 +1316,727 @@ private extension XCUIElement {
         }
         typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
         typeText(text)
+    }
+}
+
+/// Opt-in evidence collection on a physical iPhone. XCTest completion is not a
+/// full-page acceptance: each receipt and both screenshots require visual review.
+@MainActor
+final class AegisRealWebsiteSmokeTests: XCTestCase {
+    func testDirectSubscriptionQuotaChangesAfterRealProxyBrowsing() throws {
+        guard ProcessInfo.processInfo.environment["AEGIS_DIRECT_SUBSCRIPTION_SMOKE"] == "1" else {
+            throw XCTSkip("Requires the authorized embedded node and private subscription descriptor")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["page-protection"].waitForExistence(timeout: 10))
+        let before = try readDirectQuota(app, name: "direct-quota-before")
+        for site in [Site(id: 6, host: "wikipedia.org"), Site(id: 26, host: "bbc.com")] {
+            try submitAddress(site.url, in: app)
+            let deadline = Date(timeIntervalSinceNow: 15)
+            var action = recoveryButton(app)
+            while action == nil, Date() < deadline {
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 1)); action = recoveryButton(app)
+            }
+            action?.coordinate.tap()
+            var content = try waitForContent(app, site: site)
+            var route = readRoute(app)
+            if route["local_entry_ready"] as? Bool != true {
+                let change = enableVisibleSiteRecovery(app, site: site, prefix: "direct-quota-\(site.id)")
+                XCTAssertEqual(change["performed"] as? Bool, true)
+                content = try waitForContent(app, site: site)
+                route = readRoute(app)
+            }
+            XCTAssertEqual(route["local_entry_ready"] as? Bool, true)
+            XCTAssertTrue(site.contains(route["host"] as? String ?? ""))
+            XCTAssertEqual(content["expected_site_address_observed"] as? Bool, true)
+            attachJSON(content, name: "direct-quota-\(site.id)-content.json")
+            attachJSON(route, name: "direct-quota-\(site.id)-route.json")
+            screenshot("direct-quota-\(site.id)-content")
+        }
+        var after = try readDirectQuota(app, name: "direct-quota-after")
+        for attempt in 0..<3 where (after["uploaded"] ?? 0) <= (before["uploaded"] ?? 0)
+            || (after["downloaded"] ?? 0) <= (before["downloaded"] ?? 0) {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 5))
+            after = try readDirectQuota(app, name: "direct-quota-after-\(attempt)")
+        }
+        XCTAssertGreaterThan(try XCTUnwrap(after["uploaded"]), try XCTUnwrap(before["uploaded"]))
+        XCTAssertGreaterThan(try XCTUnwrap(after["downloaded"]), try XCTUnwrap(before["downloaded"]))
+        XCTAssertLessThan(try XCTUnwrap(after["remaining"]), try XCTUnwrap(before["remaining"]))
+    }
+
+    private func readDirectQuota(_ app: XCUIApplication, name: String) throws -> [String: UInt64] {
+        app.buttons["page-protection"].tap()
+        let refresh = app.buttons["access-usage-refresh"]
+        for _ in 0..<8 where !refresh.isHittable { app.swipeUp() }
+        XCTAssertTrue(refresh.waitForExistence(timeout: 10))
+        if refresh.isEnabled && refresh.isHittable { refresh.tap() }
+        var values: [String: UInt64] = [:]
+        let deadline = Date(timeIntervalSinceNow: 15)
+        repeat {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 1))
+            values = [:]
+            func visit(_ snapshot: XCUIElementSnapshot) {
+                for key in ["quota", "uploaded", "downloaded", "used", "remaining"] where snapshot.identifier == "access-usage-" + key {
+                    if let raw = snapshot.value as? String, let bytes = UInt64(raw) { values[key] = bytes }
+                }
+                for child in snapshot.children { visit(child) }
+            }
+            visit(try app.snapshot())
+        } while values.count != 5 && Date() < deadline
+        screenshot(name)
+        attachJSON(values.mapValues { String($0) }, name: name + ".json")
+        XCTAssertEqual(values["quota"], 10_000_000_000)
+        let used = try XCTUnwrap(values["used"])
+        XCTAssertEqual(used, try XCTUnwrap(values["uploaded"]) + XCTUnwrap(values["downloaded"]))
+        XCTAssertEqual(values["remaining"], used < 10_000_000_000 ? 10_000_000_000 - used : 0)
+        app.navigationBars.buttons["完成"].tap()
+        return values
+    }
+
+    func testCurrentSiteProxySwitchPreservesOtherSite() throws {
+        guard ProcessInfo.processInfo.environment["AEGIS_REAL_SITE_SWITCH_SMOKE"] == "1" else {
+            throw XCTSkip("Requires an explicitly enabled real-node UI run")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        let first = Site(id: 6, host: "wikipedia.org")
+        let second = Site(id: 14, host: "dropbox.com")
+        for site in [first, second, first] {
+            try submitAddress(site.url, in: app)
+            let deadline = Date(timeIntervalSinceNow: 15)
+            var action = recoveryButton(app)
+            while action == nil, Date() < deadline {
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 1))
+                action = recoveryButton(app)
+            }
+            action?.coordinate.tap()
+            _ = try waitForContent(app, site: site)
+            var route = readRoute(app)
+            if route["local_entry_ready"] as? Bool != true {
+                let change = enableVisibleSiteRecovery(app, site: site, prefix: "site-switch-\(site.id)")
+                XCTAssertEqual(change["performed"] as? Bool, true)
+                _ = try waitForContent(app, site: site)
+                route = readRoute(app)
+            }
+            XCTAssertEqual(route["local_entry_ready"] as? Bool, true)
+            attachJSON(route, name: "site-switch-\(site.id)-route.json")
+        }
+        app.buttons["page-protection"].tap()
+        let currentHost = app.staticTexts["access-site-proxy-host"]
+        XCTAssertTrue(currentHost.waitForExistence(timeout: 5))
+        XCTAssertTrue(first.contains(currentHost.label.lowercased()))
+        let toggle = app.switches["access-site-proxy-toggle"]
+        for _ in 0..<4 where !toggle.isHittable { app.swipeUp() }
+        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertTrue(toggle.isHittable)
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0"), object: toggle)
+        let offResult = XCTWaiter.wait(for: [off], timeout: 5)
+        screenshot("site-switch-current-off")
+        guard offResult == .completed else { XCTFail("Visible current-site switch did not turn off"); return }
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed)
+        screenshot("site-switch-current-on")
+        app.navigationBars.buttons["完成"].tap()
+        _ = try waitForContent(app, site: first)
+        XCTAssertEqual(readRoute(app)["local_entry_ready"] as? Bool, true)
+        try submitAddress(second.url, in: app)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "Address submission must dismiss the keyboard")
+        _ = try waitForContent(app, site: second)
+        let otherRoute = readRoute(app)
+        XCTAssertEqual(otherRoute["local_entry_ready"] as? Bool, true)
+        attachJSON(otherRoute, name: "site-switch-other-site-still-on.json")
+        screenshot("site-switch-other-site-still-on")
+    }
+
+    private func submitAddress(_ url: String, in app: XCUIApplication) throws {
+        let address = app.textFields["address-field"]
+        let cancel = app.buttons["取消"]
+        for attempt in 0..<2 {
+            guard address.waitForExistence(timeout: 10), address.isHittable else { break }
+            address.tap()
+            guard cancel.waitForExistence(timeout: 3) else { continue }
+            let keyboard = app.keyboards.firstMatch
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                keyboard.exists && keyboard.frame.intersects(app.frame)
+            }, object: nil)
+            _ = XCTWaiter.wait(for: [ready], timeout: 3)
+            address.clearAndType(url)
+            if address.value as? String == url {
+                address.typeText("\n")
+                return
+            }
+            screenshot("address-entry-attempt-\(attempt + 1)")
+            if cancel.isHittable { cancel.tap() }
+        }
+        throw NSError(domain: "AegisRealWebsiteSmoke", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Address entry did not reach the requested URL before submission"])
+    }
+
+    private struct Site {
+        let id: Int
+        let host: String
+        var url: String { "https://\(host)/" }
+        func contains(_ candidate: String) -> Bool {
+            candidate == host || candidate.hasSuffix("." + host)
+        }
+    }
+
+    private static let sites: [Site] = [
+        .init(id: 1, host: "google.com"),
+        .init(id: 2, host: "facebook.com"),
+        .init(id: 3, host: "youtube.com"),
+        .init(id: 4, host: "instagram.com"),
+        .init(id: 5, host: "x.com"),
+        .init(id: 6, host: "wikipedia.org"),
+        .init(id: 7, host: "pinterest.com"),
+        .init(id: 8, host: "tiktok.com"),
+        .init(id: 9, host: "whatsapp.com"),
+        .init(id: 10, host: "vimeo.com"),
+        .init(id: 11, host: "reddit.com"),
+        .init(id: 12, host: "chatgpt.com"),
+        .init(id: 13, host: "nih.gov"),
+        .init(id: 14, host: "dropbox.com"),
+        .init(id: 15, host: "archive.org"),
+        .init(id: 16, host: "tumblr.com"),
+        .init(id: 17, host: "snapchat.com"),
+        .init(id: 18, host: "nytimes.com"),
+        .init(id: 19, host: "godaddy.com"),
+        .init(id: 20, host: "flickr.com"),
+        .init(id: 21, host: "discord.com"),
+        .init(id: 22, host: "soundcloud.com"),
+        .init(id: 23, host: "theguardian.com"),
+        .init(id: 24, host: "medium.com"),
+        .init(id: 25, host: "brave.com"),
+        .init(id: 26, host: "bbc.com"),
+        .init(id: 27, host: "roku.com"),
+        .init(id: 28, host: "forbes.com"),
+        .init(id: 29, host: "twitch.tv"),
+        .init(id: 30, host: "linktr.ee"),
+        .init(id: 31, host: "reuters.com"),
+        .init(id: 32, host: "archive.ph"),
+        .init(id: 33, host: "etsy.com"),
+        .init(id: 34, host: "ok.ru"),
+        .init(id: 35, host: "tradingview.com"),
+        .init(id: 36, host: "wsj.com"),
+        .init(id: 37, host: "bsky.app"),
+        .init(id: 38, host: "issuu.com"),
+        .init(id: 39, host: "bloomberg.com"),
+        .init(id: 40, host: "washingtonpost.com"),
+        .init(id: 41, host: "substack.com"),
+        .init(id: 42, host: "duckduckgo.com"),
+        .init(id: 43, host: "line.me"),
+        .init(id: 44, host: "steamcommunity.com"),
+        .init(id: 45, host: "dailymotion.com"),
+        .init(id: 46, host: "goodreads.com"),
+        .init(id: 47, host: "businessinsider.com"),
+        .init(id: 48, host: "amazon.co.jp"),
+        .init(id: 49, host: "quora.com"),
+        .init(id: 50, host: "openstreetmap.org"),
+        .init(id: 51, host: "indiatimes.com"),
+        .init(id: 52, host: "blogger.com"),
+        .init(id: 53, host: "fandom.com"),
+        .init(id: 54, host: "behance.net"),
+        .init(id: 55, host: "ft.com"),
+        .init(id: 56, host: "slideshare.net"),
+        .init(id: 57, host: "threads.com"),
+        .init(id: 58, host: "deviantart.com"),
+        .init(id: 59, host: "time.com"),
+        .init(id: 60, host: "rakuten.co.jp"),
+        .init(id: 61, host: "meta.com"),
+        .init(id: 62, host: "nike.com"),
+        .init(id: 63, host: "elpais.com"),
+        .init(id: 64, host: "lemonde.fr"),
+        .init(id: 65, host: "bandcamp.com"),
+        .init(id: 66, host: "itch.io"),
+        .init(id: 67, host: "binance.com"),
+        .init(id: 68, host: "dailymail.co.uk"),
+        .init(id: 69, host: "independent.co.uk"),
+        .init(id: 70, host: "bild.de"),
+        .init(id: 71, host: "wattpad.com"),
+        .init(id: 72, host: "viber.com"),
+        .init(id: 73, host: "nikkei.com"),
+        .init(id: 74, host: "welt.de"),
+        .init(id: 75, host: "imgur.com"),
+        .init(id: 76, host: "perplexity.ai"),
+        .init(id: 77, host: "focus.de"),
+        .init(id: 78, host: "daum.net"),
+        .init(id: 79, host: "gofundme.com"),
+        .init(id: 80, host: "nbcnews.com"),
+        .init(id: 81, host: "cbc.ca"),
+        .init(id: 82, host: "disqus.com"),
+        .init(id: 83, host: "patreon.com"),
+        .init(id: 84, host: "genius.com"),
+        .init(id: 85, host: "character.ai"),
+        .init(id: 86, host: "corriere.it"),
+        .init(id: 87, host: "huffpost.com"),
+        .init(id: 88, host: "pbs.org"),
+        .init(id: 89, host: "abc.net.au"),
+        .init(id: 90, host: "change.org"),
+        .init(id: 91, host: "n-tv.de"),
+        .init(id: 92, host: "pixiv.net"),
+        .init(id: 93, host: "bol.com"),
+        .init(id: 94, host: "tagesschau.de"),
+        .init(id: 95, host: "archiveofourown.org"),
+        .init(id: 96, host: "theatlantic.com"),
+        .init(id: 97, host: "huggingface.co"),
+        .init(id: 98, host: "moneycontrol.com"),
+        .init(id: 99, host: "ameba.jp"),
+        .init(id: 100, host: "rutube.ru")
+    ]
+
+    func testSelectedRealWebsites() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["AEGIS_REAL_SITE_SMOKE"] == "1" else {
+            throw XCTSkip("External websites require AEGIS_REAL_SITE_SMOKE=1 and AEGIS_REAL_SITE_IDS.")
+        }
+#if targetEnvironment(simulator)
+        throw XCTSkip("Real-site smoke requires a physical iPhone.")
+#else
+        let selection = environment["AEGIS_REAL_SITE_IDS"] ?? ""
+        let ids = selection.split(separator: ",", omittingEmptySubsequences: false)
+            .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        let selected = selection == "all" ? Self.sites : Self.sites.filter { ids.contains($0.id) }
+        guard selection == "all" || (!ids.isEmpty && ids.count == selection.split(separator: ",", omittingEmptySubsequences: false).count
+            && Set(ids).count == ids.count && selected.count == ids.count) else {
+            XCTFail("Select all or a comma-separated subset of the 100 documented site IDs; raw URLs are rejected.")
+            return
+        }
+        continueAfterFailure = true
+        for site in selected {
+            XCTContext.runActivity(named: "Real site \(site.id): \(site.host)") { _ in
+                collect(site, tryLink: environment["AEGIS_REAL_SITE_LINKS"] == "1")
+            }
+        }
+#endif
+    }
+
+    private func collect(_ site: Site, tryLink: Bool) {
+        let app = XCUIApplication()
+        let prefix = String(format: "real-site-%03d-%@", site.id, site.host)
+        var receipt: [String: Any] = [
+            "schema": 1, "site_id": site.id, "requested_url": site.url,
+            "started_at": ISO8601DateFormatter().string(from: Date()),
+            "recovery_action_count": 0, "recovery_action": "NONE",
+            "result": "HARNESS_INCOMPLETE", "acceptance": "NOT_ESTABLISHED",
+            "visual_review_required": true, "link_result": "NOT_REQUESTED",
+            "checklist": ["Read initial and scrolled screenshots for complete content and missing assets.",
+                          "Reject consent, challenge, login shell, blank or incomplete pages as full-page passes.",
+                          "Confirm final host and route; local proxy readiness does not verify the remote connection.",
+                          "Review redirect and optional link outcomes separately from the first recovery action."]
+        ]
+        defer {
+            receipt["finished_at"] = ISO8601DateFormatter().string(from: Date())
+            attachJSON(receipt, name: prefix + "-receipt.json")
+            app.terminate()
+        }
+        // Standard UI-test launch resets tabs and test preferences between sites.
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let address = app.textFields["address-field"]
+        guard address.waitForExistence(timeout: 10), address.isHittable else {
+            receipt["result"] = "ADDRESS_UNAVAILABLE"; screenshot(prefix + "-launch")
+            XCTFail("Address bar unavailable for site \(site.id)")
+            return
+        }
+        address.tap(); address.clearAndType(site.url)
+        let typed = address.value as? String ?? ""
+        receipt["typed_address"] = sanitizedURL(typed)
+        receipt["typed_address_matches_request"] = typed == site.url
+        guard typed == site.url else {
+            receipt["result"] = "TYPED_ADDRESS_MISMATCH"; screenshot(prefix + "-typed-address-mismatch")
+            return
+        }
+        address.typeText("\n")
+        receipt["keyboard_dismissed_after_submit"] = app.keyboards.firstMatch.waitForNonExistence(timeout: 5)
+        let initialUX = preActionEvidence(app)
+        attachJSON(initialUX, name: prefix + "-pre-action-initial.json")
+        screenshot(prefix + "-pre-action-initial")
+        let deadline = Date(timeIntervalSinceNow: 38)
+        var retry = recoveryButton(app)
+        while retry == nil, Date() < deadline {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 1))
+            retry = recoveryButton(app)
+        }
+        let ux = preActionEvidence(app)
+        receipt["pre_action"] = ux
+        attachJSON(ux, name: prefix + "-pre-action-final.json")
+        screenshot(prefix + "-before-recovery")
+        // The initial direct page may finish while evidence is captured. Resolve
+        // the visible action again; a vanished banner is not a successful tap.
+        retry = recoveryButton(app)
+        if let retry {
+            let pending = retry.label == "通过代理打开"
+            let exposedTarget = ux["target"] as? String ?? "NOT_EXPOSED"
+            let observedAddress = ux["observed_address"] as? String ?? "UNREADABLE"
+            receipt["recovery_target"] = exposedTarget
+            receipt["recovery_target_source"] = ux["target_source"]
+            let hasExposedTarget = exposedTarget != "NOT_EXPOSED" && exposedTarget != "UNREADABLE"
+            receipt["recovery_binding_source"] = hasExposedTarget ? "EXPOSED_NAVIGATION_TARGET" : "OBSERVED_ADDRESS_FIELD_ONLY"
+            guard host(hasExposedTarget ? exposedTarget : observedAddress).map(site.contains) == true else {
+                receipt["result"] = "RECOVERY_TARGET_MISMATCH"; screenshot(prefix + "-target-mismatch")
+                return
+            }
+            receipt["recovery_action"] = pending ? "VISIBLE_PENDING_PROXY" : "VISIBLE_FAILURE_RETRY"
+            // The page may finish between observing the native button and the
+            // tap. Use the observed point, not a stale element query that aborts
+            // the entire batch. This is only an attempted action; the later
+            // host, route and content receipts still decide whether it worked.
+            retry.coordinate.tap()
+            receipt["recovery_action_count"] = 1
+            receipt["recovery_action_requires_route_confirmation"] = true
+        } else {
+            receipt["result"] = "ACTION_UNAVAILABLE"
+            let siteAction = enableVisibleSiteRecovery(app, site: site, prefix: prefix)
+            receipt["site_menu_action"] = siteAction
+            if siteAction["performed"] as? Bool == true {
+                receipt["recovery_action"] = "VISIBLE_SITE_PROXY_TOGGLE"
+                receipt["recovery_action_count"] = 1
+                receipt["recovery_target"] = siteAction["target"]
+                receipt["recovery_target_source"] = siteAction["target_source"]
+                receipt["result"] = "AWAITING_CONTENT"
+            }
+        }
+        do {
+            let page = try waitForContent(app, site: site)
+            receipt["content"] = page
+            receipt["address_before_scroll"] = sanitizedURL(address.exists ? address.value as? String ?? "" : "")
+            screenshot(prefix + "-before-scroll")
+            let web = app.webViews.firstMatch
+            var scrolledClass = "NO_WEBVIEW"
+            if web.exists, !web.frame.isEmpty {
+                web.swipeUp()
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
+                let scrolled = try pageEvidence(web)
+                receipt["after_scroll_content"] = scrolled
+                scrolledClass = scrolled["classification"] as? String ?? "SNAPSHOT_UNAVAILABLE"
+                receipt["scroll_result"] = "GESTURE_SENT_REQUIRES_VISUAL_REVIEW"
+            } else { receipt["scroll_result"] = "NO_WEBVIEW" }
+            screenshot(prefix + "-after-scroll")
+            let finalAddress = address.exists ? address.value as? String ?? "" : ""
+            let finalHost = host(finalAddress) ?? ""
+            receipt["final_address"] = sanitizedURL(finalAddress)
+            receipt["final_host"] = finalHost
+            receipt["redirect_class"] = finalHost.isEmpty ? "UNREADABLE_ADDRESS" :
+                finalHost == site.host ? "SAME_HOST" : site.contains(finalHost) ? "SAME_REGISTRABLE_DOMAIN" : "CROSS_REGISTRABLE_DOMAIN"
+            receipt["cross_registrable_redirect_observed"] = (page["observed_hosts"] as? [String] ?? []).contains { !site.contains($0) }
+            let route = readRoute(app)
+            receipt["route"] = route
+            let routeHost = route["host"] as? String ?? ""
+            receipt["route_address_match"] = !finalHost.isEmpty && routeHost == finalHost
+            let contentClass = page["classification"] as? String ?? "SNAPSHOT_UNAVAILABLE"
+            if receipt["result"] as? String != "ACTION_UNAVAILABLE" {
+                receipt["result"] = !site.contains(finalHost) ? "OFF_HOST_OR_UNREADABLE" :
+                    routeHost != finalHost ? "ROUTE_ADDRESS_UNVERIFIED" :
+                    route["local_entry_ready"] as? Bool != true ? "PROXY_ROUTE_UNVERIFIED" : contentClass
+            }
+            if tryLink {
+                receipt["link_result"] = "SKIPPED_INITIAL_CONTENT_OR_ROUTE_UNVERIFIED"
+                if contentClass == "CONTENT_PRESENT_NEEDS_VISUAL_REVIEW", scrolledClass == contentClass,
+                   site.contains(finalHost), routeHost == finalHost,
+                   route["local_entry_ready"] as? Bool == true,
+                   route["menu_closed"] as? Bool == true {
+                    receipt["link"] = try followSafeLink(app, site: site, prefix: prefix)
+                    receipt["link_result"] = (receipt["link"] as? [String: Any])?["result"]
+                }
+            }
+        } catch {
+            receipt["result"] = "SNAPSHOT_UNAVAILABLE"
+            screenshot(prefix + "-snapshot-unavailable")
+            XCTFail("Real-site snapshot unavailable for site \(site.id)")
+        }
+    }
+
+    private let recoveryLabels = ["通过代理打开", "通过代理重试"]
+
+    private struct ObservedRecoveryAction {
+        let label: String
+        let coordinate: XCUICoordinate
+    }
+
+    private func recoveryButton(_ app: XCUIApplication) -> ObservedRecoveryAction? {
+        guard let snapshot = try? app.snapshot() else { return nil }
+        let candidates = nativeDescendants(snapshot).filter {
+            $0.elementType == .button && $0.isEnabled
+                && ($0.identifier == "page-load-proxy-retry" || recoveryLabels.contains($0.label))
+                && !$0.frame.isEmpty && $0.frame.intersects(snapshot.frame)
+        }
+        guard candidates.count == 1, let candidate = candidates.first,
+              recoveryLabels.contains(candidate.label) else { return nil }
+        // Identifier propagation must never turn a container or an unrelated
+        // descendant into a tap target. Require a unique native button and label.
+        // isHittable can itself raise an XCTest failure while the pending
+        // button is replaced by a timeout button. Observe two complete native
+        // snapshots instead; the later route/content checks still decide if
+        // this one attempted action actually worked.
+        guard let current = try? app.snapshot() else { return nil }
+        let currentCandidates = nativeDescendants(current).filter {
+            $0.elementType == .button && $0.isEnabled
+                && ($0.identifier == "page-load-proxy-retry" || recoveryLabels.contains($0.label))
+                && !$0.frame.isEmpty && !$0.frame.isInfinite && !$0.frame.isNull
+                && current.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY))
+        }
+        guard currentCandidates.count == 1, let live = currentCandidates.first,
+              live.frame == candidate.frame, live.label == candidate.label else { return nil }
+        return ObservedRecoveryAction(label: live.label,
+            coordinate: app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+                dx: live.frame.midX - current.frame.minX,
+                dy: live.frame.midY - current.frame.minY)))
+    }
+
+    private func preActionEvidence(_ app: XCUIApplication) -> [String: Any] {
+        guard let snapshot = try? app.snapshot() else { return ["result": "SNAPSHOT_UNAVAILABLE"] }
+        let nodes = nativeDescendants(snapshot)
+        let address = nodes.first { $0.elementType == .textField && $0.identifier == "address-field" }
+        let pending = nodes.first { $0.elementType == .staticText && $0.identifier == "page-load-pending-host" }
+        let failed = nodes.first { $0.elementType == .staticText && $0.identifier == "page-load-failed-host" }
+        let status = nodes.first { $0.elementType == .staticText && $0.identifier == "page-load-pending-status" }
+        let knownStatus = ["正在准备代理连接…", "正在连接此网址。你可以选择通过代理打开。"]
+        let targetNode = pending ?? failed
+        let targetValue = targetNode?.value as? String
+        let target = targetValue ?? targetNode?.label
+        let controls = nodes.filter { $0.identifier == "page-load-proxy-retry" || recoveryLabels.contains($0.label) }
+        return ["result": "OBSERVED", "observed_address": sanitizedURL(address?.value as? String ?? ""),
+                "target": target.map(sanitizedURL) ?? "NOT_EXPOSED",
+                "target_source": pending != nil ? "PENDING_NATIVE_HOST" : failed != nil ? "FAILED_NATIVE_HOST" : "NOT_EXPOSED",
+                "pending_status": status.map { knownStatus.contains($0.label) ? $0.label : "UNRECOGNIZED" } ?? "NOT_EXPOSED",
+                "recovery_controls": controls.prefix(8).map { item in
+                    ["type": item.elementType.rawValue, "identifier_match": item.identifier == "page-load-proxy-retry",
+                     "label": recoveryLabels.contains(item.label) ? item.label : "UNRECOGNIZED",
+                     "enabled": item.isEnabled, "frame": String(describing: item.frame)] as [String: Any]
+                }]
+    }
+
+    private func nativeDescendants(_ root: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+        var pending = [root], result: [XCUIElementSnapshot] = []
+        while let item = pending.popLast(), result.count < 2_000 {
+            if item.elementType == .webView { continue }
+            result.append(item); pending.append(contentsOf: item.children.reversed())
+        }
+        return result
+    }
+
+    private func enableVisibleSiteRecovery(_ app: XCUIApplication, site: Site, prefix: String) -> [String: Any] {
+        let field = app.textFields["address-field"]
+        let address = field.exists ? field.value as? String ?? "" : ""
+        let web = app.webViews.firstMatch
+        let native = preActionEvidence(app)
+        let failedHost = native["target_source"] as? String == "FAILED_NATIVE_HOST"
+            ? (native["target"] as? String).flatMap(host) : nil
+        let committedPage = web.exists && (try? pageEvidence(web)["classification"] as? String).map {
+            $0 != "BROWSER_START_PAGE"
+        } == true
+        guard let addressHost = host(address), site.contains(addressHost),
+              committedPage || failedHost == addressHost else {
+            return ["performed": false, "result": "NO_VISIBLE_CURRENT_SITE_EVIDENCE"]
+        }
+        let menu = app.buttons["page-protection"]
+        guard menu.exists, menu.isHittable else { return ["performed": false, "result": "MENU_UNAVAILABLE"] }
+        menu.tap()
+        defer {
+            let done = app.navigationBars.buttons["完成"]
+            if done.exists, done.isHittable { done.tap(); _ = done.waitForNonExistence(timeout: 3) }
+        }
+        let committedHost = app.staticTexts["access-site-proxy-host"]
+        guard committedHost.waitForExistence(timeout: 5), committedHost.label.lowercased() == addressHost else {
+            return ["performed": false, "result": "COMMITTED_HOST_MISMATCH"]
+        }
+        let toggle = app.switches["access-site-proxy-toggle"]
+        guard toggle.exists, toggle.isEnabled, toggle.isHittable,
+              toggle.value as? String == "0", let snapshot = try? toggle.snapshot(),
+              snapshot.elementType == .switch else {
+            return ["performed": false, "result": "NO_VISIBLE_ENABLED_OFF_SWITCH", "target": addressHost]
+        }
+        screenshot(prefix + "-before-site-toggle")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"), object: toggle)
+        let changed = XCTWaiter.wait(for: [enabled], timeout: 5) == .completed
+        return ["performed": changed, "result": changed ? "VISIBLE_SWITCH_ENABLED" : "VISIBLE_SWITCH_UNCHANGED", "target": addressHost,
+                "target_source": failedHost == addressHost ? "FAILED_HOST_AND_SITE_MENU_AND_ADDRESS" : "COMMITTED_SITE_MENU_HOST_AND_ADDRESS",
+                "toggle_value_after": toggle.exists ? toggle.value as? String ?? "UNREADABLE" : "UNAVAILABLE"]
+    }
+
+    private func waitForContent(_ app: XCUIApplication, site: Site, previousAddress: String? = nil,
+                                previousContent: String? = nil) throws -> [String: Any] {
+        let deadline = Date(timeIntervalSinceNow: 45)
+        var last: [String: Any] = ["classification": "NO_WEBVIEW"]
+        var previous = "", stable = 0
+        var observedHosts: [String] = []
+        var invalidSnapshotCount = 0
+        repeat {
+            let field = app.textFields["address-field"]
+            let currentAddress = field.exists ? field.value as? String ?? "" : ""
+            let currentHost = host(currentAddress)
+            if let current = currentHost, !observedHosts.contains(current) {
+                observedHosts.append(current)
+            }
+            let web = app.webViews.firstMatch
+            if web.exists {
+                do { last = try pageEvidence(web) }
+                catch {
+                    let failure = error as NSError
+                    guard failure.domain == "com.apple.dt.xctest.automation-support.error", failure.code == 8 else { throw error }
+                    // Rebinding replaces a WebView between existence and snapshot.
+                    // Retry within the original deadline, never accept an old snapshot.
+                    invalidSnapshotCount += 1
+                    last = ["classification": "SNAPSHOT_UNAVAILABLE"]
+                    stable = 0; previous = ""
+                    RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
+                    continue
+                }
+                let signature = contentSignature(last) + ":" + currentAddress
+                stable = signature == previous ? stable + 1 : 0
+                previous = signature
+                let addressMatches = currentHost.map(site.contains) == true && currentAddress.hasPrefix("https://")
+                let moved = previousAddress.map { sanitizedURL($0) != sanitizedURL(currentAddress) } ?? true
+                let changed = previousContent.map { $0 != contentSignature(last) } ?? true
+                last["expected_site_address_observed"] = addressMatches
+                last["navigation_away_from_previous_address"] = moved
+                last["destination_content_changed"] = changed
+                if stable >= 2, addressMatches, moved, changed,
+                   last["classification"] as? String != "BROWSER_START_PAGE",
+                   (last["visible_text_characters"] as? Int ?? 0) > 30 { break }
+            } else {
+                last = ["classification": "NO_WEBVIEW"]
+                stable = 0; previous = ""
+            }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 2))
+        } while Date() < deadline
+        last["settled_observation"] = stable >= 2 && last["expected_site_address_observed"] as? Bool == true
+            && last["navigation_away_from_previous_address"] as? Bool == true && last["destination_content_changed"] as? Bool == true
+            && last["classification"] as? String != "BROWSER_START_PAGE"
+            && (last["visible_text_characters"] as? Int ?? 0) > 30
+        last["observed_hosts"] = observedHosts
+        last["invalid_snapshot_retries"] = invalidSnapshotCount
+        return last
+    }
+
+    private func contentSignature(_ evidence: [String: Any]) -> String {
+        ["classification", "visible_text_characters", "visible_links", "visible_images"]
+            .map { String(describing: evidence[$0] ?? "") }.joined(separator: ":")
+    }
+
+    private func pageEvidence(_ web: XCUIElement) throws -> [String: Any] {
+        // Resolve once; never index a live, changing web descendants query.
+        let snapshot = try web.snapshot()
+        let nodes = descendants(snapshot).filter { !$0.frame.isEmpty && $0.frame.intersects(snapshot.frame) }
+        let text = nodes.filter { $0.elementType == .staticText || $0.elementType == .link }
+            .map(\.label).filter { !$0.isEmpty }.joined(separator: " ").lowercased()
+        let signals: [(String, [String])] = [
+            ("CHALLENGE", ["verify you are human", "checking your browser", "just a moment", "验证码", "验证您是人类", "access denied", "unusual traffic"]),
+            ("CONSENT", ["accept all cookies", "reject all cookies", "before you continue to", "consent preferences", "接受所有", "同意并继续"]),
+            ("LOGIN", ["log in to continue", "sign in to continue", "login to continue", "登录以继续", "登录后继续"])
+        ]
+        var detected = signals.filter { $0.1.contains(where: text.contains) }.map(\.0)
+        if text.count < 700, ["log in", "sign in", "登录"].contains(where: text.contains),
+           ["password", "email", "sign up", "密码", "注册"].contains(where: text.contains), !detected.contains("LOGIN") {
+            detected.append("LOGIN")
+        }
+        let startPage = text.contains("安心浏览，清楚掌控") && text.contains("网页摘要与研究")
+        let classification = startPage ? "BROWSER_START_PAGE" : detected.first.map { $0 + "_REQUIRES_MANUAL_REVIEW" } ??
+            (text.count < 30 ? "BLANK_OR_INSUFFICIENT_CONTENT" : "CONTENT_PRESENT_NEEDS_VISUAL_REVIEW")
+        return ["classification": classification, "signals": detected, "visible_text_characters": text.count,
+                "visible_links": nodes.filter { $0.elementType == .link }.count,
+                "visible_images": nodes.filter { $0.elementType == .image }.count]
+    }
+
+    private func readRoute(_ app: XCUIApplication) -> [String: Any] {
+        let button = app.buttons["page-protection"]
+        if !button.exists || !button.isHittable {
+            if app.webViews.firstMatch.exists { app.webViews.firstMatch.swipeDown() }
+        }
+        guard button.exists, button.isHittable else { return ["result": "MENU_UNAVAILABLE", "menu_closed": true] }
+        button.tap()
+        let routeHost = app.staticTexts["access-site-proxy-host"]
+        guard routeHost.waitForExistence(timeout: 5) else {
+            let done = app.navigationBars.buttons["完成"]
+            if done.exists, done.isHittable { done.tap() }
+            return ["result": "ROUTE_HOST_UNAVAILABLE", "menu_closed": !done.exists]
+        }
+        let route = app.staticTexts["access-proxy-page-route"]
+        let routeText = route.exists ? route.label : ""
+        var result: [String: Any] = ["result": "OBSERVED", "host": routeHost.label.lowercased(),
+                                   "local_entry_ready": routeText == "本地代理入口已就绪；远端连接未验证",
+                                   "remote_connection_verified": false]
+        let connection = app.staticTexts["access-site-proxy-connection"]
+        result["connection_ui"] = connection.exists ? connection.label : "UNAVAILABLE"
+        let done = app.navigationBars.buttons["完成"]
+        if done.exists, done.isHittable { done.tap(); _ = done.waitForNonExistence(timeout: 3) }
+        result["menu_closed"] = !done.exists
+        return result
+    }
+
+    private func followSafeLink(_ app: XCUIApplication, site: Site, prefix: String) throws -> [String: Any] {
+        let web = app.webViews.firstMatch
+        guard web.exists else { return ["result": "NO_WEBVIEW"] }
+        // Only a real page link exposing a verifiable href is eligible. No consent,
+        // login, TLS, download, search, menu or system-interstitial interaction.
+        let safePaths = ["/about", "/about/", "/help", "/help/"] + (site.host == "lemonde.fr" ? ["/en/international/"] : [])
+        let links = descendants(try web.snapshot()).filter { $0.elementType == .link }
+        guard let candidate = links.first(where: { item in
+            guard let raw = item.value as? String, let url = URLComponents(string: raw),
+                  url.scheme == "https", let target = url.host?.lowercased(), site.contains(target),
+                  url.query == nil, url.fragment == nil, url.user == nil, url.password == nil,
+                  safePaths.contains(url.path) else { return false }
+            return !item.label.isEmpty
+        }), let raw = candidate.value as? String else { return ["result": "NO_VERIFIABLE_SAFE_SAME_SITE_LINK"] }
+        let link = web.links.matching(NSPredicate(format: "label == %@ AND value == %@", candidate.label, raw)).firstMatch
+        guard link.exists, link.isHittable else { return ["result": "SAFE_LINK_NOT_VISIBLE"] }
+        let before = app.textFields["address-field"].value as? String ?? ""
+        let beforeContent = contentSignature(try pageEvidence(web))
+        link.tap()
+        let content = try waitForContent(app, site: site, previousAddress: before, previousContent: beforeContent)
+        let after = app.textFields["address-field"].value as? String ?? ""
+        let actualHost = host(after) ?? ""
+        screenshot(prefix + "-after-safe-link")
+        let route = readRoute(app)
+        let contentObserved = content["classification"] as? String == "CONTENT_PRESENT_NEEDS_VISUAL_REVIEW"
+            && content["settled_observation"] as? Bool == true
+        let routeObserved = route["host"] as? String == actualHost && route["local_entry_ready"] as? Bool == true
+        return ["target": sanitizedURL(raw), "actual_address": sanitizedURL(after), "actual_host": actualHost,
+                "result": actualHost.isEmpty ? "ADDRESS_UNREADABLE" : !site.contains(actualHost) ? "FOREIGN_HOST" :
+                    sanitizedURL(before) == sanitizedURL(after) ? "NO_NAVIGATION_OBSERVED" :
+                    !contentObserved ? "DESTINATION_CONTENT_UNVERIFIED" : !routeObserved ? "DESTINATION_ROUTE_UNVERIFIED" :
+                    "SAME_SITE_CONTENT_AND_ROUTE_OBSERVED_NEEDS_VISUAL_REVIEW",
+                "content": content, "route": route]
+    }
+
+    private func descendants(_ root: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+        var pending = [root], result: [XCUIElementSnapshot] = []
+        while let item = pending.popLast(), result.count < 8_000 {
+            result.append(item); pending.append(contentsOf: item.children.reversed())
+        }
+        return result
+    }
+
+    private func host(_ raw: String) -> String? {
+        URLComponents(string: raw.contains("://") ? raw : "https://" + raw)?.host?.lowercased()
+    }
+
+    private func sanitizedURL(_ raw: String) -> String {
+        guard var url = URLComponents(string: raw.contains("://") ? raw : "https://" + raw),
+              ["https", "http"].contains(url.scheme ?? ""), url.host != nil else { return "UNREADABLE" }
+        url.query = nil; url.fragment = nil; url.user = nil; url.password = nil
+        return url.string ?? "UNREADABLE"
+    }
+
+    private func screenshot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    private func attachJSON(_ value: [String: Any], name: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else {
+            XCTFail("Could not encode real-site receipt")
+            return
+        }
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
 }

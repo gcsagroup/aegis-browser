@@ -1,9 +1,9 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From de17103a6520599454a4148796960e4e5ef7c04c Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 17:55:00 +0800
 Subject: [PATCH] 统一移动设置入口并修复休眠标签阅读崩溃
-
 ---
+
 diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/java/res/xml/main_preferences.xml
 index 67228cb0ac09589f6ee362c7c5fa2ac8667014c5..5c633fe8a0b9c7d258a531c81562d8d5eb9d19cb 100644
 --- a/chrome/android/java/res/xml/main_preferences.xml
@@ -31,7 +31,7 @@ index c52e633f062aa87228621060b2c604e066c378ec..40ecbe9d2164983dd9b60a7887e4a053
  import android.os.Bundle;
  import android.os.Handler;
  import android.os.Parcelable;
-@@ -36,6 +37,7 @@ import org.chromium.build.annotations.Initializer;
+@@ -37,6 +38,7 @@ import org.chromium.build.annotations.Initializer;
  import org.chromium.build.annotations.NullMarked;
  import org.chromium.build.annotations.Nullable;
  import org.chromium.chrome.R;
@@ -39,7 +39,7 @@ index c52e633f062aa87228621060b2c604e066c378ec..40ecbe9d2164983dd9b60a7887e4a053
  import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;
  import org.chromium.chrome.browser.autofill.settings.SettingsNavigationHelper;
  import org.chromium.chrome.browser.autofill.settings.options.AutofillOptionsFragment;
-@@ -359,6 +361,24 @@ public class MainSettings extends ChromeBaseSettingsFragment
+@@ -385,6 +387,24 @@ public class MainSettings extends ChromeBaseSettingsFragment
          mManagedPreferenceDelegate = createManagedPreferenceDelegate();
  
          SettingsUtils.addPreferencesFromResource(this, R.xml.main_preferences);

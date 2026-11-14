@@ -1,4 +1,4 @@
-From 83362f280de815151d916d43e2bb1f2aab39633f Mon Sep 17 00:00:00 2001
+From da478ff4ec2f9f22371a03942a9e27ffa340bbd0 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Fri, 9 Oct 2026 02:30:27 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E6=98=8E=E7=A1=AE=E6=89=8B=E5=8A=BF?=
@@ -10,11 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../gestures/gesture_interactive_uitest.cc    |  3 ++
- chrome/browser/resources/aegis/gestures.css   |  4 +-
- chrome/browser/resources/aegis/gestures.ts    | 39 ++++++++++++-------
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- 4 files changed, 32 insertions(+), 18 deletions(-)
 
 diff --git a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
 index 060b69fc2062e8076e3a233417e0c78353e28b8c..c2636fea396efd8039de53052d66d165fa33fa2a 100644

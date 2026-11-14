@@ -8,6 +8,8 @@ require "psych"
 require "rbconfig"
 require "time"
 require "uri"
+require "tmpdir"
+require "shellwords"
 
 module AegisRelease
   ROOT = File.expand_path("../..", __dir__)
@@ -34,9 +36,16 @@ module AegisRelease
   def self.command(executable, *arguments, cwd: ROOT, env: {}, binary: false)
     # Ruby's [executable, argv0] form always uses exec, including zero arguments.
     # Metacharacters therefore remain literal bytes and never select a shell.
-    stdout, _stderr, status = Open3.capture3({ 'PYTHONDONTWRITEBYTECODE' => '1' }.merge(env),
+    stdout, stderr, status = Open3.capture3({ 'PYTHONDONTWRITEBYTECODE' => '1' }.merge(env),
                                            [executable, executable], *arguments, chdir: cwd, binmode: binary)
-    require!(status.success?, "#{File.basename(executable)} failed (exit #{status.exitstatus}); no success receipt written")
+    unless status.success?
+      detail = [stdout, stderr].compact.map { |chunk| chunk.to_s.strip }.reject(&:empty?).last
+      detail = detail.lines.map(&:strip).reject(&:empty?).last if detail
+      if detail && detail.length <= 300 && !detail.match?(/PRIVATE KEY|BEGIN |password|P12|AuthKey_/i)
+        require!(false, "#{File.basename(executable)} failed (exit #{status.exitstatus}); #{detail}")
+      end
+      require!(false, "#{File.basename(executable)} failed (exit #{status.exitstatus}); no success receipt written")
+    end
     binary ? stdout : stdout.strip
   end
 
@@ -272,16 +281,30 @@ module AegisRelease
       AegisRelease.real_path!(request.directory)
       AegisRelease.require!(!File.exist?(request.directory), 'Attempt already exists; use a new run ID or upload the verified package')
       required('AEGIS_APPLE_TEAM_ID')
+      archive_args = cloud_archive_arguments if request.signing_mode == 'cloud'
       if request.signing_mode == 'manual'
         certificate = required('AEGIS_IOS_CERT_SHA1')
         AegisRelease.require!(/\A[0-9A-Fa-f]{40}\z/.match?(certificate), 'Provide AEGIS_IOS_CERT_SHA1')
         ios_profiles
       end
       run('python3', File.join(request.root, 'scripts/release/safari_manifest.py'), File.join(request.root, 'apps/ios/SharedWebExtension'))
+      if ENV['GITHUB_ACTIONS'] == 'true'
+        run('python3', File.join(request.root, 'scripts/release/ios-durable.py'), 'export-start',
+            '--version', request.version, '--build', request.build, '--profile', request.profile)
+      end
       FileUtils.mkdir_p(File.dirname(request.directory))
       Dir.mkdir(request.directory, 0o700)
-      paths, details = package_ios
+      paths, details = package_ios(archive_args)
       sha = Receipt.create(request, paths, source, details)
+      unless details['privateBetaTestNode']
+        publish_args = request.destination == 'github-draft' ? ['--draft'] : []
+        begin
+          run('python3', File.join(request.root, 'scripts/release/ios-publish.py'),
+              '--directory', request.directory, '--manifest-sha256', sha, *publish_args)
+        rescue Error
+          warn 'Downloads catalogue copy failed; retain the verified package and rerun ios-publish.py.'
+        end
+      end
       puts "Manifest SHA-256: #{sha}"
       if ENV['GITHUB_OUTPUT']
         File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') { |f| f.puts("manifest_sha256=#{sha}\nrun_id=#{request.run_id}") }
@@ -295,12 +318,80 @@ module AegisRelease
       profiles
     end
 
-    def package_ios
-      return package_ios_cloud if request.signing_mode == 'cloud'
+    def package_ios(archive_args = nil)
+      # Consume private values before any build subprocess receives its environment.
+      enabled = ENV.delete('AEGIS_IOS_BETA_TEST_NODE_ENABLED').to_s
+      secrets = %w[AEGIS_IOS_TEST_NODE_BASE64 AEGIS_IOS_TEST_SUBSCRIPTION_BASE64].to_h do |key|
+        [key, ENV.delete(key).to_s]
+      end
+      AegisRelease.require!(%w[true false].include?(enabled) || enabled.empty?, 'Invalid private Beta input switch')
+      unless enabled == 'true'
+        AegisRelease.require!(secrets.values.all?(&:empty?), 'Private Beta inputs require explicit opt-in')
+        return package_ios_impl(archive_args)
+      end
+      AegisRelease.require!(request.profile == 'beta' && request.signing_mode == 'manual',
+                            'Private Beta inputs require Beta with explicit manual signing')
+      AegisRelease.require!(request.destination == 'testflight', 'Private Beta inputs require TestFlight upload')
+      FileUtils.mkdir_p(request.directory)
+      Dir.mktmpdir('private-beta-', request.directory) do |private_dir|
+        helper = File.join(request.root, 'scripts/release/private-beta-inputs.py')
+        run('python3', helper, 'stage', '--directory', private_dir, env: secrets)
+        @private_beta_xcargs = ['AEGIS_PRIVATE_TEST_NODE_FILE=' + File.join(private_dir, 'node.vless'),
+                               'AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE=' + File.join(private_dir, 'subscription.json')]
+                               .map { |value| Shellwords.escape(value) }.join(' ')
+        paths, details = package_ios_impl(archive_args)
+        run('python3', helper, 'verify', '--directory', private_dir, '--ipa', paths.first, '--live-quota')
+        [paths, details.merge('privateBetaTestNode' => true, 'privateBetaQuota' => true)]
+      ensure
+        @private_beta_xcargs = nil
+      end
+    end
+
+    def package_ios_impl(archive_args = nil)
+      return package_ios_cloud(archive_args) if request.signing_mode == 'cloud'
       profiles = ios_profiles
       work = File.join(request.directory, 'work')
+      firebase_script = File.join(work, 'apps/ios/scripts/firebase_config.py')
+      firebase_args = ['--root', File.join(work, 'apps/ios/Firebase'), '--channel', request.profile]
+      stage_ios_package(work, firebase_script, firebase_args)
+      project = File.join(work, 'apps/ios/Aegis.xcodeproj')
+      team = required('AEGIS_APPLE_TEAM_ID')
+      @fastlane.update_code_signing_settings(path: project, use_automatic_signing: false,
+                                            team_id: team, code_sign_identity: 'Apple Distribution', build_configurations: ['Release'])
+      IOS_TARGETS.each do |target, app_id|
+        @fastlane.update_code_signing_settings(path: project, use_automatic_signing: false, team_id: team,
+                                              targets: [target], build_configurations: ['Release'], profile_name: profiles.fetch(app_id))
+      end
+      name = "Aegis-#{request.profile}-#{request.version}-#{request.build}-ios.ipa"
+      private_beta = !@private_beta_xcargs.nil?
+      internal_testing_only = request.profile == 'alpha' || private_beta
+      admit_source!
+      @fastlane.build_app(project: project, scheme: 'Aegis-Release', configuration: 'Release', clean: true,
+                         destination: 'generic/platform=iOS', output_directory: request.directory, output_name: name,
+                         archive_path: File.join(work, 'Aegis.xcarchive'), derived_data_path: File.join(work, 'DerivedData'),
+                         buildlog_path: File.join(work, 'logs'), export_method: 'app-store',
+                         skip_profile_detection: true, disable_package_automatic_updates: true,
+                         xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile} AEGIS_ACCESS_RELEASE_CHANNEL=#{request.profile} #{@private_beta_xcargs}",
+                         export_options: { method: 'app-store-connect', teamID: team, signingStyle: 'manual',
+                                           provisioningProfiles: profiles, manageAppVersionAndBuildNumber: false,
+                                           testFlightInternalTestingOnly: internal_testing_only })
+      ipa = File.join(request.directory, name)
+      run('python3', firebase_script, 'verify-ipa', *firebase_args, '--artifact', ipa)
+      run('python3', File.join(request.root, 'scripts/release/verify-ipa.py'), ipa, request.version, request.build, request.profile)
+      certificate = required('AEGIS_IOS_CERT_SHA1')
+      audience_args = private_beta ? ['--private-beta'] : []
+      run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), ipa, request.version, request.build, request.profile,
+          '--team', team, '--certificate-sha1', certificate, '--profiles-json', JSON.generate(profiles),
+          '--source-root', request.root, *audience_args)
+      paths = [ipa] + Dir.glob(File.join(request.directory, '*.dSYM.zip'))
+      [paths, { 'signing' => 'app-store-export', 'signingMode' => 'manual', 'appleTeamId' => team, 'certificateSha1' => certificate.upcase,
+                'provisioningProfiles' => profiles, 'testflight' => 'not_uploaded', 'deviceAcceptance' => 'not_verified',
+                'testFlightInternalTestingOnly' => internal_testing_only }]
+    end
+
+    def stage_ios_package(work, firebase_script, firebase_args)
       # Copy only committed inputs; ignored local files must not enter the archive.
-      tracked = AegisRelease.command('git', 'ls-files', '-z', 'apps/ios',
+      tracked = AegisRelease.command('git', 'ls-files', '-z', 'apps/ios', 'scripts/release/ios_embedded_core.py',
                                      'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared',
                                      'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json', cwd: request.root).split("\0")
       tracked.each do |relative|
@@ -311,54 +402,64 @@ module AegisRelease
         FileUtils.mkdir_p(File.dirname(target))
         FileUtils.cp(original, target)
       end
-      firebase_script = File.join(work, 'apps/ios/scripts/firebase_config.py')
-      firebase_root = File.join(work, 'apps/ios/Firebase')
-      firebase_args = ['--root', firebase_root, '--channel', request.profile]
       run('python3', firebase_script, 'stage', *firebase_args)
-      project = File.join(work, 'apps/ios/Aegis.xcodeproj')
-      team = required('AEGIS_APPLE_TEAM_ID')
-      @fastlane.update_code_signing_settings(path: project, use_automatic_signing: false,
-                                            team_id: team, code_sign_identity: 'Apple Distribution', build_configurations: ['Release'])
-      IOS_TARGETS.each do |target, app_id|
-        @fastlane.update_code_signing_settings(path: project, use_automatic_signing: false, team_id: team,
-                                              targets: [target], build_configurations: ['Release'], profile_name: profiles.fetch(app_id))
-      end
-      %w[AegisApp SafariWebExtension ShareExtension].each do |target|
-        run('/usr/libexec/PlistBuddy', '-c', "Add :AegisReleaseProfile string #{request.profile}", File.join(work, 'apps/ios', target, 'Info.plist'))
-      end
-      name = "Aegis-#{request.profile}-#{request.version}-#{request.build}-ios.ipa"
-      admit_source!
-      @fastlane.build_app(project: project, scheme: 'Aegis-Release', configuration: 'Release', clean: true,
-                         destination: 'generic/platform=iOS', output_directory: request.directory, output_name: name,
-                         archive_path: File.join(work, 'Aegis.xcarchive'), derived_data_path: File.join(work, 'DerivedData'),
-                         buildlog_path: File.join(work, 'logs'), export_method: 'app-store',
-                         skip_profile_detection: true, disable_package_automatic_updates: true,
-                         xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile}",
-                         export_options: { method: 'app-store-connect', teamID: team, signingStyle: 'manual',
-                                           provisioningProfiles: profiles, manageAppVersionAndBuildNumber: false,
-                                           testFlightInternalTestingOnly: request.profile == 'alpha' })
-      ipa = File.join(request.directory, name)
-      run('python3', firebase_script, 'verify-ipa', *firebase_args, '--artifact', ipa)
-      run('python3', File.join(request.root, 'scripts/release/verify-ipa.py'), ipa, request.version, request.build, request.profile)
-      certificate = required('AEGIS_IOS_CERT_SHA1')
-      run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), ipa, request.version, request.build, request.profile,
-          '--team', team, '--certificate-sha1', certificate, '--profiles-json', JSON.generate(profiles), '--source-root', request.root)
-      paths = [ipa] + Dir.glob(File.join(request.directory, '*.dSYM.zip'))
-      [paths, { 'signing' => 'app-store-export', 'signingMode' => 'manual', 'appleTeamId' => team, 'certificateSha1' => certificate.upcase,
-                'provisioningProfiles' => profiles, 'testflight' => 'not_uploaded', 'deviceAcceptance' => 'not_verified',
-                'testFlightInternalTestingOnly' => request.profile == 'alpha' }]
+      run('bash', File.join(request.root, 'scripts/release/prepare-ios-package-core.sh'), work)
     end
 
-    def package_ios_cloud
-      AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted',
-                            'Cloud production packaging requires a GitHub-hosted runner; use the explicit local fallback separately')
+    def cloud_archive_arguments
+      path = ENV['AEGIS_CLOUD_ARCHIVE_INPUT'].to_s
+      digest = ENV['AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256'].to_s
+      return [] if path.empty? && digest.empty?
+      AegisRelease.require!(!path.empty? && /\A[0-9a-f]{64}\z/.match?(digest),
+                            'Cloud archive requires the original producer job manifest digest')
+      path = File.expand_path(path, request.root)
+      manifest_path = AegisRelease.file!(File.join(path, 'archive-manifest.json'))
+      File.open(manifest_path, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |file|
+        info = file.stat
+        AegisRelease.require!(info.file? && info.size.positive? && info.size <= 16 * 1024**2,
+                              'Invalid Development archive manifest')
+        bytes = file.read(16 * 1024**2 + 1)
+        AegisRelease.require!(bytes.bytesize == info.size && Digest::SHA256.hexdigest(bytes) == digest,
+                              'Development archive manifest differs from its producer before export allocation')
+        begin
+          archive_digest = JSON.parse(bytes).fetch('archive_sha256')
+        rescue JSON::ParserError, KeyError, TypeError
+          raise Error, 'Invalid Development archive manifest'
+        end
+        AegisRelease.require!(archive_digest.is_a?(String) && /\A[0-9a-f]{64}\z/.match?(archive_digest),
+                              'Invalid Development archive ZIP digest')
+        archive_path = AegisRelease.file!(File.join(path, 'archive.zip'))
+        File.open(archive_path, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |archive|
+          archive_info = archive.stat
+          AegisRelease.require!(archive_info.file? && archive_info.size.positive? && archive_info.size <= 2 * 1024**3,
+                                'Invalid Development archive ZIP')
+          checksum = Digest::SHA256.new
+          total = 0
+          while (chunk = archive.read(1024**2))
+            total += chunk.bytesize
+            AegisRelease.require!(total <= archive_info.size, 'Development archive ZIP changed during verification')
+            checksum.update(chunk)
+          end
+          AegisRelease.require!(total == archive_info.size && checksum.hexdigest == archive_digest,
+                                'Development archive ZIP differs from its producer before export allocation')
+        end
+      end
+      ['--archive-input', path, '--archive-manifest-sha256', digest]
+    end
+
+    def package_ios_cloud(archive_args = nil)
+      runtime = ENV['RUNNER_ENVIRONMENT'].to_s
+      AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && %w[github-hosted self-hosted].include?(runtime) &&
+                            ENV['RUNNER_OS'] == 'macOS',
+                            'Cloud production packaging requires a GitHub Actions macOS runner; use the explicit local fallback separately')
+      archive_args ||= cloud_archive_arguments
       source = AegisRelease.source(request.root)
       client = AppleStore.new(request, @fastlane, admission: method(:preflight_upload)).tap(&:authenticate)
       before = CloudReservations.preflight(client, request, source)
       engine_run_id = 'production-' + Digest::SHA256.hexdigest(request.run_id)[0,32]
       run('python3', File.join(request.root, 'scripts/release/cloud-signing-poc.py'), '--signing-mode', 'cloud',
-          '--runtime', 'github-hosted', '--profile', request.profile, '--version', request.version, '--build', request.build,
-          '--team', required('AEGIS_APPLE_TEAM_ID'), '--run-id', engine_run_id)
+          '--runtime', runtime, '--profile', request.profile, '--version', request.version, '--build', request.build,
+          '--team', required('AEGIS_APPLE_TEAM_ID'), '--run-id', engine_run_id, *archive_args)
       root = File.join(request.root, '.artifacts/cloud-signing-poc', engine_run_id)
       receipt_path = File.join(root, 'poc-receipt.json')
       receipt = JSON.parse(File.read(AegisRelease.file!(receipt_path)))
@@ -395,6 +496,7 @@ module AegisRelease
       receipt = Receipt.verify(request, expected_digest)
       preflight_upload
       if request.destination == 'github-draft'
+        AegisRelease.require!(!receipt.fetch('details')['privateBetaTestNode'], 'Private Beta is only delivered to TestFlight')
         result = Draft.new(request, receipt, expected_digest, admission: method(:preflight_upload)).upload
         AegisRelease.write_new(File.join(request.directory, 'github-upload-result.json'), result)
       else
@@ -407,6 +509,7 @@ module AegisRelease
           verification_args += ['--signing-mode', 'cloud', '--expected-verification', File.join(request.directory, details.fetch('cloudVerification'))]
         else
           verification_args += ['--certificate-sha1', details.fetch('certificateSha1'), '--profiles-json', JSON.generate(details.fetch('provisioningProfiles'))]
+          verification_args << '--private-beta' if details['privateBetaTestNode']
         end
         run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), path, request.version, request.build, request.profile, *verification_args)
         client = store

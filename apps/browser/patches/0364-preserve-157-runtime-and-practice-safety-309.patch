@@ -1,4 +1,4 @@
-From bc7d61bc5d006382206f5db99ad82eaa8ff5035e Mon Sep 17 00:00:00 2001
+From 2d9f3b75c07739e9dfee0ea12a337acd085dd2e2 Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Tue, 10 Nov 2026 18:40:03 +0800
 Subject: [PATCH] =?UTF-8?q?157.0.8103.51=E9=80=90=E9=A1=B9=E9=80=82?=
@@ -7,28 +7,7 @@ Subject: [PATCH] =?UTF-8?q?157.0.8103.51=E9=80=90=E9=A1=B9=E9=80=82?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
-
 ---
- chrome/browser/aegis/BUILD.gn                 |  4 ++
- ...ess_browser_request_adapter_browsertest.cc | 37 +++++++++-
- ...proxying_url_loader_factory_browsertest.cc |  2 +-
- .../aegis/aegis_ui_handler_unittest.cc        | 44 ++++++++++--
- .../aegis/agent/aegis_agent_browsertest.cc    | 27 +++++++-
- .../agent/aegis_agent_interactive_uitest.cc   | 26 ++++++-
- .../gestures/gesture_interactive_uitest.cc    | 68 ++++++++++++-------
- chrome/browser/resources/aegis/gestures.ts    |  6 ++
- .../site_token_browsertest.cc                 |  6 +-
- chrome/browser/ui/actions/chrome_action_id.h  |  4 ++
- chrome/browser/ui/browser_actions.cc          | 42 ++++++++++++
- chrome/browser/ui/tabs/tab_features.cc        |  5 +-
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- chrome/test/BUILD.gn                          |  4 ++
- .../settings/autofill_page_index_test.ts      |  3 +-
- .../data/webui/settings/autofill_page_test.ts | 16 ++---
- .../webui/settings/identity_docs_page_test.ts |  2 +-
- .../data/webui/settings/shopping_page_test.ts |  2 +-
- .../data/webui/settings/travel_page_test.ts   |  2 +-
- 19 files changed, 250 insertions(+), 54 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 3f23af3000d70db24397c6e9f6c8d306c52fc419..185b8719f0ced89de9606446a5909f34567789e2 100644
@@ -539,7 +518,7 @@ index c52c8003770479aedea0d3640d40a57081f28a36..16ef07b2415b300a1f8d21687464cbf1
        actions::ActionItem::Builder(
            base::BindRepeating(
 diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
-index 9943fabca847d446b9c6006e67bbb53ef01fd49c..7b5518502048df5edcc029291e69f5d6eb879ae0 100644
+index 9b6f0b56e26ed13bb3ecf3b76f93d36c43e2c312..987c04042457f8b30bb92aafd7d226873e9f06de 100644
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
 @@ -738,7 +738,10 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
@@ -678,6 +657,3 @@ index 92a144a5a5d5541646c9c0b0173b11d8c3b7783b..0d0088adec50bb0766a3baa6498b0026
            '#suggestionsFromGeminiLinkRow');
        assertFalse(!!button);
      });
--- 
-2.52.0
-

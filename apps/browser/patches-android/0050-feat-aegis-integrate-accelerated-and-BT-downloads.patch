@@ -1,84 +1,9 @@
-From 14ac97625173260f950bc945c41f830a134562a2 Mon Sep 17 00:00:00 2001
+From 1ad077b33d97a55b7345d0c1d231da7eee0e9885 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 26 Aug 2026 18:00:16 +0800
 Subject: [PATCH] feat(aegis): integrate accelerated and BT downloads
 
 ---
- chrome/browser/aegis/BUILD.gn                 |  19 +
- chrome/browser/aegis/aegis_prefs.cc           |   2 +
- chrome/browser/aegis/aegis_torrent_client.cc  | 106 ++++
- chrome/browser/aegis/aegis_torrent_client.h   |  61 +++
- .../aegis/metalink_download_verifier.cc       | 305 +++++++++++
- .../aegis/metalink_download_verifier.h        |  36 ++
- chrome/browser/aegis/metalink_parser.cc       | 194 +++++++
- chrome/browser/aegis/metalink_parser.h        |  41 ++
- .../browser/aegis/metalink_parser_unittest.cc |  96 ++++
- chrome/browser/download/download_ui_model.cc  |  79 ++-
- chrome/browser/resources/aegis/aegis.css      |  95 +++-
- chrome/browser/resources/aegis/aegis.html     |   9 +-
- chrome/browser/resources/aegis/aegis.ts       | 114 ++--
- chrome/browser/resources/downloads/BUILD.gn   |   3 +
- .../downloads/aegis_download_panel.css        | 185 +++++++
- .../downloads/aegis_download_panel.html.ts    | 127 +++++
- .../downloads/aegis_download_panel.ts         | 517 ++++++++++++++++++
- chrome/browser/resources/downloads/item.css   |  12 +
- .../browser/resources/downloads/item.html.ts  |   5 +
- .../resources/downloads/manager.html.ts       |   2 +
- chrome/browser/resources/downloads/manager.ts |   1 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 136 +++++
- .../ui/webui/aegis/aegis_ui_handler.cc        | 437 ++++++++++++++-
- .../browser/ui/webui/aegis/aegis_ui_handler.h |  42 +-
- chrome/browser/ui/webui/downloads/BUILD.gn    |   1 +
- .../ui/webui/downloads/downloads.mojom        |   7 +
- .../webui/downloads/downloads_list_tracker.cc |  66 ++-
- .../webui/downloads/downloads_list_tracker.h  |   4 +
- .../downloads_list_tracker_unittest.cc        |  39 ++
- .../ui/webui/downloads/downloads_ui.cc        |   2 +
- chrome/common/aegis/pref_names.h              |   3 +
- chrome/services/aegis_torrent/BUILD.gn        |  50 ++
- .../aegis_torrent/aegis_torrent_service.cc    | 325 +++++++++++
- .../aegis_torrent/aegis_torrent_service.h     |  55 ++
- .../aegis_torrent/public/mojom/BUILD.gn       |  13 +
- .../public/mojom/aegis_torrent_service.mojom  |  70 +++
- .../services/aegis_torrent/torrent_safety.cc  | 232 ++++++++
- .../services/aegis_torrent/torrent_safety.h   |  34 ++
- .../aegis_torrent/torrent_safety_unittest.cc  |  76 +++
- .../torrent_transfer_unittest.cc              | 138 +++++
- .../test/data/webui/downloads/test_support.ts |   5 +
- chrome/utility/BUILD.gn                       |   1 +
- chrome/utility/services.cc                    |   8 +
- .../common/parallel_download_utils.cc         |  41 +-
- .../parallel_download_utils_unittest.cc       |  16 +
- .../public/common/download_features.cc        |   8 +-
- sandbox/policy/mac/network.sb                 |   7 +
- third_party/aegis_libtorrent/.gitignore       |   7 +
- third_party/aegis_libtorrent/BUILD.gn         | 230 ++++++++
- third_party/aegis_libtorrent/LICENSE          |  27 +
- third_party/aegis_libtorrent/README.aegis     |  19 +
- 51 files changed, 4012 insertions(+), 96 deletions(-)
- create mode 100644 chrome/browser/aegis/aegis_torrent_client.cc
- create mode 100644 chrome/browser/aegis/aegis_torrent_client.h
- create mode 100644 chrome/browser/aegis/metalink_download_verifier.cc
- create mode 100644 chrome/browser/aegis/metalink_download_verifier.h
- create mode 100644 chrome/browser/aegis/metalink_parser.cc
- create mode 100644 chrome/browser/aegis/metalink_parser.h
- create mode 100644 chrome/browser/aegis/metalink_parser_unittest.cc
- create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.css
- create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.html.ts
- create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.ts
- create mode 100644 chrome/services/aegis_torrent/BUILD.gn
- create mode 100644 chrome/services/aegis_torrent/aegis_torrent_service.cc
- create mode 100644 chrome/services/aegis_torrent/aegis_torrent_service.h
- create mode 100644 chrome/services/aegis_torrent/public/mojom/BUILD.gn
- create mode 100644 chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom
- create mode 100644 chrome/services/aegis_torrent/torrent_safety.cc
- create mode 100644 chrome/services/aegis_torrent/torrent_safety.h
- create mode 100644 chrome/services/aegis_torrent/torrent_safety_unittest.cc
- create mode 100644 chrome/services/aegis_torrent/torrent_transfer_unittest.cc
- create mode 100644 third_party/aegis_libtorrent/.gitignore
- create mode 100644 third_party/aegis_libtorrent/BUILD.gn
- create mode 100644 third_party/aegis_libtorrent/LICENSE
- create mode 100644 third_party/aegis_libtorrent/README.aegis
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index f5938cb5ee7594df39bb399a5eda084af0e0803e..da0c389d215b785baa7dbe81ae5dfbdee6080902 100644

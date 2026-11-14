@@ -8,6 +8,11 @@ class ReleaseFixture < Minitest::Test
     @root = File.realpath(Dir.mktmpdir('aegis-release-test-'))
     write('.gitignore', ".artifacts/\n")
     write('apps/ios/project.yml', "MARKETING_VERSION: 3.2\nCURRENT_PROJECT_VERSION: 69\n")
+    write('scripts/release/ios-durable.py', <<~PY)
+      import pathlib, sys
+      if pathlib.Path('.artifacts/fail-durable').exists():
+          sys.exit(2)
+    PY
     git('init', '-q')
     git('config', 'user.name', 'Fixture')
     git('config', 'user.email', 'fixture@example.invalid')
@@ -96,6 +101,53 @@ class ReleaseTest < ReleaseFixture
     end
   end
 
+  def test_private_beta_inputs_are_opt_in_manual_only_and_scrubbed_before_build
+    keys = %w[AEGIS_IOS_BETA_TEST_NODE_ENABLED AEGIS_IOS_TEST_NODE_BASE64 AEGIS_IOS_TEST_SUBSCRIPTION_BASE64]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    [%w[release manual], %w[alpha manual], %w[beta cloud]].each do |profile, mode|
+      keys.each { |key| ENV[key] = key.end_with?('ENABLED') ? 'true' : 'private-fixture' }
+      flow = AegisRelease::Pipeline.new(request(profile: profile, signing_mode: mode), Object.new)
+      flow.define_singleton_method(:package_ios_impl) { |_| raise 'must not build' }
+      assert_raises(AegisRelease::Error) { flow.package_ios }
+      keys.each { |key| refute ENV.key?(key) }
+    end
+    [false, true].each do |fail_verification|
+      keys.each { |key| ENV[key] = key.end_with?('ENABLED') ? 'true' : 'private-fixture' }
+      req = request(profile: 'beta', signing_mode: 'manual', destination: 'testflight')
+      flow = AegisRelease::Pipeline.new(req, Object.new)
+      checks = self
+      calls = []
+      private_path = nil
+      flow.define_singleton_method(:run) do |*args, env: {}|
+        calls << args[2]
+        private_path = args[args.index('--directory') + 1]
+        checks.assert(File.directory?(private_path))
+        checks.refute(args.join.include?('private-fixture'))
+        checks.assert_equal(args[2] == 'stage' ? 2 : 0, env.size)
+        checks.assert_includes(args, '--live-quota') if args[2] == 'verify'
+        raise AegisRelease::Error, 'verification failed' if fail_verification && args[2] == 'verify'
+      end
+      flow.define_singleton_method(:package_ios_impl) do |_|
+        keys.each { |key| checks.refute ENV.key?(key) }
+        settings = Shellwords.split(@private_beta_xcargs)
+        checks.assert_equal 2, settings.size
+        checks.assert(settings.all? { |arg| arg.include?(private_path) })
+        [['fixture.ipa'], {}]
+      end
+      if fail_verification
+        assert_raises(AegisRelease::Error) { flow.package_ios }
+      else
+        _paths, details = flow.package_ios
+        assert_equal true, details.fetch('privateBetaTestNode')
+      end
+      assert_equal %w[stage verify], calls
+      refute File.exist?(private_path)
+      assert_nil flow.instance_variable_get(:@private_beta_xcargs)
+    end
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
   def test_signing_mode_defaults_to_cloud_and_manual_requires_explicit_selection
     assert_equal 'cloud', request.signing_mode
     assert_equal 'manual', request(signing_mode: 'manual').plan.fetch('signingMode')
@@ -111,7 +163,7 @@ class ReleaseTest < ReleaseFixture
   def test_cloud_failure_never_retries_manual_signing_implicitly
     attempts = []
     flow = AegisRelease::Pipeline.new(request, Object.new)
-    flow.define_singleton_method(:package_ios_cloud) do
+    flow.define_singleton_method(:package_ios_cloud) do |_archive_args = nil|
       attempts << :cloud
       raise AegisRelease::Error, 'cloud signing unavailable'
     end
@@ -119,6 +171,109 @@ class ReleaseTest < ReleaseFixture
     error = assert_raises(AegisRelease::Error) { flow.package_ios }
     assert_equal 'cloud signing unavailable', error.message
     assert_equal [:cloud], attempts
+  end
+
+  def test_cloud_archive_requires_a_separately_supplied_producer_digest
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    archive = write('.artifacts/development-transfer/archive.zip', 'archive fixture')
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    directory = File.dirname(manifest)
+    original_digest = AegisRelease.digest(manifest)
+    [['', ''], [directory, original_digest], [directory, ''], ['', original_digest],
+     [directory, 'invalid'], [directory, '0' * 64]].each do |path, digest|
+      ENV[keys[0]], ENV[keys[1]] = path, digest
+      if path.empty? && digest.empty?
+        assert_empty flow.cloud_archive_arguments
+      elsif !path.empty? && digest == original_digest
+        assert_equal ['--archive-input', path, '--archive-manifest-sha256', digest], flow.cloud_archive_arguments
+      else
+        assert_raises(AegisRelease::Error) { flow.cloud_archive_arguments }
+      end
+    end
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_changed_manifest_is_rejected_before_permanent_export_allocation
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID GITHUB_ACTIONS]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', '{"fixture":"original"}')
+    ENV[keys[0]] = File.dirname(manifest)
+    ENV[keys[1]] = AegisRelease.digest(manifest)
+    ENV[keys[2]] = 'ABCDEFGHIJ'
+    ENV[keys[3]] = 'true'
+    File.write(manifest, '{"fixture":"changed"}')
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    commands = []
+    flow.define_singleton_method(:run) { |*arguments, **_options| commands << arguments; true }
+    error = assert_raises(AegisRelease::Error) { flow.package }
+    assert_match(/producer before export allocation/, error.message)
+    assert_empty commands
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_changed_or_missing_archive_zip_is_rejected_before_any_export_command
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID GITHUB_ACTIONS]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    archive = write('.artifacts/development-transfer/archive.zip', 'original archive')
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    ENV[keys[0]], ENV[keys[1]], ENV[keys[2]], ENV[keys[3]] = File.dirname(manifest), AegisRelease.digest(manifest), 'ABCDEFGHIJ', 'true'
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    commands = []
+    flow.define_singleton_method(:run) { |*arguments, **_options| commands << arguments; true }
+    File.write(archive, 'corrupt bytes')
+    error = assert_raises(AegisRelease::Error) { flow.package }
+    assert_match(/ZIP differs.*before export allocation/, error.message)
+    File.unlink(archive)
+    assert_raises(AegisRelease::Error) { flow.package }
+    assert_empty commands
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_relative_archive_input_is_bound_to_request_root_from_a_fastlane_working_directory
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    archive = write('.artifacts/fixture-transfer/archive.zip', 'original archive')
+    manifest = write('.artifacts/fixture-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    FileUtils.mkdir_p(File.join(@root, 'fastlane'))
+    ENV[keys[0]], ENV[keys[1]] = '.artifacts/fixture-transfer', AegisRelease.digest(manifest)
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    Dir.chdir(File.join(@root, 'fastlane')) do
+      assert_equal ['--archive-input', File.dirname(manifest), '--archive-manifest-sha256', ENV[keys[1]]], flow.cloud_archive_arguments
+    end
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_package_passes_the_preallocation_transfer_arguments_without_reading_them_twice
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    previous = ENV['AEGIS_APPLE_TEAM_ID']
+    ENV['AEGIS_APPLE_TEAM_ID'] = 'ABCDEFGHIJ'
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    verified = ['--archive-input', '/verified/original', '--archive-manifest-sha256', 'a' * 64]
+    calls = 0
+    flow.define_singleton_method(:cloud_archive_arguments) { calls += 1; verified }
+    flow.define_singleton_method(:run) { |*_arguments, **_options| true }
+    flow.define_singleton_method(:package_ios_cloud) { |arguments| throw(:at_builder, arguments) }
+    assert_same verified, catch(:at_builder) { flow.package }
+    assert_equal 1, calls
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous ? ENV['AEGIS_APPLE_TEAM_ID'] = previous : ENV.delete('AEGIS_APPLE_TEAM_ID')
   end
 
   def test_store_readonly_stages_authorize_before_asc_authentication
@@ -434,27 +589,37 @@ class ReleaseTest < ReleaseFixture
     AegisRelease::Pipeline.new(req, fastlane).extend(PipelineStub)
   end
 
-  def test_ios_alpha_export_is_internal_only_even_for_package_and_draft
-    [%w[alpha artifacts], %w[alpha github-draft], %w[beta artifacts], %w[release artifacts]].each do |profile, destination|
+  def test_ios_export_limits_alpha_and_private_beta_to_internal_testing
+    routes = [%w[alpha artifacts], %w[alpha github-draft], %w[beta artifacts], %w[release artifacts],
+              ['beta', 'testflight', true]]
+    routes.each do |profile, destination, private_beta|
       options = { profile: profile, destination: destination, signing_mode: 'manual' }
       options[:tag] = "candidate/ios/3.2-#{profile}.69" if destination == 'github-draft'
       req = request(**options)
       builder = Object.new
       builder.define_singleton_method(:update_code_signing_settings) { |**_options| }
       checks = self
+      internal_only = profile == 'alpha' || private_beta == true
       builder.define_singleton_method(:build_app) do |**build_options|
-        checks.assert_equal(profile == 'alpha', build_options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
+        checks.assert_equal(internal_only, build_options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
         checks.assert_includes(build_options.fetch(:xcargs).split, "AEGIS_FIREBASE_CHANNEL=#{profile}")
+        checks.assert_includes(build_options.fetch(:xcargs).split, "AEGIS_ACCESS_RELEASE_CHANNEL=#{profile}")
         File.write(File.join(build_options.fetch(:output_directory), build_options.fetch(:output_name)), 'fixture IPA')
       end
-      keys = %w[AEGIS_APPLE_TEAM_ID AEGIS_IOS_PROFILES AEGIS_IOS_CERT_SHA1]
+      keys = %w[AEGIS_APPLE_TEAM_ID AEGIS_IOS_PROFILES AEGIS_IOS_CERT_SHA1 AEGIS_IOS_BETA_TEST_NODE_ENABLED
+                AEGIS_IOS_TEST_NODE_BASE64 AEGIS_IOS_TEST_SUBSCRIPTION_BASE64]
       previous = keys.to_h { |key| [key, ENV[key]] }
       ENV['AEGIS_APPLE_TEAM_ID'] = 'ABCDEFGHIJ'
       ENV['AEGIS_IOS_CERT_SHA1'] = 'A' * 40
       ENV['AEGIS_IOS_PROFILES'] = AegisRelease::IOS_TARGETS.values.to_h { |id| [id, 'fixture'] }.to_json
+      if private_beta
+        ENV['AEGIS_IOS_BETA_TEST_NODE_ENABLED'] = 'true'
+        ENV['AEGIS_IOS_TEST_NODE_BASE64'] = 'fixture'
+        ENV['AEGIS_IOS_TEST_SUBSCRIPTION_BASE64'] = 'fixture'
+      end
       FileUtils.mkdir_p(req.directory)
       _paths, details = fixture_pipeline(req, builder).package_ios
-      assert_equal profile == 'alpha', details.fetch('testFlightInternalTestingOnly')
+      assert_equal internal_only, details.fetch('testFlightInternalTestingOnly')
       assert_equal 'ABCDEFGHIJ', details['appleTeamId']
       assert_equal 'A' * 40, details['certificateSha1']
     ensure
@@ -464,6 +629,7 @@ class ReleaseTest < ReleaseFixture
 
   def test_ios_snapshot_includes_committed_shared_resources_and_excludes_local_files
     shared = 'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared'
+    write('scripts/release/ios_embedded_core.py', '# tracked Xcode verifier')
     write("#{shared}/viewer.html", '<html>committed viewer</html>')
     write("#{shared}/vendor/purify.min.js", 'committed sanitizer')
     vectors = 'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json'
@@ -477,6 +643,7 @@ class ReleaseTest < ReleaseFixture
     checks = self
     builder.define_singleton_method(:build_app) do |**options|
       snapshot = File.expand_path('../..', File.dirname(options.fetch(:project)))
+      checks.assert File.file?(File.join(snapshot, 'scripts/release/ios_embedded_core.py'))
       checks.assert_equal '<html>committed viewer</html>', File.read(File.join(snapshot, shared, 'viewer.html'))
       checks.assert_equal 'committed sanitizer', File.read(File.join(snapshot, shared, 'vendor/purify.min.js'))
       checks.assert_equal '{"vectors":[]}', File.read(File.join(snapshot, vectors))
@@ -559,5 +726,22 @@ class ReleaseTest < ReleaseFixture
     apple.fail_upload = false
     assert_raises(AegisRelease::Error) { flow.upload(sha) }
     assert_equal 1, apple.uploads.length
+  end
+
+  def test_unreadable_permanent_upload_intent_prevents_apple_transport
+    req, sha = package('ios', destination: 'testflight')
+    apple = FakeApple.new
+    flow = fixture_pipeline(req, apple)
+    store = AegisRelease::AppleStore.new(req, apple)
+    store.instance_variable_set(:@app, Struct.new(:id).new('fixture'))
+    store.define_singleton_method(:authenticate) { true }
+    store.define_singleton_method(:exact_build) { nil }
+    store.define_singleton_method(:upload_records) { [] }
+    flow.define_singleton_method(:store) { store }
+    write('.artifacts/fail-durable', 'simulate failed remote record readback')
+    assert_raises(AegisRelease::Error) { flow.upload(sha) }
+    assert_empty apple.uploads
+    assert File.file?(File.join(req.directory, 'apple-upload-started.json'))
+    refute File.exist?(File.join(req.directory, 'apple-upload-result.json'))
   end
 end

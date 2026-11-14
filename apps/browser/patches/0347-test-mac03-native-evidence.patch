@@ -1,11 +1,8 @@
-From ae6f0dd695500988061d3f735f92cbe598df4127 Mon Sep 17 00:00:00 2001
+From 80643469328683aed209ed123d096874c8d5ef3b Mon Sep 17 00:00:00 2001
 From: Aegis patch fixture <aegis-patch-fixture@example.invalid>
 Date: Wed, 28 Oct 2026 12:35:23 +0000
 Subject: [PATCH] test(mac03): record independent native evidence
-
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    | 718 +++++++++++++++++-
- 1 file changed, 698 insertions(+), 20 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index 6412a5cf70a637b2076c4e4f95c55fad441a1563..b6b7f80a3fdc4f67efafa85300a92a4d7a2eb5bc 100644

@@ -1,4 +1,4 @@
-From 98abfad6b3cddc98c9b74d13f6603e3abc5a9f3a Mon Sep 17 00:00:00 2001
+From 28d3a6557c0e7993ad388e5e27bc1342231b5d2c Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 17:34:58 +0800
 Subject: [PATCH] Aegis: add chrome://aegis entries in Settings and menus
@@ -6,17 +6,6 @@ Subject: [PATCH] Aegis: add chrome://aegis entries in Settings and menus
 Expose GCSA-aegis from Privacy and security, the app menu, and the
 macOS Chromium menu so users do not have to type the URL.
 ---
- chrome/app/chrome_command_ids.h               |  1 +
- chrome/app/settings_strings.grdp              |  9 +++++++++
- .../settings/privacy_page/privacy_page.html   |  7 +++++++
- .../settings/privacy_page/privacy_page.ts     |  6 ++++++
- .../browser/ui/browser_command_controller.cc  |  6 ++++++
- chrome/browser/ui/chrome_pages.cc             |  5 +++++
- chrome/browser/ui/chrome_pages.h              |  1 +
- chrome/browser/ui/cocoa/main_menu_builder.mm  |  3 +++
- chrome/browser/ui/toolbar/app_menu_model.cc   |  3 +++
- .../settings_localized_strings_provider.cc    | 19 +++++++++++++++++++
- 10 files changed, 60 insertions(+)
 
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
 index e7b9327ce3fd4664d5e152b44cff1cf859b57fe7..5d6f8bc73193a375a21e73a726dee45e9d1b5e44 100644

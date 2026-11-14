@@ -1,43 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 20040eaf3ebb393bc72837e488dcb78097c6f73f Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Tue, 20 Oct 2026 19:00:00 +0800
 Subject: [PATCH] 统一 Aegis 功能设置，保留完整配置与旧入口
-
 ---
- chrome/browser/aegis/aegis_ui_handler_unittest.cc  |  35 +++++++
- chrome/browser/aegis/gestures/gesture_settings.cc  |   7 ++
- chrome/browser/aegis/gestures/gesture_settings.h   |   2 +
- chrome/browser/aegis/gestures/gesture_unittest.cc  |  22 +++++
- chrome/browser/chrome_content_browser_client.cc    |   5 +
- chrome/browser/resources/aegis/aegis.css           |  59 ++++++++++++
- chrome/browser/resources/aegis/aegis.html          |  18 ++--
- chrome/browser/resources/aegis/aegis.ts            | 106 +++++++++++++++++----
- chrome/browser/resources/aegis/enhancements.js     |   6 +-
- chrome/browser/resources/aegis/gestures.ts         |   4 +-
- chrome/browser/resources/aegis_agent/agent.css     |  56 +++++++++++
- chrome/browser/resources/aegis_agent/agent.html    |   2 +
- chrome/browser/resources/aegis_agent/agent.ts      |  91 +++++++++++++++++-
- .../resources/aegis_agent/reading_workspace.ts     |   4 +
- .../resources/settings/aegis_page/aegis_page.html  |  31 ++++--
- .../resources/settings/aegis_page/aegis_page.ts    | 100 ++++++++++++-------
- .../settings/downloads_page/downloads_page.html.ts |   8 +-
- .../settings/downloads_page/downloads_page.ts      |  23 +++--
- .../settings/privacy_page/privacy_page.html        |   4 +-
- .../settings/privacy_page/privacy_page.ts          |   2 +-
- chrome/browser/resources/settings/route.ts         |  12 ++-
- chrome/browser/resources/settings/router.ts        |   4 +
- .../settings/settings_main/settings_main.html      |  12 ++-
- .../settings/settings_menu/settings_menu.html      |   7 +-
- .../browser/ui/aegis_mouse_gesture_tab_helper.cc   |   3 +-
- .../ui/webui/aegis/aegis_gesture_handler.cc        |   5 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc          |   8 +-
- chrome/browser/ui/webui/aegis/aegis_ui_handler.cc  |  11 +++
- .../webui/aegis_agent/aegis_agent_page_handler.cc  |   5 +
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |   7 ++
- chrome/browser/ui/webui/help/aegis_github_update.h |   4 +-
- chrome/browser/ui/webui/settings/settings_ui.cc    |  25 ++++-
- .../aegis_downloads/aegis_download_panel.ts        |  10 ++
- 33 files changed, 589 insertions(+), 109 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 index c3003bc190f0b9dd82cb754499ea032e032eb7ff..faea43f005857d926e11c5655653864523915bdc 100644

@@ -4,11 +4,12 @@ import XCTest
 @MainActor
 final class WebsiteEnhancementUITests: XCTestCase {
   override func setUpWithError() throws { continueAfterFailure = false }
-  private func launch(reset: Bool = true) -> XCUIApplication {
+  private func launch(reset: Bool = true, accountOrigin: String? = nil) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments =
       ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
       + (reset ? ["--ui-testing-enhancements-reset"] : [])
+    if let accountOrigin { app.launchEnvironment["AEGIS_ACCOUNT_SIM_ORIGIN"] = accountOrigin }
     app.launch()
     return app
   }
@@ -65,6 +66,102 @@ final class WebsiteEnhancementUITests: XCTestCase {
     XCTAssertEqual(app.switches["site-copy"].value as? String, "0")
     capture("私密设置没有继承")
   }
+
+  func testConfiguredNodeIsVisible() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let nodeConfig = env["AEGIS_UI_NODE_CONFIG"] else {
+      throw XCTSkip("Supply a simulator node fixture path")
+    }
+    let app = XCUIApplication()
+    app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+    app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = nodeConfig
+    app.launch()
+    defer { app.terminate() }
+    openFixturePageProtection(app)
+    XCTAssertTrue(app.staticTexts["VLESS · TCP · REALITY · Vision"].waitForExistence(timeout: 10))
+    capture("节点配置和代理状态")
+  }
+
+  func testBoundAccountQuotaIsVisibleWithoutNodeConfiguration() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let origin = env["AEGIS_S1_FIXTURE_ORIGIN"], let token = env["AEGIS_S1_FIXTURE_C"] else {
+      throw XCTSkip("Start the controlled simulator account fixture")
+    }
+    let app = XCUIApplication()
+    app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+    app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_ORIGIN"] = origin
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_ACTION"] = "bind"
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_ID"] = "C"
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_TOKEN"] = token
+    app.launch()
+    defer {
+      app.terminate()
+      app.launchEnvironment.removeValue(forKey: "AEGIS_ACCOUNT_SIM_TOKEN")
+      app.launchEnvironment["AEGIS_ACCOUNT_SIM_ACTION"] = "clear"
+      app.launch()
+      app.terminate()
+    }
+    openFixturePageProtection(app)
+    XCTAssertFalse(app.staticTexts["VLESS · TCP · REALITY · Vision"].exists)
+    let quota = app.staticTexts["10000 B"]
+    for _ in 0..<8 {
+      if quota.exists { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(quota.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["9970 B"].exists)
+    capture("受控账户C额度显示")
+  }
+
+  private func openFixturePageProtection(_ app: XCUIApplication) {
+    navigate(app, "http://127.0.0.1:8768/enhancements/page")
+    XCTAssertTrue(app.webViews.staticTexts["网站增强验收文章"].firstMatch.waitForExistence(timeout: 12))
+    app.buttons["page-protection"].tap()
+  }
+
+  func testAccessIntentIsolatedBetweenOrdinaryAndPrivateStores() {
+    let app = launch()
+    navigate(app, "http://127.0.0.1:8768/enhancements/page")
+    XCTAssertTrue(app.webViews.staticTexts["网站增强验收文章"].firstMatch.waitForExistence(timeout: 12))
+    app.buttons["page-protection"].tap()
+    let toggle = app.switches["access-site-proxy-toggle"]
+    XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+    toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+    XCTAssertEqual(toggle.value as? String, "1")
+    app.navigationBars["当前网站"].buttons["完成"].tap()
+    app.buttons["browser-more"].tap()
+    let modeMenu = app.descendants(matching: .any).matching(
+      NSPredicate(format: "identifier == %@ OR label == %@", "profile-menu", "普通")
+    ).firstMatch
+    XCTAssertTrue(modeMenu.waitForExistence(timeout: 5), app.debugDescription)
+    modeMenu.tap()
+    app.buttons["私密"].tap()
+    navigate(app, "http://127.0.0.1:8768/enhancements/page")
+    XCTAssertTrue(app.webViews.staticTexts["网站增强验收文章"].firstMatch.waitForExistence(timeout: 12))
+    app.buttons["page-protection"].tap()
+    let privateToggle = app.switches["access-site-proxy-toggle"]
+    XCTAssertTrue(privateToggle.waitForExistence(timeout: 5))
+    XCTAssertEqual(privateToggle.value as? String, "0")
+    capture("私密代理意图没有继承")
+  }
+  func testPaidDownloadSelectionIsIndependentOfWebsiteRecovery() {
+    let app = launch(accountOrigin: "http://127.0.0.1:8768")
+    navigate(app, "http://127.0.0.1:8768/enhancements/page")
+    XCTAssertTrue(app.webViews.staticTexts["网站增强验收文章"].firstMatch.waitForExistence(timeout: 12))
+    app.buttons["page-protection"].tap()
+    let recovery = app.switches["access-site-auto-recovery-toggle"]
+    let download = app.switches["access-account-site-download-toggle"]
+    XCTAssertTrue(download.waitForExistence(timeout: 5))
+    XCTAssertEqual(recovery.value as? String, "0")
+    download.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+    XCTAssertEqual(download.value as? String, "1")
+    XCTAssertEqual(recovery.value as? String, "0")
+    recovery.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+    XCTAssertEqual(recovery.value as? String, "1")
+    XCTAssertEqual(download.value as? String, "1")
+  }
+
   func testScriptDraftTrialEnableAndRecovery() {
     let app = launch()
     navigate(app, "http://127.0.0.1:8768/enhancements/page")

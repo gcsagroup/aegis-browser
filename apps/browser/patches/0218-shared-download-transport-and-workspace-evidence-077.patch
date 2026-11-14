@@ -1,4 +1,4 @@
-From 45f2ba248367b3abfa8a9a9fddbc6522e1a121b1 Mon Sep 17 00:00:00 2001
+From 1ed6c4fd9aaf59d4050a84e97ae286d863ddbf78 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 03:43:59 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=8E=A5=E9=80=9A=E5=85=B1=E4=BA=AB=E4=B8=8B?=
@@ -10,16 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/agent/agent_execution.cc |  9 +++++
- .../aegis/agent/agent_execution_unittest.cc   | 26 ++++++++++++
- chrome/browser/resources/aegis/aegis.ts       |  4 ++
- chrome/browser/resources/downloads/manager.ts |  4 ++
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- third_party/lit/v3_0/BUILD.gn                 |  1 +
- tools/typescript/path_mappings.py             |  1 +
- ui/webui/resources/BUILD.gn                   |  3 +-
- .../aegis_downloads/aegis_download_panel.ts   | 40 +++++++++++++------
- 9 files changed, 77 insertions(+), 15 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
 index a9369ceb8423480a6eed5be96cad9c600cf5a6c0..648574e83b7f724503196427d9e78eca2e9cab30 100644
@@ -140,7 +130,7 @@ diff --git a/third_party/lit/v3_0/BUILD.gn b/third_party/lit/v3_0/BUILD.gn
 index 7b494253a6bf90875c846127153ef51d08003aea..b030fe5d843806182429d47edde042e0e0959901 100644
 --- a/third_party/lit/v3_0/BUILD.gn
 +++ b/third_party/lit/v3_0/BUILD.gn
-@@ -167,6 +167,7 @@ ts_library("build_ts") {
+@@ -168,6 +168,7 @@ ts_library("build_ts") {
      "//content/browser/resources/service_worker:build_ts",
      "//content/browser/resources/traces_internals:build_ts",
      "//ios/chrome/app/resources/profile_internals:build_ts",
@@ -172,7 +162,7 @@ index c81042c093ba03af3feb2bbb86f959e3c0a2e398..86d93212738e105de59d23619f751ec7
      "$root_gen_dir/third_party/lit/v3_0/resources.grdp",
      "$target_gen_dir/cr_components/commerce/resources.grdp",
      "$target_gen_dir/cr_elements/resources.grdp",
-@@ -130,6 +129,8 @@ generate_grd("build_grd") {
+@@ -139,6 +138,8 @@ generate_grd("build_grd") {
      public_deps += [ "cr_components/signin:build_grdp" ]
      grdp_files += [ "$target_gen_dir/cr_components/signin/resources.grdp" ]
    }
@@ -308,6 +298,3 @@ index 9d23c6e93c8e67695558f51c2f2f828676bd8579..1ffade2ac9efa930db3c02ad840f71aa
        if (result.ok && action === 'cancel') {
          this.taskId_ = '';
          this.taskStatus_ = null;
--- 
-2.52.0
-

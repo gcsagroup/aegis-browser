@@ -1,30 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From c08e3d90e4693bd15042d6deb0466aaf7cce6efa Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 00:15:00 +0800
 Subject: [PATCH] 将 Android Aegis 设置接入原生页面栈并合并智能体入口
-
 ---
- chrome/android/chrome_java_sources.gni             |   1 +
- .../java/res/layout/aegis_agent_bottom_sheet.xml   |   8 +
- chrome/android/java/res/values/ids.xml             |   1 -
- .../chrome/browser/ChromeTabbedActivity.java       |  13 +-
- .../aegis/AegisAgentBottomSheetCoordinator.java    |  15 +-
- .../chrome/browser/download/DownloadUtils.java     |   4 +-
- .../chromium/chrome/browser/ntp/NewTabPage.java    |   2 +-
- .../chrome/browser/settings/AegisSettings.java     | 190 +++++++++++++++++++++
- .../chrome/browser/settings/MainSettings.java      |  32 ++--
- .../TabbedAppMenuPropertiesDelegate.java           |  26 ---
- chrome/browser/ui/webui/aegis/BUILD.gn             |   6 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc          |  71 +++++++-
- chrome/browser/ui/webui/aegis/aegis_ui.h           |   7 +
- chrome/browser/ui/webui/aegis_agent/BUILD.gn       |   3 +
- .../webui/aegis_agent/aegis_agent_page_handler.cc  |  30 ++--
- .../webui/aegis_agent/aegis_agent_page_handler.h   |   3 +-
- .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |   6 +
- .../ui/webui/aegis_agent/reading_workspace.cc      |   9 +-
- .../ui/webui/aegis_agent/reading_workspace.h       |   2 +-
- chrome/browser/ui/webui/help/aegis_github_update.h |   4 +-
- 20 files changed, 354 insertions(+), 79 deletions(-)
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 index 49614da069b39e59a57db72b77795be95a3b5deb..52a8203d6c70ba069b97529acacee85b21983bd5 100644

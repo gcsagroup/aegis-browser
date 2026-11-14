@@ -1,62 +1,12 @@
-From 5aeb4bf9e25feaf4c9f57ca27d7b40f8b4caeb1d Mon Sep 17 00:00:00 2001
+From e744ea8c9de97732f091dc293081951b03a9e6e8 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 29 Aug 2026 17:20:12 +0800
 Subject: [PATCH] feat(aegis): tailor settings and update status
 
 ---
- chrome/app/resources/generated_resources_zh-CN.xtb |  5 +-
- chrome/app/resources/generated_resources_zh-HK.xtb |  5 +-
- chrome/app/resources/generated_resources_zh-TW.xtb |  5 +-
- chrome/app/settings_strings.grdp                   |  9 ++++
- .../resources/settings/about_page/about_page.css   |  7 +++
- .../settings/about_page/about_page.html.ts         | 22 ++++++++-
- .../resources/settings/about_page/about_page.ts    |  8 +++-
- .../settings/autofill_page/autofill_page.html      | 45 ++++++++++--------
- .../settings/autofill_page/autofill_page.ts        | 13 +++++-
- .../settings/autofill_page/autofill_page_index.ts  |  3 +-
- .../identity_docs/identity_docs_page.ts            |  3 +-
- .../autofill_page/shopping/shopping_page.ts        |  3 +-
- .../settings/autofill_page/travel/travel_page.ts   |  3 +-
- .../settings/people_page/people_page.html.ts       | 14 ++++--
- .../resources/settings/people_page/people_page.ts  | 27 +++++++----
- .../settings/people_page/people_page_index.html.ts |  5 +-
- .../settings/people_page/people_page_index.ts      |  3 ++
- .../settings/privacy_page/privacy_page_index.ts    | 35 ++++++--------
- chrome/browser/resources/settings/route.ts         | 27 +++++++----
- .../settings/settings_menu/settings_menu.html      |  9 +++-
- .../settings/settings_menu/settings_menu.ts        | 11 +++++
- .../browser/ui/views/profiles/profile_menu_view.cc | 17 ++++---
- .../profiles/profile_menu_view_browsertest.cc      | 45 ++++++++++++++++++
- chrome/browser/ui/webui/help/BUILD.gn              | 29 +++++++-----
- .../browser/ui/webui/help/version_updater_basic.cc | 18 +++++++-
- .../settings_localized_strings_provider.cc         | 29 +++++++++++-
- chrome/browser/ui/webui/settings/settings_ui.cc    | 39 ++++++++++++++--
- .../ui/webui/settings/settings_ui_browsertest.cc   | 31 +++++++++++++
- chrome/test/data/webui/settings/about_page_test.ts | 40 ++++++++++++++--
- .../test/data/webui/settings/account_page_test.ts  |  1 +
- .../data/webui/settings/autofill_account_test.ts   |  3 ++
- .../webui/settings/autofill_page_index_test.ts     | 21 +++++++++
- .../test/data/webui/settings/autofill_page_test.ts | 31 +++++++++++--
- .../webui/settings/google_services_page_test.ts    |  2 +
- .../data/webui/settings/identity_docs_page_test.ts | 14 ++++++
- .../data/webui/settings/people_page_index_test.ts  | 32 +++++++++++++
- .../settings/people_page_sync_controls_test.ts     |  6 ++-
- .../people_page_sync_page_interactive_test.ts      |  5 +-
- .../webui/settings/people_page_sync_page_test.ts   |  8 +++-
- .../test/data/webui/settings/people_page_test.ts   | 46 ++++++++++++++++++
- .../data/webui/settings/privacy_page_index_test.ts | 16 ++++++-
- chrome/test/data/webui/settings/route_test.ts      | 54 +++++++++++++++++++---
- .../webui/settings/settings_main_plugins_test.ts   | 10 +++-
- .../settings/settings_menu_interactive_ui_test.ts  |  1 +
- .../test/data/webui/settings/settings_menu_test.ts |  9 ++++
- .../test/data/webui/settings/shopping_page_test.ts | 14 ++++++
- .../webui/settings/sync_account_control_test.ts    |  4 ++
- .../test/data/webui/settings/travel_page_test.ts   | 14 ++++++
- tools/grit/grit_args.gni                           |  1 +
- 49 files changed, 684 insertions(+), 118 deletions(-)
 
 diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
-index 647a76fb4b028284d30cfaa633595eab70f2a881..6acef2e538f0f02a3d2a2f15c1c50f4a00e83269 100644
+index 15c61cd76adb3a25b978e048fd999bdb01c5ecf1..0f34f7d39520e1b75be6268a901dd17c7e2e6ad0 100644
 --- a/chrome/app/resources/generated_resources_zh-CN.xtb
 +++ b/chrome/app/resources/generated_resources_zh-CN.xtb
 @@ -1178,6 +1178,7 @@
@@ -126,7 +76,7 @@ index d0d62598dff000487cb8c477cbff0a489d9fc2c1..972ff54411eee4454d46ccb2ba54477c
 \ No newline at end of file
 +</translationbundle>
 diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
-index e8b55898ffcc1eb002bda4dc08e79a9e612c01bb..2b0f68b37d191df82bd25c51203c640ad51a9d70 100644
+index 7f9a06941c4ab1c4d5a664d78e0d5d68d20c03e0..dfeab744965b3369424e1eae28ded5d59536dfae 100644
 --- a/chrome/app/resources/generated_resources_zh-TW.xtb
 +++ b/chrome/app/resources/generated_resources_zh-TW.xtb
 @@ -1178,6 +1178,7 @@

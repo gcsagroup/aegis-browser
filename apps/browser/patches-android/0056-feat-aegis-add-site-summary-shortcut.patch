@@ -1,31 +1,9 @@
-From 712214b6c2538d82a3b26fe36908f7ad5c85f311 Mon Sep 17 00:00:00 2001
+From ff1f0d4da1f5402feca8446ea886f8e809ce0cdc Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 22:17:13 +0800
 Subject: [PATCH] feat(aegis): add site summary shortcut
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   9 +
- chrome/browser/aegis/aegis_service.cc         |  54 ++-
- chrome/browser/aegis/aegis_service.h          |  22 +-
- .../browser/aegis/aegis_service_unittest.cc   | 106 ++++-
- chrome/browser/aegis/model_provider_client.cc |  75 +++-
- chrome/browser/aegis/model_provider_client.h  |  22 +-
- .../aegis/model_provider_client_unittest.cc   |  51 +++
- chrome/browser/aegis/summary_policy.cc        | 216 +++++++++-
- chrome/browser/aegis/summary_policy.h         |  13 +-
- .../browser/aegis/summary_policy_unittest.cc  | 110 ++++-
- chrome/browser/aegis/summary_session.cc       | 285 ++++++++++++
- chrome/browser/aegis/summary_session.h        | 104 +++++
- .../browser/aegis/summary_session_unittest.cc |  59 +++
- chrome/browser/resources/aegis/aegis.ts       |  97 ++++-
- .../ui/views/toolbar/aegis_toolbar_button.cc  | 408 ++++++++++++++++--
- .../ui/views/toolbar/aegis_toolbar_button.h   |   1 +
- .../ui/webui/aegis/aegis_ui_handler.cc        | 270 +++++++++---
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   5 +
- 18 files changed, 1703 insertions(+), 204 deletions(-)
- create mode 100644 chrome/browser/aegis/summary_session.cc
- create mode 100644 chrome/browser/aegis/summary_session.h
- create mode 100644 chrome/browser/aegis/summary_session_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 8f8c5cbee25d00c87528ada36a2518f528e93c02..69006853b4825193588c54ac6badde30ca42bde1 100644
@@ -2865,6 +2843,3 @@ index a7eaeed5f7a9309fbf6ded53963670c3e83c2462..50a99e097d4b30170c9f9c3ae2976222
    std::optional<PendingMetalink> pending_metalink_;
    std::optional<PendingTorrent> pending_torrent_;
    base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
--- 
-2.52.0
-

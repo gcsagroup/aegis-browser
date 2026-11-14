@@ -1,24 +1,9 @@
-From 55ff08aea90324dee0b9c6a370d46b9538ab6314 Mon Sep 17 00:00:00 2001
+From 0a42d2781975668d4ea1a55d66c79862a5a8fee7 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 18:30:34 +0800
 Subject: [PATCH] feat(aegis): enforce scoped Actor execution
 
 ---
- chrome/browser/actor/BUILD.gn                      |  1 +
- chrome/browser/actor/actor_keyed_service.cc        | 33 +++++++--
- chrome/browser/actor/actor_keyed_service.h         | 10 +++
- .../browser/actor/actor_keyed_service_factory.cc   |  4 +-
- .../browser/actor/actor_keyed_service_unittest.cc  | 78 ++++++++++++++++++++++
- chrome/browser/actor/actor_navigation_throttle.cc  |  1 +
- chrome/browser/actor/actor_task.cc                 |  9 ++-
- chrome/browser/actor/actor_task.h                  |  6 +-
- chrome/browser/actor/actor_util.cc                 |  8 +++
- chrome/browser/actor/actor_util.h                  |  5 ++
- chrome/browser/actor/execution_engine.cc           | 10 ++-
- chrome/browser/actor/execution_engine_unittest.cc  | 28 +++++++-
- chrome/browser/actor/tools/tool_controller.cc      |  8 +--
- components/actor/core/task_source_info.h           |  8 ++-
- 14 files changed, 188 insertions(+), 21 deletions(-)
 
 diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
 index 8d819481842a492703d248054960d2f96359c5e2..ae10cffa70e68dcc1e514e416a8079ac7ab0e015 100644

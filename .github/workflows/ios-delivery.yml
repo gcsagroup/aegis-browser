@@ -33,8 +33,17 @@ on:
         type: choice
         options: [cloud, manual]
         default: cloud
+      private_beta:
+        description: "Embed protected test inputs and upload privately (Beta/manual only)"
+        type: choice
+        options: ['no', 'yes']
+        default: 'no'
   workflow_call:
     secrets:
+      AEGIS_IOS_TEST_NODE_BASE64:
+        required: false
+      AEGIS_IOS_TEST_SUBSCRIPTION_BASE64:
+        required: false
       AEGIS_ASC_KEY_ID:
         required: true
       AEGIS_ASC_ISSUER_ID:
@@ -65,7 +74,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ios-delivery-${{ github.repository }}
+  group: ${{ contains(fromJSON('["Status","Wait"]'), inputs.operation || fromJSON(inputs.delivery_inputs || '{}').operation) && !fromJSON(inputs.delivery_inputs || '{}').source && format('ios-delivery-read-{0}-{1}', github.repository, github.run_id) || format('ios-delivery-{0}', github.repository) }}
   cancel-in-progress: false
 env:
   DELIVERY_MODE: ${{ inputs.delivery_mode || 'simple' }}
@@ -96,6 +105,7 @@ jobs:
       stage_input: ${{ steps.plan.outputs.stage_input }}
       signing_mode: ${{ steps.plan.outputs.signing_mode }}
       package_entrypoint: ${{ steps.plan.outputs.package_entrypoint }}
+      private_beta: ${{ steps.plan.outputs.private_beta }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -121,18 +131,108 @@ jobs:
         env:
           RELEASE_DESTINATION: ${{ steps.plan.outputs.destination }}
           RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+  archive-settings:
+    needs: admission
+    if: ${{ needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || needs.admission.outputs.operation == 'package-upload') }}
+    runs-on: ubuntu-24.04
+    environment: aegis-ios-signing
+    timeout-minutes: 5
+    outputs:
+      team: ${{ steps.settings.outputs.team }}
+      firebase_dev: ${{ steps.settings.outputs.firebase_dev }}
+      firebase_prod: ${{ steps.settings.outputs.firebase_prod }}
+    steps:
+      - id: settings
+        name: Pass only validated non-secret archive settings
+        env:
+          TEAM: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+          FIREBASE_DEV: ${{ vars.AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64 }}
+          FIREBASE_PROD: ${{ vars.AEGIS_IOS_FIREBASE_PROD_PLIST_BASE64 }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          team = os.environ['TEAM']
+          if not re.fullmatch(r'[A-Z0-9]{10}', team):
+              raise SystemExit('Invalid archive team')
+          values = dict(team=team, firebase_dev=os.environ['FIREBASE_DEV'], firebase_prod=os.environ['FIREBASE_PROD'])
+          if any(value and not re.fullmatch(r'[A-Za-z0-9+/=]+', value) for value in values.values()):
+              raise SystemExit('Invalid archive settings')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for name, value in values.items():
+                  output.write(name + '=' + value + '\n')
+          PY
+  ios-archive:
+    name: ios-archive
+    outputs:
+      manifest_sha256: ${{ steps.archive.outputs.manifest_sha256 }}
+    needs: [admission, check-unused, archive-settings]
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    timeout-minutes: 50
+    env:
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      AEGIS_APPLE_TEAM_ID: ${{ needs.archive-settings.outputs.team }}
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install Go for the staged EmbeddedCore build
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Build Development archive without cloud or upload credentials
+        id: archive
+        env:
+          AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64: ${{ needs.archive-settings.outputs.firebase_dev }}
+          AEGIS_IOS_FIREBASE_PROD_PLIST_BASE64: ${{ needs.archive-settings.outputs.firebase_prod }}
+        run: >-
+          python3 -B scripts/release/cloud-archive.py --output "$RUNNER_TEMP/aegis-development-archive"
+          --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --profile "$RELEASE_PROFILE" --team "$AEGIS_APPLE_TEAM_ID"
+          --github-output "$GITHUB_OUTPUT"
+      - name: Preserve uncredentialed archive diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-archive-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/aegis-development-archive/archive.log
+            ${{ runner.temp }}/aegis-development-archive/development-keychain-activation.json
+            ${{ runner.temp }}/aegis-development-archive/development-key-access.json
+            ${{ runner.temp }}/aegis-development-archive/development-key-probe-*.log
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-development-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/aegis-development-archive/archive.zip
+            ${{ runner.temp }}/aegis-development-archive/archive-manifest.json
+          if-no-files-found: error
+          retention-days: 7
   ios-package:
     name: ios-package
+    permissions:
+      contents: write
+      actions: read
     needs:
       - admission
       - check-unused
-    runs-on: macos-26
+      - ios-archive
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-signing
     timeout-minutes: 50
     outputs:
       manifest_sha256: ${{ steps.package.outputs.manifest_sha256 }}
+      private_beta: ${{ steps.package.outputs.private_beta }}
     env:
       RELEASE_STAGE: package
+      RELEASE_OPERATION: ${{ needs.admission.outputs.operation }}
+      AEGIS_IOS_BETA_TEST_NODE_ENABLED: ${{ needs.admission.outputs.private_beta }}
       RELEASE_SIGNING_MODE: ${{ needs.admission.outputs.signing_mode }}
       RELEASE_PACKAGE_ENTRYPOINT: ${{ needs.admission.outputs.package_entrypoint }}
       RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
@@ -158,15 +258,25 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Revalidate source and locked runtime
         run: |
           node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
           bundle check
           xcodebuild -version
+      - name: Import the successful Development archive
+        if: ${{ needs.admission.outputs.signing_mode == 'cloud' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ios-development-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aegis-development-input
+      - name: Install Go for the staged EmbeddedCore build
+        if: ${{ needs.admission.outputs.signing_mode == 'manual' }}
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
       - name: Install signing material on the ephemeral runner
         if: ${{ needs.admission.outputs.signing_mode == 'manual' }}
         env:
@@ -178,6 +288,10 @@ jobs:
         run: python3 scripts/release/hosted-signing.py setup
       - id: package
         env:
+          AEGIS_IOS_TEST_NODE_BASE64: ${{ needs.admission.outputs.profile == 'beta' && needs.admission.outputs.signing_mode == 'manual' && needs.admission.outputs.private_beta == 'true' && secrets.AEGIS_IOS_TEST_NODE_BASE64 || '' }}
+          AEGIS_IOS_TEST_SUBSCRIPTION_BASE64: ${{ needs.admission.outputs.profile == 'beta' && needs.admission.outputs.signing_mode == 'manual' && needs.admission.outputs.private_beta == 'true' && secrets.AEGIS_IOS_TEST_SUBSCRIPTION_BASE64 || '' }}
+          AEGIS_CLOUD_ARCHIVE_INPUT: ${{ needs.admission.outputs.signing_mode == 'cloud' && format('{0}/aegis-development-input', runner.temp) || '' }}
+          AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256: ${{ needs.ios-archive.outputs.manifest_sha256 }}
           AEGIS_ASC_KEY_ID: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_KEY_ID || '' }}
           AEGIS_ASC_ISSUER_ID: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_ISSUER_ID || '' }}
           AEGIS_ASC_KEY_BASE64: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_KEY_BASE64 || '' }}
@@ -197,17 +311,126 @@ jobs:
             .artifacts/cloud-signing-poc/*/*.log
           if-no-files-found: warn
           retention-days: 14
+      - name: Retain private Beta on the admitted runner for the store gate
+        if: ${{ steps.package.outputs.private_beta == 'true' }}
+        env:
+          RELEASE_MANIFEST_SHA256: ${{ steps.package.outputs.manifest_sha256 }}
+        run: python3 scripts/release/ios-action.py retain-private-beta
+      - name: Clean private Beta workspace
+        if: ${{ always() && env.AEGIS_IOS_BETA_TEST_NODE_ENABLED == 'true' && env.RELEASE_OPERATION == 'package-upload' && env.RELEASE_SIGNING_MODE == 'manual' && github.run_attempt == 1 }}
+        run: python3 scripts/release/ios-action.py cleanup-private-beta
       - name: Copy the delivery receipt for the next operation
+        if: ${{ steps.package.outputs.private_beta == 'false' }}
         run: python3 scripts/release/ios-action.py receipt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ steps.package.outputs.private_beta == 'false' }}
         with:
           name: ${{ needs.admission.outputs.operation == 'package-upload' && format('ios-package-{0}-{1}', github.run_id, github.run_attempt) || format('ios-delivery-{0}-{1}', github.run_id, github.run_attempt) }}
           path: .artifacts/ios-delivery/package.zip
           if-no-files-found: error
           retention-days: 30
-    if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+    if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.admission.outputs.signing_mode != 'cloud' || needs.ios-archive.result == 'success') && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+  private-beta-store:
+    needs: [admission, ios-package]
+    if: ${{ !cancelled() && needs.ios-package.result == 'success' && needs.ios-package.outputs.private_beta == 'true' }}
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    environment: aegis-ios-store
+    timeout-minutes: 45
+    env:
+      RELEASE_STAGE: upload
+      RELEASE_OPERATION: ${{ needs.admission.outputs.operation }}
+      RELEASE_SIGNING_MODE: manual
+      RELEASE_PROFILE: beta
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: testflight
+      RELEASE_MANIFEST_SHA256: ${{ needs.ios-package.outputs.manifest_sha256 }}
+      PACKAGE_RUN_ID: ${{ github.run_id }}
+      UPLOAD_RUN_ID: ${{ github.run_id }}
+      SOURCE_ATTEMPT: ${{ github.run_attempt }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
+      - name: Revalidate current source before accessing the private package
+        run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+      - id: restore
+        name: Verify the private package and the original runner identity
+        run: python3 scripts/release/ios-action.py restore-private-beta
+      - id: quota
+        name: Verify private Beta and live quota without ASC credentials
+        run: python3 scripts/release/ios-action.py private-beta-preflight
+      - name: Require matching quota verification before loading ASC credentials
+        env:
+          AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256: ${{ steps.quota.outputs.manifest_sha256 }}
+        run: python3 scripts/release/ios-action.py require-private-beta-preflight
+      - name: Upload private Beta inside the store environment
+        env:
+          AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256: ${{ steps.quota.outputs.manifest_sha256 }}
+          AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
+          AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
+          AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
+        run: python3 scripts/release/ios-action.py private-beta-upload
+      - id: private-evidence
+        name: Read permanent upload state for private Beta
+        if: ${{ always() && steps.restore.outcome == 'success' }}
+        run: python3 scripts/release/ios-action.py private-beta-evidence
+      - id: restore-cleanup
+        name: Clean this attempt's owned private copies
+        if: ${{ always() && steps.restore.outcome != 'skipped' }}
+        run: python3 scripts/release/ios-action.py cleanup-private-beta-restore
+      - name: Clean verified private handoff
+        if: ${{ always() && steps.restore.outcome == 'success' && steps.restore-cleanup.outcome == 'success' }}
+        run: python3 scripts/release/ios-action.py cleanup-private-beta-handoff
+      - name: Preserve private Beta upload receipt
+        if: ${{ always() && steps.private-evidence.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-private-beta-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.private-evidence.outputs.receipt_path }}
+          if-no-files-found: error
+          retention-days: 30
+  seal-package:
+    needs: [admission, ios-package]
+    if: ${{ !cancelled() && needs.ios-package.result == 'success' && needs.ios-package.outputs.private_beta == 'false' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_STAGE: package
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.ios-package.outputs.manifest_sha256 }}
+      PACKAGE_RUN_ID: ${{ github.run_id }}
+      IMPORT_KIND: new-upload
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.admission.outputs.operation == 'package-upload' && format('ios-package-{0}-{1}', github.run_id, github.run_attempt) || format('ios-delivery-{0}-{1}', github.run_id, github.run_attempt) }}
+          path: .artifacts/download
+      - name: Verify original bytes and publish the permanent package locator
+        run: |
+          python3 -B scripts/release/ios-restore.py
+          python3 -B scripts/release/ios-durable.py seal --directory ".artifacts/release/ios/$RELEASE_RUN_ID"
+          python3 -B scripts/release/ios-action.py receipt
   ios-draft:
-    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.ios-package.result == 'success' && needs.admission.outputs.operation == 'package' && needs.admission.outputs.destination == 'github-draft' }}
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.ios-package.result == 'success' && needs.ios-package.outputs.private_beta == 'false' && needs.admission.outputs.operation == 'package' && needs.admission.outputs.destination == 'github-draft' }}
     needs:
       - admission
       - ios-package
@@ -239,10 +462,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Download exact package from this running package job
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -303,10 +524,13 @@ jobs:
       - admission
     if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' }}
   store:
+    permissions:
+      contents: write
+      actions: read
     needs:
       - admission
       - import
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-store
     timeout-minutes: 45
     env:
@@ -332,10 +556,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ios-validated-${{ github.run_id }}-${{ github.run_attempt }}
@@ -364,10 +586,14 @@ jobs:
           retention-days: 30
     if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' }}
   upload-new:
+    permissions:
+      contents: write
+      actions: read
     needs:
       - admission
       - ios-package
-    runs-on: macos-26
+      - seal-package
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-store
     timeout-minutes: 45
     env:
@@ -392,10 +618,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ios-package-${{ github.run_id }}-${{ github.run_attempt }}
@@ -422,7 +646,7 @@ jobs:
           path: .artifacts/ios-delivery/package.zip
           if-no-files-found: error
           retention-days: 30
-    if: ${{ needs.admission.outputs.operation == 'package-upload' }}
+    if: ${{ needs.admission.outputs.operation == 'package-upload' && needs.ios-package.outputs.private_beta == 'false' }}
   status-query:
     name: status-query
     needs: admission
@@ -442,10 +666,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Recheck Admin and current source before loading ASC credentials
         run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
       - name: Read exact version and build from Apple using GET only
@@ -480,10 +702,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Recheck Admin and current source before loading ASC credentials
         run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
       - name: Read exact version and build from Apple using GET only

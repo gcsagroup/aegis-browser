@@ -1,15 +1,8 @@
-From 6d0a9e70e4d59e6fec090b74dc7ddbb746013a88 Mon Sep 17 00:00:00 2001
+From 10a46a2f801902552d87b09efe5e0eabe559c89c Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 20:42:59 +0800
 Subject: [PATCH] 修复设置内阅读提取并区分下载平台说明
-
 ---
- chrome/browser/resources/aegis/aegis.html                | 2 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc                | 2 ++
- chrome/browser/ui/webui/aegis_agent/reading_workspace.cc | 7 +++++++
- chrome/browser/ui/webui/aegis_agent/reading_workspace.h  | 2 ++
- chrome/browser/ui/webui/help/aegis_github_update.h       | 4 ++--
- 5 files changed, 14 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
 index 5b549961c08557956d0f0c3d2633e7ffa77aad72..f875fcfab4e183567b035e39bb5796a55904ed06 100644

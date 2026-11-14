@@ -1,4 +1,4 @@
-"""Install existing App Store signing assets on an ephemeral GitHub-hosted Mac."""
+"""Install existing App Store signing assets on a GitHub Actions macOS runner."""
 import base64
 import binascii
 import datetime
@@ -18,10 +18,14 @@ TARGETS = {
     'com.gcsa.aegis.share': 'AEGIS_IOS_SHARE_PROFILE_BASE64',
 }
 
+ACTIONS_MACOS = frozenset({'github-hosted', 'self-hosted'})
+
 
 def check_host(environment):
-    if environment.get('GITHUB_ACTIONS') != 'true' or environment.get('RUNNER_ENVIRONMENT') != 'github-hosted' or environment.get('RUNNER_OS') != 'macOS':
-        raise ValueError('Signing assets require a GitHub-hosted macOS runner')
+    if (environment.get('GITHUB_ACTIONS') != 'true'
+            or environment.get('RUNNER_ENVIRONMENT') not in ACTIONS_MACOS
+            or environment.get('RUNNER_OS') != 'macOS'):
+        raise ValueError('Signing assets require a GitHub Actions macOS runner')
 
 
 def validate_profile(profile, identifier, name, team, fingerprint):
@@ -110,7 +114,10 @@ def setup():
                 directory.mkdir(parents=True, exist_ok=True)
                 target = directory / (uuid + '.mobileprovision')
                 if target.exists():
-                    raise ValueError('Provisioning profile path already exists')
+                    # Durable self-hosted runners may retain the same UUID from a prior job.
+                    if os.environ.get('RUNNER_ENVIRONMENT') != 'self-hosted':
+                        raise ValueError('Provisioning profile path already exists')
+                    target.unlink()
                 with target.open('xb') as handle:
                     installed.append(str(target))
                     manifest.write_text(json.dumps(installed))

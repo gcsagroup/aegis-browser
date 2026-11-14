@@ -71,6 +71,11 @@ struct PolicyMatchResult {
                          const PolicyMatchResult&) = default;
 };
 
+// Validates the entire candidate before atomic NetworkContext installation.
+// kNone means valid; no request attribution or network authorization is granted.
+PolicyMatchReason ValidateAccessPolicySnapshot(
+    const PublishedAccessPolicySnapshot& snapshot);
+
 // Evaluates an immutable, already-published rule snapshot without I/O. It
 // validates normalized rule shapes before matching and fails closed when the
 // winning rule is ambiguous. Site rules are ignored when the browser-owned

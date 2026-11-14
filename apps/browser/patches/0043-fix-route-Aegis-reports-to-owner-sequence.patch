@@ -1,19 +1,9 @@
-From e50f8a0ef7bcf61c93ef48ca6fda40ea67a5ee2e Mon Sep 17 00:00:00 2001
+From ed63c882fd7db612a6f3009064317fe5c53cfd8b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 04:59:19 +0800
 Subject: [PATCH] fix: route Aegis reports to owner sequence
 
 ---
- chrome/browser/aegis/aegis_service.cc         |  43 +++--
- chrome/browser/aegis/aegis_service.h          |   7 +
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/aegis_block_reporter.cc   |  34 ++--
- chrome/common/aegis/aegis_block_reporter.h    |  25 ++-
- .../aegis/aegis_block_reporter_unittest.cc    | 176 ++++++++++++++++++
- .../renderer/chrome_render_thread_observer.cc |  77 ++++----
- .../renderer/chrome_render_thread_observer.h  |  16 ++
- 8 files changed, 310 insertions(+), 70 deletions(-)
- create mode 100644 chrome/common/aegis/aegis_block_reporter_unittest.cc
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index d8dae036f17386fff3dcc05d4735147cbddc95ce..34866941a49c89df06f68db06f268ad70ac637dd 100644

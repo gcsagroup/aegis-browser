@@ -21,6 +21,8 @@
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/browser/aegis/privacy_event_store.h"
 #include "chrome/browser/aegis/summary_policy.h"
 #include "chrome/browser/aegis/agent/agent_model_router.h"
@@ -124,6 +126,10 @@ class AegisService : public KeyedService,
   bool IsInitializedForProfile(const Profile* profile) const;
   Profile* profile() const { return profile_; }
   const std::string& torrent_owner_id() const { return torrent_owner_id_; }
+
+#if BUILDFLAG(IS_MAC)
+  void QueryCurrentAccessAccount(base::OnceCallback<void(base::DictValue)> callback);
+#endif
 
   bool IsEnabled() const;
   bool IsTrackerBlockingEnabled() const;

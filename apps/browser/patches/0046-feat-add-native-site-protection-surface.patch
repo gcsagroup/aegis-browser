@@ -1,15 +1,9 @@
-From f387e53a2e7902ee11be9da7608729b1d9b4a763 Mon Sep 17 00:00:00 2001
+From 0444735b6c46c3232703ba451b34278016e2ed9e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 20:22:12 +0800
 Subject: [PATCH] feat(aegis): add native site protection surface
 
 ---
- chrome/browser/ui/views/toolbar/BUILD.gn           |   3 +
- .../ui/views/toolbar/aegis_toolbar_button.cc       | 286 +++++++++++++++++++++
- .../ui/views/toolbar/aegis_toolbar_button.h        |  47 ++++
- chrome/browser/ui/views/toolbar/toolbar_view.cc    |   8 +
- chrome/browser/ui/views/toolbar/toolbar_view.h     |   3 +
- 5 files changed, 347 insertions(+)
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
 index aa58fdf578f1cb6611d4432baaf13f5abbd7e84a..7574d0a016e9d67e3e17b8248d31097ad19c4612 100644

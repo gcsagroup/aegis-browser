@@ -1,4 +1,4 @@
-From 78e9365459073d5ad6d669906a9db44f94f3aa62 Mon Sep 17 00:00:00 2001
+From a18f8c679140d47f5909a5dbab6e682434db7f80 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 7 Oct 2026 06:10:51 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E7=95=99Android155.39=E7=8B=AC?=
@@ -9,11 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/actor/actor_keyed_service.cc        | 19 ++++++++++++---
- chrome/browser/actor/actor_keyed_service.h         | 14 +++++++++++
- .../browser/actor/actor_keyed_service_unittest.cc  | 28 ++++++++++++++++++++++
- chrome/browser/ui/webui/help/aegis_github_update.h |  4 ++--
- 4 files changed, 60 insertions(+), 5 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
 index fd3052491a59d7aea6a45515cb23dac087cb5af3..cc46ae1beb87661c448276a58c4b23b63ca859a4 100644
