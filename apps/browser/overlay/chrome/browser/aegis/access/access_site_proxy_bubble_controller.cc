@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <utility>
+#include "base/task/thread_pool.h"
 #include "base/command_line.h"
 #include "chrome/browser/aegis/access/access_identity_generation_source.h"
 #include "chrome/browser/aegis/access/access_published_request_runtime.h"
@@ -229,7 +230,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
 
 bool AccessSiteProxyBubbleController::RequestHostProxySession(
     const AccessSiteHost& requested_host,
-    bool enabled, base::OnceClosure on_disabled) {
+    bool enabled, base::OnceClosure on_ready) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const auto website = CanonicalWebsiteHost(requested_host);
   if (!website.host) return false;
@@ -257,6 +258,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     verifying_host_.reset();
     ++committed_verification_attempt_;
     publication_in_flight_ = false;
+    on_enabled_.Reset();
     superseded_retry = std::move(retry_completion_);
     superseded_queue = std::move(queued_retry_);
     retry_url_ = GURL();
@@ -272,7 +274,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     // committed choice until the local transaction actually succeeds.
     host_states_[host].connection = AccessSiteConnectionState::kConnecting;
     host_states_[host].failure_reason.clear();
-    BeginDisablePublication(host, std::move(on_disabled));
+    BeginDisablePublication(host, std::move(on_ready));
     if (superseded_retry) std::move(superseded_retry).Run(false);
     if (superseded_queue) std::move(superseded_queue).Run(false);
     return true;
@@ -282,6 +284,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
   host_states_[host].failure_reason.clear();
 
   publication_in_flight_ = true;
+  on_enabled_ = std::move(on_ready);
   PrepareLocalCore(host);
   return true;
 }
@@ -441,6 +444,19 @@ void AccessSiteProxyBubbleController::SetCoreLogLevel(std::string_view level) {
   ++state_revision_;
 }
 #if BUILDFLAG(IS_MAC)
+void AccessSiteProxyBubbleController::ReadConfiguredNodeId(
+    base::OnceCallback<void(std::string)> done) {
+  auto input = ResolveAccessLocalCoreInput();
+  if (!input) {
+    std::move(done).Run(std::string());
+    return;
+  }
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock()},
+      base::BindOnce(&ReadConfiguredAccessNodeId, std::move(*input)),
+      std::move(done));
+}
+
 void AccessSiteProxyBubbleController::ShareCoreLogs(
     content::WebContents* tab,
     std::string preview,
@@ -684,6 +700,7 @@ void AccessSiteProxyBubbleController::OnRestoredCoreVerified(
   FinishCoreRequests(ready);
 }
 void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
+  auto on_enabled = std::move(on_enabled_);
   auto retry = std::move(retry_completion_);
   auto next = std::move(queued_retry_);
   GURL url = std::exchange(retry_url_, GURL());
@@ -694,6 +711,7 @@ void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
   if (next && !next.IsCancelled()) {
     RequestFailedNavigationProxy(url, std::move(next));
   }
+  if (ready && on_enabled) std::move(on_enabled).Run();
 }
 
 void AccessSiteProxyBubbleController::FinishCoreRequests(bool ready) {

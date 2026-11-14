@@ -8,6 +8,9 @@ import {flush, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/pol
 import {loadTimeData} from '../i18n_setup.js';
 import type {SearchResult} from '../search_settings.js';
 import {getTemplate} from './aegis_page.html.js';
+// <if expr="is_macosx">
+import {startAccessUsage} from './access_account_usage.js';
+// </if>
 
 type ReadingPreferences = {theme: string, family: string, font: number, spacing: number, width: number};
 type SiteRule = {origin: string, menu: boolean, copy: boolean, debug: boolean, subdomains: boolean, disabled: boolean};
@@ -22,6 +25,9 @@ export class SettingsAegisPageElement extends PolymerElement {
   private statusListener_: WebUiListener|undefined;
   private translate_: (value: string) => string = value => value;
   private cleanup_: (() => void)|undefined;
+  // <if expr="is_macosx">
+  private usageCleanup_: (() => void)|undefined;
+  // </if>
   private state_: State = {};
   private readingSave_: Promise<void> = Promise.resolve();
   private readingSequence_ = 0;
@@ -58,9 +64,32 @@ export class SettingsAegisPageElement extends PolymerElement {
       this.shadowRoot?.querySelector<HTMLIFrameElement>('.legacy-frame')
           ?.contentWindow?.postMessage({type: 'aegis-settings-status', status}, 'chrome://aegis');
     });
-    queueMicrotask(() => { flush(); void this.initialize_().catch(error => this.message_(String(error))); });
+    queueMicrotask(() => {
+      if (!this.isConnected) return;
+      flush();
+      // <if expr="is_macosx">
+      const usage = this.shadowRoot?.querySelector<HTMLElement>('#access-account-usage');
+      if (usage) this.usageCleanup_ = startAccessUsage(usage,
+          () => sendWithPromise('getAccessAccountSnapshot'),
+          () => sendWithPromise('getCurrentAccessAccount'),
+          visible => chrome.send('setAccessAccountUsageVisible', [visible]),
+          () => this.isConnected && this.mode === 'home' &&
+              usage.checkVisibility({checkVisibilityCSS: true}));
+      // </if>
+      void this.initialize_().catch(error => this.message_(String(error)));
+    });
   }
-  override disconnectedCallback() { if (this.statusListener_) removeWebUiListener(this.statusListener_); window.removeEventListener('message', this.onFrameMessage_); window.removeEventListener('beforeunload', this.beforeUnload_); window.removeEventListener('aegis-settings-before-route', this.routeGuard_); this.cleanup_?.(); super.disconnectedCallback(); }
+  override disconnectedCallback() {
+    // <if expr="is_macosx">
+    this.usageCleanup_?.();
+    // </if>
+    if (this.statusListener_) removeWebUiListener(this.statusListener_);
+    window.removeEventListener('message', this.onFrameMessage_);
+    window.removeEventListener('beforeunload', this.beforeUnload_);
+    window.removeEventListener('aegis-settings-before-route', this.routeGuard_);
+    this.cleanup_?.();
+    super.disconnectedCallback();
+  }
   // 子框架没有 chrome.send 通道；只为当前受信任子页转发固定接口。
   private onFrameMessage_ = (event: MessageEvent) => {
     for (const frame of this.shadowRoot?.querySelectorAll<HTMLIFrameElement>('iframe') || []) {

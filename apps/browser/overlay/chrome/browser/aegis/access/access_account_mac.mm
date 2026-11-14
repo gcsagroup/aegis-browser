@@ -115,6 +115,9 @@ NSDictionary* Entitlement(NSData* data, NSString* account, int64_t* evaluatedAt)
       @"measuredAt", @"receivedAt", @"snapshotAgeMs", @"freshness"];
   NSString* status = body[@"status"];
   bool subscribed = ![status isEqual:@"not_subscribed"];
+  const bool alpha = body[@"quotaSource"] || body[@"panelExpiryMode"] ||
+                     body[@"panelExpiresAt"];
+  if (alpha && !subscribed) return nil;
   NSMutableDictionary* out = [@{@"entitlementAccountId": account} mutableCopy];
   for (NSString* field in fields) {
     id value = body[field];
@@ -132,17 +135,36 @@ NSDictionary* Entitlement(NSData* data, NSString* account, int64_t* evaluatedAt)
         *received < *start || !quota || !up || !down || !used || !remaining ||
         *up > INT64_MAX || *down > INT64_MAX || *quota > INT64_MAX ||
         *up + *down != *used || *remaining != (*used < *quota ? *quota - *used : 0)) return nil;
-    auto now = *received;
+    if (alpha) {
+      if (![body[@"quotaSource"] isEqual:@"3xui_alpha"] ||
+          !body[@"panelExpiresAt"]) return nil;
+      NSString* mode = body[@"panelExpiryMode"];
+      if ([mode isEqual:@"none"]) {
+        if (body[@"panelExpiresAt"] != NSNull.null || *expiry != *end) return nil;
+      } else if ([mode isEqual:@"absolute"]) {
+        auto panel_expiry = Time(body[@"panelExpiresAt"]);
+        if (!panel_expiry || !*panel_expiry ||
+            *expiry != std::min(*end, *panel_expiry)) return nil;
+      } else {
+        return nil;
+      }
+      out[@"quotaSource"] = body[@"quotaSource"];
+      out[@"panelExpiryMode"] = mode;
+      out[@"panelExpiresAt"] = body[@"panelExpiresAt"];
+    }
+    auto evaluated = Time(body[@"evaluatedAt"]);
+    if (evaluated && *evaluated < *received) return nil;
+    int64_t now;
     NSString* freshness = @"unavailable";
     if (out[@"measuredAt"] == NSNull.null) {
-      auto evaluated = Time(body[@"evaluatedAt"]);
-      if (out[@"snapshotAgeMs"] != NSNull.null || !evaluated || *evaluated < *received) return nil;
+      if (out[@"snapshotAgeMs"] != NSNull.null || !evaluated) return nil;
       now = *evaluated;
     } else {
       auto measured = Time(out[@"measuredAt"]), age = Time(out[@"snapshotAgeMs"]);
       if (!measured || !age || *measured < *start || *measured > *received ||
           *age < *received - *measured || *age > 9007199254740991LL - *measured) return nil;
       now = *measured + *age;
+      if (body[@"evaluatedAt"] && (!evaluated || *evaluated != now)) return nil;
       freshness = Freshness(*age);
     }
     if (![freshness isEqual:out[@"freshness"]]) return nil;
@@ -159,15 +181,14 @@ NSDictionary* Entitlement(NSData* data, NSString* account, int64_t* evaluatedAt)
 }
 
 AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange change,
-                               uint64_t receiptNanos, int64_t evaluatedAt) {
+                               uint64_t queryStartedNanos, int64_t evaluatedAt) {
   return ^NSDictionary* {
     NSString* state = change ? change() : nil;
     if (state) return State(state);
     NSDictionary* entitlement = result[@"entitlement"];
     if (!entitlement || [entitlement[@"status"] isEqual:@"not_subscribed"]) return result;
 
-    int64_t elapsed = (clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - receiptNanos) / NSEC_PER_MSEC;
-    if (!elapsed) return result;
+    int64_t elapsed = (clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - queryStartedNanos) / NSEC_PER_MSEC;
     NSMutableDictionary* updated = [entitlement mutableCopy];
     int64_t now = evaluatedAt + elapsed;
     if (entitlement[@"snapshotAgeMs"] != NSNull.null) {
@@ -181,7 +202,8 @@ AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange c
                         [entitlement[@"expiresAt"] longLongValue])) {
       updated[@"status"] = @"expired";
     }
-    return @{@"state": @"available", @"entitlement": updated};
+    return @{@"state": @"available", @"entitlement": updated,
+             @"queryElapsedMs": @(elapsed), @"evaluatedAt": @(now)};
   };
 }
 }  // namespace
@@ -191,6 +213,7 @@ AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange c
 @property(nonatomic, copy) NSDictionary* binding;
 @property(nonatomic, copy) AegisAccountCompletion completion;
 @property(nonatomic, strong) NSMutableData* body;
+@property(nonatomic) uint64_t requestStartedNanos;
 @property(nonatomic, copy) void (^rawCompletion)(NSInteger, NSData*);
 @end
 
@@ -199,6 +222,7 @@ AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange c
 @synthesize binding = _binding;
 @synthesize completion = _completion;
 @synthesize body = _body;
+@synthesize requestStartedNanos = _requestStartedNanos;
 @synthesize rawCompletion = _rawCompletion;
 - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
     willPerformHTTPRedirection:(NSHTTPURLResponse*)response newRequest:(NSURLRequest*)request
@@ -222,7 +246,6 @@ AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange c
 }
 - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
     didCompleteWithError:(NSError*)error {
-  uint64_t received = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
   [session finishTasksAndInvalidate];
   if (self.rawCompletion) {
     NSInteger status = !error && [task.response isKindOfClass:NSHTTPURLResponse.class]
@@ -237,11 +260,13 @@ AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange c
     if (status == 401) result = State(@"signed_out");
     if (status == 200) result = Entitlement(self.body, self.binding[@"accountId"], &evaluatedAt);
   }
-  self.completion(PrepareReply(result ?: State(@"unavailable"), self.bindingChange, received, evaluatedAt));
+  self.completion(PrepareReply(result ?: State(@"unavailable"), self.bindingChange,
+                               self.requestStartedNanos, evaluatedAt));
 }
 @end
 
 void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion completion) {
+  const uint64_t started = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
     NSString* path = [profileDirectory stringByAppendingPathComponent:@"AegisAccessAccount.json"];
     bool missing;
@@ -256,6 +281,7 @@ void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion 
     transfer.binding = binding;
     transfer.completion = completion;
     transfer.body = [NSMutableData data];
+    transfer.requestStartedNanos = started;
     NSURLSessionConfiguration* configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.HTTPCookieStorage = nil;
     configuration.HTTPShouldSetCookies = NO;

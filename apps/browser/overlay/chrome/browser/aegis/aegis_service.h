@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -23,6 +24,9 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#if BUILDFLAG(IS_MAC)
+#include "chrome/browser/aegis/access/access_account_refresh.h"
+#endif
 #include "chrome/browser/aegis/privacy_event_store.h"
 #include "chrome/browser/aegis/summary_policy.h"
 #include "chrome/browser/aegis/agent/agent_model_router.h"
@@ -129,6 +133,9 @@ class AegisService : public KeyedService,
 
 #if BUILDFLAG(IS_MAC)
   void QueryCurrentAccessAccount(base::OnceCallback<void(base::DictValue)> callback);
+  // Revalidates the account capability and ages the observation at every read.
+  base::DictValue CurrentAccessAccountSnapshot();
+  base::ScopedClosureRunner ObserveAccessAccountUsage();
 #endif
 
   bool IsEnabled() const;
@@ -314,6 +321,24 @@ class AegisService : public KeyedService,
       base::WeakPtr<Profile> retiring_incognito,
       int retries_remaining);
 
+#if BUILDFLAG(IS_MAC)
+  friend class AccessAccountRefreshTestPeer;
+  base::DictValue ResolveAccessAccountSnapshot(bool reschedule);
+  void SetAccessAccountUsageVisible(base::UnguessableToken owner, bool visible);
+  void InitializeAccessAccountRefresh();
+  void StopAccessAccountRefresh();
+  void AccessAccountApplicationStateChanged();
+  void ScheduleAccessAccountRefresh();
+  void StartAccessAccountRefresh(bool manual);
+  void OnAccessAccountReady(base::RepeatingCallback<base::DictValue()> resolve);
+  access::AccessAccountRefresh access_account_refresh_;
+  base::OneShotTimer access_account_timer_;
+  base::ScopedClosureRunner access_account_activation_observer_;
+  base::RepeatingCallback<base::DictValue()> access_account_reply_;
+  std::string access_account_reply_state_;
+  bool access_account_query_unavailable_ = false;
+  std::vector<base::OnceCallback<void(base::DictValue)>> access_account_waiters_;
+#endif
   bool initialized_ = false;
   const std::string torrent_owner_id_;
   raw_ptr<PrefService> prefs_ = nullptr;

@@ -477,3 +477,4 @@
 0475-macos-account-node-scoped-connect.patch
 0476-fix-paid-site-test-transport-dependency.patch
 0477-fix-account-fence-client-disconnect.patch
+0478-feat-macos-access-quota-ui.patch

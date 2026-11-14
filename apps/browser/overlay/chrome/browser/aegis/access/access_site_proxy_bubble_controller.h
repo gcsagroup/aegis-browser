@@ -52,6 +52,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   AccessCoreLogStore* core_logs() const { return core_logs_.get(); }
   void SetCoreLogLevel(std::string_view level);
 #if BUILDFLAG(IS_MAC)
+  void ReadConfiguredNodeId(base::OnceCallback<void(std::string)> done);
   enum class CoreLogShareResult { kCompleted, kFailed, kCleanupFailed };
   void ShareCoreLogs(content::WebContents* tab,
                      std::string preview,
@@ -73,7 +74,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   // Returns false only when the host/toggle cannot be accepted.
   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled,
-                               base::OnceClosure on_disabled);
+                               base::OnceClosure on_ready);
   void RequestFailedNavigationProxy(const GURL& original_url,
       base::OnceCallback<void(bool)> completion);
   base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
@@ -175,6 +176,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   GURL retry_url_;
   base::OnceCallback<void(bool)> retry_completion_;
   base::OnceCallback<void(bool)> queued_retry_;
+  base::OnceClosure on_enabled_;
   base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
 };
 

@@ -50,6 +50,16 @@
   <a href="/aegisTools"><cr-icon icon="settings:build"></cr-icon><span><strong>$i18n{aegisToolsTitle}</strong><small>$i18n{aegisToolsDescription}</small></span></a>
   <a href="/aegisExperiments"><cr-icon icon="settings20:insight-spark"></cr-icon><span><strong>$i18n{aegisExperimentsTitle}</strong><small>$i18n{aegisExperimentsDescription}</small></span></a>
 </nav></template>
+<if expr="is_macosx">
+<section id="access-account-usage" hidden$="[[!isMode_(mode, 'home')]]">
+  <h2 data-usage="heading"></h2>
+  <p data-usage="status" role="status"></p>
+  <div data-usage="values"></div>
+  <p data-usage="freshness"></p>
+  <button data-usage="refresh" type="button"></button>
+  <p class="hint" data-usage="note"></p>
+</section>
+</if>
 <template is="dom-if" if="[[isMode_(mode, 'enhancements')]]">
   <p id="result" role="status" aria-live="polite"></p>
   <section><div class="section-heading row"><h2>网站规则</h2><button id="rule-new" class="primary">添加网站</button></div>

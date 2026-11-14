@@ -10,6 +10,8 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
+#include "base/i18n/time_formatting.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -25,6 +27,8 @@
 #include "url/origin.h"
 #include "chrome/browser/browser_process.h"
 #if BUILDFLAG(IS_MAC)
+#include "chrome/browser/aegis/access/access_account_refresh.h"
+#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
 #include "chrome/browser/aegis/access/access_paid_site_mac.h"
 #endif
 #include "chrome/browser/profiles/profile.h"
@@ -235,6 +239,12 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       tab_ = aegis::EnhancementField(helper->Snapshot(), "id");
     }
   }
+  ~AegisPageBubble() override {
+#if BUILDFLAG(IS_MAC)
+    quota_visibility_.RunAndReset();
+#endif
+  }
+
  private:
   aegis::EnhancementTabHelper* Helper() const {
     return source_ ? aegis::EnhancementTabHelper::FromWebContents(source_.get()) : nullptr;
@@ -253,10 +263,23 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     panel_ = scroll->SetContents(CreatePanel());
     AddChildView(std::move(scroll));
     Build();
+#if BUILDFLAG(IS_MAC)
+    if (auto* controller = AccessBubble()) {
+      controller->ReadConfiguredNodeId(base::BindOnce(
+          [](base::WeakPtr<AegisPageBubble> bubble, std::string id) {
+            if (!bubble || !bubble->Valid()) return;
+            bubble->configured_node_id_ = std::move(id);
+            bubble->RefreshSoon();
+          }, weak_.GetWeakPtr()));
+    }
+#endif
     timer_.Start(FROM_HERE, base::Milliseconds(500), this, &AegisPageBubble::Poll);
   }
   void Poll() {
     if (!Valid()) {
+#if BUILDFLAG(IS_MAC)
+      quota_visibility_.RunAndReset();
+#endif
       if (GetWidget()) GetWidget()->Close();
       return;
     }
@@ -273,6 +296,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
         ? aegis::access::AccountNodeForSite(browser_->GetProfile(), access_snapshot->host.value)
         : aegis::access::AccountNodeStatus::kOff;
     if (paid_state != paid_status_) { Build(); return; }
+    UpdateQuotaVisibility();
+    PaintQuota();
     if (expanded_.contains("core-logs") && access && access->CanViewCoreLogs() &&
         (log_disk_status_ != access->core_logs()->disk_status() ||
          log_view_version_ != access->core_logs()->view_version())) {
@@ -400,6 +425,21 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
         (!snap.toggle_on && aegis::access::UsesAccountNode(profile,
             profile->IsOffTheRecord() && !controller->GetFailedNavigationRetryHandler().is_null()));
   }
+
+  base::OnceClosure CaptureSiteProxyReload() const {
+    auto* helper = aegis::access::AccessNavigationRetryTabHelper::FromWebContents(
+        source_.get());
+    auto reload = helper ? helper->CaptureSiteProxyReload() : base::OnceClosure();
+    if (!reload) return {};
+    return base::BindOnce(
+        [](base::WeakPtr<BrowserWindowInterface> browser,
+           base::WeakPtr<content::WebContents> tab, base::OnceClosure reload) {
+          if (browser && tab &&
+              browser->GetTabStripModel()->GetActiveWebContents() == tab.get()) {
+            std::move(reload).Run();
+          }
+        }, browser_->GetWeakPtr(), source_, std::move(reload));
+  }
 #endif
   // Trusted URL for Access is the committed navigation only (address_).
   void ToggleSiteProxy() {
@@ -415,25 +455,167 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       return;
     }
 #if BUILDFLAG(IS_MAC)
-    if (UseAccountNode(controller, snap, aegis::access::AccountNodeForSite(
-            browser_->GetProfile(), snap.host.value))) {
+    auto* profile = browser_->GetProfile();
+    using AccountStatus = aegis::access::AccountNodeStatus;
+    const auto account_status = aegis::access::AccountNodeForSite(profile, snap.host.value);
+    if (UseAccountNode(controller, snap, account_status)) {
       auto weak = weak_.GetWeakPtr();
       if (snap.toggle_on) {
         controller->RequestHostProxySession(snap.host, false, base::BindOnce(
             &aegis::access::DisableAccountNodeSite, browser_->GetProfile(), snap.host.value));
       } else if (snap.connection != aegis::access::AccessSiteConnectionState::kConnecting) {
-        aegis::access::ToggleAccountNodeSite(browser_->GetProfile(), snap.host.value);
+        auto reload = account_status == AccountStatus::kOff && address_.SchemeIs("https")
+                          ? CaptureSiteProxyReload() : base::OnceClosure();
+        aegis::access::ToggleAccountNodeSite(profile, snap.host.value, std::move(reload));
       }
       if (weak) weak->RefreshSoon();
       return;
     }
-#endif
-    // Publication path: enable → Prepare/Publish/ACK; disable commits locally
-    // even when the service is unavailable. Switch state ≠ connectivity.
+    auto reload = snap.toggle_on ? base::OnceClosure() : CaptureSiteProxyReload();
+    controller->RequestHostProxySession(snap.host, !snap.toggle_on, std::move(reload));
+#else
     controller->RequestHostProxySession(snap.host, !snap.toggle_on);
+#endif
     RefreshSoon();
   }
 #if BUILDFLAG(IS_MAC)
+  void UpdateQuotaVisibility() {
+    auto* widget = GetWidget();
+    const bool visible = expanded_.contains("access-quota") && widget &&
+        widget->IsVisibleOnScreen();
+    if (!visible) {
+      quota_visibility_.RunAndReset();
+      return;
+    }
+    if (quota_visibility_) return;
+    if (auto* service = ServiceForWebContents(browser_, source_.get())) {
+      quota_visibility_ = service->ObserveAccessAccountUsage();
+    }
+  }
+
+  void PaintQuota() {
+    if (!quota_status_ || !quota_values_ || !quota_freshness_) return;
+    auto* service = ServiceForWebContents(browser_, source_.get());
+    const auto snapshot = service ? service->CurrentAccessAccountSnapshot()
+                                  : base::DictValue();
+    const auto* state = snapshot.FindString("state");
+    const auto* data = snapshot.FindDict("entitlement");
+    const auto* status = data ? data->FindString("status") : nullptr;
+    const bool stale = snapshot.FindBool("stale").value_or(false);
+    std::u16string status_text;
+    std::u16string values;
+    std::u16string freshness;
+    if (!status) {
+      if (state && *state == "signed_out") {
+        status_text = Copy(u"尚未绑定额度查询账户", u"No usage account is bound",
+                           u"尚未綁定額度查詢帳戶");
+      } else if (state && *state == "loading") {
+        status_text = Copy(u"正在查询额度…", u"Loading usage…", u"正在查詢額度…");
+      } else {
+        status_text = Copy(u"额度查询失败，请刷新",
+                           u"Usage unavailable. Refresh to retry.",
+                           u"額度查詢失敗，請重新整理");
+      }
+    } else if (*status == "not_subscribed") {
+      status_text = Copy(u"尚无有效套餐", u"No active plan", u"尚無有效方案");
+    } else {
+      status_text = *status == "expired"
+          ? Copy(u"授权已到期", u"Authorization expired", u"授權已到期")
+          : *status == "exhausted"
+              ? Copy(u"服务端报告：额度已耗尽", u"Service reports quota exhausted",
+                     u"伺服器回報：額度已耗盡")
+              : Copy(u"服务端报告：额度有效", u"Service reports available quota",
+                     u"伺服器回報：額度有效");
+      const auto row = [&](std::u16string title, std::u16string value) {
+        if (!values.empty()) values += u"\n";
+        values += std::move(title) + u"  " + std::move(value);
+      };
+      const auto bytes = [&](std::string_view key) -> std::u16string {
+        const auto* value = data->FindString(key);
+        return value ? aegis::access::FormatAccessUsageBytes(*value) : u"—";
+      };
+      const auto timestamp = [&](std::string_view key) -> std::u16string {
+        const auto value = data->FindDouble(key);
+        if (!value) return u"—";
+        return base::TimeFormatShortDateAndTime(
+            base::Time::FromMillisecondsSinceUnixEpoch(static_cast<int64_t>(*value)));
+      };
+      row(Copy(u"总额度", u"Total quota", u"總額度"), bytes("quotaBytes"));
+      row(Copy(u"已用", u"Used", u"已用"), bytes("usedBytes"));
+      row(Copy(u"剩余", u"Remaining", u"剩餘"), bytes("remainingBytes"));
+      row(Copy(u"上传", u"Uploaded", u"上傳"), bytes("uploadedBytes"));
+      row(Copy(u"下载", u"Downloaded", u"下載"), bytes("downloadedBytes"));
+      const auto* quota_source = data->FindString("quotaSource");
+      const bool alpha = quota_source && *quota_source == "3xui_alpha";
+      row(alpha ? Copy(u"查询授权截止", u"Query authorization expiry", u"查詢授權截止")
+                : Copy(u"到期时间", u"Expiry", u"到期時間"), timestamp("expiresAt"));
+      if (alpha) {
+        row(Copy(u"来源", u"Source", u"來源"), u"3X-UI Alpha");
+        const auto* mode = data->FindString("panelExpiryMode");
+        row(Copy(u"节点到期", u"Node expiry", u"節點到期"),
+            mode && *mode == "none"
+                ? Copy(u"未设到期", u"No expiry configured", u"未設到期")
+                : timestamp("panelExpiresAt"));
+      }
+      row(Copy(u"服务端测量时间", u"Source measurement time", u"伺服器測量時間"),
+          timestamp("measuredAt"));
+      row(Copy(u"数据接收时间", u"Source receipt time", u"資料接收時間"),
+          timestamp("receivedAt"));
+      const auto* age = data->FindString("freshness");
+      if (age && *age == "current") {
+        freshness = Copy(u"用量测量较新", u"Recent usage measurement", u"用量測量較新");
+      } else if (age && *age == "delayed") {
+        freshness = Copy(u"用量同步有延迟", u"Usage synchronization delayed",
+                         u"用量同步有延遲");
+      } else {
+        freshness = Copy(u"用量测量时间未知或数据已陈旧",
+                         u"Measurement time unknown or usage stale",
+                         u"用量測量時間未知或資料已陳舊");
+      }
+    }
+    if (stale) {
+      status_text = Copy(u"这是上次查询结果，当前额度尚未确认",
+                         u"Last result; current balance is unconfirmed",
+                         u"這是上次查詢結果，目前額度尚未確認");
+      freshness.clear();
+    }
+    const auto set = [](views::Label* label, std::u16string text) {
+      if (label->GetText() != text) label->SetText(text);
+      label->SetVisible(!text.empty());
+    };
+    set(quota_status_, std::move(status_text));
+    set(quota_values_, std::move(values));
+    set(quota_freshness_, std::move(freshness));
+  }
+
+  void RefreshQuota() {
+    if (!Valid() || !expanded_.contains("access-quota")) return;
+    if (auto* service = ServiceForWebContents(browser_, source_.get())) {
+      service->QueryCurrentAccessAccount(base::BindOnce(
+          [](base::WeakPtr<AegisPageBubble> bubble, base::DictValue) {
+            if (bubble && bubble->Valid()) bubble->PaintQuota();
+          }, weak_.GetWeakPtr()));
+    }
+  }
+
+  void AppendQuota(views::View* parent) {
+    auto* profile = browser_->GetProfile();
+    if (!profile->IsRegularProfile() || profile->IsOffTheRecord()) return;
+    Button(parent, Copy(u"Access 账户额度", u"Access account usage", u"Access 帳戶額度"),
+           base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this),
+                               std::string("access-quota")));
+    if (!expanded_.contains("access-quota")) return;
+    quota_status_ = AddLabel(parent, {});
+    quota_values_ = AddLabel(parent, {});
+    quota_values_->SetSelectable(true);
+    quota_freshness_ = AddLabel(parent, {});
+    Button(parent, Copy(u"刷新额度", u"Refresh usage", u"重新整理額度"),
+           base::BindRepeating(&AegisPageBubble::RefreshQuota,
+                               base::Unretained(this)));
+    UpdateQuotaVisibility();
+    PaintQuota();
+  }
+
   void AppendCoreLogs(views::View* parent,
                       aegis::access::AccessSiteProxyBubbleController* controller) {
     if (!controller->CanViewCoreLogs()) return;
@@ -546,9 +728,6 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                             u"目前使用者資料不可用"));
       return;
     }
-#if BUILDFLAG(IS_MAC)
-    AppendCoreLogs(parent, controller);
-#endif
     const auto snap = controller->SnapshotForCommittedUrl(address_);
     if (!snap.has_trusted_site) {
       AddLabel(parent, IntentStatusCopy(snap.intent_status));
@@ -561,7 +740,29 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     using Paid = aegis::access::AccountNodeStatus;
     const auto state = paid_status_ = aegis::access::AccountNodeForSite(profile, snap.host.value);
     const bool paid = UseAccountNode(controller, snap, state);
-    if (paid) toggle_on = state != Paid::kOff;
+    if (paid) {
+      toggle_on = state != Paid::kOff;
+      AddLabel(parent, Copy(u"由服务分配账户节点",
+                            u"Service-issued account node",
+                            u"由服務分配帳戶節點"));
+      AddLabel(parent, Copy(u"账户代理用于此主机，其他主机使用各自的设置。",
+                            u"The account proxy applies to this host. Other hosts use their own settings.",
+                            u"帳戶代理用於此主機，其他主機使用各自的設定。"));
+    } else {
+      AddLabel(parent, Copy(u"适用于本站及符合规则的页面资源",
+                            u"Applies to this site and eligible page resources",
+                            u"適用於本站及符合規則的頁面資源"));
+      if (configured_node_id_) {
+        AddLabel(parent, configured_node_id_->empty()
+            ? Copy(u"未找到可用的本地节点配置",
+                   u"No usable local node is configured",
+                   u"未找到可用的本機節點設定")
+            : Copy(u"本地节点配置（匿名标识）",
+                   u"Local node configuration (anonymous ID)",
+                   u"本機節點設定（匿名識別碼）") + u" · " +
+                  base::UTF8ToUTF16(*configured_node_id_));
+      }
+    }
 #endif
     Toggle(parent,
            Copy(u"当前网站使用代理", u"Use Access proxy for this site",
@@ -651,10 +852,19 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     access_revision_ = access ? access->state_revision() : 0;
     access_snapshot_ = access
         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
+#if BUILDFLAG(IS_MAC)
+    quota_status_ = nullptr;
+    quota_values_ = nullptr;
+    quota_freshness_ = nullptr;
+#endif
     panel_->RemoveAllChildViews();
     if (!address_.SchemeIsHTTPOrHTTPS()) {
       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
       AppendSiteProxySection(panel_);
+#if BUILDFLAG(IS_MAC)
+      AppendQuota(panel_);
+      if (auto* controller = AccessBubble()) AppendCoreLogs(panel_, controller);
+#endif
       AppendDevAllowBlockSection(panel_);
       AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
       Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
@@ -665,6 +875,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (browser_->GetProfile()->IsOffTheRecord())
       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
     AppendSiteProxySection(panel_);
+#if BUILDFLAG(IS_MAC)
+    AppendQuota(panel_);
+    if (auto* controller = AccessBubble()) AppendCoreLogs(panel_, controller);
+#endif
     AppendDevAllowBlockSection(panel_);
     AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
     AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
@@ -791,6 +1005,11 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   std::set<std::string> expanded_;
   std::u16string notice_;
 #if BUILDFLAG(IS_MAC)
+  base::ScopedClosureRunner quota_visibility_;
+  raw_ptr<views::Label> quota_status_ = nullptr;
+  raw_ptr<views::Label> quota_values_ = nullptr;
+  raw_ptr<views::Label> quota_freshness_ = nullptr;
+  std::optional<std::string> configured_node_id_;
   std::u16string log_notice_;
   std::optional<std::pair<std::string, uint64_t>> log_share_confirmation_;
   uint64_t log_view_version_ = 0;

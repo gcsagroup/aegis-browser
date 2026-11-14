@@ -446,6 +446,18 @@ TEST_F(AccessSiteProxyProductTest, DualSelectionReleasesPaidOnlyAfterCommittedLo
 }
 #endif
 
+TEST_F(AccessSiteProxyProductTest, ToolbarEnableCompletesOnlyAfterAcknowledgement) {
+  context_.hold_next = true;
+  base::test::TestFuture<void> ready;
+  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true,
+                                              ready.GetCallback()));
+  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
+  EXPECT_FALSE(ready.IsReady());
+  context_.Reply(true);
+  ASSERT_TRUE(ready.Wait());
+  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);
+}
+
 TEST_F(AccessSiteProxyProductTest, RecoveryTimesOutWhileCandidateAckIsStillHeld) {
   context_.hold_next = true;
   ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));

@@ -19,6 +19,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/metalink_download_verifier.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
@@ -43,6 +44,27 @@
 #include "url/origin.h"
 
 namespace aegis {
+#if BUILDFLAG(IS_MAC)
+class AccessAccountRefreshTestPeer {
+ public:
+  static void ActivateWithoutPlatformNotifications(AegisService& service) {
+    service.StopAccessAccountRefresh();
+    service.access_account_refresh_.SetActivity(true, true,
+                                               base::TimeTicks::Now());
+  }
+
+  static void FinishQuery(
+      AegisService& service,
+      base::RepeatingCallback<base::DictValue()> resolve) {
+    service.OnAccessAccountReady(std::move(resolve));
+  }
+
+  static void StopTimer(AegisService& service) {
+    service.access_account_timer_.Stop();
+  }
+};
+#endif
+
 namespace {
 
 class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
@@ -143,6 +165,9 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
   const auto file = profile()->GetPath().AppendASCII("AegisAccessAccount.json");
   ASSERT_TRUE(base::WriteFile(file, base::WriteJson(binding).value()));
   ASSERT_TRUE(base::SetPosixFilePermissions(file, 0600));
+  auto* service = AegisServiceFactory::GetForProfile(profile());
+  ASSERT_TRUE(service);
+  AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(*service);
   auto contents = content::WebContents::Create(content::WebContents::CreateParams(profile()));
   content::TestWebUI web_ui;
   web_ui.set_web_contents(contents.get());
@@ -159,8 +184,11 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
   untrusted_args.Append("other-account");
   web_ui.HandleReceivedMessage("getCurrentAccessAccount", untrusted_args);
   EXPECT_EQ(web_ui.call_data().size(), 1u);
+  web_ui.HandleReceivedMessage("getAccessAccountSnapshot", args);
+  ASSERT_EQ(web_ui.call_data().size(), 2u);
+  EXPECT_EQ(requests.load(), 0);
   web_ui.HandleReceivedMessage("getCurrentAccessAccount", args);
-  ASSERT_TRUE(base::test::RunUntil([&] { return web_ui.call_data().size() == 2; }));
+  ASSERT_TRUE(base::test::RunUntil([&] { return web_ui.call_data().size() == 3; }));
   const auto& result = web_ui.call_data().back()->arg3()->GetDict();
   EXPECT_EQ(result.FindString("state") ? *result.FindString("state") : "", "available");
   const auto* account = result.FindStringByDottedPath("entitlement.entitlementAccountId");
@@ -192,6 +220,10 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
       ASSERT_TRUE(held->posted.TimedWait(base::Seconds(5)));
     }
     ASSERT_EQ(web_ui.call_data().size(), prior);
+    base::ListValue second;
+    second.Append("read-coalesced");
+    web_ui.HandleReceivedMessage("getCurrentAccessAccount", second);
+    ASSERT_EQ(web_ui.call_data().size(), prior);
     bool sign_out = std::string_view(action) == "sign_out";
     if (sign_out) {
       ASSERT_TRUE(base::DeleteFile(file));
@@ -199,13 +231,64 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
       ASSERT_TRUE(install("B"));
       if (std::string_view(action) == "switch_back") ASSERT_TRUE(install("A"));
     }
-    held->RunUntilIdle();
-    ASSERT_EQ(web_ui.call_data().size(), prior + 1);
+    // The reply can schedule an immediate refresh for the replacement
+    // identity. TestSimpleTaskRunner drains delayed tasks too; execute only
+    // this delivery and stop its timer before starting an independent case.
+    held->RunPendingTasks();
+    AccessAccountRefreshTestPeer::StopTimer(*service);
+    ASSERT_EQ(web_ui.call_data().size(), prior + 2);
+    EXPECT_EQ(web_ui.call_data()[prior]->arg3()->GetDict(),
+              web_ui.call_data()[prior + 1]->arg3()->GetDict());
     const auto& delivered = web_ui.call_data().back()->arg3()->GetDict();
     const auto* state = delivered.FindString("state");
     EXPECT_EQ(state ? *state : "", sign_out ? "signed_out" : "superseded");
     EXPECT_FALSE(delivered.contains("entitlement"));
   }
+  EXPECT_EQ(requests.load(), 4);
+}
+
+TEST_F(AegisUIHandlerTest, StaleBalanceIsKeptOnlyForItsOriginalBinding) {
+  auto* service = AegisServiceFactory::GetForProfile(profile());
+  ASSERT_TRUE(service);
+  AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(*service);
+
+  bool original_binding = true;
+  const base::ScopedClosureRunner reset_service(base::BindOnce(
+      [](AegisService* service) {
+        AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(
+            *service);
+      },
+      service));
+  AccessAccountRefreshTestPeer::FinishQuery(
+      *service, base::BindLambdaForTesting([&] {
+        if (!original_binding) {
+          return base::DictValue().Set("state", "superseded");
+        }
+        return base::DictValue()
+            .Set("state", "available")
+            .Set("entitlement",
+                 base::DictValue().Set("remainingBytes", "12345"));
+      }));
+  EXPECT_FALSE(
+      service->CurrentAccessAccountSnapshot().FindBool("stale").value_or(false));
+
+  AccessAccountRefreshTestPeer::FinishQuery(
+      *service, base::BindLambdaForTesting([] {
+        return base::DictValue().Set("state", "unavailable");
+      }));
+  const auto prior = service->CurrentAccessAccountSnapshot();
+  EXPECT_TRUE(prior.FindBool("stale").value_or(false));
+  const auto* remaining =
+      prior.FindStringByDottedPath("entitlement.remainingBytes");
+  ASSERT_TRUE(remaining);
+  EXPECT_EQ(*remaining, "12345");
+
+  original_binding = false;
+  auto after_switch = service->CurrentAccessAccountSnapshot();
+  ASSERT_TRUE(after_switch.FindString("state"));
+  EXPECT_EQ(*after_switch.FindString("state"), "superseded");
+  EXPECT_FALSE(after_switch.contains("entitlement"));
+  EXPECT_FALSE(service->CurrentAccessAccountSnapshot().contains("entitlement"));
 }
 #endif
 

@@ -10,6 +10,7 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.request import Request, urlopen
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -114,6 +115,7 @@ class NativeQuery(unittest.TestCase):
             ("regular","Bearer test-A"), ("private","Bearer private-B"), ("private","Bearer test-A")])
         self.assertNotEqual(issued[0][0]["contextId"], issued[1][0]["contextId"])
 
+
     def test_service_two_profiles_signout_and_revocation(self):
         self.bind(self.a)
         self.bind(self.b, "B")
@@ -130,6 +132,80 @@ class NativeQuery(unittest.TestCase):
         self.db.execute("UPDATE sessions SET revoked_at=? WHERE account_id='B'", (NOW,))
         self.db.commit()
         self.assertEqual(self.query(self.b), {"state": "signed_out"})
+
+    def test_alpha_node_metadata_is_complete_and_validated(self):
+        self.bind(self.a)
+        payload = self.query_bound_snapshot()
+        payload.update(quotaSource="3xui_alpha", panelExpiryMode="none",
+                       panelExpiresAt=None, expiresAt=NOW + 10000,
+                       measuredAt=None, snapshotAgeMs=None, freshness="unavailable")
+
+        class AlphaResponse(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                body = json.dumps(payload).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        origin = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), AlphaResponse))
+        self.bind(self.a, origin=origin)
+        # Missing producer decision time cannot be inferred from panel receipt.
+        payload.pop("evaluatedAt")
+        self.assertEqual(self.query(self.a), {"state": "unavailable"})
+        payload["evaluatedAt"] = NOW
+        result = self.query(self.a)
+        self.assertEqual(result["state"], "available")
+        self.assertEqual(result["entitlement"]["panelExpiryMode"], "none")
+        self.assertEqual(result["entitlement"]["quotaSource"], "3xui_alpha")
+        payload.update(panelExpiryMode="absolute", panelExpiresAt=NOW + 5000,
+                       expiresAt=NOW + 5000)
+        self.assertEqual(self.query(self.a)["entitlement"]["panelExpiresAt"], NOW + 5000)
+        valid = dict(payload)
+        for key, value in (("panelExpiryMode", "unknown"),
+                           ("panelExpiresAt", None),
+                           ("quotaSource", "unbound"),
+                           ("expiresAt", NOW + 10000)):
+            with self.subTest(field=key):
+                payload.clear()
+                payload.update(valid)
+                payload[key] = value
+                self.assertEqual(self.query(self.a), {"state": "unavailable"})
+        payload.clear()
+        payload.update(valid)
+        payload.pop("panelExpiresAt")
+        self.assertEqual(self.query(self.a), {"state": "unavailable"})
+
+    def test_response_transit_ages_snapshot_and_expiry(self):
+        self.bind(self.a)
+        payload = self.query_bound_snapshot()
+        payload.update(evaluatedAt=NOW + 8500, measuredAt=NOW - 6000, snapshotAgeMs=14500,
+                       freshness="delayed", status="active", expiresAt=NOW + 10000)
+
+        class DelayedResponse(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                body = json.dumps(payload).encode()
+                time.sleep(1.6)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        origin = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), DelayedResponse))
+        self.bind(self.a, origin=origin)
+        reply = self.query(self.a)
+        self.assertGreaterEqual(reply["queryElapsedMs"], 1500)
+        self.assertGreater(reply["entitlement"]["snapshotAgeMs"], 15000)
+        self.assertEqual(reply["entitlement"]["freshness"], "unavailable")
+        self.assertEqual(reply["entitlement"]["status"], "expired")
 
     def test_inflight_switch_back_and_signout_discard_response(self):
         entered, release = threading.Event(), threading.Event()
@@ -269,7 +345,8 @@ class NativeQuery(unittest.TestCase):
 
         origin = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), Stub))
         self.bind(self.a, origin=origin)
-        for change in ({"usedBytes": 24}, {"remainingBytes": "0"}, {"usedBytes": "024"},
+        for change in ({"evaluatedAt": NOW - 500}, {"evaluatedAt": NOW + 1},
+                       {"evaluatedAt": None}, {"usedBytes": 24}, {"remainingBytes": "0"}, {"usedBytes": "024"},
                        {"entitlementAccountId": "B"}, {"freshness": "current"},
                        {"measuredAt": None}, {"periodEnd": False}, {"status": "expired"}):
             wire[1] = {**response, **change}
@@ -277,14 +354,13 @@ class NativeQuery(unittest.TestCase):
         wire[1] = {**response, "transportSecret": "fixture-must-not-be-exposed"}
         delivered = self.query(self.a)["entitlement"]
         self.assertGreaterEqual(delivered.pop("snapshotAgeMs"), response["snapshotAgeMs"])
-        self.assertEqual(delivered, {k: v for k, v in response.items() if k != "snapshotAgeMs"})
+        self.assertEqual(delivered, {k: v for k, v in response.items() if k not in ("snapshotAgeMs", "evaluatedAt")})
         for age, freshness in ((0, "current"), (5000, "current"), (15000, "delayed"),
                                (15001, "unavailable"), (None, "unavailable")):
             measured = NOW if age is not None else None
             wire[1] = {**response, "receivedAt": NOW, "measuredAt": measured,
                        "snapshotAgeMs": age, "freshness": freshness}
-            if age is None:
-                wire[1]["evaluatedAt"] = NOW
+            wire[1]["evaluatedAt"] = NOW + (age or 0)
             if age is not None and NOW + age >= wire[1]["periodEnd"]:
                 wire[1]["status"] = "expired"
             delivered = self.query(self.a)["entitlement"]
@@ -294,7 +370,8 @@ class NativeQuery(unittest.TestCase):
                 actual_age = delivered["snapshotAgeMs"]
                 self.assertGreaterEqual(actual_age, age)
                 expected_freshness = "current" if actual_age <= 5000 else "delayed" if actual_age <= 15000 else "unavailable"
-                self.assertEqual(delivered, {**wire[1], "snapshotAgeMs": actual_age,
+                expected = {k: v for k, v in wire[1].items() if k != "evaluatedAt"}
+                self.assertEqual(delivered, {**expected, "snapshotAgeMs": actual_age,
                                              "freshness": expected_freshness})
         wire[1] = {**response, "ignored": "x" * 65536}
         self.assertEqual(self.query(self.a), {"state": "unavailable"})
@@ -303,7 +380,10 @@ class NativeQuery(unittest.TestCase):
 
     def query_bound_snapshot(self):
         self.bind(self.a)
-        return self.query(self.a)["entitlement"]
+        request = Request(self.origin + "/v1/me/entitlement",
+                          headers={"Authorization": "Bearer test-A"})
+        with urlopen(request, timeout=5) as response:
+            return json.load(response)
 
 
 if __name__ == "__main__":
