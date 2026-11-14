@@ -1,5 +1,7 @@
 """Native macOS Access transport, session isolation and late response regressions."""
+from contextlib import closing
 import hashlib
+from http.client import HTTPConnection
 import json
 from pathlib import Path
 import sqlite3
@@ -10,7 +12,7 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -380,10 +382,13 @@ class NativeQuery(unittest.TestCase):
 
     def query_bound_snapshot(self):
         self.bind(self.a)
-        request = Request(self.origin + "/v1/me/entitlement",
-                          headers={"Authorization": "Bearer test-A"})
-        with urlopen(request, timeout=5) as response:
-            return json.load(response)
+        origin = urlsplit(self.origin)
+        self.assertEqual((origin.scheme, origin.hostname), ("http", "127.0.0.1"))
+        with closing(HTTPConnection("127.0.0.1", origin.port, timeout=5)) as client:
+            client.request("GET", "/v1/me/entitlement", headers={"Authorization": "Bearer test-A"})
+            with client.getresponse() as response:
+                self.assertEqual(response.status, 200)
+                return json.load(response)
 
 
 if __name__ == "__main__":

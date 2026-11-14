@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {mkdtempSync, readFileSync, readdirSync, rmSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import test from 'node:test';
+import {JSDOM} from 'jsdom';
 
 const requireCore = createRequire(new URL('../../../packages/core/package.json', import.meta.url));
 const ts = requireCore('typescript');
-const path = new URL('../overlay/chrome/browser/resources/settings/aegis_page/access_account_usage.ts', import.meta.url);
-const source = readFileSync(path, 'utf8');
+const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)),
+    '../overlay/chrome/browser/resources/settings/aegis_page/access_account_usage.ts'), 'utf8');
 const {outputText} = ts.transpileModule(source, {compilerOptions: {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
 }});
@@ -165,30 +166,26 @@ test('search-hidden view rejects a reply even before its visibility observer run
   refresh.setVisible(false);
 });
 
-test('snapshot render immediately qualifies stale/unknown data and ages visible expiry', async () => {
-  class Element {
-    textContent = '';
-    children = [];
-    parentElement = null;
-    replaceChildren() { this.children = []; }
-    append(item) { this.children.push(item); }
-    listeners = new Map();
-    addEventListener(type, fn) { this.listeners.set(type, fn); }
-    removeEventListener(type) { this.listeners.delete(type); }
-    getRootNode() { return {}; }
-  }
+test('snapshot render immediately qualifies stale/unknown data and ages visible expiry', async t => {
+  const dom = new JSDOM('<!doctype html><html lang="en"><main></main></html>',
+      {pretendToBeVisual: true});
+  t.after(() => dom.window.close());
+  const {document, HTMLElement, ShadowRoot, MutationObserver} = dom.window;
+  const root = document.querySelector('main');
+  let hidden = false;
+  Object.defineProperty(document, 'hidden', {get: () => hidden});
   for (const unknown of [false, true]) {
+    hidden = false;
     let now = 0;
     let interval;
-    const fields = Object.fromEntries(['heading', 'status', 'refresh', 'note', 'values', 'freshness']
-        .map(id => [id, new Element()]));
-    const root = new Element();
-    root.querySelector = selector => fields[selector.match(/data-usage="([^"]+)"/)[1]];
-    const doc = {documentElement: {lang: 'en'}, hidden: false,
-      createElement: () => new Element(), addEventListener() {}, removeEventListener() {}};
-    const ui = vm.createContext({exports: {}, document: doc,
-      performance: {now: () => now}, HTMLElement: Element, ShadowRoot: class {},
-      MutationObserver: class { observe() {} disconnect() {} },
+    const fields = Object.fromEntries(['heading', 'status', 'refresh', 'note', 'values', 'freshness'].map(id => {
+      const element = document.createElement(id === 'refresh' ? 'button' : 'div');
+      element.dataset.usage = id;
+      return [id, element];
+    }));
+    root.replaceChildren(...Object.values(fields));
+    const ui = vm.createContext({exports: {}, document,
+      performance: {now: () => now}, HTMLElement, ShadowRoot, MutationObserver,
       window: {setInterval: tick => { interval = tick; return 1; }, clearInterval() {}},
     });
     vm.runInContext(outputText, ui);
@@ -198,11 +195,12 @@ test('snapshot render immediately qualifies stale/unknown data and ages visible 
     if (unknown) Object.assign(reply.entitlement,
         {measuredAt: null, snapshotAgeMs: null, freshness: 'unavailable'});
     let networkReads = 0;
+    let finishQuery;
     const visibility = [];
     let observed = reply;
-    const cleanup = ui.exports.startAccessUsage(root, async () => observed, async () => {
+    const cleanup = ui.exports.startAccessUsage(root, async () => observed, () => {
       networkReads++;
-      return reply;
+      return new Promise(resolve => { finishQuery = () => resolve(reply); });
     }, value => visibility.push(value), () => true);
     await tick();
     assert.equal(fields.freshness.textContent, 'Measurement time unknown or usage stale');
@@ -212,26 +210,33 @@ test('snapshot render immediately qualifies stale/unknown data and ages visible 
     assert.equal(fields.status.textContent, 'Authorization expired');
     await tick();
     assert.equal(networkReads, 0);
-    await fields.refresh.listeners.get('click')();
+    fields.refresh.click();
+    assert.equal(fields.refresh.disabled, true);
+    fields.refresh.click();
     assert.equal(networkReads, 1);
+    finishQuery();
     await tick();
+    assert.equal(fields.refresh.disabled, false);
     observed = {...reply, state: 'unavailable', stale: true};
     interval();
     await tick();
     assert.equal(fields.status.textContent, 'Last result; current balance is unconfirmed');
     assert.equal(fields.freshness.textContent, '');
-    assert.ok(fields.values.children.some(row => row.textContent ===
+    assert.ok(Array.from(fields.values.children).some(row => row.textContent ===
         'Remaining · 1.00 KiB (1024 B)'));
     observed = {state: 'superseded'};
     interval();
     await tick();
     assert.equal(fields.values.children.length, 0);
-    doc.hidden = true;
+    hidden = true;
     interval();
     await tick();
     assert.deepEqual(visibility, [true, false]);
     assert.equal(fields.values.children.length, 0);
     cleanup();
+    hidden = false;
+    fields.refresh.click();
+    assert.equal(networkReads, 1);
   }
 });
 
@@ -239,10 +244,18 @@ test('snapshot render immediately qualifies stale/unknown data and ages visible 
 // Packing fields for pure view helpers does not emulate native validation,
 // network timing or a Browser/Profile acceptance run.
 let serviceResponses;
-const runFixture = ({timeout = 10000, stall = false, onDirectory = () => {}} = {}) => {
-  const directory = mkdtempSync(join(tmpdir(), 'aegis-usage-wire-parent-'));
+function withFixtureWorkspace(run) {
+  const workspace = mkdtempSync(join(tmpdir(), 'aegis-usage-wire-workspace-'));
   try {
-    onDirectory(directory);
+    return run(workspace);
+  } finally {
+    rmSync(workspace, {recursive: true, force: true});
+  }
+}
+
+const runFixture = (workspace, {timeout = 10000, stall = false} = {}) => {
+  const directory = mkdtempSync(join(workspace, 'fixture-'));
+  try {
     const args = ['-B', fileURLToPath(new URL('../tests/access-account/usage_fixture.py', import.meta.url)), directory];
     if (stall) args.push('--stall-after-store');
     return JSON.parse(execFileSync('python3', args, {encoding: 'utf8', timeout, killSignal: 'SIGKILL'}));
@@ -252,7 +265,7 @@ const runFixture = ({timeout = 10000, stall = false, onDirectory = () => {}} = {
     rmSync(directory, {recursive: true, force: true});
   }
 };
-const wire = () => serviceResponses ??= runFixture();
+const wire = () => serviceResponses ??= withFixtureWorkspace(workspace => runFixture(workspace));
 const fromWire = record => {
   assert.equal(record.status, 200);
   assert.equal(record.cacheControl, 'no-store');
@@ -301,11 +314,13 @@ test('real service unknown measurement retains bytes without substituting receip
 });
 
 test('fixture timeout cleans the parent-owned directory after the real store was created', () => {
-  let directory;
-  assert.throws(() => runFixture({timeout: 2500, stall: true, onDirectory: value => { directory = value; }}), error => {
-    assert.equal(error.code, 'ETIMEDOUT');
-    assert.match(String(error.stdout), /fixture-store-created/);
-    return true;
+  withFixtureWorkspace(workspace => {
+    assert.throws(() => runFixture(workspace, {timeout: 2500, stall: true}), error => {
+      assert.equal(error.code, 'ETIMEDOUT');
+      assert.match(String(error.stdout), /fixture-store-created/);
+      return true;
+    });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Inspect only this test's freshly created workspace.
+    assert.deepEqual(readdirSync(workspace), []);
   });
-  assert.equal(existsSync(directory), false);
 });

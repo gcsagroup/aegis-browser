@@ -4,8 +4,9 @@ Uses only an isolated SQLite store. It neither invokes the native client nor
 contacts a panel, browser, production account or proxy node.
 """
 
-import hashlib
 from contextlib import closing
+import hashlib
+from http.client import HTTPConnection
 import json
 from pathlib import Path
 import secrets
@@ -13,7 +14,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
-import urllib.request
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
@@ -43,21 +44,22 @@ def responses(parent_directory, stall_after_store=False):
             if stall_after_store:
                 print("fixture-store-created", flush=True)
                 threading.Event().wait()
-            server = create_server(database, clock_ms=lambda: clock[0])
+            # HTTPServer resolves its bind address for a display name that this
+            # numeric loopback fixture does not use. Keep runner DNS out of it.
+            with patch("http.server.socket.getfqdn", return_value="127.0.0.1"):
+                server = create_server(database, clock_ms=lambda: clock[0])
             worker = threading.Thread(target=server.serve_forever,
                                       kwargs={"poll_interval": .01}, daemon=True)
             worker.start()
             try:
-                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
                 def read(who="A"):
-                    request = urllib.request.Request(
-                        "http://127.0.0.1:" + str(server.server_address[1]) + "/v1/me/entitlement",
-                        headers={"Authorization": "Bearer " + tokens[who]})
-                    with opener.open(request, timeout=3) as reply:
-                        return {"status": reply.status,
-                                "cacheControl": reply.headers.get("Cache-Control"),
-                                "body": json.load(reply)}
+                    with closing(HTTPConnection("127.0.0.1", server.server_address[1], timeout=3)) as client:
+                        client.request("GET", "/v1/me/entitlement",
+                                       headers={"Authorization": "Bearer " + tokens[who]})
+                        with client.getresponse() as reply:
+                            return {"status": reply.status,
+                                    "cacheControl": reply.headers.get("Cache-Control"),
+                                    "body": json.load(reply)}
 
                 result = {"active": read(), "other": read("B"), "activeAgain": read()}
                 db.execute("UPDATE snapshots SET quota_bytes=?", (used - 1,))

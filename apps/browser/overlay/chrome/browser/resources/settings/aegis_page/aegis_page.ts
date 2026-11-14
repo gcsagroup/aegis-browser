@@ -76,7 +76,9 @@ export class SettingsAegisPageElement extends PolymerElement {
           () => this.isConnected && this.mode === 'home' &&
               usage.checkVisibility({checkVisibilityCSS: true}));
       // </if>
-      void this.initialize_().catch(error => this.message_(String(error)));
+      void this.initialize_().catch(error => {
+        this.message_(String(error));
+      });
     });
   }
   override disconnectedCallback() {

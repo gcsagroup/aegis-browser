@@ -29,16 +29,16 @@ export function formatUsageBytes(raw: string|null): string {
   if (raw === null || !/^(0|[1-9]\d*)$/.test(raw)) return '—';
   const bytes = BigInt(raw);
   if (bytes > 18446744073709551615n) return '—';
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
   let divisor = 1n;
-  let unit = 0;
-  while (unit < units.length - 1 && bytes / divisor >= 1024n) {
+  let unit = 'B';
+  for (const nextUnit of ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB']) {
+    if (bytes / divisor < 1024n) break;
     divisor *= 1024n;
-    ++unit;
+    unit = nextUnit;
   }
-  if (!unit) return `${raw} B`;
+  if (unit === 'B') return `${raw} B`;
   const fraction = ((bytes % divisor) * 100n / divisor).toString().padStart(2, '0');
-  return `${bytes / divisor}.${fraction} ${units[unit]} (${raw} B)`;
+  return `${bytes / divisor}.${fraction} ${unit} (${raw} B)`;
 }
 
 export function usageFreshness(
@@ -90,6 +90,11 @@ export class AccessUsageRefresh {
     if (this.visible_ && !this.isVisible_()) this.setVisible(false);
     return this.visible_ && generation === this.generation_;
   }
+  private refreshNewGeneration_(generation: number): void {
+    if (generation !== this.generation_ && this.current_(this.generation_)) {
+      void this.refresh();
+    }
+  }
   setVisible(visible: boolean) {
     if (visible === this.visible_) return;
     this.visible_ = visible;
@@ -126,7 +131,7 @@ export class AccessUsageRefresh {
       }
     } finally {
       this.inFlight_ = false;
-      if (this.visible_ && generation !== this.generation_) void this.refresh();
+      this.refreshNewGeneration_(generation);
     }
   }
 }
@@ -231,7 +236,7 @@ export function startAccessUsage(
   let visible = false;
   let manual = false;
   const button = root.querySelector<HTMLButtonElement>('[data-usage="refresh"]');
-  const onRefresh = async () => {
+  const queryUsage = async () => {
     if (!visibleNow() || manual) return;
     manual = true;
     if (button) button.disabled = true;
@@ -244,6 +249,9 @@ export function startAccessUsage(
       if (button) button.disabled = false;
       if (visibleNow()) void refresh.refresh();
     }
+  };
+  const onRefresh = () => {
+    void queryUsage();
   };
   button?.addEventListener('click', onRefresh);
   const tick = () => {
