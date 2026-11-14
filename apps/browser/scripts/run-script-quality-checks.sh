@@ -81,3 +81,4 @@ run_check 'fingerprint runtime verifier self-test' node ./scripts/verify-fingerp
 run_check 'miner runtime verifier syntax' node --check ./scripts/verify-miner-runtime.mjs
 run_check 'miner runtime verifier self-test' node ./scripts/verify-miner-runtime.mjs --self-test
 run_check 'multisite runtime verifier syntax' node --check ./scripts/verify-multisite-runtime.mjs
+run_check 'Access account usage view' node --test ./scripts/access-account-usage_test.mjs

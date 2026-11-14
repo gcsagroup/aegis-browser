@@ -70,6 +70,21 @@ TEST(AccessLocalCoreInputTest, BuildControlsPrivateInputSource) {
 #endif
 }
 
+TEST(AccessLocalCoreInputTest, ConfiguredNodeLabelMatchesEndpointOnly) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto path = directory.GetPath().AppendASCII("node.json");
+  constexpr char config[] = R"({"outbounds":[{"protocol":"vless",
+    "settings":{"vnext":[{"address":"TEST.invalid","port":443,
+    "users":[{"id":"credential-must-not-appear"}]}]},
+    "streamSettings":{"network":"tcp","security":"reality"}}]})";
+  ASSERT_TRUE(base::WriteFile(path, config));
+  const AccessLocalCoreInput input{base::FilePath(), path};
+  EXPECT_EQ(ReadConfiguredAccessNodeId(input), "0be6fae64ec1");
+  ASSERT_TRUE(base::WriteFile(path, R"({"outbounds":[{"protocol":"direct"}]})"));
+  EXPECT_TRUE(ReadConfiguredAccessNodeId(input).empty());
+}
+
 class AccessLocalCoreManagerTest : public testing::Test {
  protected:
   base::test::TaskEnvironment environment_;

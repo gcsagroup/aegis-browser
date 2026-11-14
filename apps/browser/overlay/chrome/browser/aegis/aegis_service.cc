@@ -492,6 +492,9 @@ AegisService::AegisService(Profile* profile)
     }
   }
 #endif
+#if BUILDFLAG(IS_MAC)
+  InitializeAccessAccountRefresh();
+#endif
   LOG(INFO) << "GCSA-aegis initialized for profile"
             << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
                                            : " (tracker blocking off)");
@@ -642,6 +645,9 @@ void AegisService::Shutdown() {
 }
 
 void AegisService::ShutdownForProfile() {
+#if BUILDFLAG(IS_MAC)
+  StopAccessAccountRefresh();
+#endif
   profile_observation_.Reset();
   incognito_profile_observations_.RemoveAllObservations();
   if (!initialized_) {

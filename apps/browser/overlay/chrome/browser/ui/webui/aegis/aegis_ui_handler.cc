@@ -342,6 +342,9 @@ base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
 
 AegisUIHandler::AegisUIHandler() = default;
 AegisUIHandler::~AegisUIHandler() {
+#if BUILDFLAG(IS_MAC)
+  OnJavascriptDisallowed();
+#endif
   if (active_model_request_id_) {
     if (aegis::AegisService* service = ServiceForWebUI()) {
       service->CancelModelSummaryRequest(*active_model_request_id_);
@@ -357,6 +360,14 @@ void AegisUIHandler::RegisterMessages() {
       "getStatus", base::BindRepeating(&AegisUIHandler::HandleGetStatus,
                                        base::Unretained(this)));
 #if BUILDFLAG(IS_MAC)
+  web_ui()->RegisterMessageCallback(
+      "getAccessAccountSnapshot",
+      base::BindRepeating(&AegisUIHandler::HandleGetAccessAccountSnapshot,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setAccessAccountUsageVisible",
+      base::BindRepeating(&AegisUIHandler::HandleSetAccessAccountUsageVisible,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "getCurrentAccessAccount", base::BindRepeating(&AegisUIHandler::HandleGetCurrentAccessAccount,
                                                      base::Unretained(this)));
@@ -586,12 +597,35 @@ void AegisUIHandler::HandleGetCurrentAccessAccount(const base::ListValue& args) 
       args[0].GetString()));
 }
 
+void AegisUIHandler::HandleGetAccessAccountSnapshot(const base::ListValue& args) {
+  if (args.size() != 1 || !args[0].is_string()) return;
+  AllowJavascript();
+  auto* service = ServiceForWebUI();
+  ResolveJavascriptCallback(args[0], service ? service->CurrentAccessAccountSnapshot()
+      : base::DictValue().Set("state", "unavailable"));
+}
+
+void AegisUIHandler::HandleSetAccessAccountUsageVisible(const base::ListValue& args) {
+  if (args.size() != 1 || !args[0].is_bool()) return;
+  auto* service = ServiceForWebUI();
+  if (!service) return;
+  AllowJavascript();
+  if (args[0].GetBool()) {
+    if (!access_usage_visibility_) {
+      access_usage_visibility_ = service->ObserveAccessAccountUsage();
+    }
+  } else {
+    access_usage_visibility_.RunAndReset();
+  }
+}
+
 void AegisUIHandler::OnAccessAccountStatus(std::string callback_id, base::DictValue account) {
   if (IsJavascriptAllowed())
     ResolveJavascriptCallback(base::Value(callback_id), account);
 }
 
 void AegisUIHandler::OnJavascriptDisallowed() {
+  access_usage_visibility_.RunAndReset();
   account_weak_factory_.InvalidateWeakPtrs();
 }
 #endif
