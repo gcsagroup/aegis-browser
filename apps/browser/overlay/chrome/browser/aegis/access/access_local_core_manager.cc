@@ -77,6 +77,45 @@ std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput() {
 #endif
 }
 namespace {
+
+const base::DictValue* SelectedOutbound(const base::DictValue& node) {
+  const auto* outbounds = node.FindList("outbounds");
+  if (!outbounds || outbounds->empty() || !outbounds->front().is_dict()) {
+    return nullptr;
+  }
+  const auto& outbound = outbounds->front().GetDict();
+  const auto* protocol = outbound.FindString("protocol");
+  const auto* transport = outbound.FindStringByDottedPath("streamSettings.network");
+  const auto* security = outbound.FindStringByDottedPath("streamSettings.security");
+  return protocol && *protocol == "vless" && transport && *transport == "tcp" &&
+                 security && *security == "reality" ? &outbound : nullptr;
+}
+
+}  // namespace
+
+std::string ReadConfiguredAccessNodeId(const AccessLocalCoreInput& input) {
+  std::string node_json;
+  if (!base::ReadFileToStringWithMaxSize(input.node_config, &node_json, 1024 * 1024)) {
+    return {};
+  }
+  auto node = base::JSONReader::ReadDict(node_json, base::JSON_PARSE_RFC);
+  const auto* outbound = node ? SelectedOutbound(*node) : nullptr;
+  const auto* servers = outbound ? outbound->FindListByDottedPath("settings.vnext") : nullptr;
+  if (!servers || servers->empty() || !servers->front().is_dict()) {
+    return {};
+  }
+  const auto& server = servers->front().GetDict();
+  const auto* address = server.FindString("address");
+  const int port = server.FindInt("port").value_or(0);
+  if (!address || address->empty() || port <= 0 || port > 65535) {
+    return {};
+  }
+  const auto label = base::ToLowerASCII(*address) + "\n" + base::NumberToString(port);
+  const auto digest = crypto::hash::Sha256(base::as_byte_span(label));
+  return base::HexEncodeLower(base::span(digest).first<6>());
+}
+
+namespace {
 constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
     "aegis_access_local_core_canary", R"(
       semantics {
@@ -297,14 +336,8 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     if (!binary.IsAbsolute() || !bytes ||
         base::HexEncodeLower(crypto::hash::Sha256(*bytes)) != *pin)
       return false;
-    const auto* outbounds = node->FindList("outbounds");
-    if (!outbounds || outbounds->empty() || !outbounds->front().is_dict()) return false;
-    const auto& outbound = outbounds->front().GetDict();
-    const auto* protocol = outbound.FindString("protocol");
-    const auto* transport = outbound.FindStringByDottedPath("streamSettings.network");
-    const auto* security = outbound.FindStringByDottedPath("streamSettings.security");
-    if (!protocol || *protocol != "vless" || !transport || *transport != "tcp" ||
-        !security || *security != "reality") return false;
+    const auto* outbound = SelectedOutbound(*node);
+    if (!outbound) return false;
     // The selected outbound is copied privately; no subscription, system
     // routing, original V2Ray process or original input file is changed.
     if (!directory_.CreateUniqueTempDir() ||
@@ -322,7 +355,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     std::string level = "none";
     protected_values_ = {user, password, registration_,
                          base::ToLowerASCII(base::Base64Encode(user + ":" + password))};
-    if (!CollectProtectedValues(outbounds->front(), protected_values_))
+    if (!CollectProtectedValues(base::Value(outbound->Clone()), protected_values_))
       return false;
     if (protected_values_.size() >= 256)
       protected_values_ = {""};  // A saturated budget suppresses every record.
@@ -338,7 +371,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
             .Set("listen", "127.0.0.1").Set("port", port_).Set("protocol", "http")
             .Set("settings", base::DictValue().Set("accounts", base::ListValue()
                 .Append(base::DictValue().Set("user", user).Set("pass", password))))))
-        .Set("outbounds", base::ListValue().Append(outbound.Clone()));
+        .Set("outbounds", base::ListValue().Append(outbound->Clone()));
     const auto config_path = directory_.GetPath().AppendASCII("config.json");
     std::string serialized;
     if (!base::JSONWriter::Write(config, &serialized)) return false;

@@ -493,3 +493,6 @@
 0493-fix-paid-site-test-transport-dependency.patch
 0494-fix-account-fence-client-disconnect.patch
 0495-fix-native310-direct-gn-dependencies.patch
+0496-feat-macos-access-quota-ui.patch
+0497-fix-access-settings-refresh-static-checks.patch
+0498-prepare-quota-security-candidate-314.patch

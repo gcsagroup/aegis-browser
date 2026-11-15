@@ -5,6 +5,7 @@
 
 #include <sys/stat.h>
 #include <algorithm>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -65,8 +66,9 @@ class SiteLease final : public base::SupportsUserData::Data {
     return in_flight_ ? AccountNodeStatus::kAcquiring : AccountNodeStatus::kUnavailable;
   }
   bool HasSites() const { return !sites_.empty(); }
-  void Toggle(const std::string& site) {
+  void Toggle(const std::string& site, base::OnceClosure on_assigned = {}) {
     if (sites_.erase(site)) {
+      on_assigned_.erase(site);
       Publish();
       if (sites_.empty()) Reset();
       return;
@@ -77,6 +79,7 @@ class SiteLease final : public base::SupportsUserData::Data {
                            (change_ && change_()))) Reset();
     sites_.insert(site);
     if (!Publish()) { sites_.erase(site); return; }
+    if (on_assigned) on_assigned_.emplace(site, std::move(on_assigned));
     if (!auth_.empty() || in_flight_) return;
     // An abandoned in-flight POST may arrive after a later off/on cycle. Give
     // the new authorization its own context so the old POST cannot rotate it.
@@ -142,6 +145,19 @@ class SiteLease final : public base::SupportsUserData::Data {
   void Check() {
     double now = NSDate.date.timeIntervalSince1970 * 1000;
     if (now >= expires_ || (change_ && change_())) { Reset(); Publish(); return; }
+    for (auto it = on_assigned_.begin(); it != on_assigned_.end();) {
+      if (it->second.IsCancelled()) {
+        it = on_assigned_.erase(it);
+      } else if (Status(it->first) == AccountNodeStatus::kAssigned) {
+        auto callback = on_assigned_.extract(it++);
+        // Navigation can re-enter Browser code. Run outside lease iteration;
+        // the callback still belongs only to the initiating tab/document.
+        std::move(callback.mapped()).Run();
+        return;
+      } else {
+        ++it;
+      }
+    }
     if (now < renew_ || in_flight_) return;
     in_flight_ = true;
     __block auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
@@ -162,6 +178,7 @@ class SiteLease final : public base::SupportsUserData::Data {
   void Reset() {
     weak_.InvalidateWeakPtrs();
     guard_.Stop();
+    on_assigned_.clear();
     if (revoke_) revoke_();
     revoke_ = nil;
     extend_ = nil;
@@ -172,6 +189,7 @@ class SiteLease final : public base::SupportsUserData::Data {
   }
   raw_ptr<Profile> profile_;
   std::set<std::string> sites_;
+  std::map<std::string, base::OnceClosure> on_assigned_;
   std::string host_, auth_;
   uint16_t port_ = 0;
   bool in_flight_ = false;
@@ -206,10 +224,12 @@ void DisableAccountNodeSite(Profile* profile, const std::string& site) {
   auto* lease = static_cast<SiteLease*>(profile->GetUserData(kLeaseKey));
   if (lease && lease->Status(site) != AccountNodeStatus::kOff) lease->Toggle(site);
 }
-void ToggleAccountNodeSite(Profile* profile, const std::string& site) {
+void ToggleAccountNodeSite(Profile* profile, const std::string& site,
+                           base::OnceClosure on_assigned) {
   if (!aegis::IsAegisProfileSupported(profile) || site.empty()) return;
   if (!profile->GetUserData(kLeaseKey))
     profile->SetUserData(kLeaseKey, std::make_unique<SiteLease>(profile));
-  static_cast<SiteLease*>(profile->GetUserData(kLeaseKey))->Toggle(site);
+  static_cast<SiteLease*>(profile->GetUserData(kLeaseKey))->Toggle(
+      site, std::move(on_assigned));
 }
 }  // namespace aegis::access

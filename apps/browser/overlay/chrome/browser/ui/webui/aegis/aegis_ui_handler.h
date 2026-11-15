@@ -97,6 +97,8 @@ class AegisUIHandler : public content::WebUIMessageHandler,
                         aegis::MetalinkParseResult result);
 #if BUILDFLAG(IS_MAC)
   void HandleGetCurrentAccessAccount(const base::ListValue& args);
+  void HandleGetAccessAccountSnapshot(const base::ListValue& args);
+  void HandleSetAccessAccountUsageVisible(const base::ListValue& args);
   void OnAccessAccountStatus(std::string callback_id, base::DictValue account);
   void OnJavascriptDisallowed() override;
   void OnTorrentValidated(std::string callback_id,
@@ -151,6 +153,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
       service_observation_{this};
 
 #if BUILDFLAG(IS_MAC)
+  base::ScopedClosureRunner access_usage_visibility_;
   base::WeakPtrFactory<AegisUIHandler> account_weak_factory_{this};
 #endif
   base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};

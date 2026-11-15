@@ -451,7 +451,7 @@
         "AccessSiteProxySessionTest.*",
         "AccessSiteProxyBubbleModelTest.*"
       ],
-      "additionalChecks": "按docs/plans/macos-access-phase1-evidence-NOTES.md完成同候选开启、加载、故障、恢复、关闭五步实操；不能把直连成功当成代理成功。Android保持其原独立实现。"
+      "additionalChecks": "按docs/plans/macos-access-phase1-evidence-NOTES.md完成同候选开启、加载、故障、恢复、关闭五步实操；不能把直连成功当成代理成功。Android保持其原独立实现。 开启代理成功后原网址重载一次；开启失败、手动停止、导航改变时不得误重载。"
     },
     {
       "id": "mac-access-account",
@@ -459,12 +459,16 @@
       "platforms": [
         "mac-arm64"
       ],
-      "additionalChecks": "执行python3 apps/browser/tests/access-account/test_mac.py的真实Foundation通信回归，并在本次App实操切换资料、账户及登出；本地测试服务不是生产账户接入证明。 本次账户指定节点须验证真实 Chromium CONNECT、租约续期中的下载、拒绝续期与登出中止，并拒绝本地直连规则替换账户路由。",
+      "additionalChecks": "执行python3 apps/browser/tests/access-account/test_mac.py的真实Foundation通信回归，并在本次App实操切换资料、账户及登出；本地测试服务不是生产账户接入证明。 本次账户指定节点须验证真实 Chromium CONNECT、租约续期中的下载、拒绝续期与登出中止，并拒绝本地直连规则替换账户路由。 额度显示保留超过JavaScript安全整数的精确字节；验证隐藏/重开、资料切换、错误清空、刷新去重和过期倒计时，不得把旧账户或旧观察值显示为新鲜数据。",
       "testFilters": [
-        "PaidSiteMac.*"
+        "PaidSiteMac.*",
+        "AccessAccountRefreshTest.*"
       ],
       "nativeTargets": [
         "aegis_browser_unittests"
+      ],
+      "sourceRegressionTests": [
+        "apps/browser/scripts/access-account-usage_test.mjs"
       ]
     },
     {
