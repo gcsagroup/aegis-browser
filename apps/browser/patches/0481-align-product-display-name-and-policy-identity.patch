@@ -1,6 +1,6 @@
-From aa9cbadea8dae04e859048804c207915ea331d45 Mon Sep 17 00:00:00 2001
+From d08d0090ad2602509a19fddb13af9f152146a53d Mon Sep 17 00:00:00 2001
 From: Aegis Browser <devnull@localhost>
-Date: Mon, 16 Nov 2026 03:06:26 +0800
+Date: Mon, 16 Nov 2026 05:04:00 +0800
 Subject: [PATCH] fix(branding): align visible product names and preserve
  Chinese translations
 
@@ -9,6 +9,7 @@ Subject: [PATCH] fix(branding): align visible product names and preserve
  .../app/resources/chromium_strings_zh-CN.xtb  |  58 ++++-----
  .../app/resources/chromium_strings_zh-HK.xtb  |  58 ++++-----
  .../app/resources/chromium_strings_zh-TW.xtb  |  58 ++++-----
+ chrome/app/settings_strings.grdp              |   4 +-
  chrome/app/theme/gcsa_aegis/BRANDING          |   8 +-
  chrome/app/theme/gcsa_aegis/product_logo.svg  |   2 +-
  .../gcsa_aegis/product_logo_animation.svg     |   4 +-
@@ -35,7 +36,7 @@ Subject: [PATCH] fix(branding): align visible product names and preserve
  .../version/resources/about_version.html      |   4 +-
  .../webui/version/resources/product_logo.svg  |   2 +-
  third_party/aegis_libtorrent/SOURCE_OFFER.txt |   2 +-
- 30 files changed, 253 insertions(+), 246 deletions(-)
+ 31 files changed, 255 insertions(+), 248 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
 index b7f56284d8791ab7fe69a9b2fc4c6603bb0a83ab..13ce4d1259b5d0d9c28b8da5ffb3c458d77ae02d 100644
@@ -700,6 +701,21 @@ index edb717508dcdd46952e9453fd51e0787ec826a06..a6822607a6dca77cf7c248f53c49e9ee
  <translation id="3021625366901643453">未配置 Google API 金鑰，部分 Google 服務整合暫不可用。</translation>
  </translationbundle>
 \ No newline at end of file
+diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
+index 77a8918734558214dbd292d81419dc6dc9694410..0fb0a731daf3e377abb5e5368bb5092e390f03ce 100644
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -1372,8 +1372,8 @@
+     </message>
+ 
+     <!-- Privacy Page -->
+-    <message name="IDS_AEGIS_SETTINGS_MENU" desc="Menu item that opens chrome://aegis privacy modules.">
+-      GCSA Aegis
++    <message name="IDS_AEGIS_SETTINGS_MENU" desc="Menu item that opens chrome://aegis privacy modules." translateable="false">
++      Aegis Browser
+     </message>
+     <message name="IDS_AEGIS_SETTINGS_ROW_LABEL" desc="Label of the row on the Privacy and security settings page that opens chrome://aegis.">
+       Protection center
 diff --git a/chrome/app/theme/gcsa_aegis/BRANDING b/chrome/app/theme/gcsa_aegis/BRANDING
 index dfebe2211b3594ef813399d73355509976c0140e..b2f88bfff9d526a024c39fdddf232947d79acf29 100644
 --- a/chrome/app/theme/gcsa_aegis/BRANDING

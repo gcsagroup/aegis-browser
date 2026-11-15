@@ -1,4 +1,4 @@
-"""Generate and read password-dialog .pak resources using Chromium's real GRIT."""
+"""Read password-dialog and native menu resources using Chromium's real GRIT."""
 
 import argparse
 import copy
@@ -11,12 +11,17 @@ import xml.etree.ElementTree as ET
 MESSAGES = (
     "IDS_PASSWORD_MANAGER_IMPORT_DIALOG_TITLE",
     "IDS_PASSWORD_MANAGER_EXPORT_DIALOG_TITLE",
+    "IDS_AEGIS_SETTINGS_MENU",
 )
 EXPECTED = {
-    "en": ("Import Passwords To Aegis Browser", "Export Passwords From Aegis Browser"),
-    "zh-CN": ("将密码导入 Aegis Browser", "从 Aegis Browser 导出密码"),
-    "zh-HK": ("匯入密碼至 Aegis Browser", "從 Aegis Browser 匯出密碼"),
-    "zh-TW": ("將密碼匯入 Aegis Browser", "從 Aegis Browser 匯出密碼"),
+    "en": (
+        "Import Passwords To Aegis Browser",
+        "Export Passwords From Aegis Browser",
+        "Aegis Browser",
+    ),
+    "zh-CN": ("将密码导入 Aegis Browser", "从 Aegis Browser 导出密码", "Aegis Browser"),
+    "zh-HK": ("匯入密碼至 Aegis Browser", "從 Aegis Browser 匯出密碼", "Aegis Browser"),
+    "zh-TW": ("將密碼匯入 Aegis Browser", "從 Aegis Browser 匯出密碼", "Aegis Browser"),
 }
 
 
@@ -32,8 +37,10 @@ def main():
 
     app = args.src / "chrome/app"
     source = ET.parse(app / "chromium_strings.grd").getroot()
-    # Retain the actual production messages and translation paths. Isolating
-    # these desktop dialogs avoids unrelated feature flags and resource IDs.
+    settings = ET.parse(app / "settings_strings.grdp").getroot()
+    # Retain production messages and translation paths. Isolating these desktop
+    # labels avoids unrelated feature flags and resource IDs. The native menu
+    # uses the product's untranslated proper name from settings_strings.grdp.
     fixture = ET.Element("grit", {
         "base_dir": ".", "latest_public_release": "0",
         "current_release": "1", "source_lang_id": "en",
@@ -55,7 +62,8 @@ def main():
         "messages", dict(production_messages.attrib),
     )
     for name in MESSAGES:
-        matches = [node for node in source.iter("message") if node.get("name") == name]
+        matches = [node for document in (source, settings)
+                   for node in document.iter("message") if node.get("name") == name]
         if len(matches) != 1:
             raise AssertionError(f"Expected one production definition for {name}")
         messages.append(copy.deepcopy(matches[0]))
@@ -73,7 +81,7 @@ def main():
             actual = resources[root.GetIdMap()[name]].decode("utf-8")
             if actual != text:
                 raise AssertionError(f"{lang} {name}: {actual!r} != {text!r}")
-    print("PASS: 8 password import/export strings in GRIT-generated language packs")
+    print("PASS: 12 password import/export and native menu strings in GRIT-generated language packs")
 
 
 if __name__ == "__main__":
