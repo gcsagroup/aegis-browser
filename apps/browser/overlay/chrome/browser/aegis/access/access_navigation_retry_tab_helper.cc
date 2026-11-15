@@ -3,11 +3,13 @@
 #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "components/error_page/content/browser/net_error_auto_reloader.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/page_type.h"
@@ -67,6 +69,65 @@ base::OnceClosure AccessNavigationRetryTabHelper::CaptureRouteReadyCallback() {
                         weak_factory_.GetWeakPtr(), *ticket, entry_id);
 }
 
+const content::NavigationEntry*
+AccessNavigationRetryTabHelper::ReloadableSiteEntry() const {
+  auto* tab = web_contents();
+  if (!committed_safe_get_ || !tab || tab->IsBeingDestroyed() ||
+      tab->GetVisibility() != content::Visibility::VISIBLE ||
+      tab->HasUncommittedNavigationInPrimaryMainFrame()) {
+    return nullptr;
+  }
+  auto& controller = tab->GetController();
+  const auto* entry = controller.GetLastCommittedEntry();
+  return !controller.GetPendingEntry() && entry &&
+                 entry->GetPageType() == content::PAGE_TYPE_NORMAL &&
+                 !entry->GetHasPostData() && entry->GetURL().SchemeIsHTTPOrHTTPS() &&
+                 !entry->GetURL().has_username() && !entry->GetURL().has_password()
+             ? entry : nullptr;
+}
+
+base::OnceClosure AccessNavigationRetryTabHelper::CaptureSiteProxyReload() {
+  const auto* entry = ReloadableSiteEntry();
+  if (!entry || preparing_site_reload_) return {};
+  auto completion = base::BindOnce(
+      &AccessNavigationRetryTabHelper::FinishSiteProxyReload,
+      site_reload_weak_.GetWeakPtr(), entry->GetUniqueID(), entry->GetURL());
+  // A rejected or superseded publication drops its closure. Clear the Stop
+  // state in that case as well as on a successful route installation.
+  auto callbacks = base::SplitOnceCallback(std::move(completion));
+  auto reload = base::BindOnce(
+      [](base::OnceCallback<void(bool)> complete,
+         base::ScopedClosureRunner abandon) {
+        (void)abandon.Release();
+        std::move(complete).Run(true);
+      }, std::move(callbacks.first),
+      base::ScopedClosureRunner(base::BindOnce(std::move(callbacks.second), false)));
+  preparing_site_reload_ = true;
+  UpdateStopControl();
+  return reload;
+}
+
+void AccessNavigationRetryTabHelper::FinishSiteProxyReload(
+    int entry_id, const GURL& url, bool ready) {
+  CancelSiteProxyReload();
+  if (!ready) return;
+  const auto* current = ReloadableSiteEntry();
+  if (!current || current->GetUniqueID() != entry_id || current->GetURL() != url) {
+    return;
+  }
+  // The controller reloads the committed entry and preserves its history.
+  // Bypass the original cache so the request exercises the new route.
+  web_contents()->GetController().Reload(content::ReloadType::BYPASSING_CACHE,
+                                          /*check_for_repost=*/true);
+}
+
+void AccessNavigationRetryTabHelper::CancelSiteProxyReload() {
+  site_reload_weak_.InvalidateWeakPtrs();
+  if (!preparing_site_reload_) return;
+  preparing_site_reload_ = false;
+  UpdateStopControl();
+}
+
 void AccessNavigationRetryTabHelper::SetProxyRetryHandler(ProxyRetryHandler handler) {
   proxy_retry_handler_ = std::move(handler);
 }
@@ -108,6 +169,7 @@ void AccessNavigationRetryTabHelper::OnProxyPrepared(
 
 void AccessNavigationRetryTabHelper::CancelPendingPreparation() {
   weak_factory_.InvalidateWeakPtrs();
+  CancelSiteProxyReload();
   // Stop can leave the same error document and its Mojo reply pipe alive.
   if (pending_retry_reply_) {
     auto reply = std::move(pending_retry_reply_);
@@ -137,6 +199,11 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
     content::NavigationHandle* navigation) {
   if (!navigation->IsInPrimaryMainFrame()) {
     return;
+  }
+  if (navigation->HasCommitted() && !navigation->IsSameDocument()) {
+    committed_safe_get_ = !navigation->IsErrorPage() &&
+                          !navigation->IsPageActivation() &&
+                          navigation->GetRequestMethod() == "GET";
   }
   const auto& redirects = navigation->GetRedirectChain();
   const bool recorded = state_.RecordFailure(
@@ -169,6 +236,13 @@ void AccessNavigationRetryTabHelper::NavigationStopped() {
     state_.BeginNavigation(0);
   }
   CancelPendingPreparation();
+}
+
+void AccessNavigationRetryTabHelper::OnVisibilityChanged(
+    content::Visibility visibility) {
+  if (visibility == content::Visibility::HIDDEN) {
+    CancelSiteProxyReload();
+  }
 }
 
 void AccessNavigationRetryTabHelper::OnRouteReady(

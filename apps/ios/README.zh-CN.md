@@ -71,6 +71,8 @@ bash apps/ios/scripts/run-simulator-tests.sh \
 
 执行时自动递增 `project.yml` 中的构建号并重新生成工程。版本展示采用 `Ver 6.0 (构建号)`。构建目录固定为仓库同级的 `GCSA-aegis-build/ios/DerivedData`，App 固定为该目录下 `Build/Products/Debug-iphonesimulator/Aegis.app`。每次日志与 `.xcresult` 使用新的证据目录；不覆盖旧证据，不擦除或删除模拟设备。
 
+输入哈希覆盖 `apps/ios`、`packages/core` 以及 iOS 工程引用的浏览器 `enhancements_shared` 资源，分别保留原始源码、工程生成后的构建输入及测试后的清单。元数据记录原始 Git 状态和工程生成后的状态。测试前核对 App 的 `CFBundleVersion` 与本次递增的构建号，Swift coverage 报告也记录该构建号。
+
 脚本复用 `Aegis QA iPhone 17` 和 `Aegis QA iPad Air 11-inch (M4)`。本机验收服务仅监听 `127.0.0.1:8768`，网页、文件和模型回答都是明确的合成资料。真实 HTTP、WebKit 和文件操作用于验证链路；合成模型通过不代表远端模型质量通过。脚本自动启动并关闭自己创建的服务，已有的同类服务会复用。
 
 手动体验合成网页与模型链路：

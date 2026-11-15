@@ -18,6 +18,7 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     private let queue: DispatchQueue
     private let gate = Mutex(State())
     private let tunnels: any AccessHTTPTunnelOpening
+    private let maximumConnections: Int
 
     private struct State {
         var admissionSummary = ""
@@ -31,12 +32,13 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         var bridges: [ObjectIdentifier: AccessHTTPTunnelBridge] = [:]
     }
 
-    public init(registration: AccessRegistration, tunnels: any AccessHTTPTunnelOpening) throws {
+    public init(registration: AccessRegistration, tunnels: any AccessHTTPTunnelOpening, maximumConnections: Int = 128) throws {
         guard registration.transport == .http else {
             throw AccessHTTPInboundError.transportNotHTTP(registration.transport)
         }
         self.registration = registration
         self.tunnels = tunnels
+        self.maximumConnections = max(1, maximumConnections)
         self.queue = DispatchQueue(label: "accesskit.http.inbound.\(registration.id.rawValue)")
     }
 
@@ -61,6 +63,13 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     public var admissionSummary: String {
         gate.withLock { $0.admissionSummary }
     }
+
+    // Used by churn tests to verify ownership, independently of allocator caching.
+    var retainedResourceCounts: (connections: Int, sessions: Int, bridges: Int) {
+        gate.withLock { ($0.openConnections.count, $0.sessions.count, $0.bridges.count) }
+    }
+
+    var acceptedConnectionObserverForTests: (@Sendable (NWConnection) -> Void)?
 
     /// Starts listening on the registration endpoint when the lease is active.
     public func start(at now: Date = Date()) async throws {
@@ -93,8 +102,9 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
             throw AccessHTTPInboundError.bindFailed(String(describing: error))
         }
 
-        nwListener.newConnectionHandler = { [weak self] connection in
-            self?.accept(connection)
+        nwListener.newConnectionHandler = { [weak self, weak nwListener] connection in
+            guard let self, let nwListener else { connection.cancel(); return }
+            self.accept(connection, from: nwListener)
         }
 
         let installed = gate.withLock { state -> Bool in
@@ -159,14 +169,19 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         }
     }
 
-    private func accept(_ connection: NWConnection) {
-        gate.withLock { state in
+    private func accept(_ connection: NWConnection, from listener: NWListener) {
+        let admitted = gate.withLock { state in
+            guard state.listener === listener, !state.listenerFailed,
+                  state.openConnections.count < maximumConnections else { return false }
             state.acceptedConnections &+= 1
             state.openConnections.append(connection)
+            return true
         }
+        guard admitted else { connection.cancel(); return }
+        acceptedConnectionObserverForTests?(connection)
 
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
+        connection.stateUpdateHandler = { [weak self, weak connection] state in
+            guard let self, let connection else { return }
             switch state {
             case .failed, .cancelled:
                 let bridge: AccessHTTPTunnelBridge? = self.gate.withLock { gateState in
@@ -175,29 +190,38 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
                     return gateState.bridges.removeValue(forKey: ObjectIdentifier(connection))
                 }
                 bridge?.stop()
+                connection.stateUpdateHandler = nil
+                connection.cancel()
             default:
                 break
             }
         }
         connection.start(queue: queue)
 
-        let session = AccessHTTPConnectSession(connection: connection, queue: queue) { [weak self] outcome in
-            guard let self else { return }
+        let session = AccessHTTPConnectSession(connection: connection, queue: queue) { [weak self, weak connection, weak listener] outcome in
+            guard let self, let connection, let listener else { return }
             guard case let .established(request, remainder) = outcome else {
                 self.gate.withLock { $0.admissionSummary = "rejected" }
                 return
             }
-            self.gate.withLock {
-                $0.admissionSummary = "established \(request.authority) remainder \(remainder.count)"
-            }
             let bridge = AccessHTTPTunnelBridge(client: connection, queue: self.queue, opener: self.tunnels)
-            self.gate.withLock { state in
+            let installed = self.gate.withLock { state in
+                guard state.listener === listener, state.openConnections.contains(where: { $0 === connection }) else { return false }
+                state.admissionSummary = "established \(request.authority) remainder \(remainder.count)"
+                state.sessions.removeValue(forKey: ObjectIdentifier(connection))
                 state.establishedConnects &+= 1
                 state.bridges[ObjectIdentifier(connection)] = bridge
+                return true
             }
+            guard installed else { bridge.stop(); return }
             bridge.start(host: request.host, port: request.port, prelude: remainder)
         }
-        gate.withLock { $0.sessions[ObjectIdentifier(connection)] = session }
+        let installed = gate.withLock { state in
+            guard state.listener === listener, state.openConnections.contains(where: { $0 === connection }) else { return false }
+            state.sessions[ObjectIdentifier(connection)] = session
+            return true
+        }
+        guard installed else { connection.cancel(); return }
         session.start()
     }
 }

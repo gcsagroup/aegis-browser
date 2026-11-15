@@ -39,8 +39,7 @@ public enum AccessEmbeddedProxyEntryFactory {
             }
             let local = try AccessLocalV2RayConfigLoader.load(path: configPath)
             let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: local.parameters)
-            let configData = try outbound.embeddedInstanceJSONData()
-            let session = AccessEmbeddedProxyEntrySession(core: core, configData: configData)
+            let session = AccessEmbeddedProxyEntrySession(core: core, outbound: outbound)
             return AccessProxyEntryPublisher(
                 provision: { generation, deadline in
                     try await session.provision(generation: generation, deadline: deadline)
@@ -74,15 +73,16 @@ public enum AccessEmbeddedProxyEntryFactory {
 @MainActor
 final class AccessEmbeddedProxyEntrySession {
     private let core: any AccessEmbeddedCoreControlling
-    private let configData: Data
+    private let outbound: AccessRealityVisionOutboundConfig
     private var listener: AccessHTTPInboundListener?
     private var identity: String?
     private var startedCore = false
     private var pendingStop: Task<Void, Never>?
+    private var logCapture: AccessDiagnosticLog.Capture?
 
-    init(core: any AccessEmbeddedCoreControlling, configData: Data) {
+    init(core: any AccessEmbeddedCoreControlling, outbound: AccessRealityVisionOutboundConfig) {
         self.core = core
-        self.configData = configData
+        self.outbound = outbound
     }
 
     func provision(generation: UInt64, deadline: Duration) async throws -> AccessProxyEntryPublisher.Provision {
@@ -111,8 +111,13 @@ final class AccessEmbeddedProxyEntrySession {
 
         if !core.isRunning {
             do {
-                try await core.start(configData: configData)
+                logCapture = try await Self.startCoreWithDiagnostics(
+                    core: core, outbound: outbound, diagnostics: .shared,
+                    level: AccessDiagnosticLog.selectedLevel()
+                )
             } catch {
+                if let logCapture { AccessDiagnosticLog.shared.stop(capture: logCapture) }
+                logCapture = nil
                 throw AccessSiteSessionError.prepareFailed("core.start: \(error)")
             }
             startedCore = true
@@ -172,6 +177,38 @@ final class AccessEmbeddedProxyEntrySession {
         )
     }
 
+    /// Retries only a recognized Xray log-initialization failure with the same
+    /// outbound and quiet logging; ordinary core failures are never hidden.
+    static func startCoreWithDiagnostics(
+        core: any AccessEmbeddedCoreControlling,
+        outbound: AccessRealityVisionOutboundConfig,
+        diagnostics: AccessDiagnosticLog,
+        level: AccessLogLevel
+    ) async throws -> AccessDiagnosticLog.Capture? {
+        let parameters = outbound.parameters
+        let capture = try? diagnostics.start(
+            level: level, secrets: [parameters.userID, parameters.publicKey, parameters.shortID]
+        )
+        if level != .none && capture == nil { diagnostics.markUnavailable() }
+        do {
+            let config = try outbound.embeddedInstanceJSONData(
+                logLevel: capture == nil ? .none : level,
+                errorLogPath: capture?.path, includeAccessLog: true
+            )
+            try await core.start(configData: config)
+            return capture
+        } catch {
+            if let capture { diagnostics.stop(capture: capture) }
+            let text = (error as NSError).localizedDescription
+            let loggerFailure = text.contains("failed to initialize access logger") ||
+                text.contains("failed to initialize error logger")
+            guard capture != nil, !core.isRunning, loggerFailure else { throw error }
+            diagnostics.markUnavailable()
+            try await core.start(configData: outbound.embeddedInstanceJSONData())
+            return nil
+        }
+    }
+
     var isRuntimeHealthy: Bool {
         guard let listener, identity != nil else { return false }
         return listener.isListening && core.isRunning
@@ -186,8 +223,13 @@ final class AccessEmbeddedProxyEntrySession {
         self.identity = nil
         if startedCore {
             startedCore = false
+            let capture = logCapture
+            logCapture = nil
             // Publisher shutdown is synchronous; stop the core without blocking callers.
-            pendingStop = Task { await core.stop() }
+            pendingStop = Task {
+                await core.stop()
+                if let capture { AccessDiagnosticLog.shared.stop(capture: capture) }
+            }
         }
     }
 

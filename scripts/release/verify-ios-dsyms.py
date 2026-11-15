@@ -7,6 +7,8 @@ import plistlib
 import re
 import subprocess
 import zipfile
+import stat
+import tempfile
 
 TARGETS = {'Aegis.app': 'com.gcsa.aegis',
            'Aegis.app/PlugIns/SafariWebExtension.appex': 'com.gcsa.aegis.safari',
@@ -52,6 +54,40 @@ def export_zip(archive, destination):
                 raise ValueError('dSYM symlink refused')
             if path.is_file():
                 output.write(path, str(path.relative_to(root)))
+
+
+def verify_delivered(ipa, symbols, version, build):
+    """Compare all architectures in the downloaded IPA with the original dSYM ZIP."""
+    with tempfile.TemporaryDirectory(prefix='aegis-delivered-symbols-') as temporary:
+        root = Path(temporary)
+        for source, destination in [(ipa, root / 'ipa'), (symbols, root / 'symbols')]:
+            with zipfile.ZipFile(source) as zipped:
+                rows = zipped.infolist()
+                names = [row.filename.rstrip('/') for row in rows]
+                if (not rows or len(rows) > 100000 or len({name.casefold() for name in names}) != len(names)
+                        or sum(row.file_size for row in rows) > 4 * 1024**3):
+                    raise ValueError('Invalid delivered ZIP size or duplicate path')
+                for row, name in zip(rows, names):
+                    if (Path(name).is_absolute() or '\\' in name or not name
+                            or any(part in ('', '.', '..') for part in name.split('/'))
+                            or stat.S_IFMT(row.external_attr >> 16) not in (0, stat.S_IFREG, stat.S_IFDIR)):
+                        raise ValueError('Unsafe delivered ZIP entry')
+                zipped.extractall(destination)
+        checked = []
+        for relative, identifier in TARGETS.items():
+            bundle = root / 'ipa/Payload' / relative
+            info = plistlib.loads((bundle / 'Info.plist').read_bytes())
+            if (info.get('CFBundleIdentifier'), info.get('CFBundleShortVersionString'), info.get('CFBundleVersion')) != (identifier, version, build):
+                raise ValueError('Delivered dSYM identity differs')
+            name = info['CFBundleExecutable']
+            if not isinstance(name, str) or Path(name).name != name or name in ('.', '..'):
+                raise ValueError('Unsafe delivered executable')
+            symbol = root / 'symbols' / (bundle.name + '.dSYM') / 'Contents/Resources/DWARF' / name
+            binaries, dwarfs = uuids(bundle / name), uuids(symbol)
+            if binaries != dwarfs or not any(arch == 'arm64' for arch, _ in binaries):
+                raise ValueError('Delivered IPA/dSYM UUID differs: ' + identifier)
+            checked.append({'applicationId': identifier, 'uuids': binaries})
+        return {'downloadedIpaVerified': True, 'bundles': checked}
 
 
 if __name__ == '__main__':

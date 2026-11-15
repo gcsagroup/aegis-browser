@@ -3,10 +3,12 @@ import QuickLook
 import SwiftUI
 
 struct DownloadsView: View {
+    @EnvironmentObject private var accountSession: AccessAccountSession
     @EnvironmentObject private var downloads: DownloadManager
     @EnvironmentObject private var browser: BrowserSession
     @Environment(\.dismiss) private var dismiss
     var initialURL: URL?
+    var protectedContext: BrowserAccessDownload?
     @State private var address = ""
     @State private var expectedHash = ""
     @State private var mirrorAddresses = ""
@@ -218,8 +220,22 @@ struct DownloadsView: View {
     }
 
     private func start(_ plan: DownloadPlan) {
-        do { _ = try downloads.start(plan); importedPlan = nil; error = nil }
-        catch { self.error = .error(error) }
+        let captured = protectedContext
+        if captured != nil, plan.urls.count != 1 {
+            error = .resource("账户代理下载仅支持当前网站，不支持备用镜像。")
+            return
+        }
+        Task {
+            do {
+                _ = try await accountSession.startDownload(plan, captured: captured,
+                                                           browser: browser, downloads: downloads)
+                importedPlan = nil
+                error = nil
+            } catch {
+                if captured != nil { self.error = .resource("账户代理下载不可用。") }
+                else { self.error = .error(error) }
+            }
+        }
     }
 
     private var storageSection: some View {

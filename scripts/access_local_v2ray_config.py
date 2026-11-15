@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,16 @@ def _first_str(data: dict[str, Any], keys: list[str], field: str) -> str:
     raise LocalV2RayError(f"emptyField:{field}")
 
 
+def _short_id(data: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        if key in data:
+            value = data[key]
+            if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{0,16}", value):
+                return value.lower()
+            raise LocalV2RayError("fieldNotCanonical:shortID")
+    raise LocalV2RayError("emptyField:shortID")
+
+
 def _port(value: Any) -> int:
     if value is None:
         raise LocalV2RayError("emptyField:port")
@@ -78,7 +89,7 @@ def parameters_from_share_uri(raw: str) -> dict[str, Any]:
         raise LocalV2RayError("emptyField:address")
     if parsed.port is None:
         raise LocalV2RayError("emptyField:port")
-    query = {k: v[-1] for k, v in parse_qs(parsed.query, keep_blank_values=False).items()}
+    query = {k: v[-1] for k, v in parse_qs(parsed.query, keep_blank_values=True).items()}
     flow = query.get("flow") or ADMITTED_FLOW
     if flow != ADMITTED_FLOW:
         raise LocalV2RayError(f"unsupportedFlow:{flow}")
@@ -99,7 +110,7 @@ def parameters_from_share_uri(raw: str) -> dict[str, Any]:
         "userID": user_id,
         "serverName": query.get("sni") or query.get("serverName") or _missing("serverName"),
         "publicKey": query.get("pbk") or query.get("publicKey") or _missing("publicKey"),
-        "shortID": query.get("sid") or query.get("shortId") or _missing("shortID"),
+        "shortID": _short_id(query, ("sid", "shortId")),
         "fingerprint": query.get("fp") or query.get("fingerprint") or "chrome",
         "source": "vless-uri",
     }
@@ -140,7 +151,7 @@ def parameters_from_xray_outbound(outbound: dict[str, Any]) -> dict[str, Any]:
         "userID": _first_str(user, ["id"], "userID"),
         "serverName": _first_str(reality, ["serverName", "server_name", "sni"], "serverName"),
         "publicKey": _first_str(reality, ["publicKey", "public_key", "pbk"], "publicKey"),
-        "shortID": _first_str(reality, ["shortId", "short_id", "sid"], "shortID"),
+        "shortID": _short_id(reality, ("shortId", "short_id", "sid")),
         "fingerprint": reality.get("fingerprint") or reality.get("fp") or "chrome",
         "source": "xray-core",
     }
@@ -175,7 +186,7 @@ def parameters_from_singbox_outbound(outbound: dict[str, Any]) -> dict[str, Any]
         "userID": _first_str(outbound, ["uuid", "id", "userID"], "userID"),
         "serverName": _first_str(tls, ["server_name", "serverName", "sni"], "serverName"),
         "publicKey": _first_str(reality, ["public_key", "publicKey", "pbk"], "publicKey"),
-        "shortID": _first_str(reality, ["short_id", "shortId", "sid"], "shortID"),
+        "shortID": _short_id(reality, ("short_id", "shortId", "sid")),
         "fingerprint": utls.get("fingerprint") or tls.get("fingerprint") or "chrome",
         "source": "sing-box",
     }
@@ -198,7 +209,7 @@ def parameters_from_flat(root: dict[str, Any]) -> dict[str, Any]:
         "userID": _first_str(root, ["id", "userID", "userId", "uuid"], "userID"),
         "serverName": _first_str(root, ["serverName", "server_name", "sni"], "serverName"),
         "publicKey": _first_str(root, ["publicKey", "public_key", "pbk"], "publicKey"),
-        "shortID": _first_str(root, ["shortId", "short_id", "sid"], "shortID"),
+        "shortID": _short_id(root, ("shortId", "short_id", "sid")),
         "fingerprint": root.get("fingerprint") or root.get("fp") or "chrome",
         "source": "flat",
     }

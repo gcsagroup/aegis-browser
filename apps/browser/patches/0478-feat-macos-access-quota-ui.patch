@@ -1,0 +1,2448 @@
+From fc2b8ce288944dcf41c7528038c4e5c2abc09595 Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Sat, 14 Nov 2026 07:04:40 +0800
+Subject: [PATCH] feat(access-macos): align quota and reload the site after
+ proxy activation
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   4 +
+ .../aegis/access/access_account_mac.mm        |  44 ++-
+ .../aegis/access/access_account_refresh.cc    |  48 +++
+ .../aegis/access/access_account_refresh.h     | 102 +++++++
+ .../access/access_account_refresh_unittest.cc | 131 ++++++++
+ .../aegis/access/access_local_core_manager.cc |  53 +++-
+ .../aegis/access/access_local_core_manager.h  |   5 +
+ .../access_local_core_manager_unittest.cc     |  15 +
+ .../access_navigation_retry_tab_helper.cc     |  74 +++++
+ .../access_navigation_retry_tab_helper.h      |  14 +-
+ ...ss_navigation_retry_tab_helper_unittest.cc |  86 ++++++
+ .../aegis/access/access_paid_site_mac.h       |   6 +-
+ .../aegis/access/access_paid_site_mac.mm      |  26 +-
+ .../access_site_proxy_bubble_controller.cc    |  22 +-
+ .../access_site_proxy_bubble_controller.h     |   4 +-
+ .../access_site_proxy_product_unittest.cc     |  12 +
+ chrome/browser/aegis/aegis_service.cc         |   6 +
+ chrome/browser/aegis/aegis_service.h          |  25 ++
+ .../aegis/aegis_service_access_account_mac.mm | 239 ++++++++++++++-
+ .../aegis/aegis_ui_handler_unittest.cc        |  89 +++++-
+ chrome/browser/resources/settings/BUILD.gn    |   1 +
+ .../aegis_page/access_account_usage.ts        | 283 ++++++++++++++++++
+ .../settings/aegis_page/aegis_page.html       |  10 +
+ .../settings/aegis_page/aegis_page.ts         |  33 +-
+ chrome/browser/ui/views/toolbar/BUILD.gn      |   1 +
+ .../ui/views/toolbar/aegis_toolbar_button.cc  | 239 ++++++++++++++-
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  34 +++
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |   3 +
+ 28 files changed, 1551 insertions(+), 58 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/access_account_refresh.cc
+ create mode 100644 chrome/browser/aegis/access/access_account_refresh.h
+ create mode 100644 chrome/browser/aegis/access/access_account_refresh_unittest.cc
+ create mode 100644 chrome/browser/resources/settings/aegis_page/access_account_usage.ts
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 47c320658bea106fd90bf94c0bd84dc250c14055..b2f94079d7fa3e898ddecd50d8909a0d9a7c21ba 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -280,6 +280,8 @@ source_set("aegis") {
+     sources += [
+       "access/access_account_mac.h",
+       "access/access_account_mac.mm",
++      "access/access_account_refresh.cc",
++      "access/access_account_refresh.h",
+       "access/access_paid_site_mac.h",
+       "access/access_paid_site_mac.mm",
+       "aegis_service_access_account_mac.mm",
+@@ -287,6 +289,7 @@ source_set("aegis") {
+       "aegis_torrent_client.h",
+     ]
+     deps += [
++      "//chrome/browser:global_features",
+       "//chrome/browser/aegis/access:access_core_log_archive",
+       "//chrome/browser/aegis/access:access_network_context_transport",
+       "//services/network/public/mojom",
+@@ -551,6 +554,7 @@ test("aegis_browser_unittests") {
+       "//services/network:network_service",
+     ]
+     sources += [
++      "access/access_account_refresh_unittest.cc",
+       "access/access_paid_site_mac_unittest.mm",
+       "aegis_torrent_client_unittest.cc",
+       "aegis_mac_signing_unittest.cc",
+diff --git a/chrome/browser/aegis/access/access_account_mac.mm b/chrome/browser/aegis/access/access_account_mac.mm
+index 78200ff0f3f80968a02ac5b7e8667e81e53b84cd..50f507548cdebf7b415f6e34334ff3c780825785 100644
+--- a/chrome/browser/aegis/access/access_account_mac.mm
++++ b/chrome/browser/aegis/access/access_account_mac.mm
+@@ -115,6 +115,9 @@ bool Nonempty(id value) {
+       @"measuredAt", @"receivedAt", @"snapshotAgeMs", @"freshness"];
+   NSString* status = body[@"status"];
+   bool subscribed = ![status isEqual:@"not_subscribed"];
++  const bool alpha = body[@"quotaSource"] || body[@"panelExpiryMode"] ||
++                     body[@"panelExpiresAt"];
++  if (alpha && !subscribed) return nil;
+   NSMutableDictionary* out = [@{@"entitlementAccountId": account} mutableCopy];
+   for (NSString* field in fields) {
+     id value = body[field];
+@@ -132,17 +135,36 @@ bool Nonempty(id value) {
+         *received < *start || !quota || !up || !down || !used || !remaining ||
+         *up > INT64_MAX || *down > INT64_MAX || *quota > INT64_MAX ||
+         *up + *down != *used || *remaining != (*used < *quota ? *quota - *used : 0)) return nil;
+-    auto now = *received;
++    if (alpha) {
++      if (![body[@"quotaSource"] isEqual:@"3xui_alpha"] ||
++          !body[@"panelExpiresAt"]) return nil;
++      NSString* mode = body[@"panelExpiryMode"];
++      if ([mode isEqual:@"none"]) {
++        if (body[@"panelExpiresAt"] != NSNull.null || *expiry != *end) return nil;
++      } else if ([mode isEqual:@"absolute"]) {
++        auto panel_expiry = Time(body[@"panelExpiresAt"]);
++        if (!panel_expiry || !*panel_expiry ||
++            *expiry != std::min(*end, *panel_expiry)) return nil;
++      } else {
++        return nil;
++      }
++      out[@"quotaSource"] = body[@"quotaSource"];
++      out[@"panelExpiryMode"] = mode;
++      out[@"panelExpiresAt"] = body[@"panelExpiresAt"];
++    }
++    auto evaluated = Time(body[@"evaluatedAt"]);
++    if (evaluated && *evaluated < *received) return nil;
++    int64_t now;
+     NSString* freshness = @"unavailable";
+     if (out[@"measuredAt"] == NSNull.null) {
+-      auto evaluated = Time(body[@"evaluatedAt"]);
+-      if (out[@"snapshotAgeMs"] != NSNull.null || !evaluated || *evaluated < *received) return nil;
++      if (out[@"snapshotAgeMs"] != NSNull.null || !evaluated) return nil;
+       now = *evaluated;
+     } else {
+       auto measured = Time(out[@"measuredAt"]), age = Time(out[@"snapshotAgeMs"]);
+       if (!measured || !age || *measured < *start || *measured > *received ||
+           *age < *received - *measured || *age > 9007199254740991LL - *measured) return nil;
+       now = *measured + *age;
++      if (body[@"evaluatedAt"] && (!evaluated || *evaluated != now)) return nil;
+       freshness = Freshness(*age);
+     }
+     if (![freshness isEqual:out[@"freshness"]]) return nil;
+@@ -159,15 +181,14 @@ bool Nonempty(id value) {
+ }
+ 
+ AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange change,
+-                               uint64_t receiptNanos, int64_t evaluatedAt) {
++                               uint64_t queryStartedNanos, int64_t evaluatedAt) {
+   return ^NSDictionary* {
+     NSString* state = change ? change() : nil;
+     if (state) return State(state);
+     NSDictionary* entitlement = result[@"entitlement"];
+     if (!entitlement || [entitlement[@"status"] isEqual:@"not_subscribed"]) return result;
+ 
+-    int64_t elapsed = (clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - receiptNanos) / NSEC_PER_MSEC;
+-    if (!elapsed) return result;
++    int64_t elapsed = (clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - queryStartedNanos) / NSEC_PER_MSEC;
+     NSMutableDictionary* updated = [entitlement mutableCopy];
+     int64_t now = evaluatedAt + elapsed;
+     if (entitlement[@"snapshotAgeMs"] != NSNull.null) {
+@@ -181,7 +202,8 @@ AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange c
+                         [entitlement[@"expiresAt"] longLongValue])) {
+       updated[@"status"] = @"expired";
+     }
+-    return @{@"state": @"available", @"entitlement": updated};
++    return @{@"state": @"available", @"entitlement": updated,
++             @"queryElapsedMs": @(elapsed), @"evaluatedAt": @(now)};
+   };
+ }
+ }  // namespace
+@@ -191,6 +213,7 @@ @interface AegisAccountTransfer : NSObject <NSURLSessionDataDelegate>
+ @property(nonatomic, copy) NSDictionary* binding;
+ @property(nonatomic, copy) AegisAccountCompletion completion;
+ @property(nonatomic, strong) NSMutableData* body;
++@property(nonatomic) uint64_t requestStartedNanos;
+ @property(nonatomic, copy) void (^rawCompletion)(NSInteger, NSData*);
+ @end
+ 
+@@ -199,6 +222,7 @@ @implementation AegisAccountTransfer
+ @synthesize binding = _binding;
+ @synthesize completion = _completion;
+ @synthesize body = _body;
++@synthesize requestStartedNanos = _requestStartedNanos;
+ @synthesize rawCompletion = _rawCompletion;
+ - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
+     willPerformHTTPRedirection:(NSHTTPURLResponse*)response newRequest:(NSURLRequest*)request
+@@ -222,7 +246,6 @@ - (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task
+ }
+ - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
+     didCompleteWithError:(NSError*)error {
+-  uint64_t received = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
+   [session finishTasksAndInvalidate];
+   if (self.rawCompletion) {
+     NSInteger status = !error && [task.response isKindOfClass:NSHTTPURLResponse.class]
+@@ -237,11 +260,13 @@ - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
+     if (status == 401) result = State(@"signed_out");
+     if (status == 200) result = Entitlement(self.body, self.binding[@"accountId"], &evaluatedAt);
+   }
+-  self.completion(PrepareReply(result ?: State(@"unavailable"), self.bindingChange, received, evaluatedAt));
++  self.completion(PrepareReply(result ?: State(@"unavailable"), self.bindingChange,
++                               self.requestStartedNanos, evaluatedAt));
+ }
+ @end
+ 
+ void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion completion) {
++  const uint64_t started = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
+   dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+     NSString* path = [profileDirectory stringByAppendingPathComponent:@"AegisAccessAccount.json"];
+     bool missing;
+@@ -256,6 +281,7 @@ void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion
+     transfer.binding = binding;
+     transfer.completion = completion;
+     transfer.body = [NSMutableData data];
++    transfer.requestStartedNanos = started;
+     NSURLSessionConfiguration* configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+     configuration.HTTPCookieStorage = nil;
+     configuration.HTTPShouldSetCookies = NO;
+diff --git a/chrome/browser/aegis/access/access_account_refresh.cc b/chrome/browser/aegis/access/access_account_refresh.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..cc099df48119dc1e2023602b0123577ba1ceffc5
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_account_refresh.cc
+@@ -0,0 +1,48 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_account_refresh.h"
++
++#include <array>
++#include <cstdint>
++
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++
++namespace aegis::access {
++
++std::u16string FormatAccessUsageBytes(std::string_view raw) {
++  uint64_t bytes;
++  if (!base::StringToUint64(raw, &bytes) || base::NumberToString(bytes) != raw) {
++    return u"—";
++  }
++  const auto exact = base::ASCIIToUTF16(raw) + u" B";
++  if (bytes < 1024) {
++    return exact;
++  }
++
++  constexpr auto units =
++      std::to_array<std::u16string_view>({u"B", u"KiB", u"MiB", u"GiB",
++                                         u"TiB", u"PiB", u"EiB"});
++  uint64_t divisor = 1;
++  size_t unit = 0;
++  while (unit + 1 < units.size() && bytes / divisor >= 1024) {
++    divisor *= 1024;
++    ++unit;
++  }
++  // On macOS the full-width product preserves truncation even at EiB scale.
++  const uint64_t fraction =
++      static_cast<unsigned __int128>(bytes % divisor) * 100 / divisor;
++  std::u16string result = base::NumberToString16(bytes / divisor);
++  result += fraction < 10 ? u".0" : u".";
++  result += base::NumberToString16(fraction);
++  result += u" ";
++  result += units[unit];
++  result += u" (";
++  result += exact;
++  result += u")";
++  return result;
++}
++
++AccessAccountRefresh::AccessAccountRefresh() = default;
++AccessAccountRefresh::~AccessAccountRefresh() = default;
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_account_refresh.h b/chrome/browser/aegis/access/access_account_refresh.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..45833a2459bca868f1daa1275f1da5013ef81cdc
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_account_refresh.h
+@@ -0,0 +1,102 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_ACCOUNT_REFRESH_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_ACCOUNT_REFRESH_H_
++
++#include <optional>
++#include <set>
++#include <string>
++#include <string_view>
++
++#include "base/time/time.h"
++#include "base/unguessable_token.h"
++
++namespace aegis::access {
++
++// Presentation shared with Settings' binary units and exact byte counts.
++std::u16string FormatAccessUsageBytes(std::string_view raw);
++
++// Profile-owned schedule, shared by every quota surface. Only a completed
++// request starts the next interval. Backgrounding never cancels a request or
++// permits a second one; late completion cannot restart a background timer.
++class AccessAccountRefresh {
++ public:
++  AccessAccountRefresh();
++  ~AccessAccountRefresh();
++
++  void SetActivity(bool app_foreground, bool profile_focused,
++                   base::TimeTicks now) {
++    app_foreground_ = app_foreground;
++    profile_focused_ = profile_focused;
++    UpdateActivity(now);
++  }
++
++  void SetVisible(base::UnguessableToken owner, bool visible,
++                  base::TimeTicks now) {
++    const bool was_visible = !owners_.empty();
++    if (visible) owners_.insert(owner);
++    else owners_.erase(owner);
++    UpdateActivity(now);
++    if (was_visible == !owners_.empty() || failures_ || in_flight_) return;
++    next_ = owners_.empty() ? now + base::Seconds(30) : now;
++  }
++
++  bool Begin(base::TimeTicks now, bool manual = false) {
++    if (!active_) return false;
++    if (manual) {
++      if (last_manual_ && now - *last_manual_ < base::Seconds(1)) return false;
++      last_manual_ = now;
++    }
++    if (in_flight_ || (!manual && now < next_)) return false;
++    in_flight_ = true;
++    return true;
++  }
++
++  void Complete(bool succeeded, base::TimeTicks now) {
++    in_flight_ = false;
++    const bool refresh_on_resume = refresh_after_current_;
++    refresh_after_current_ = false;
++    failures_ = succeeded ? 0 : (failures_ == 0 ? 1 : 2);
++    if (refresh_on_resume) {
++      next_ = now;
++      return;
++    }
++    next_ = now + (failures_ == 1 ? base::Seconds(15)
++        : failures_ == 2 ? base::Seconds(30)
++        : owners_.empty() ? base::Seconds(30) : base::Seconds(5));
++  }
++
++  std::optional<base::TimeDelta> DueIn(base::TimeTicks now) const {
++    if (!active_ || in_flight_) return std::nullopt;
++    return next_ > now ? next_ - now : base::TimeDelta();
++  }
++
++  bool in_flight() const { return in_flight_; }
++
++  void IdentityChanged(base::TimeTicks now) {
++    failures_ = 0;
++    last_manual_.reset();
++    next_ = now;
++  }
++
++ private:
++  void UpdateActivity(base::TimeTicks now) {
++    const bool active = app_foreground_ && (profile_focused_ || !owners_.empty());
++    if (active_ == active) return;
++    active_ = active;
++    refresh_after_current_ = active && in_flight_;
++    if (active) next_ = now;
++  }
++
++  bool app_foreground_ = false;
++  bool profile_focused_ = false;
++  bool active_ = false;
++  bool in_flight_ = false;
++  bool refresh_after_current_ = false;
++  int failures_ = 0;
++  std::set<base::UnguessableToken> owners_;
++  std::optional<base::TimeTicks> last_manual_;
++  base::TimeTicks next_;
++};
++
++}  // namespace aegis::access
++#endif
+diff --git a/chrome/browser/aegis/access/access_account_refresh_unittest.cc b/chrome/browser/aegis/access/access_account_refresh_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7978577fc294a052eb4bf3edeaf8d42fd035f92
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_account_refresh_unittest.cc
+@@ -0,0 +1,131 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_account_refresh.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++TEST(AccessAccountRefreshTest, DisplaysTheSameExactBinaryUnitsAsSettings) {
++  EXPECT_EQ(FormatAccessUsageBytes("0"), u"0 B");
++  EXPECT_EQ(FormatAccessUsageBytes("1023"), u"1023 B");
++  EXPECT_EQ(FormatAccessUsageBytes("1024"), u"1.00 KiB (1024 B)");
++  EXPECT_EQ(FormatAccessUsageBytes("8800000000"),
++            u"8.19 GiB (8800000000 B)");
++  EXPECT_EQ(FormatAccessUsageBytes("18446744073709551615"),
++            u"15.99 EiB (18446744073709551615 B)");
++  for (std::string_view invalid : {"", "-1", "00", "+1",
++                                  "18446744073709551616"}) {
++    EXPECT_EQ(FormatAccessUsageBytes(invalid), u"—");
++  }
++}
++
++TEST(AccessAccountRefreshTest, SharesOneRequestAndUsesVisibleCadence) {
++  AccessAccountRefresh refresh;
++  const auto now = base::TimeTicks() + base::Seconds(100);
++  refresh.SetActivity(true, true, now);
++  ASSERT_TRUE(refresh.Begin(now));
++  EXPECT_FALSE(refresh.Begin(now, true));
++  refresh.Complete(true, now);
++  EXPECT_EQ(refresh.DueIn(now), base::Seconds(30));
++
++  const auto first = base::UnguessableToken::Create();
++  const auto second = base::UnguessableToken::Create();
++  refresh.SetVisible(first, true, now);
++  ASSERT_TRUE(refresh.Begin(now));
++  refresh.SetVisible(second, true, now);
++  refresh.SetVisible(first, false, now);
++  EXPECT_FALSE(refresh.DueIn(now));
++  const auto done = now + base::Seconds(7);
++  refresh.Complete(true, done);
++  EXPECT_EQ(refresh.DueIn(done), base::Seconds(5));
++  refresh.SetVisible(second, false, done);
++  EXPECT_EQ(refresh.DueIn(done), base::Seconds(30));
++}
++
++TEST(AccessAccountRefreshTest, BackgroundCompletionCannotPollAndResumeRefreshes) {
++  AccessAccountRefresh refresh;
++  const auto now = base::TimeTicks() + base::Seconds(100);
++  refresh.SetActivity(true, true, now);
++  ASSERT_TRUE(refresh.Begin(now));
++  refresh.SetActivity(false, false, now);
++  EXPECT_FALSE(refresh.Begin(now, true));
++  refresh.Complete(true, now);
++  EXPECT_FALSE(refresh.DueIn(now + base::Minutes(1)));
++  refresh.SetActivity(true, true, now + base::Minutes(1));
++  EXPECT_TRUE(refresh.Begin(now + base::Minutes(1)));
++}
++
++TEST(AccessAccountRefreshTest, VisibleProfileContinuesWhileAnotherHasFocus) {
++  AccessAccountRefresh first;
++  AccessAccountRefresh second;
++  const auto usage = base::UnguessableToken::Create();
++  const auto now = base::TimeTicks() + base::Seconds(100);
++  first.SetActivity(true, true, now);
++  first.SetVisible(usage, true, now);
++  ASSERT_TRUE(first.Begin(now));
++  first.Complete(true, now);
++
++  const auto changed = now + base::Seconds(1);
++  first.SetActivity(true, false, changed);
++  second.SetActivity(true, true, changed);
++  EXPECT_EQ(first.DueIn(changed), base::Seconds(4));
++  EXPECT_TRUE(second.Begin(changed));
++  second.Complete(true, changed);
++  EXPECT_EQ(second.DueIn(changed), base::Seconds(30));
++
++  first.SetActivity(false, false, changed);
++  EXPECT_FALSE(first.DueIn(changed));
++  first.SetActivity(true, false, changed);
++  EXPECT_EQ(first.DueIn(changed), base::TimeDelta());
++  first.SetVisible(usage, false, changed);
++  EXPECT_FALSE(first.DueIn(changed));
++}
++
++TEST(AccessAccountRefreshTest, ResumeWhilePendingQueuesOnlyOneRefresh) {
++  AccessAccountRefresh refresh;
++  const auto now = base::TimeTicks() + base::Seconds(100);
++  refresh.SetActivity(true, true, now);
++  ASSERT_TRUE(refresh.Begin(now));
++  refresh.SetActivity(false, false, now);
++  refresh.SetActivity(true, true, now);
++  EXPECT_FALSE(refresh.Begin(now));
++  refresh.Complete(true, now);
++  ASSERT_TRUE(refresh.Begin(now));
++  refresh.Complete(true, now);
++  EXPECT_EQ(refresh.DueIn(now), base::Seconds(30));
++}
++
++TEST(AccessAccountRefreshTest, DebouncesManualRequestsAndBacksOffUntilSuccess) {
++  AccessAccountRefresh refresh;
++  const auto now = base::TimeTicks() + base::Seconds(100);
++  refresh.SetActivity(true, true, now);
++  refresh.SetVisible(base::UnguessableToken::Create(), true, now);
++  ASSERT_TRUE(refresh.Begin(now, true));
++  refresh.Complete(false, now);
++  EXPECT_EQ(refresh.DueIn(now), base::Seconds(15));
++  EXPECT_FALSE(refresh.Begin(now + base::Milliseconds(999), true));
++  EXPECT_FALSE(refresh.Begin(now + base::Seconds(14)));
++  const auto retry = now + base::Seconds(15);
++  ASSERT_TRUE(refresh.Begin(retry));
++  refresh.Complete(false, retry);
++  EXPECT_EQ(refresh.DueIn(retry), base::Seconds(30));
++  const auto manual = retry + base::Seconds(1);
++  ASSERT_TRUE(refresh.Begin(manual, true));
++  refresh.Complete(true, manual);
++  EXPECT_EQ(refresh.DueIn(manual), base::Seconds(5));
++}
++
++TEST(AccessAccountRefreshTest, AccountChangeClearsPreviousBackoffAndDebounce) {
++  AccessAccountRefresh refresh;
++  const auto now = base::TimeTicks() + base::Seconds(100);
++  refresh.SetActivity(true, true, now);
++  ASSERT_TRUE(refresh.Begin(now, true));
++  refresh.Complete(false, now);
++  EXPECT_FALSE(refresh.Begin(now, true));
++  refresh.IdentityChanged(now);
++  EXPECT_TRUE(refresh.Begin(now, true));
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index e511fbb4fde0260aa29669c1cc61f54ed0e4d1bf..8595e9ed41bdba85044b389901938f97d6ea2cbe 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -76,6 +76,45 @@ std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput() {
+   return std::nullopt;
+ #endif
+ }
++namespace {
++
++const base::DictValue* SelectedOutbound(const base::DictValue& node) {
++  const auto* outbounds = node.FindList("outbounds");
++  if (!outbounds || outbounds->empty() || !outbounds->front().is_dict()) {
++    return nullptr;
++  }
++  const auto& outbound = outbounds->front().GetDict();
++  const auto* protocol = outbound.FindString("protocol");
++  const auto* transport = outbound.FindStringByDottedPath("streamSettings.network");
++  const auto* security = outbound.FindStringByDottedPath("streamSettings.security");
++  return protocol && *protocol == "vless" && transport && *transport == "tcp" &&
++                 security && *security == "reality" ? &outbound : nullptr;
++}
++
++}  // namespace
++
++std::string ReadConfiguredAccessNodeId(const AccessLocalCoreInput& input) {
++  std::string node_json;
++  if (!base::ReadFileToStringWithMaxSize(input.node_config, &node_json, 1024 * 1024)) {
++    return {};
++  }
++  auto node = base::JSONReader::ReadDict(node_json, base::JSON_PARSE_RFC);
++  const auto* outbound = node ? SelectedOutbound(*node) : nullptr;
++  const auto* servers = outbound ? outbound->FindListByDottedPath("settings.vnext") : nullptr;
++  if (!servers || servers->empty() || !servers->front().is_dict()) {
++    return {};
++  }
++  const auto& server = servers->front().GetDict();
++  const auto* address = server.FindString("address");
++  const int port = server.FindInt("port").value_or(0);
++  if (!address || address->empty() || port <= 0 || port > 65535) {
++    return {};
++  }
++  const auto label = base::ToLowerASCII(*address) + "\n" + base::NumberToString(port);
++  const auto digest = crypto::hash::Sha256(base::as_byte_span(label));
++  return base::HexEncodeLower(base::span(digest).first<6>());
++}
++
+ namespace {
+ constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
+     "aegis_access_local_core_canary", R"(
+@@ -297,14 +336,8 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     if (!binary.IsAbsolute() || !bytes ||
+         base::HexEncodeLower(crypto::hash::Sha256(*bytes)) != *pin)
+       return false;
+-    const auto* outbounds = node->FindList("outbounds");
+-    if (!outbounds || outbounds->empty() || !outbounds->front().is_dict()) return false;
+-    const auto& outbound = outbounds->front().GetDict();
+-    const auto* protocol = outbound.FindString("protocol");
+-    const auto* transport = outbound.FindStringByDottedPath("streamSettings.network");
+-    const auto* security = outbound.FindStringByDottedPath("streamSettings.security");
+-    if (!protocol || *protocol != "vless" || !transport || *transport != "tcp" ||
+-        !security || *security != "reality") return false;
++    const auto* outbound = SelectedOutbound(*node);
++    if (!outbound) return false;
+     // The selected outbound is copied privately; no subscription, system
+     // routing, original V2Ray process or original input file is changed.
+     if (!directory_.CreateUniqueTempDir() ||
+@@ -322,7 +355,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     std::string level = "none";
+     protected_values_ = {user, password, registration_,
+                          base::ToLowerASCII(base::Base64Encode(user + ":" + password))};
+-    if (!CollectProtectedValues(outbounds->front(), protected_values_))
++    if (!CollectProtectedValues(base::Value(outbound->Clone()), protected_values_))
+       return false;
+     if (protected_values_.size() >= 256)
+       protected_values_ = {""};  // A saturated budget suppresses every record.
+@@ -338,7 +371,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+             .Set("listen", "127.0.0.1").Set("port", port_).Set("protocol", "http")
+             .Set("settings", base::DictValue().Set("accounts", base::ListValue()
+                 .Append(base::DictValue().Set("user", user).Set("pass", password))))))
+-        .Set("outbounds", base::ListValue().Append(outbound.Clone()));
++        .Set("outbounds", base::ListValue().Append(outbound->Clone()));
+     const auto config_path = directory_.GetPath().AppendASCII("config.json");
+     std::string serialized;
+     if (!base::JSONWriter::Write(config, &serialized)) return false;
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.h b/chrome/browser/aegis/access/access_local_core_manager.h
+index ca66110b027a27fa4a0193d4b659f6f5579df2e9..280ec691159f2f073c525c276b0bcbe8b78e07e1 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.h
++++ b/chrome/browser/aegis/access/access_local_core_manager.h
+@@ -33,6 +33,11 @@ struct AccessLocalCoreInput {
+ // Resolves paths only. File parsing, pins, process launch and readiness remain
+ // on the core IO thread. Alpha never takes node paths from command-line flags.
+ std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput();
++#if BUILDFLAG(IS_MAC)
++// Display-only anonymous label. Call on a blocking sequence.
++std::string ReadConfiguredAccessNodeId(const AccessLocalCoreInput& input);
++#endif
++
+ struct AccessLocalCoreReady {
+   bool ready = false;
+   uint16_t port = 0;
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index baaa85fdc6d31ff1fde4656b8b0edcb9c56c42f0..f89e3a4a93a0b594813d050920abe7a433045b54 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -70,6 +70,21 @@ TEST(AccessLocalCoreInputTest, BuildControlsPrivateInputSource) {
+ #endif
+ }
+ 
++TEST(AccessLocalCoreInputTest, ConfiguredNodeLabelMatchesEndpointOnly) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto path = directory.GetPath().AppendASCII("node.json");
++  constexpr char config[] = R"({"outbounds":[{"protocol":"vless",
++    "settings":{"vnext":[{"address":"TEST.invalid","port":443,
++    "users":[{"id":"credential-must-not-appear"}]}]},
++    "streamSettings":{"network":"tcp","security":"reality"}}]})";
++  ASSERT_TRUE(base::WriteFile(path, config));
++  const AccessLocalCoreInput input{base::FilePath(), path};
++  EXPECT_EQ(ReadConfiguredAccessNodeId(input), "0be6fae64ec1");
++  ASSERT_TRUE(base::WriteFile(path, R"({"outbounds":[{"protocol":"direct"}]})"));
++  EXPECT_TRUE(ReadConfiguredAccessNodeId(input).empty());
++}
++
+ class AccessLocalCoreManagerTest : public testing::Test {
+  protected:
+   base::test::TaskEnvironment environment_;
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index 9bbbf4335273a84facb63096d649c58835098185..5aab93e1814f1c84180d1a5cb2503643fb1f2660 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -3,11 +3,13 @@
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ 
+ #include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/logging.h"
+ #include "components/error_page/content/browser/net_error_auto_reloader.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/visibility.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_contents_delegate.h"
+ #include "content/public/common/page_type.h"
+@@ -67,6 +69,65 @@ base::OnceClosure AccessNavigationRetryTabHelper::CaptureRouteReadyCallback() {
+                         weak_factory_.GetWeakPtr(), *ticket, entry_id);
+ }
+ 
++const content::NavigationEntry*
++AccessNavigationRetryTabHelper::ReloadableSiteEntry() const {
++  auto* tab = web_contents();
++  if (!committed_safe_get_ || !tab || tab->IsBeingDestroyed() ||
++      tab->GetVisibility() != content::Visibility::VISIBLE ||
++      tab->HasUncommittedNavigationInPrimaryMainFrame()) {
++    return nullptr;
++  }
++  auto& controller = tab->GetController();
++  const auto* entry = controller.GetLastCommittedEntry();
++  return !controller.GetPendingEntry() && entry &&
++                 entry->GetPageType() == content::PAGE_TYPE_NORMAL &&
++                 !entry->GetHasPostData() && entry->GetURL().SchemeIsHTTPOrHTTPS() &&
++                 !entry->GetURL().has_username() && !entry->GetURL().has_password()
++             ? entry : nullptr;
++}
++
++base::OnceClosure AccessNavigationRetryTabHelper::CaptureSiteProxyReload() {
++  const auto* entry = ReloadableSiteEntry();
++  if (!entry || preparing_site_reload_) return {};
++  auto completion = base::BindOnce(
++      &AccessNavigationRetryTabHelper::FinishSiteProxyReload,
++      site_reload_weak_.GetWeakPtr(), entry->GetUniqueID(), entry->GetURL());
++  // A rejected or superseded publication drops its closure. Clear the Stop
++  // state in that case as well as on a successful route installation.
++  auto callbacks = base::SplitOnceCallback(std::move(completion));
++  auto reload = base::BindOnce(
++      [](base::OnceCallback<void(bool)> complete,
++         base::ScopedClosureRunner abandon) {
++        (void)abandon.Release();
++        std::move(complete).Run(true);
++      }, std::move(callbacks.first),
++      base::ScopedClosureRunner(base::BindOnce(std::move(callbacks.second), false)));
++  preparing_site_reload_ = true;
++  UpdateStopControl();
++  return reload;
++}
++
++void AccessNavigationRetryTabHelper::FinishSiteProxyReload(
++    int entry_id, const GURL& url, bool ready) {
++  CancelSiteProxyReload();
++  if (!ready) return;
++  const auto* current = ReloadableSiteEntry();
++  if (!current || current->GetUniqueID() != entry_id || current->GetURL() != url) {
++    return;
++  }
++  // The controller reloads the committed entry and preserves its history.
++  // Bypass the original cache so the request exercises the new route.
++  web_contents()->GetController().Reload(content::ReloadType::BYPASSING_CACHE,
++                                          /*check_for_repost=*/true);
++}
++
++void AccessNavigationRetryTabHelper::CancelSiteProxyReload() {
++  site_reload_weak_.InvalidateWeakPtrs();
++  if (!preparing_site_reload_) return;
++  preparing_site_reload_ = false;
++  UpdateStopControl();
++}
++
+ void AccessNavigationRetryTabHelper::SetProxyRetryHandler(ProxyRetryHandler handler) {
+   proxy_retry_handler_ = std::move(handler);
+ }
+@@ -108,6 +169,7 @@ void AccessNavigationRetryTabHelper::OnProxyPrepared(
+ 
+ void AccessNavigationRetryTabHelper::CancelPendingPreparation() {
+   weak_factory_.InvalidateWeakPtrs();
++  CancelSiteProxyReload();
+   // Stop can leave the same error document and its Mojo reply pipe alive.
+   if (pending_retry_reply_) {
+     auto reply = std::move(pending_retry_reply_);
+@@ -138,6 +200,11 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
+   if (!navigation->IsInPrimaryMainFrame()) {
+     return;
+   }
++  if (navigation->HasCommitted() && !navigation->IsSameDocument()) {
++    committed_safe_get_ = !navigation->IsErrorPage() &&
++                          !navigation->IsPageActivation() &&
++                          navigation->GetRequestMethod() == "GET";
++  }
+   const auto& redirects = navigation->GetRedirectChain();
+   const bool recorded = state_.RecordFailure(
+       navigation->GetNavigationId(),
+@@ -171,6 +238,13 @@ void AccessNavigationRetryTabHelper::NavigationStopped() {
+   CancelPendingPreparation();
+ }
+ 
++void AccessNavigationRetryTabHelper::OnVisibilityChanged(
++    content::Visibility visibility) {
++  if (visibility == content::Visibility::HIDDEN) {
++    CancelSiteProxyReload();
++  }
++}
++
+ void AccessNavigationRetryTabHelper::OnRouteReady(
+     AccessNavigationRetryTicket ticket,
+     int error_entry_id) {
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+index fb2ce36619194c1f80f61c0fbbfac2236df3d367..49e6032143ffa97a370af5ad0db3d957ee756689 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+@@ -27,6 +27,9 @@ class AccessNavigationRetryTabHelper
+                                        int64_t navigation_id);
+   std::optional<AccessNavigationRetryTicket> FailureForRetry() const;
+   base::OnceClosure CaptureRouteReadyCallback();
++  // Captures the current safe GET document for a trusted toolbar action.
++  // The callback is invalidated by navigation or Stop.
++  base::OnceClosure CaptureSiteProxyReload();
+   using ProxyRetryHandler = base::RepeatingCallback<void(
+       const GURL&, base::OnceCallback<void(bool)>)>;
+   bool HasProxyRetryHandler() const { return !!proxy_retry_handler_; }
+@@ -35,16 +38,22 @@ class AccessNavigationRetryTabHelper
+   // error document. The target comes from this helper, never renderer IPC.
+   bool RequestProxyRetry(base::OnceCallback<void(bool)> completion);
+ 
+-  bool IsPreparingProxyRetry() const { return !!pending_retry_reply_; }
++  bool IsPreparingProxyRetry() const {
++    return !!pending_retry_reply_ || preparing_site_reload_;
++  }
+ 
+   void DidStartNavigation(content::NavigationHandle* navigation) override;
+   void DidFinishNavigation(content::NavigationHandle* navigation) override;
++  void OnVisibilityChanged(content::Visibility visibility) override;
+   void NavigationStopped() override;
+ 
+  private:
+   friend class content::WebContentsUserData<AccessNavigationRetryTabHelper>;
+   explicit AccessNavigationRetryTabHelper(content::WebContents* contents);
+   const content::NavigationEntry* CurrentErrorEntry() const;
++  const content::NavigationEntry* ReloadableSiteEntry() const;
++  void FinishSiteProxyReload(int entry_id, const GURL& url, bool ready);
++  void CancelSiteProxyReload();
+   void OnRouteReady(AccessNavigationRetryTicket ticket, int error_entry_id);
+   void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
+                        bool ready);
+@@ -52,9 +61,12 @@ class AccessNavigationRetryTabHelper
+   void UpdateStopControl();
+ 
+   AccessNavigationRetryState state_;
++  bool committed_safe_get_ = false;
++  bool preparing_site_reload_ = false;
+   ProxyRetryHandler proxy_retry_handler_;
+   base::OnceCallback<void(bool)> pending_retry_reply_;
+   WEB_CONTENTS_USER_DATA_KEY_DECL();
++  base::WeakPtrFactory<AccessNavigationRetryTabHelper> site_reload_weak_{this};
+   base::WeakPtrFactory<AccessNavigationRetryTabHelper> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+index 363d6e9e330ba02971deeeab53946eed95639506..738607727ca6a1054e4c0f4e3cb78bb067426ad4 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+@@ -39,6 +39,92 @@ class AccessNavigationRetryTabHelperTest
+   }
+ };
+ 
++TEST_F(AccessNavigationRetryTabHelperTest,
++       ToolbarReloadsCommittedRedirectDestinationOnce) {
++  const GURL original("https://start.example/");
++  const GURL destination("https://destination.example/article#section");
++  web_contents()->WasShown();
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      original, web_contents());
++  navigation->Start();
++  navigation->Redirect(destination);
++  navigation->Commit();
++
++  auto reload = helper()->CaptureSiteProxyReload();
++  ASSERT_TRUE(reload);
++  EXPECT_TRUE(helper()->IsPreparingProxyRetry());
++  EXPECT_FALSE(helper()->CaptureSiteProxyReload());
++  const int entries = controller().GetEntryCount();
++  EXPECT_FALSE(controller().GetPendingEntry());
++  std::move(reload).Run();
++  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), destination);
++  auto reloading = content::NavigationSimulator::CreateFromPending(controller());
++  EXPECT_EQ(reloading->GetNavigationHandle()->GetRequestMethod(), "GET");
++  reloading->Commit();
++  EXPECT_EQ(controller().GetEntryCount(), entries);
++  EXPECT_FALSE(controller().GetPendingEntry());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest, ToolbarAbandonedRouteClearsStopState) {
++  web_contents()->WasShown();
++  content::NavigationSimulator::NavigateAndCommitFromBrowser(
++      web_contents(), GURL("https://source.example/"));
++  auto pending = helper()->CaptureSiteProxyReload();
++  ASSERT_TRUE(pending);
++  EXPECT_TRUE(helper()->IsPreparingProxyRetry());
++  pending.Reset();
++  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
++  EXPECT_FALSE(controller().GetPendingEntry());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest,
++       ToolbarSkipsPostAndItsRedirectDestination) {
++  web_contents()->WasShown();
++  for (bool redirect : {false, true}) {
++    auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++        GURL("https://source.example/form"), web_contents());
++    navigation->SetMethod("POST");
++    navigation->Start();
++    if (redirect) navigation->Redirect(GURL("https://destination.example/"));
++    navigation->Commit();
++    EXPECT_FALSE(helper()->CaptureSiteProxyReload()) << redirect;
++  }
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest,
++       ToolbarIgnoresHiddenStoppedOrSupersededDocument) {
++  const GURL first("https://source.example/");
++  const GURL second("https://destination.example/");
++  web_contents()->WasShown();
++  content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), first);
++  auto hidden = helper()->CaptureSiteProxyReload();
++  ASSERT_TRUE(hidden);
++  web_contents()->WasHidden();
++  web_contents()->WasShown();
++  std::move(hidden).Run();
++  EXPECT_FALSE(controller().GetPendingEntry());
++
++  auto stopped = helper()->CaptureSiteProxyReload();
++  ASSERT_TRUE(stopped);
++  EXPECT_TRUE(helper()->IsPreparingProxyRetry());
++  helper()->NavigationStopped();
++  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
++  std::move(stopped).Run();
++  EXPECT_FALSE(controller().GetPendingEntry());
++
++  auto superseded = helper()->CaptureSiteProxyReload();
++  ASSERT_TRUE(superseded);
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      second, web_contents());
++  navigation->Start();
++  EXPECT_FALSE(helper()->CaptureSiteProxyReload());
++  std::move(superseded).Run();
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), second);
++}
++
+ TEST_F(AccessNavigationRetryTabHelperTest, ReloadsOriginalUrlOnceAfterRedirect) {
+   const GURL original("https://start.example/path?q=1#section");
+   const GURL failed("https://target.example/redirect?q=2");
+diff --git a/chrome/browser/aegis/access/access_paid_site_mac.h b/chrome/browser/aegis/access/access_paid_site_mac.h
+index 821894a0191accaced105ffe921f01c2c98b6008..b130bfd6ab0d9b41257eb46ab99741088214cbd5 100644
+--- a/chrome/browser/aegis/access/access_paid_site_mac.h
++++ b/chrome/browser/aegis/access/access_paid_site_mac.h
+@@ -3,6 +3,9 @@
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PAID_SITE_MAC_H_
+ 
+ #include <string>
++
++#include "base/functional/callback.h"
++
+ class Profile;
+ namespace aegis::access {
+ // Called only from trusted browser chrome for the active committed HTTPS site.
+@@ -10,6 +13,7 @@ enum class AccountNodeStatus { kOff, kAcquiring, kAssigned, kUnavailable };
+ bool UsesAccountNode(Profile* profile, bool local_node_available = false);
+ AccountNodeStatus AccountNodeForSite(Profile* profile, const std::string& site);
+ void DisableAccountNodeSite(Profile* profile, const std::string& site);
+-void ToggleAccountNodeSite(Profile* profile, const std::string& site);
++void ToggleAccountNodeSite(Profile* profile, const std::string& site,
++                           base::OnceClosure on_assigned = {});
+ }  // namespace aegis::access
+ #endif
+diff --git a/chrome/browser/aegis/access/access_paid_site_mac.mm b/chrome/browser/aegis/access/access_paid_site_mac.mm
+index f69ed9715bca40122aa532fb2f0a632f09d04cef..60de94d5d5f56b4528d9b89e9fd57449209c4985 100644
+--- a/chrome/browser/aegis/access/access_paid_site_mac.mm
++++ b/chrome/browser/aegis/access/access_paid_site_mac.mm
+@@ -5,6 +5,7 @@
+ 
+ #include <sys/stat.h>
+ #include <algorithm>
++#include <map>
+ #include <set>
+ #include <vector>
+ 
+@@ -65,8 +66,9 @@ AccountNodeStatus Status(const std::string& site) const {
+     return in_flight_ ? AccountNodeStatus::kAcquiring : AccountNodeStatus::kUnavailable;
+   }
+   bool HasSites() const { return !sites_.empty(); }
+-  void Toggle(const std::string& site) {
++  void Toggle(const std::string& site, base::OnceClosure on_assigned = {}) {
+     if (sites_.erase(site)) {
++      on_assigned_.erase(site);
+       Publish();
+       if (sites_.empty()) Reset();
+       return;
+@@ -77,6 +79,7 @@ void Toggle(const std::string& site) {
+                            (change_ && change_()))) Reset();
+     sites_.insert(site);
+     if (!Publish()) { sites_.erase(site); return; }
++    if (on_assigned) on_assigned_.emplace(site, std::move(on_assigned));
+     if (!auth_.empty() || in_flight_) return;
+     // An abandoned in-flight POST may arrive after a later off/on cycle. Give
+     // the new authorization its own context so the old POST cannot rotate it.
+@@ -142,6 +145,19 @@ static double RenewalTime(double now, double expires) {
+   void Check() {
+     double now = NSDate.date.timeIntervalSince1970 * 1000;
+     if (now >= expires_ || (change_ && change_())) { Reset(); Publish(); return; }
++    for (auto it = on_assigned_.begin(); it != on_assigned_.end();) {
++      if (it->second.IsCancelled()) {
++        it = on_assigned_.erase(it);
++      } else if (Status(it->first) == AccountNodeStatus::kAssigned) {
++        auto callback = on_assigned_.extract(it++);
++        // Navigation can re-enter Browser code. Run outside lease iteration;
++        // the callback still belongs only to the initiating tab/document.
++        std::move(callback.mapped()).Run();
++        return;
++      } else {
++        ++it;
++      }
++    }
+     if (now < renew_ || in_flight_) return;
+     in_flight_ = true;
+     __block auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
+@@ -162,6 +178,7 @@ void Renewed(int64_t expiry) {
+   void Reset() {
+     weak_.InvalidateWeakPtrs();
+     guard_.Stop();
++    on_assigned_.clear();
+     if (revoke_) revoke_();
+     revoke_ = nil;
+     extend_ = nil;
+@@ -172,6 +189,7 @@ void Reset() {
+   }
+   raw_ptr<Profile> profile_;
+   std::set<std::string> sites_;
++  std::map<std::string, base::OnceClosure> on_assigned_;
+   std::string host_, auth_;
+   uint16_t port_ = 0;
+   bool in_flight_ = false;
+@@ -206,10 +224,12 @@ void DisableAccountNodeSite(Profile* profile, const std::string& site) {
+   auto* lease = static_cast<SiteLease*>(profile->GetUserData(kLeaseKey));
+   if (lease && lease->Status(site) != AccountNodeStatus::kOff) lease->Toggle(site);
+ }
+-void ToggleAccountNodeSite(Profile* profile, const std::string& site) {
++void ToggleAccountNodeSite(Profile* profile, const std::string& site,
++                           base::OnceClosure on_assigned) {
+   if (!aegis::IsAegisProfileSupported(profile) || site.empty()) return;
+   if (!profile->GetUserData(kLeaseKey))
+     profile->SetUserData(kLeaseKey, std::make_unique<SiteLease>(profile));
+-  static_cast<SiteLease*>(profile->GetUserData(kLeaseKey))->Toggle(site);
++  static_cast<SiteLease*>(profile->GetUserData(kLeaseKey))->Toggle(
++      site, std::move(on_assigned));
+ }
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 8b3f1efc09c433eb342af24170f56e7a1831f49a..77dd981455d236e0151e8d6081d396726824b1ab 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -5,6 +5,7 @@
+ 
+ #include <algorithm>
+ #include <utility>
++#include "base/task/thread_pool.h"
+ #include "base/command_line.h"
+ #include "chrome/browser/aegis/access/access_identity_generation_source.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+@@ -229,7 +230,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+ 
+ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     const AccessSiteHost& requested_host,
+-    bool enabled, base::OnceClosure on_disabled) {
++    bool enabled, base::OnceClosure on_ready) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   const auto website = CanonicalWebsiteHost(requested_host);
+   if (!website.host) return false;
+@@ -257,6 +258,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     verifying_host_.reset();
+     ++committed_verification_attempt_;
+     publication_in_flight_ = false;
++    on_enabled_.Reset();
+     superseded_retry = std::move(retry_completion_);
+     superseded_queue = std::move(queued_retry_);
+     retry_url_ = GURL();
+@@ -272,7 +274,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     // committed choice until the local transaction actually succeeds.
+     host_states_[host].connection = AccessSiteConnectionState::kConnecting;
+     host_states_[host].failure_reason.clear();
+-    BeginDisablePublication(host, std::move(on_disabled));
++    BeginDisablePublication(host, std::move(on_ready));
+     if (superseded_retry) std::move(superseded_retry).Run(false);
+     if (superseded_queue) std::move(superseded_queue).Run(false);
+     return true;
+@@ -282,6 +284,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+   host_states_[host].failure_reason.clear();
+ 
+   publication_in_flight_ = true;
++  on_enabled_ = std::move(on_ready);
+   PrepareLocalCore(host);
+   return true;
+ }
+@@ -441,6 +444,19 @@ void AccessSiteProxyBubbleController::SetCoreLogLevel(std::string_view level) {
+   ++state_revision_;
+ }
+ #if BUILDFLAG(IS_MAC)
++void AccessSiteProxyBubbleController::ReadConfiguredNodeId(
++    base::OnceCallback<void(std::string)> done) {
++  auto input = ResolveAccessLocalCoreInput();
++  if (!input) {
++    std::move(done).Run(std::string());
++    return;
++  }
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock()},
++      base::BindOnce(&ReadConfiguredAccessNodeId, std::move(*input)),
++      std::move(done));
++}
++
+ void AccessSiteProxyBubbleController::ShareCoreLogs(
+     content::WebContents* tab,
+     std::string preview,
+@@ -684,6 +700,7 @@ void AccessSiteProxyBubbleController::OnRestoredCoreVerified(
+   FinishCoreRequests(ready);
+ }
+ void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
++  auto on_enabled = std::move(on_enabled_);
+   auto retry = std::move(retry_completion_);
+   auto next = std::move(queued_retry_);
+   GURL url = std::exchange(retry_url_, GURL());
+@@ -694,6 +711,7 @@ void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
+   if (next && !next.IsCancelled()) {
+     RequestFailedNavigationProxy(url, std::move(next));
+   }
++  if (ready && on_enabled) std::move(on_enabled).Run();
+ }
+ 
+ void AccessSiteProxyBubbleController::FinishCoreRequests(bool ready) {
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index c981d9ca45ed8bb949af79a209d233aa55d40500..ec6068f71a85e45cfee5ae59b18191d373edc740 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -52,6 +52,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   AccessCoreLogStore* core_logs() const { return core_logs_.get(); }
+   void SetCoreLogLevel(std::string_view level);
+ #if BUILDFLAG(IS_MAC)
++  void ReadConfiguredNodeId(base::OnceCallback<void(std::string)> done);
+   enum class CoreLogShareResult { kCompleted, kFailed, kCleanupFailed };
+   void ShareCoreLogs(content::WebContents* tab,
+                      std::string preview,
+@@ -73,7 +74,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   // Returns false only when the host/toggle cannot be accepted.
+   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
+   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled,
+-                               base::OnceClosure on_disabled);
++                               base::OnceClosure on_ready);
+   void RequestFailedNavigationProxy(const GURL& original_url,
+       base::OnceCallback<void(bool)> completion);
+   base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
+@@ -175,6 +176,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   GURL retry_url_;
+   base::OnceCallback<void(bool)> retry_completion_;
+   base::OnceCallback<void(bool)> queued_retry_;
++  base::OnceClosure on_enabled_;
+   base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 50cac4460844022792433d17eaee0c12901fa8c8..91ac888befea0f68f9c2d82729fd6022a5890747 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -446,6 +446,18 @@ TEST_F(AccessSiteProxyProductTest, DualSelectionReleasesPaidOnlyAfterCommittedLo
+ }
+ #endif
+ 
++TEST_F(AccessSiteProxyProductTest, ToolbarEnableCompletesOnlyAfterAcknowledgement) {
++  context_.hold_next = true;
++  base::test::TestFuture<void> ready;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true,
++                                              ready.GetCallback()));
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++  EXPECT_FALSE(ready.IsReady());
++  context_.Reply(true);
++  ASSERT_TRUE(ready.Wait());
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);
++}
++
+ TEST_F(AccessSiteProxyProductTest, RecoveryTimesOutWhileCandidateAckIsStillHeld) {
+   context_.hold_next = true;
+   ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 317b4d4da6ee7d97c8db58f321d5bb940aa9d0e0..38fe560f5e9fbeff68101df7947f639dbf654708 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -491,6 +491,9 @@ AegisService::AegisService(Profile* profile)
+       prefs_->SetBoolean(prefs::kAiControlEnabled, false);
+     }
+   }
++#endif
++#if BUILDFLAG(IS_MAC)
++  InitializeAccessAccountRefresh();
+ #endif
+   LOG(INFO) << "GCSA-aegis initialized for profile"
+             << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
+@@ -642,6 +645,9 @@ void AegisService::Shutdown() {
+ }
+ 
+ void AegisService::ShutdownForProfile() {
++#if BUILDFLAG(IS_MAC)
++  StopAccessAccountRefresh();
++#endif
+   profile_observation_.Reset();
+   incognito_profile_observations_.RemoveAllObservations();
+   if (!initialized_) {
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 9962615d1c6e5b251eeb7f4b0b4ad79ff1654e57..cf426721a1b58135f14b64acea1c71a844e43f0a 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -13,6 +13,7 @@
+ #include <vector>
+ 
+ #include "base/functional/callback.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -23,6 +24,9 @@
+ #include "base/timer/timer.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "chrome/browser/aegis/access/access_account_refresh.h"
++#endif
+ #include "chrome/browser/aegis/privacy_event_store.h"
+ #include "chrome/browser/aegis/summary_policy.h"
+ #include "chrome/browser/aegis/agent/agent_model_router.h"
+@@ -129,6 +133,9 @@ class AegisService : public KeyedService,
+ 
+ #if BUILDFLAG(IS_MAC)
+   void QueryCurrentAccessAccount(base::OnceCallback<void(base::DictValue)> callback);
++  // Revalidates the account capability and ages the observation at every read.
++  base::DictValue CurrentAccessAccountSnapshot();
++  base::ScopedClosureRunner ObserveAccessAccountUsage();
+ #endif
+ 
+   bool IsEnabled() const;
+@@ -314,6 +321,24 @@ class AegisService : public KeyedService,
+       base::WeakPtr<Profile> retiring_incognito,
+       int retries_remaining);
+ 
++#if BUILDFLAG(IS_MAC)
++  friend class AccessAccountRefreshTestPeer;
++  base::DictValue ResolveAccessAccountSnapshot(bool reschedule);
++  void SetAccessAccountUsageVisible(base::UnguessableToken owner, bool visible);
++  void InitializeAccessAccountRefresh();
++  void StopAccessAccountRefresh();
++  void AccessAccountApplicationStateChanged();
++  void ScheduleAccessAccountRefresh();
++  void StartAccessAccountRefresh(bool manual);
++  void OnAccessAccountReady(base::RepeatingCallback<base::DictValue()> resolve);
++  access::AccessAccountRefresh access_account_refresh_;
++  base::OneShotTimer access_account_timer_;
++  base::ScopedClosureRunner access_account_activation_observer_;
++  base::RepeatingCallback<base::DictValue()> access_account_reply_;
++  std::string access_account_reply_state_;
++  bool access_account_query_unavailable_ = false;
++  std::vector<base::OnceCallback<void(base::DictValue)>> access_account_waiters_;
++#endif
+   bool initialized_ = false;
+   const std::string torrent_owner_id_;
+   raw_ptr<PrefService> prefs_ = nullptr;
+diff --git a/chrome/browser/aegis/aegis_service_access_account_mac.mm b/chrome/browser/aegis/aegis_service_access_account_mac.mm
+index 18c413ed95f13399b520bedce3665be1249b9d79..06dce7d6c4e961cc910370f733af7b908a5509c8 100644
+--- a/chrome/browser/aegis/aegis_service_access_account_mac.mm
++++ b/chrome/browser/aegis/aegis_service_access_account_mac.mm
+@@ -1,38 +1,245 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/aegis/aegis_service.h"
+ 
+-#import "chrome/browser/aegis/access/access_account_mac.h"
++#import <AppKit/AppKit.h>
++
++#include <memory>
++#include <string_view>
++#include <utility>
+ 
+-#include "base/files/file_path.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_reader.h"
+ #include "base/strings/sys_string_conversions.h"
+ #include "base/task/bind_post_task.h"
++#include "chrome/browser/aegis/access/access_account_mac.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/global_features.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ 
+ namespace aegis {
++namespace {
++
++base::DictValue AccountState(std::string_view state) {
++  return base::DictValue().Set("state", state);
++}
++
++base::DictValue ResolveAccountReply(AegisAccountReply resolve) {
++  NSData* json = [NSJSONSerialization dataWithJSONObject:resolve()
++                                                options:0
++                                                  error:nil];
++  auto parsed = json ? base::JSONReader::ReadDict(
++      std::string_view(static_cast<const char*>(json.bytes), json.length),
++      base::JSON_PARSE_RFC) : std::nullopt;
++  return parsed ? std::move(*parsed) : AccountState("unavailable");
++}
++
++GlobalBrowserCollection* Browsers() {
++  auto* features = g_browser_process ? g_browser_process->GetFeatures() : nullptr;
++  return features ? features->global_browser_collection() : nullptr;
++}
++
++class AccountBrowserObserver : public BrowserCollectionObserver {
++ public:
++  AccountBrowserObserver(GlobalBrowserCollection* browsers,
++                         base::RepeatingClosure changed)
++      : changed_(std::move(changed)) {
++    if (browsers) observation_.Observe(browsers);
++  }
++
++  void OnBrowserActivated(BrowserWindowInterface* browser) override {
++    changed_.Run();
++  }
++
++  void OnBrowserClosed(BrowserWindowInterface* browser) override {
++    changed_.Run();
++  }
++
++ private:
++  base::RepeatingClosure changed_;
++  base::ScopedObservation<GlobalBrowserCollection, BrowserCollectionObserver>
++      observation_{this};
++};
++
++}  // namespace
++
++void AegisService::InitializeAccessAccountRefresh() {
++  if (!profile_->IsRegularProfile() || profile_->IsOffTheRecord()) {
++    return;
++  }
++  auto changed = base::BindRepeating(
++      &AegisService::AccessAccountApplicationStateChanged,
++      weak_ptr_factory_.GetWeakPtr());
++  auto browsers = std::make_unique<AccountBrowserObserver>(Browsers(), changed);
++  auto on_activation = ^(NSNotification*) { changed.Run(); };
++  NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
++  id active = [center addObserverForName:NSApplicationDidBecomeActiveNotification
++      object:nil queue:NSOperationQueue.mainQueue usingBlock:on_activation];
++  id inactive = [center addObserverForName:NSApplicationDidResignActiveNotification
++      object:nil queue:NSOperationQueue.mainQueue usingBlock:on_activation];
++  access_account_activation_observer_ = base::ScopedClosureRunner(base::BindOnce(
++      [](NSNotificationCenter* center, id active, id inactive,
++         std::unique_ptr<AccountBrowserObserver> browsers) {
++        [center removeObserver:active];
++        [center removeObserver:inactive];
++      }, center, active, inactive, std::move(browsers)));
++  AccessAccountApplicationStateChanged();
++}
++
++void AegisService::StopAccessAccountRefresh() {
++  access_account_activation_observer_.RunAndReset();
++  access_account_timer_.Stop();
++  access_account_refresh_.SetActivity(false, false, base::TimeTicks::Now());
++  access_account_reply_.Reset();
++  access_account_reply_state_.clear();
++  access_account_query_unavailable_ = false;
++  access_account_waiters_.clear();
++}
++
++void AegisService::AccessAccountApplicationStateChanged() {
++  auto* browsers = Browsers();
++  auto* browser = browsers ? browsers->GetLastActiveBrowser() : nullptr;
++  access_account_refresh_.SetActivity(NSApp.active,
++      browser && browser->GetProfile() == profile_, base::TimeTicks::Now());
++  ScheduleAccessAccountRefresh();
++}
++
++base::ScopedClosureRunner AegisService::ObserveAccessAccountUsage() {
++  const auto owner = base::UnguessableToken::Create();
++  SetAccessAccountUsageVisible(owner, true);
++  return base::ScopedClosureRunner(base::BindOnce(
++      &AegisService::SetAccessAccountUsageVisible,
++      weak_ptr_factory_.GetWeakPtr(), owner, false));
++}
++
++void AegisService::SetAccessAccountUsageVisible(base::UnguessableToken owner,
++                                               bool visible) {
++  if (!profile_ || !initialized_ || !profile_->IsRegularProfile() ||
++      profile_->IsOffTheRecord()) {
++    return;
++  }
++  access_account_refresh_.SetVisible(owner, visible, base::TimeTicks::Now());
++  ScheduleAccessAccountRefresh();
++}
++
++void AegisService::ScheduleAccessAccountRefresh() {
++  access_account_timer_.Stop();
++  if (!initialized_) {
++    return;
++  }
++  auto delay = access_account_refresh_.DueIn(base::TimeTicks::Now());
++  if (delay) {
++    access_account_timer_.Start(
++        FROM_HERE, *delay, base::BindOnce(&AegisService::StartAccessAccountRefresh,
++                                         weak_ptr_factory_.GetWeakPtr(), false));
++  }
++}
++
++base::DictValue AegisService::CurrentAccessAccountSnapshot() {
++  return ResolveAccessAccountSnapshot(true);
++}
++
++base::DictValue AegisService::ResolveAccessAccountSnapshot(bool reschedule) {
++  if (!profile_ || !initialized_ || !profile_->IsRegularProfile() ||
++      profile_->IsOffTheRecord()) {
++    return AccountState("signed_out");
++  }
++  if (access_account_reply_.is_null()) {
++    return AccountState(access_account_refresh_.in_flight() ? "loading"
++                                                             : "unavailable");
++  }
++  auto result = access_account_reply_.Run();
++  const auto* state = result.FindString("state");
++  if (state && *state != access_account_reply_state_) {
++    access_account_reply_.Reset();
++    access_account_reply_state_.clear();
++    access_account_query_unavailable_ = false;
++    access_account_refresh_.IdentityChanged(base::TimeTicks::Now());
++    if (reschedule) ScheduleAccessAccountRefresh();
++  } else if (state && *state == "available" && result.FindDict("entitlement") &&
++             (access_account_query_unavailable_ ||
++              access_account_refresh_.in_flight())) {
++    result.Set("state", access_account_query_unavailable_ ? "unavailable"
++                                                         : "loading");
++    result.Set("stale", true);
++  }
++  return result;
++}
++
+ void AegisService::QueryCurrentAccessAccount(
+     base::OnceCallback<void(base::DictValue)> callback) {
+   if (!profile_ || !initialized_ || !profile_->IsRegularProfile() ||
+       profile_->IsOffTheRecord()) {
+-    std::move(callback).Run(base::DictValue().Set("state", "signed_out"));
++    std::move(callback).Run(AccountState("signed_out"));
++    return;
++  }
++  access_account_waiters_.push_back(std::move(callback));
++  StartAccessAccountRefresh(true);
++}
++
++void AegisService::StartAccessAccountRefresh(bool manual) {
++  if (!profile_ || !initialized_) {
++    return;
++  }
++  // A newly switched identity does not inherit the previous account's
++  // debounce or retry delay.
++  if (access_account_reply_) ResolveAccessAccountSnapshot(false);
++  if (!access_account_refresh_.Begin(base::TimeTicks::Now(), manual)) {
++    if (!access_account_refresh_.in_flight()) {
++      auto weak = weak_ptr_factory_.GetWeakPtr();
++      auto callbacks = std::exchange(access_account_waiters_, {});
++      for (auto& callback : callbacks) {
++        if (!weak) break;
++        std::move(callback).Run(weak->CurrentAccessAccountSnapshot());
++      }
++    }
+     return;
+   }
+-  // Bind delivery to this service and its original UI sequence. Destruction
+-  // and Shutdown invalidate the Profile capability before a reply can escape.
++  access_account_timer_.Stop();
+   __block auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
+-      [](base::WeakPtr<AegisService> service,
+-         base::OnceCallback<void(base::DictValue)> callback, AegisAccountReply resolve) {
+-        if (!service || !service->IsInitializedForProfile(service->profile())) return;
+-        NSDictionary* result = resolve();
+-        NSData* json = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+-        auto parsed = json ? base::JSONReader::ReadDict(
+-            std::string_view(static_cast<const char*>(json.bytes), json.length),
+-            base::JSON_PARSE_RFC) : std::nullopt;
+-        std::move(callback).Run(parsed ? std::move(*parsed)
+-                                      : base::DictValue().Set("state", "unavailable"));
+-      }, weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++      [](base::WeakPtr<AegisService> service, AegisAccountReply resolve) {
++        if (service && service->IsInitializedForProfile(service->profile())) {
++          service->OnAccessAccountReady(
++              base::BindRepeating(&ResolveAccountReply, resolve));
++        }
++      }, weak_ptr_factory_.GetWeakPtr()));
+   AegisQueryAccessAccount(base::SysUTF8ToNSString(profile_->GetPath().value()),
+       ^(AegisAccountReply resolve) { std::move(reply).Run(resolve); });
+ }
++
++void AegisService::OnAccessAccountReady(
++    base::RepeatingCallback<base::DictValue()> resolve) {
++  auto result = resolve.Run();
++  const auto* state = result.FindString("state");
++  const std::string_view reply_state =
++      state ? std::string_view(*state) : "unavailable";
++  access_account_query_unavailable_ = reply_state == "unavailable";
++  // A failed refresh can keep the prior observation only while its original
++  // Profile binding still validates on every read. Sign-out and identity
++  // replacement discard it regardless of the previous balance.
++  if (access_account_query_unavailable_ &&
++      access_account_reply_state_ == "available") {
++    ResolveAccessAccountSnapshot(false);
++  } else {
++    access_account_reply_ = std::move(resolve);
++    access_account_reply_state_ = reply_state;
++  }
++  const auto now = base::TimeTicks::Now();
++  access_account_refresh_.Complete(reply_state == "available" ||
++                                       reply_state == "signed_out",
++                                   now);
++  if (reply_state == "superseded") {
++    access_account_refresh_.IdentityChanged(now);
++  }
++  ScheduleAccessAccountRefresh();
++  auto weak = weak_ptr_factory_.GetWeakPtr();
++  auto callbacks = std::exchange(access_account_waiters_, {});
++  for (auto& callback : callbacks) {
++    if (!weak) break;
++    std::move(callback).Run(weak->CurrentAccessAccountSnapshot());
++  }
++}
++
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 339f6cecdea232a991391a7cb5d5b0c9b0b06cb6..c9ab001ef3f841380f367add929cc1a9eba866d5 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -19,6 +19,7 @@
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
++#include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/aegis/metalink_download_verifier.h"
+ #include "chrome/browser/chrome_content_browser_client.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+@@ -43,6 +44,27 @@
+ #include "url/origin.h"
+ 
+ namespace aegis {
++#if BUILDFLAG(IS_MAC)
++class AccessAccountRefreshTestPeer {
++ public:
++  static void ActivateWithoutPlatformNotifications(AegisService& service) {
++    service.StopAccessAccountRefresh();
++    service.access_account_refresh_.SetActivity(true, true,
++                                               base::TimeTicks::Now());
++  }
++
++  static void FinishQuery(
++      AegisService& service,
++      base::RepeatingCallback<base::DictValue()> resolve) {
++    service.OnAccessAccountReady(std::move(resolve));
++  }
++
++  static void StopTimer(AegisService& service) {
++    service.access_account_timer_.Stop();
++  }
++};
++#endif
++
+ namespace {
+ 
+ class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
+@@ -143,6 +165,9 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
+   const auto file = profile()->GetPath().AppendASCII("AegisAccessAccount.json");
+   ASSERT_TRUE(base::WriteFile(file, base::WriteJson(binding).value()));
+   ASSERT_TRUE(base::SetPosixFilePermissions(file, 0600));
++  auto* service = AegisServiceFactory::GetForProfile(profile());
++  ASSERT_TRUE(service);
++  AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(*service);
+   auto contents = content::WebContents::Create(content::WebContents::CreateParams(profile()));
+   content::TestWebUI web_ui;
+   web_ui.set_web_contents(contents.get());
+@@ -159,8 +184,11 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
+   untrusted_args.Append("other-account");
+   web_ui.HandleReceivedMessage("getCurrentAccessAccount", untrusted_args);
+   EXPECT_EQ(web_ui.call_data().size(), 1u);
++  web_ui.HandleReceivedMessage("getAccessAccountSnapshot", args);
++  ASSERT_EQ(web_ui.call_data().size(), 2u);
++  EXPECT_EQ(requests.load(), 0);
+   web_ui.HandleReceivedMessage("getCurrentAccessAccount", args);
+-  ASSERT_TRUE(base::test::RunUntil([&] { return web_ui.call_data().size() == 2; }));
++  ASSERT_TRUE(base::test::RunUntil([&] { return web_ui.call_data().size() == 3; }));
+   const auto& result = web_ui.call_data().back()->arg3()->GetDict();
+   EXPECT_EQ(result.FindString("state") ? *result.FindString("state") : "", "available");
+   const auto* account = result.FindStringByDottedPath("entitlement.entitlementAccountId");
+@@ -192,6 +220,10 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
+       ASSERT_TRUE(held->posted.TimedWait(base::Seconds(5)));
+     }
+     ASSERT_EQ(web_ui.call_data().size(), prior);
++    base::ListValue second;
++    second.Append("read-coalesced");
++    web_ui.HandleReceivedMessage("getCurrentAccessAccount", second);
++    ASSERT_EQ(web_ui.call_data().size(), prior);
+     bool sign_out = std::string_view(action) == "sign_out";
+     if (sign_out) {
+       ASSERT_TRUE(base::DeleteFile(file));
+@@ -199,13 +231,64 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
+       ASSERT_TRUE(install("B"));
+       if (std::string_view(action) == "switch_back") ASSERT_TRUE(install("A"));
+     }
+-    held->RunUntilIdle();
+-    ASSERT_EQ(web_ui.call_data().size(), prior + 1);
++    // The reply can schedule an immediate refresh for the replacement
++    // identity. TestSimpleTaskRunner drains delayed tasks too; execute only
++    // this delivery and stop its timer before starting an independent case.
++    held->RunPendingTasks();
++    AccessAccountRefreshTestPeer::StopTimer(*service);
++    ASSERT_EQ(web_ui.call_data().size(), prior + 2);
++    EXPECT_EQ(web_ui.call_data()[prior]->arg3()->GetDict(),
++              web_ui.call_data()[prior + 1]->arg3()->GetDict());
+     const auto& delivered = web_ui.call_data().back()->arg3()->GetDict();
+     const auto* state = delivered.FindString("state");
+     EXPECT_EQ(state ? *state : "", sign_out ? "signed_out" : "superseded");
+     EXPECT_FALSE(delivered.contains("entitlement"));
+   }
++  EXPECT_EQ(requests.load(), 4);
++}
++
++TEST_F(AegisUIHandlerTest, StaleBalanceIsKeptOnlyForItsOriginalBinding) {
++  auto* service = AegisServiceFactory::GetForProfile(profile());
++  ASSERT_TRUE(service);
++  AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(*service);
++
++  bool original_binding = true;
++  const base::ScopedClosureRunner reset_service(base::BindOnce(
++      [](AegisService* service) {
++        AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(
++            *service);
++      },
++      service));
++  AccessAccountRefreshTestPeer::FinishQuery(
++      *service, base::BindLambdaForTesting([&] {
++        if (!original_binding) {
++          return base::DictValue().Set("state", "superseded");
++        }
++        return base::DictValue()
++            .Set("state", "available")
++            .Set("entitlement",
++                 base::DictValue().Set("remainingBytes", "12345"));
++      }));
++  EXPECT_FALSE(
++      service->CurrentAccessAccountSnapshot().FindBool("stale").value_or(false));
++
++  AccessAccountRefreshTestPeer::FinishQuery(
++      *service, base::BindLambdaForTesting([] {
++        return base::DictValue().Set("state", "unavailable");
++      }));
++  const auto prior = service->CurrentAccessAccountSnapshot();
++  EXPECT_TRUE(prior.FindBool("stale").value_or(false));
++  const auto* remaining =
++      prior.FindStringByDottedPath("entitlement.remainingBytes");
++  ASSERT_TRUE(remaining);
++  EXPECT_EQ(*remaining, "12345");
++
++  original_binding = false;
++  auto after_switch = service->CurrentAccessAccountSnapshot();
++  ASSERT_TRUE(after_switch.FindString("state"));
++  EXPECT_EQ(*after_switch.FindString("state"), "superseded");
++  EXPECT_FALSE(after_switch.contains("entitlement"));
++  EXPECT_FALSE(service->CurrentAccessAccountSnapshot().contains("entitlement"));
+ }
+ #endif
+ 
+diff --git a/chrome/browser/resources/settings/BUILD.gn b/chrome/browser/resources/settings/BUILD.gn
+index 44c4086e2d45192c358671ba1b1a3a71ead8200d..fb411986e74a493f5756a115e973f553f21f7a50 100644
+--- a/chrome/browser/resources/settings/BUILD.gn
++++ b/chrome/browser/resources/settings/BUILD.gn
+@@ -218,6 +218,7 @@ build_webui("build") {
+   # -----------------ts_files start ----------------------------
+ 
+   ts_files = [
++    "aegis_page/access_account_usage.ts",
+     "privacy_icons.html.ts",
+     "a11y_page/a11y_browser_proxy.ts",
+     "a11y_page/a11y_page.html.ts",
+diff --git a/chrome/browser/resources/settings/aegis_page/access_account_usage.ts b/chrome/browser/resources/settings/aegis_page/access_account_usage.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..638eacfe2581f2e196e14714589cdaa102de8ef0
+--- /dev/null
++++ b/chrome/browser/resources/settings/aegis_page/access_account_usage.ts
+@@ -0,0 +1,283 @@
++// Copyright 2026 GCSA
++// Read-only account observations. Traffic admission and metering belong to the service.
++export interface AccessUsageReply {
++  state: 'available'|'loading'|'signed_out'|'superseded'|'unavailable';
++  stale?: boolean;
++  // Authoritative service decision time aged through native delivery.
++  evaluatedAt?: number;
++  entitlement?: {
++    entitlementAccountId: string;
++    status: 'active'|'exhausted'|'expired'|'not_subscribed';
++    quotaBytes: string|null;
++    usedBytes: string|null;
++    remainingBytes: string|null;
++    uploadedBytes: string|null;
++    downloadedBytes: string|null;
++    measuredAt: number|null;
++    receivedAt: number|null;
++    snapshotAgeMs: number|null;
++    freshness: 'current'|'delayed'|'unavailable'|null;
++    expiresAt: number|null;
++    periodEnd: number|null;
++    quotaSource?: '3xui_alpha';
++    panelExpiryMode?: 'none'|'absolute';
++    panelExpiresAt?: number|null;
++  };
++}
++
++export function formatUsageBytes(raw: string|null): string {
++  if (raw === null || !/^(0|[1-9]\d*)$/.test(raw)) return '—';
++  const bytes = BigInt(raw);
++  if (bytes > 18446744073709551615n) return '—';
++  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
++  let divisor = 1n;
++  let unit = 0;
++  while (unit < units.length - 1 && bytes / divisor >= 1024n) {
++    divisor *= 1024n;
++    ++unit;
++  }
++  if (!unit) return `${raw} B`;
++  const fraction = ((bytes % divisor) * 100n / divisor).toString().padStart(2, '0');
++  return `${bytes / divisor}.${fraction} ${units[unit]} (${raw} B)`;
++}
++
++export function usageFreshness(
++    reply: AccessUsageReply, elapsedMs: number): 'current'|'delayed'|'unavailable' {
++  const data = reply.entitlement;
++  if (!data || data.measuredAt === null || data.receivedAt === null ||
++      data.snapshotAgeMs === null || !Number.isSafeInteger(data.measuredAt) ||
++      !Number.isSafeInteger(data.receivedAt) || !Number.isSafeInteger(data.snapshotAgeMs) ||
++      data.measuredAt < 0 || data.receivedAt < data.measuredAt ||
++      data.snapshotAgeMs < data.receivedAt - data.measuredAt ||
++      !Number.isFinite(elapsedMs) || elapsedMs < 0) return 'unavailable';
++  const classify = (age: number) => age > 15000 ? 'unavailable' :
++      age > 5000 ? 'delayed' : 'current';
++  if (data.freshness !== classify(data.snapshotAgeMs)) return 'unavailable';
++  return classify(data.snapshotAgeMs + Math.ceil(elapsedMs));
++}
++
++export function usageStatus(reply: AccessUsageReply, elapsedMs: number):
++    'active'|'exhausted'|'expired'|'not_subscribed'|'unavailable' {
++  const data = reply.entitlement;
++  if (!data) return 'unavailable';
++  if (data.status === 'not_subscribed' || data.status === 'expired') return data.status;
++  const evaluated = reply.evaluatedAt;
++  const end = data.periodEnd;
++  const expiry = data.expiresAt;
++  if (evaluated == null || end === null || expiry === null ||
++      !Number.isSafeInteger(evaluated) || evaluated < 0 ||
++      !Number.isSafeInteger(end) || end <= 0 ||
++      !Number.isSafeInteger(expiry) || expiry <= 0 ||
++      !Number.isFinite(elapsedMs) || elapsedMs < 0) return 'unavailable';
++  return evaluated + Math.ceil(elapsedMs) >= Math.min(end, expiry) ?
++      'expired' : data.status;
++}
++
++// One in-flight snapshot read per visible settings view. Replies from a hidden
++// or detached view cannot replace its next observation.
++export class AccessUsageRefresh {
++  private static pendingRead_: Promise<AccessUsageReply>|null = null;
++  private inFlight_ = false;
++  private visible_ = false;
++  private generation_ = 0;
++  constructor(
++      private snapshot_: () => Promise<AccessUsageReply>,
++      private render_: (reply: AccessUsageReply|null, deliveryAgeMs?: number) => void,
++      private isVisible_: () => boolean = () => true,
++      private now_: () => number = () => performance.now(),
++      private clearWhileReading_ = true) {}
++  private current_(generation: number): boolean {
++    if (this.visible_ && !this.isVisible_()) this.setVisible(false);
++    return this.visible_ && generation === this.generation_;
++  }
++  setVisible(visible: boolean) {
++    if (visible === this.visible_) return;
++    this.visible_ = visible;
++    ++this.generation_;
++    this.render_(null);
++    if (visible) void this.refresh();
++  }
++  async refresh() {
++    if (!this.visible_ || this.inFlight_) return;
++    this.inFlight_ = true;
++    const generation = this.generation_;
++    if (this.clearWhileReading_) this.render_(null);
++    try {
++      // Keep the native request fence across Polymer restamping. A hidden
++      // waiter is discarded before it can start its own request.
++      while (AccessUsageRefresh.pendingRead_) {
++        try { await AccessUsageRefresh.pendingRead_; } catch {}
++      }
++      if (!this.current_(generation)) return;
++      const started = this.now_();
++      const pending = this.snapshot_();
++      AccessUsageRefresh.pendingRead_ = pending;
++      try {
++        const reply = await pending;
++        // The native snapshot is already aged through sampling. Charge the
++        // full round trip of this cached read as a conservative delivery bound.
++        if (this.current_(generation)) this.render_(reply, this.now_() - started);
++      } finally {
++        if (AccessUsageRefresh.pendingRead_ === pending) AccessUsageRefresh.pendingRead_ = null;
++      }
++    } catch {
++      if (this.current_(generation)) {
++        this.render_({state: 'unavailable'});
++      }
++    } finally {
++      this.inFlight_ = false;
++      if (this.visible_ && generation !== this.generation_) void this.refresh();
++    }
++  }
++}
++
++export function startAccessUsage(
++    root: HTMLElement, snapshot: () => Promise<AccessUsageReply>,
++    query: () => Promise<AccessUsageReply>, setVisible: (visible: boolean) => void,
++    isVisible: () => boolean): () => void {
++  const lang = document.documentElement.lang.toLowerCase();
++  const text = (cn: string, en: string, tw = cn) =>
++      lang.startsWith('zh') ? (/tw|hk|hant/.test(lang) ? tw : cn) : en;
++  const put = (id: string, value: string) => {
++    const element = root.querySelector<HTMLElement>(`[data-usage="${id}"]`);
++    if (element && element.textContent !== value) element.textContent = value;
++  };
++  let last: AccessUsageReply|null = null;
++  let received = 0;
++  let deliveryAge = 0;
++  let displayedValues = '';
++  const paintObservation = (reply: AccessUsageReply, elapsed: number) => {
++    if (reply.stale) {
++      put('status', text('这是上次查询结果，当前额度尚未确认',
++          'Last result; current balance is unconfirmed',
++          '這是上次查詢結果，目前額度尚未確認'));
++      put('freshness', '');
++      return;
++    }
++    const states = {
++      active: text('服务端报告：额度有效', 'Service reports available quota', '伺服器回報：額度有效'),
++      exhausted: text('服务端报告：额度已耗尽', 'Service reports quota exhausted', '伺服器回報：額度已耗盡'),
++      expired: text('授权已到期', 'Authorization expired', '授權已到期'),
++      not_subscribed: text('尚无有效套餐', 'No active plan', '尚無有效方案'),
++      unavailable: text('授权状态未确认，请刷新', 'Authorization unconfirmed; refresh usage', '授權狀態未確認，請重新整理'),
++    };
++    put('status', states[usageStatus(reply, elapsed)]);
++    if (reply.entitlement?.status === 'not_subscribed') {
++      put('freshness', '');
++      return;
++    }
++    const freshness = usageFreshness(reply, elapsed);
++    put('freshness', freshness === 'current' ? text('用量测量较新', 'Recent usage measurement', '用量測量較新') :
++        freshness === 'delayed' ? text('用量同步有延迟', 'Usage synchronization delayed', '用量同步有延遲') :
++        text('用量测量时间未知或数据已陈旧', 'Measurement time unknown or usage stale', '用量測量時間未知或資料已陳舊'));
++  };
++  const render = (reply: AccessUsageReply|null, elapsed = 0) => {
++    last = reply;
++    received = performance.now();
++    deliveryAge = elapsed;
++    put('heading', text('Access 账户额度', 'Access account usage', 'Access 帳戶額度'));
++    put('refresh', text('刷新额度', 'Refresh usage', '重新整理額度'));
++    put('note', text('此处只展示服务端额度快照。',
++        'This view shows a read-only service quota snapshot.', '此處僅顯示伺服器額度快照。'));
++    const values = root.querySelector<HTMLElement>('[data-usage="values"]');
++    if (!values) return;
++
++    if (!reply?.entitlement || (reply.state !== 'available' && !reply.stale)) {
++      values.replaceChildren();
++      displayedValues = '';
++      put('freshness', '');
++      put('status', !reply || reply.state === 'loading' ? text('正在查询额度…', 'Loading usage…', '正在查詢額度…') :
++          reply.state === 'signed_out' ? text('尚未绑定额度查询账户', 'No usage account is bound', '尚未綁定額度查詢帳戶') :
++          text('额度查询失败，当前余额未确认', 'Usage unavailable; current balance is unconfirmed', '額度查詢失敗，目前餘額未確認'));
++      return;
++    }
++    const data = reply.entitlement;
++    paintObservation(reply, deliveryAge);
++    const key = JSON.stringify([
++      data.entitlementAccountId, data.status === 'not_subscribed', data.quotaBytes,
++      data.usedBytes, data.remainingBytes, data.uploadedBytes, data.downloadedBytes,
++      data.measuredAt, data.receivedAt, data.expiresAt, data.quotaSource,
++      data.panelExpiryMode, data.panelExpiresAt,
++    ]);
++    if (key === displayedValues) return;
++    displayedValues = key;
++    values.replaceChildren();
++    const row = (label: string, value: string) => {
++      const item = document.createElement('p');
++      item.textContent = `${label} · ${value}`;
++      values.append(item);
++    };
++    if (data.status === 'not_subscribed') return;
++    row(text('总额度', 'Total quota', '總額度'), formatUsageBytes(data.quotaBytes));
++    row(text('已用', 'Used'), formatUsageBytes(data.usedBytes));
++    row(text('剩余', 'Remaining', '剩餘'), formatUsageBytes(data.remainingBytes));
++    row(text('上传', 'Uploaded', '上傳'), formatUsageBytes(data.uploadedBytes));
++    row(text('下载', 'Downloaded', '下載'), formatUsageBytes(data.downloadedBytes));
++    const stamp = (raw: number|null|undefined) => raw == null ? '—' : new Date(raw).toLocaleString();
++    row(text('服务端测量时间', 'Source measurement time', '伺服器測量時間'), stamp(data.measuredAt));
++    row(text('数据接收时间', 'Source receipt time', '資料接收時間'), stamp(data.receivedAt));
++    row(data.quotaSource === '3xui_alpha' ?
++        text('查询授权截止', 'Query authorization expiry', '查詢授權截止') :
++        text('到期时间', 'Expiry', '到期時間'), stamp(data.expiresAt));
++    if (data.quotaSource === '3xui_alpha') {
++      row(text('来源', 'Source', '來源'), '3X-UI Alpha');
++      row(text('节点到期', 'Node expiry', '節點到期'), data.panelExpiryMode === 'none' ?
++          text('未设到期', 'No expiry configured', '未設到期') : stamp(data.panelExpiresAt));
++    }
++  };
++  const visibleNow = () => !document.hidden && isVisible();
++  const refresh = new AccessUsageRefresh(
++      snapshot, render, visibleNow, () => performance.now(), false);
++  let visible = false;
++  let manual = false;
++  const button = root.querySelector<HTMLButtonElement>('[data-usage="refresh"]');
++  const onRefresh = async () => {
++    if (!visibleNow() || manual) return;
++    manual = true;
++    if (button) button.disabled = true;
++    try {
++      await query();
++    } catch {
++      // A torn-down WebUI cannot receive the reply.
++    } finally {
++      manual = false;
++      if (button) button.disabled = false;
++      if (visibleNow()) void refresh.refresh();
++    }
++  };
++  button?.addEventListener('click', onRefresh);
++  const tick = () => {
++    const next = visibleNow();
++    if (next !== visible) {
++      visible = next;
++      setVisible(visible);
++      refresh.setVisible(visible);
++    } else if (visible) {
++      void refresh.refresh();
++    }
++    if (visible && last?.state === 'available' && !last.stale) {
++      paintObservation(last, deliveryAge + performance.now() - received);
++    }
++  };
++  tick();
++  // Reads an already validated in-process snapshot. Network cadence is owned
++  // by the Profile, including while this settings tab is closed.
++  const timer = window.setInterval(tick, 1000);
++  document.addEventListener('visibilitychange', tick);
++  const observer = new MutationObserver(tick);
++  for (let element: HTMLElement|null = root; element;) {
++    observer.observe(element, {attributes: true,
++      attributeFilter: ['hidden', 'hidden-by-search', 'class', 'style']});
++    const tree = element.getRootNode();
++    const host: Element|null = tree instanceof ShadowRoot ? tree.host : null;
++    element = element.parentElement ?? (host instanceof HTMLElement ? host : null);
++  }
++  return () => {
++    if (visible) setVisible(false);
++    refresh.setVisible(false);
++    window.clearInterval(timer);
++    document.removeEventListener('visibilitychange', tick);
++    observer.disconnect();
++    button?.removeEventListener('click', onRefresh);
++  };
++}
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.html b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+index 59623439be924316095e8a1c172b405b41b862ed..76d33e152182a00039fe77a0cefc86cc890f12c4 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.html
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+@@ -50,6 +50,16 @@
+   <a href="/aegisTools"><cr-icon icon="settings:build"></cr-icon><span><strong>$i18n{aegisToolsTitle}</strong><small>$i18n{aegisToolsDescription}</small></span></a>
+   <a href="/aegisExperiments"><cr-icon icon="settings20:insight-spark"></cr-icon><span><strong>$i18n{aegisExperimentsTitle}</strong><small>$i18n{aegisExperimentsDescription}</small></span></a>
+ </nav></template>
++<if expr="is_macosx">
++<section id="access-account-usage" hidden$="[[!isMode_(mode, 'home')]]">
++  <h2 data-usage="heading"></h2>
++  <p data-usage="status" role="status"></p>
++  <div data-usage="values"></div>
++  <p data-usage="freshness"></p>
++  <button data-usage="refresh" type="button"></button>
++  <p class="hint" data-usage="note"></p>
++</section>
++</if>
+ <template is="dom-if" if="[[isMode_(mode, 'enhancements')]]">
+   <p id="result" role="status" aria-live="polite"></p>
+   <section><div class="section-heading row"><h2>网站规则</h2><button id="rule-new" class="primary">添加网站</button></div>
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.ts b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+index 5b93452f99e75249c8114f5e97a01afeaee70992..153d5e1242ad597cd9a5d37929ddc08091c72526 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.ts
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+@@ -8,6 +8,9 @@ import {flush, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/pol
+ import {loadTimeData} from '../i18n_setup.js';
+ import type {SearchResult} from '../search_settings.js';
+ import {getTemplate} from './aegis_page.html.js';
++// <if expr="is_macosx">
++import {startAccessUsage} from './access_account_usage.js';
++// </if>
+ 
+ type ReadingPreferences = {theme: string, family: string, font: number, spacing: number, width: number};
+ type SiteRule = {origin: string, menu: boolean, copy: boolean, debug: boolean, subdomains: boolean, disabled: boolean};
+@@ -22,6 +25,9 @@ export class SettingsAegisPageElement extends PolymerElement {
+   private statusListener_: WebUiListener|undefined;
+   private translate_: (value: string) => string = value => value;
+   private cleanup_: (() => void)|undefined;
++  // <if expr="is_macosx">
++  private usageCleanup_: (() => void)|undefined;
++  // </if>
+   private state_: State = {};
+   private readingSave_: Promise<void> = Promise.resolve();
+   private readingSequence_ = 0;
+@@ -58,9 +64,32 @@ export class SettingsAegisPageElement extends PolymerElement {
+       this.shadowRoot?.querySelector<HTMLIFrameElement>('.legacy-frame')
+           ?.contentWindow?.postMessage({type: 'aegis-settings-status', status}, 'chrome://aegis');
+     });
+-    queueMicrotask(() => { flush(); void this.initialize_().catch(error => this.message_(String(error))); });
++    queueMicrotask(() => {
++      if (!this.isConnected) return;
++      flush();
++      // <if expr="is_macosx">
++      const usage = this.shadowRoot?.querySelector<HTMLElement>('#access-account-usage');
++      if (usage) this.usageCleanup_ = startAccessUsage(usage,
++          () => sendWithPromise('getAccessAccountSnapshot'),
++          () => sendWithPromise('getCurrentAccessAccount'),
++          visible => chrome.send('setAccessAccountUsageVisible', [visible]),
++          () => this.isConnected && this.mode === 'home' &&
++              usage.checkVisibility({checkVisibilityCSS: true}));
++      // </if>
++      void this.initialize_().catch(error => this.message_(String(error)));
++    });
++  }
++  override disconnectedCallback() {
++    // <if expr="is_macosx">
++    this.usageCleanup_?.();
++    // </if>
++    if (this.statusListener_) removeWebUiListener(this.statusListener_);
++    window.removeEventListener('message', this.onFrameMessage_);
++    window.removeEventListener('beforeunload', this.beforeUnload_);
++    window.removeEventListener('aegis-settings-before-route', this.routeGuard_);
++    this.cleanup_?.();
++    super.disconnectedCallback();
+   }
+-  override disconnectedCallback() { if (this.statusListener_) removeWebUiListener(this.statusListener_); window.removeEventListener('message', this.onFrameMessage_); window.removeEventListener('beforeunload', this.beforeUnload_); window.removeEventListener('aegis-settings-before-route', this.routeGuard_); this.cleanup_?.(); super.disconnectedCallback(); }
+   // 子框架没有 chrome.send 通道；只为当前受信任子页转发固定接口。
+   private onFrameMessage_ = (event: MessageEvent) => {
+     for (const frame of this.shadowRoot?.querySelectorAll<HTMLIFrameElement>('iframe') || []) {
+diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
+index b1f33c549b61e5440a5ec51918e9a3c17719690f..529bc9602adce4209bae93730edd4399e7fa1759 100644
+--- a/chrome/browser/ui/views/toolbar/BUILD.gn
++++ b/chrome/browser/ui/views/toolbar/BUILD.gn
+@@ -189,6 +189,7 @@ source_set("impl") {
+     "//chrome/app/vector_icons",
+     "//chrome/browser:browser_process",
+     "//chrome/browser/aegis",
++    "//chrome/browser/aegis/access:access_navigation_retry_tab_helper",
+     "//chrome/browser/aegis/access:access_site_dev_allow_block_panel",
+     "//chrome/browser:chained_back_navigation_tracker",
+     "//chrome/browser:flags",
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index a0b8f35099c7917c61968866f5d78f207bd3e387..085914cc366a342e1215f461953a815a35fd3d68 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -10,6 +10,8 @@
+ #include <utility>
+ 
+ #include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "base/i18n/time_formatting.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+@@ -25,6 +27,8 @@
+ #include "url/origin.h"
+ #include "chrome/browser/browser_process.h"
+ #if BUILDFLAG(IS_MAC)
++#include "chrome/browser/aegis/access/access_account_refresh.h"
++#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ #include "chrome/browser/aegis/access/access_paid_site_mac.h"
+ #endif
+ #include "chrome/browser/profiles/profile.h"
+@@ -235,6 +239,12 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+       tab_ = aegis::EnhancementField(helper->Snapshot(), "id");
+     }
+   }
++  ~AegisPageBubble() override {
++#if BUILDFLAG(IS_MAC)
++    quota_visibility_.RunAndReset();
++#endif
++  }
++
+  private:
+   aegis::EnhancementTabHelper* Helper() const {
+     return source_ ? aegis::EnhancementTabHelper::FromWebContents(source_.get()) : nullptr;
+@@ -253,10 +263,23 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     panel_ = scroll->SetContents(CreatePanel());
+     AddChildView(std::move(scroll));
+     Build();
++#if BUILDFLAG(IS_MAC)
++    if (auto* controller = AccessBubble()) {
++      controller->ReadConfiguredNodeId(base::BindOnce(
++          [](base::WeakPtr<AegisPageBubble> bubble, std::string id) {
++            if (!bubble || !bubble->Valid()) return;
++            bubble->configured_node_id_ = std::move(id);
++            bubble->RefreshSoon();
++          }, weak_.GetWeakPtr()));
++    }
++#endif
+     timer_.Start(FROM_HERE, base::Milliseconds(500), this, &AegisPageBubble::Poll);
+   }
+   void Poll() {
+     if (!Valid()) {
++#if BUILDFLAG(IS_MAC)
++      quota_visibility_.RunAndReset();
++#endif
+       if (GetWidget()) GetWidget()->Close();
+       return;
+     }
+@@ -273,6 +296,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+         ? aegis::access::AccountNodeForSite(browser_->GetProfile(), access_snapshot->host.value)
+         : aegis::access::AccountNodeStatus::kOff;
+     if (paid_state != paid_status_) { Build(); return; }
++    UpdateQuotaVisibility();
++    PaintQuota();
+     if (expanded_.contains("core-logs") && access && access->CanViewCoreLogs() &&
+         (log_disk_status_ != access->core_logs()->disk_status() ||
+          log_view_version_ != access->core_logs()->view_version())) {
+@@ -400,6 +425,21 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+         (!snap.toggle_on && aegis::access::UsesAccountNode(profile,
+             profile->IsOffTheRecord() && !controller->GetFailedNavigationRetryHandler().is_null()));
+   }
++
++  base::OnceClosure CaptureSiteProxyReload() const {
++    auto* helper = aegis::access::AccessNavigationRetryTabHelper::FromWebContents(
++        source_.get());
++    auto reload = helper ? helper->CaptureSiteProxyReload() : base::OnceClosure();
++    if (!reload) return {};
++    return base::BindOnce(
++        [](base::WeakPtr<BrowserWindowInterface> browser,
++           base::WeakPtr<content::WebContents> tab, base::OnceClosure reload) {
++          if (browser && tab &&
++              browser->GetTabStripModel()->GetActiveWebContents() == tab.get()) {
++            std::move(reload).Run();
++          }
++        }, browser_->GetWeakPtr(), source_, std::move(reload));
++  }
+ #endif
+   // Trusted URL for Access is the committed navigation only (address_).
+   void ToggleSiteProxy() {
+@@ -415,25 +455,167 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+       return;
+     }
+ #if BUILDFLAG(IS_MAC)
+-    if (UseAccountNode(controller, snap, aegis::access::AccountNodeForSite(
+-            browser_->GetProfile(), snap.host.value))) {
++    auto* profile = browser_->GetProfile();
++    using AccountStatus = aegis::access::AccountNodeStatus;
++    const auto account_status = aegis::access::AccountNodeForSite(profile, snap.host.value);
++    if (UseAccountNode(controller, snap, account_status)) {
+       auto weak = weak_.GetWeakPtr();
+       if (snap.toggle_on) {
+         controller->RequestHostProxySession(snap.host, false, base::BindOnce(
+             &aegis::access::DisableAccountNodeSite, browser_->GetProfile(), snap.host.value));
+       } else if (snap.connection != aegis::access::AccessSiteConnectionState::kConnecting) {
+-        aegis::access::ToggleAccountNodeSite(browser_->GetProfile(), snap.host.value);
++        auto reload = account_status == AccountStatus::kOff && address_.SchemeIs("https")
++                          ? CaptureSiteProxyReload() : base::OnceClosure();
++        aegis::access::ToggleAccountNodeSite(profile, snap.host.value, std::move(reload));
+       }
+       if (weak) weak->RefreshSoon();
+       return;
+     }
+-#endif
+-    // Publication path: enable → Prepare/Publish/ACK; disable commits locally
+-    // even when the service is unavailable. Switch state ≠ connectivity.
++    auto reload = snap.toggle_on ? base::OnceClosure() : CaptureSiteProxyReload();
++    controller->RequestHostProxySession(snap.host, !snap.toggle_on, std::move(reload));
++#else
+     controller->RequestHostProxySession(snap.host, !snap.toggle_on);
++#endif
+     RefreshSoon();
+   }
+ #if BUILDFLAG(IS_MAC)
++  void UpdateQuotaVisibility() {
++    auto* widget = GetWidget();
++    const bool visible = expanded_.contains("access-quota") && widget &&
++        widget->IsVisibleOnScreen();
++    if (!visible) {
++      quota_visibility_.RunAndReset();
++      return;
++    }
++    if (quota_visibility_) return;
++    if (auto* service = ServiceForWebContents(browser_, source_.get())) {
++      quota_visibility_ = service->ObserveAccessAccountUsage();
++    }
++  }
++
++  void PaintQuota() {
++    if (!quota_status_ || !quota_values_ || !quota_freshness_) return;
++    auto* service = ServiceForWebContents(browser_, source_.get());
++    const auto snapshot = service ? service->CurrentAccessAccountSnapshot()
++                                  : base::DictValue();
++    const auto* state = snapshot.FindString("state");
++    const auto* data = snapshot.FindDict("entitlement");
++    const auto* status = data ? data->FindString("status") : nullptr;
++    const bool stale = snapshot.FindBool("stale").value_or(false);
++    std::u16string status_text;
++    std::u16string values;
++    std::u16string freshness;
++    if (!status) {
++      if (state && *state == "signed_out") {
++        status_text = Copy(u"尚未绑定额度查询账户", u"No usage account is bound",
++                           u"尚未綁定額度查詢帳戶");
++      } else if (state && *state == "loading") {
++        status_text = Copy(u"正在查询额度…", u"Loading usage…", u"正在查詢額度…");
++      } else {
++        status_text = Copy(u"额度查询失败，请刷新",
++                           u"Usage unavailable. Refresh to retry.",
++                           u"額度查詢失敗，請重新整理");
++      }
++    } else if (*status == "not_subscribed") {
++      status_text = Copy(u"尚无有效套餐", u"No active plan", u"尚無有效方案");
++    } else {
++      status_text = *status == "expired"
++          ? Copy(u"授权已到期", u"Authorization expired", u"授權已到期")
++          : *status == "exhausted"
++              ? Copy(u"服务端报告：额度已耗尽", u"Service reports quota exhausted",
++                     u"伺服器回報：額度已耗盡")
++              : Copy(u"服务端报告：额度有效", u"Service reports available quota",
++                     u"伺服器回報：額度有效");
++      const auto row = [&](std::u16string title, std::u16string value) {
++        if (!values.empty()) values += u"\n";
++        values += std::move(title) + u"  " + std::move(value);
++      };
++      const auto bytes = [&](std::string_view key) -> std::u16string {
++        const auto* value = data->FindString(key);
++        return value ? aegis::access::FormatAccessUsageBytes(*value) : u"—";
++      };
++      const auto timestamp = [&](std::string_view key) -> std::u16string {
++        const auto value = data->FindDouble(key);
++        if (!value) return u"—";
++        return base::TimeFormatShortDateAndTime(
++            base::Time::FromMillisecondsSinceUnixEpoch(static_cast<int64_t>(*value)));
++      };
++      row(Copy(u"总额度", u"Total quota", u"總額度"), bytes("quotaBytes"));
++      row(Copy(u"已用", u"Used", u"已用"), bytes("usedBytes"));
++      row(Copy(u"剩余", u"Remaining", u"剩餘"), bytes("remainingBytes"));
++      row(Copy(u"上传", u"Uploaded", u"上傳"), bytes("uploadedBytes"));
++      row(Copy(u"下载", u"Downloaded", u"下載"), bytes("downloadedBytes"));
++      const auto* quota_source = data->FindString("quotaSource");
++      const bool alpha = quota_source && *quota_source == "3xui_alpha";
++      row(alpha ? Copy(u"查询授权截止", u"Query authorization expiry", u"查詢授權截止")
++                : Copy(u"到期时间", u"Expiry", u"到期時間"), timestamp("expiresAt"));
++      if (alpha) {
++        row(Copy(u"来源", u"Source", u"來源"), u"3X-UI Alpha");
++        const auto* mode = data->FindString("panelExpiryMode");
++        row(Copy(u"节点到期", u"Node expiry", u"節點到期"),
++            mode && *mode == "none"
++                ? Copy(u"未设到期", u"No expiry configured", u"未設到期")
++                : timestamp("panelExpiresAt"));
++      }
++      row(Copy(u"服务端测量时间", u"Source measurement time", u"伺服器測量時間"),
++          timestamp("measuredAt"));
++      row(Copy(u"数据接收时间", u"Source receipt time", u"資料接收時間"),
++          timestamp("receivedAt"));
++      const auto* age = data->FindString("freshness");
++      if (age && *age == "current") {
++        freshness = Copy(u"用量测量较新", u"Recent usage measurement", u"用量測量較新");
++      } else if (age && *age == "delayed") {
++        freshness = Copy(u"用量同步有延迟", u"Usage synchronization delayed",
++                         u"用量同步有延遲");
++      } else {
++        freshness = Copy(u"用量测量时间未知或数据已陈旧",
++                         u"Measurement time unknown or usage stale",
++                         u"用量測量時間未知或資料已陳舊");
++      }
++    }
++    if (stale) {
++      status_text = Copy(u"这是上次查询结果，当前额度尚未确认",
++                         u"Last result; current balance is unconfirmed",
++                         u"這是上次查詢結果，目前額度尚未確認");
++      freshness.clear();
++    }
++    const auto set = [](views::Label* label, std::u16string text) {
++      if (label->GetText() != text) label->SetText(text);
++      label->SetVisible(!text.empty());
++    };
++    set(quota_status_, std::move(status_text));
++    set(quota_values_, std::move(values));
++    set(quota_freshness_, std::move(freshness));
++  }
++
++  void RefreshQuota() {
++    if (!Valid() || !expanded_.contains("access-quota")) return;
++    if (auto* service = ServiceForWebContents(browser_, source_.get())) {
++      service->QueryCurrentAccessAccount(base::BindOnce(
++          [](base::WeakPtr<AegisPageBubble> bubble, base::DictValue) {
++            if (bubble && bubble->Valid()) bubble->PaintQuota();
++          }, weak_.GetWeakPtr()));
++    }
++  }
++
++  void AppendQuota(views::View* parent) {
++    auto* profile = browser_->GetProfile();
++    if (!profile->IsRegularProfile() || profile->IsOffTheRecord()) return;
++    Button(parent, Copy(u"Access 账户额度", u"Access account usage", u"Access 帳戶額度"),
++           base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this),
++                               std::string("access-quota")));
++    if (!expanded_.contains("access-quota")) return;
++    quota_status_ = AddLabel(parent, {});
++    quota_values_ = AddLabel(parent, {});
++    quota_values_->SetSelectable(true);
++    quota_freshness_ = AddLabel(parent, {});
++    Button(parent, Copy(u"刷新额度", u"Refresh usage", u"重新整理額度"),
++           base::BindRepeating(&AegisPageBubble::RefreshQuota,
++                               base::Unretained(this)));
++    UpdateQuotaVisibility();
++    PaintQuota();
++  }
++
+   void AppendCoreLogs(views::View* parent,
+                       aegis::access::AccessSiteProxyBubbleController* controller) {
+     if (!controller->CanViewCoreLogs()) return;
+@@ -546,9 +728,6 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+                             u"目前使用者資料不可用"));
+       return;
+     }
+-#if BUILDFLAG(IS_MAC)
+-    AppendCoreLogs(parent, controller);
+-#endif
+     const auto snap = controller->SnapshotForCommittedUrl(address_);
+     if (!snap.has_trusted_site) {
+       AddLabel(parent, IntentStatusCopy(snap.intent_status));
+@@ -561,7 +740,29 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     using Paid = aegis::access::AccountNodeStatus;
+     const auto state = paid_status_ = aegis::access::AccountNodeForSite(profile, snap.host.value);
+     const bool paid = UseAccountNode(controller, snap, state);
+-    if (paid) toggle_on = state != Paid::kOff;
++    if (paid) {
++      toggle_on = state != Paid::kOff;
++      AddLabel(parent, Copy(u"由服务分配账户节点",
++                            u"Service-issued account node",
++                            u"由服務分配帳戶節點"));
++      AddLabel(parent, Copy(u"账户代理用于此主机，其他主机使用各自的设置。",
++                            u"The account proxy applies to this host. Other hosts use their own settings.",
++                            u"帳戶代理用於此主機，其他主機使用各自的設定。"));
++    } else {
++      AddLabel(parent, Copy(u"适用于本站及符合规则的页面资源",
++                            u"Applies to this site and eligible page resources",
++                            u"適用於本站及符合規則的頁面資源"));
++      if (configured_node_id_) {
++        AddLabel(parent, configured_node_id_->empty()
++            ? Copy(u"未找到可用的本地节点配置",
++                   u"No usable local node is configured",
++                   u"未找到可用的本機節點設定")
++            : Copy(u"本地节点配置（匿名标识）",
++                   u"Local node configuration (anonymous ID)",
++                   u"本機節點設定（匿名識別碼）") + u" · " +
++                  base::UTF8ToUTF16(*configured_node_id_));
++      }
++    }
+ #endif
+     Toggle(parent,
+            Copy(u"当前网站使用代理", u"Use Access proxy for this site",
+@@ -651,10 +852,19 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     access_revision_ = access ? access->state_revision() : 0;
+     access_snapshot_ = access
+         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
++#if BUILDFLAG(IS_MAC)
++    quota_status_ = nullptr;
++    quota_values_ = nullptr;
++    quota_freshness_ = nullptr;
++#endif
+     panel_->RemoveAllChildViews();
+     if (!address_.SchemeIsHTTPOrHTTPS()) {
+       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
+       AppendSiteProxySection(panel_);
++#if BUILDFLAG(IS_MAC)
++      AppendQuota(panel_);
++      if (auto* controller = AccessBubble()) AppendCoreLogs(panel_, controller);
++#endif
+       AppendDevAllowBlockSection(panel_);
+       AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
+       Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
+@@ -665,6 +875,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     if (browser_->GetProfile()->IsOffTheRecord())
+       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
+     AppendSiteProxySection(panel_);
++#if BUILDFLAG(IS_MAC)
++    AppendQuota(panel_);
++    if (auto* controller = AccessBubble()) AppendCoreLogs(panel_, controller);
++#endif
+     AppendDevAllowBlockSection(panel_);
+     AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
+     AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
+@@ -791,6 +1005,11 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   std::set<std::string> expanded_;
+   std::u16string notice_;
+ #if BUILDFLAG(IS_MAC)
++  base::ScopedClosureRunner quota_visibility_;
++  raw_ptr<views::Label> quota_status_ = nullptr;
++  raw_ptr<views::Label> quota_values_ = nullptr;
++  raw_ptr<views::Label> quota_freshness_ = nullptr;
++  std::optional<std::string> configured_node_id_;
+   std::u16string log_notice_;
+   std::optional<std::pair<std::string, uint64_t>> log_share_confirmation_;
+   uint64_t log_view_version_ = 0;
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index a9d259509d71a871addc2f4bf85510ff9c676efb..83d67e9687613e597b58c9f4d77271fe43673f4e 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -342,6 +342,9 @@ base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
+ 
+ AegisUIHandler::AegisUIHandler() = default;
+ AegisUIHandler::~AegisUIHandler() {
++#if BUILDFLAG(IS_MAC)
++  OnJavascriptDisallowed();
++#endif
+   if (active_model_request_id_) {
+     if (aegis::AegisService* service = ServiceForWebUI()) {
+       service->CancelModelSummaryRequest(*active_model_request_id_);
+@@ -357,6 +360,14 @@ void AegisUIHandler::RegisterMessages() {
+       "getStatus", base::BindRepeating(&AegisUIHandler::HandleGetStatus,
+                                        base::Unretained(this)));
+ #if BUILDFLAG(IS_MAC)
++  web_ui()->RegisterMessageCallback(
++      "getAccessAccountSnapshot",
++      base::BindRepeating(&AegisUIHandler::HandleGetAccessAccountSnapshot,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "setAccessAccountUsageVisible",
++      base::BindRepeating(&AegisUIHandler::HandleSetAccessAccountUsageVisible,
++                          base::Unretained(this)));
+   web_ui()->RegisterMessageCallback(
+       "getCurrentAccessAccount", base::BindRepeating(&AegisUIHandler::HandleGetCurrentAccessAccount,
+                                                      base::Unretained(this)));
+@@ -586,12 +597,35 @@ void AegisUIHandler::HandleGetCurrentAccessAccount(const base::ListValue& args)
+       args[0].GetString()));
+ }
+ 
++void AegisUIHandler::HandleGetAccessAccountSnapshot(const base::ListValue& args) {
++  if (args.size() != 1 || !args[0].is_string()) return;
++  AllowJavascript();
++  auto* service = ServiceForWebUI();
++  ResolveJavascriptCallback(args[0], service ? service->CurrentAccessAccountSnapshot()
++      : base::DictValue().Set("state", "unavailable"));
++}
++
++void AegisUIHandler::HandleSetAccessAccountUsageVisible(const base::ListValue& args) {
++  if (args.size() != 1 || !args[0].is_bool()) return;
++  auto* service = ServiceForWebUI();
++  if (!service) return;
++  AllowJavascript();
++  if (args[0].GetBool()) {
++    if (!access_usage_visibility_) {
++      access_usage_visibility_ = service->ObserveAccessAccountUsage();
++    }
++  } else {
++    access_usage_visibility_.RunAndReset();
++  }
++}
++
+ void AegisUIHandler::OnAccessAccountStatus(std::string callback_id, base::DictValue account) {
+   if (IsJavascriptAllowed())
+     ResolveJavascriptCallback(base::Value(callback_id), account);
+ }
+ 
+ void AegisUIHandler::OnJavascriptDisallowed() {
++  access_usage_visibility_.RunAndReset();
+   account_weak_factory_.InvalidateWeakPtrs();
+ }
+ #endif
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index f657d2e1dc0f8b4cb6fe799b4fb50a3bcd8f3fef..4febe4a1648f95d943097c23e8e6fb6624e58be3 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -97,6 +97,8 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+                         aegis::MetalinkParseResult result);
+ #if BUILDFLAG(IS_MAC)
+   void HandleGetCurrentAccessAccount(const base::ListValue& args);
++  void HandleGetAccessAccountSnapshot(const base::ListValue& args);
++  void HandleSetAccessAccountUsageVisible(const base::ListValue& args);
+   void OnAccessAccountStatus(std::string callback_id, base::DictValue account);
+   void OnJavascriptDisallowed() override;
+   void OnTorrentValidated(std::string callback_id,
+@@ -151,6 +153,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+       service_observation_{this};
+ 
+ #if BUILDFLAG(IS_MAC)
++  base::ScopedClosureRunner access_usage_visibility_;
+   base::WeakPtrFactory<AegisUIHandler> account_weak_factory_{this};
+ #endif
+   base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
+-- 
+2.54.0 (Apple Git-157)
+

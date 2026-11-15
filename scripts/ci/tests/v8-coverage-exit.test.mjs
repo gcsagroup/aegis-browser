@@ -113,7 +113,13 @@ function runFork(body, {enabled = true, coverage = true, traceExit = false, vite
   // Keep actual subprocess output and raw reports, including failure fixtures.
   writeFileSync(join(directory, 'stdout.log'), result.stdout ?? '');
   writeFileSync(join(directory, 'stderr.log'), result.stderr ?? '');
-  assert.equal(result.error, undefined, result.stderr);
+  const termination = {status: result.status, signal: result.signal,
+    error: result.error?.message, stdout: result.stdout, stderr: result.stderr, directory};
+  writeFileSync(join(directory, 'parent-exit.json'), JSON.stringify(termination));
+  const diagnostic = JSON.stringify(termination);
+  assert.equal(result.error, undefined, diagnostic);
+  // A killed parent cannot prove an expected failing fixture completed.
+  assert.equal(result.signal, null, diagnostic);
   // The blocked-path fixture deliberately cannot contain reports; its test must
   // assert the real handoff error instead. Every normal raw file stays strict.
   const reports = (rawDirectory === 'blocked' ? [] : readdirSync(raw)).map(name => {

@@ -218,6 +218,7 @@ build_webui("build") {
   # -----------------ts_files start ----------------------------
 
   ts_files = [
+    "aegis_page/access_account_usage.ts",
     "privacy_icons.html.ts",
     "a11y_page/a11y_browser_proxy.ts",
     "a11y_page/a11y_page.html.ts",

@@ -1,6 +1,6 @@
-From 586c4e770b69ec9755392181d74bfc500e695dd6 Mon Sep 17 00:00:00 2001
-From: Quinn <coderquinn@gmail.com>
-Date: Fri, 13 Nov 2026 15:14:02 +0800
+From c51d5c9a7b6398a4eece4bf743f6d56c19371442 Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Sun, 15 Nov 2026 16:43:55 +0800
 Subject: [PATCH] fix(desktop): preserve persisted configuration and Windows
  test resources
 
@@ -13,10 +13,10 @@ Subject: [PATCH] fix(desktop): preserve persisted configuration and Windows
  5 files changed, 19 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 033549f3840498426df0f8e6b3e5b5a1cb143b86..5d66274edeb57f75afd254d465d0abcc227a34e7 100644
+index b2f94079d7fa3e898ddecd50d8909a0d9a7c21ba..6171cf2690b9c6abdff0348745016639175b9838 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
-@@ -532,6 +532,10 @@ test("aegis_browser_unittests") {
+@@ -545,6 +545,10 @@ test("aegis_browser_unittests") {
        "//content/test:test_support",
      ]
    }
@@ -25,8 +25,8 @@ index 033549f3840498426df0f8e6b3e5b5a1cb143b86..5d66274edeb57f75afd254d465d0abcc
 +    deps += [ "//chrome/installer/util:strings" ]
 +  }
    if (is_mac) {
-     sources += [
-       "aegis_torrent_client_unittest.cc",
+     deps += [
+       "//chrome/browser/aegis/access:access_network_context_transport",
 diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
 index f54fb3fb337d7adb3680ddb43e90a6697e63266f..1bcd6c56d0668a4cb939aecb4b598787255af08b 100644
 --- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc

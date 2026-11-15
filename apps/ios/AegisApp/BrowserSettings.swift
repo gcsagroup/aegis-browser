@@ -1,4 +1,5 @@
 import AgentKit
+import AccessKit
 import BrowserKit
 import SwiftUI
 
@@ -49,6 +50,8 @@ struct BrowserSettingsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }.padding(.vertical, 5)
                     }.accessibilityIdentifier("aegis-feature-settings")
+                    NavigationLink("代理诊断日志") { AccessDiagnosticsView() }
+                        .accessibilityIdentifier("access-diagnostics-settings")
                 }
                 Section("外观") {
                     SettingsPicker("主题", selection: $settings.appearance,
@@ -328,4 +331,161 @@ struct ModelSettingsView: View {
             } catch is CancellationError { } catch { message = .error(error) }
         }
     }
+}
+
+private struct AccessDiagnosticsView: View {
+    @AppStorage(AccessDiagnosticLog.preferenceKey) private var level = AccessDiagnosticLog.defaultLevel.rawValue
+    @State private var log = ""
+    @State private var unavailable = false
+    @State private var persistenceProblem = false
+    @State private var clearing = false
+    @State private var storageClearing = false
+    @State private var clearMessage: String?
+    @State private var share: AccessDiagnosticShare?
+    @State private var presentedShareURL: URL?
+    @State private var archiveCleanupPending = AccessDiagnosticArchive.hasPendingCleanup
+    @State private var showShareConfirmation = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Form {
+            Section("日志级别") {
+                Picker("级别", selection: $level) {
+                    Text("调试 (debug)").tag(AccessLogLevel.debug.rawValue)
+                    Text("信息 (info)").tag(AccessLogLevel.info.rawValue)
+                    Text("警告 (warning)").tag(AccessLogLevel.warning.rawValue)
+                    Text("错误 (error)").tag(AccessLogLevel.error.rawValue)
+                    Text("关闭 (none)").tag(AccessLogLevel.none.rawValue)
+                }
+                Text("关闭立即生效并清空日志；其他级别在代理核心下次启动时生效。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("诊断日志") {
+                Text("日志保存在本机，重启后可查看，保留最近约 256 KB。为保护凭据，仅显示部分诊断信息和访问目标；普通和私密会话的目标都可能写入磁盘，分享前请确认接收方可信。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if persistenceProblem {
+                    Text("磁盘日志读取或保存失败；当前内存日志仍可查看。清理后可重试。")
+                        .foregroundStyle(.secondary)
+                }
+                if archiveCleanupPending {
+                    Text("压缩日志的临时文件清理失败。清理成功后可再次分享。")
+                        .foregroundStyle(.secondary)
+                    Button("重试清理压缩日志", action: retryArchiveCleanup)
+                }
+                if unavailable {
+                    Text("日志接收器不可用；代理仍可使用。请重新启动代理后重试。")
+                        .foregroundStyle(.secondary)
+                }
+                if log.isEmpty {
+                    Text("暂无日志").foregroundStyle(.secondary)
+                } else {
+                    Text(log).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                        .accessibilityIdentifier("access-diagnostics-log")
+                }
+                Button(clearing || storageClearing ? "正在清理…" : "清理内存和磁盘日志", action: clearLogs)
+                    .disabled(clearing || storageClearing)
+                    .accessibilityIdentifier("access-diagnostics-clear")
+                if let clearMessage { Text(clearMessage).font(.footnote).foregroundStyle(.secondary) }
+                Button("压缩并分享") { showShareConfirmation = true }
+                    .disabled(log.isEmpty || archiveCleanupPending || presentedShareURL != nil)
+                    .accessibilityIdentifier("access-diagnostics-share")
+                    .confirmationDialog("日志可能包含普通和私密会话的访问目标，确认压缩并分享？", isPresented: $showShareConfirmation, titleVisibility: .visible) {
+                        Button("继续分享", action: prepareShare)
+                        Button("取消", role: .cancel) { }
+                    }
+                if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+            }
+        }
+        .localizedNavigationTitle("代理诊断日志")
+        .onChange(of: level) { _, value in
+            if value == AccessLogLevel.none.rawValue { AccessDiagnosticLog.shared.disableAndClear(); log = "" }
+        }
+        .task {
+            while !Task.isCancelled {
+                log = AccessDiagnosticLog.shared.snapshot()
+                unavailable = AccessDiagnosticLog.shared.unavailable
+                persistenceProblem = AccessDiagnosticLog.shared.persistenceUnavailable
+                storageClearing = AccessDiagnosticLog.shared.isClearingStorage
+                archiveCleanupPending = AccessDiagnosticArchive.hasPendingCleanup
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+        .sheet(item: $share, onDismiss: {
+            if let url = presentedShareURL { finishShare(url) }
+        }) { item in
+            AccessDiagnosticShareSheet(url: item.url) { finishShare(item.url) }
+        }
+    }
+
+    private func prepareShare() {
+        do {
+            let url = try AccessDiagnosticArchive.createTemporary(snapshot: AccessDiagnosticLog.shared.snapshot())
+            errorMessage = nil
+            presentedShareURL = url
+            share = AccessDiagnosticShare(url: url)
+        } catch AccessDiagnosticArchive.ArchiveError.cleanupRequired {
+            archiveCleanupPending = true
+        } catch AccessDiagnosticArchive.ArchiveError.shareInProgress {
+            errorMessage = "请先结束另一个窗口中的日志分享。"
+        } catch {
+            errorMessage = "无法生成压缩日志，请重试。"
+        }
+    }
+
+    private func finishShare(_ url: URL) {
+        guard presentedShareURL == url else { return }
+        presentedShareURL = nil
+        do {
+            try AccessDiagnosticArchive.removeTemporary(url)
+        } catch {
+            archiveCleanupPending = true
+        }
+    }
+
+    private func retryArchiveCleanup() {
+        do {
+            try AccessDiagnosticArchive.retryTemporaryCleanup()
+        } catch {
+            archiveCleanupPending = true
+            return
+        }
+        archiveCleanupPending = AccessDiagnosticArchive.hasPendingCleanup
+    }
+
+    private func clearLogs() {
+        clearing = true
+        clearMessage = nil
+        errorMessage = nil
+        Task {
+            do {
+                try await AccessDiagnosticLog.shared.clearStoredLogs()
+                log = AccessDiagnosticLog.shared.snapshot()
+                retryArchiveCleanup()
+                if !archiveCleanupPending {
+                    clearMessage = "已清理历史日志；新日志仍会继续记录。"
+                }
+            } catch {
+                errorMessage = "未能删除磁盘日志，请重试。"
+            }
+            clearing = false
+        }
+    }
+}
+
+private struct AccessDiagnosticShare: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct AccessDiagnosticShareSheet: UIViewControllerRepresentable {
+    let url: URL
+    let finished: @MainActor @Sendable () -> Void
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in
+            Task { @MainActor in finished() }
+        }
+        return controller
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) { }
 }
