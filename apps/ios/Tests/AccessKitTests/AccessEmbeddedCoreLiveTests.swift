@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Network
 import XCTest
 @testable import AccessKit
@@ -10,6 +11,105 @@ import XCTest
 /// Never logs secrets.
 @MainActor
 final class AccessEmbeddedCoreLiveTests: XCTestCase {
+    /// Bounded real-core ownership/footprint probe, separate from website acceptance.
+    func testResidentCoreReleasesConcurrentStreamsAndStops() async throws {
+        guard ProcessInfo.processInfo.environment["AEGIS_ACCESS_LIVE_MEMORY"] == "1" else {
+            throw XCTSkip("Requires explicit real-core memory probe opt-in")
+        }
+        let path = try requireLiveConfig()
+        let imported = try AccessLocalV2RayConfigLoader.load(path: path)
+        let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: imported.parameters)
+        let core = try AccessGoEmbeddedCore()
+        var samples: [[String: Any]] = []
+        let started = Date()
+        func sample(_ phase: String, completed: Int, retained: Int) {
+            var info = task_vm_info_data_t()
+            var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+            let result = withUnsafeMutablePointer(to: &info) { pointer in
+                pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+                }
+            }
+            samples.append(["phase": phase, "completedStreams": completed, "retainedStreamWrappers": retained,
+                "elapsedSeconds": Date().timeIntervalSince(started), "coreRunning": core.isRunning,
+                "footprintReadSucceeded": result == KERN_SUCCESS, "physicalFootprintBytes": info.phys_footprint])
+        }
+        defer {
+            if let data = try? JSONSerialization.data(withJSONObject: samples, options: [.prettyPrinted, .sortedKeys]) {
+                let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+                attachment.name = "resident-real-core-memory.json"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+        sample("before-start", completed: 0, retained: 0)
+        do { try await core.start(configData: outbound.embeddedInstanceJSONData()) }
+        catch {
+            await core.stop()
+            sample("start-failed", completed: 0, retained: 0)
+            XCTFail("real-core startup failed: \(Self.redacted(error))")
+            return
+        }
+        let watchdog = Task {
+            try await Task.sleep(for: .seconds(240))
+            await core.stop()
+        }
+        defer { watchdog.cancel() }
+        do {
+            for batch in 1...10 {
+                let probes = try await withThrowingTaskGroup(of: WeakLiveStream.self) { group in
+                    for _ in 0..<6 {
+                        group.addTask { try await Self.exerciseLiveStream(core) }
+                    }
+                    var result: [WeakLiveStream] = []
+                    for try await probe in group { result.append(probe) }
+                    return result
+                }
+                // Cancellation of each stream deadline is asynchronous; observe
+                // actual weak-reference release rather than assuming it is immediate.
+                for _ in 0..<100 where probes.contains(where: { $0.value != nil }) {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let retained = probes.filter { $0.value != nil }.count
+                XCTAssertEqual(retained, 0)
+                XCTAssertTrue(core.isRunning)
+                sample("idle-after-batch", completed: batch * 6, retained: retained)
+                if batch < 10 { try await Task.sleep(for: .seconds(10)) }
+            }
+            await core.stop()
+            XCTAssertFalse(core.isRunning)
+            sample("stopped", completed: 60, retained: 0)
+        } catch {
+            await core.stop()
+            sample("failed-and-stopped", completed: 0, retained: 0)
+            XCTFail("bounded real-core probe failed: \(Self.redacted(error))")
+        }
+    }
+
+    private final class WeakLiveStream: @unchecked Sendable {
+        weak var value: AnyObject?
+        init(_ stream: any AccessRealityPathStream) { value = stream as AnyObject }
+    }
+
+    nonisolated private static func exerciseLiveStream(_ core: AccessGoEmbeddedCore) async throws -> WeakLiveStream {
+        let stream = try await core.dial(host: "example.com", port: 80)
+        let probe = WeakLiveStream(stream)
+        let deadline = Task {
+            try await Task.sleep(for: .seconds(20))
+            stream.close()
+        }
+        defer { deadline.cancel(); stream.close() }
+        try await stream.write(Data("HEAD / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".utf8))
+        var response = Data()
+        while response.count < 8_192 {
+            guard let bytes = try await stream.read(maxBytes: 1_024), !bytes.isEmpty else { break }
+            response.append(bytes)
+            if response.range(of: Data("\r\n".utf8)) != nil { break }
+        }
+        guard response.starts(with: Data("HTTP/1.".utf8)) else { throw URLError(.badServerResponse) }
+        return probe
+    }
+
     func testLocalConfigImportsAsRealityVision() throws {
         let path = try requireLiveConfig()
         let imported = try AccessLocalV2RayConfigLoader.load(path: path)
@@ -137,6 +237,8 @@ final class AccessEmbeddedCoreLiveTests: XCTestCase {
            FileManager.default.fileExists(atPath: configured) {
             return configured
         }
+        if let bundled = AccessLocalV2RayConfigLoader.productPath(),
+           FileManager.default.fileExists(atPath: bundled) { return bundled }
         let fallback = Self.localFixtureURL()
         guard FileManager.default.fileExists(atPath: fallback.path) else {
             throw XCTSkip(

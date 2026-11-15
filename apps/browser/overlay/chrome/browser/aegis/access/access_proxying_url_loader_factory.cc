@@ -943,6 +943,10 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
   CHECK(ownership_record);
   *net_error = net::ERR_BLOCKED_BY_CLIENT;
 
+#if BUILDFLAG(IS_MAC)
+  if (factory_owner_.storage_partition_token == "<default>" &&
+      profile_->IsAccountProxyDispatchBlocked(request_url)) return RequestDisposition::kBlock;
+#endif
   if (auto* coordinator = AccessServiceCoordinator::Get(profile_);
       coordinator && !coordinator->CanDispatch(factory_owner_)) {
     *net_error = net::ERR_NETWORK_CHANGED;

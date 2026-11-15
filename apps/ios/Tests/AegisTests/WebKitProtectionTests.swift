@@ -43,6 +43,14 @@ final class WebKitProtectionTests: XCTestCase {
         return try JSONDecoder().decode([String: Int].self, from: data)
     }
 
+    func testCanonicalProxyLandingHostsStayWithinTheSelectedTenant() {
+        XCTAssertTrue(RegisteredDomain.isCanonicalLandingHost("www.example.co.uk", for: "example.co.uk"))
+        XCTAssertTrue(RegisteredDomain.isCanonicalLandingHost("m.example.com", for: "example.com"))
+        XCTAssertFalse(RegisteredDomain.isCanonicalLandingHost("www.github.io", for: "github.io"))
+        XCTAssertFalse(RegisteredDomain.isCanonicalLandingHost("www.example.com.evil.org", for: "example.com"))
+        XCTAssertFalse(RegisteredDomain.isCanonicalLandingHost("account.example.com", for: "example.com"))
+    }
+
     func testRegisteredDomainsIncludePrivateWildcardExceptionAndIDNA() {
         XCTAssertEqual(RegisteredDomain.of("login.example.co.uk"), "example.co.uk")
         XCTAssertEqual(RegisteredDomain.of("a.user.github.io"), "user.github.io")

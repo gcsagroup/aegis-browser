@@ -49,6 +49,20 @@ class PrivateTestInput(unittest.TestCase):
         self.assertNotEqual(self.invoke().returncode, 0)
         self.assertEqual((self.output / "node.json").read_bytes(), node)
 
+    def test_explicit_empty_short_id_survives_private_alpha_preparation(self):
+        result = self.invoke("alpha", uri=URI.replace("sid=abcd", "sid=&spx="))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        node = json.loads((self.output / "node.json").read_bytes())
+        reality = node["outbounds"][0]["streamSettings"]["realitySettings"]
+        self.assertEqual(reality["shortId"], "")
+        self.assertEqual(result.stdout + result.stderr, "")
+
+    def test_missing_or_invalid_short_id_still_fails(self):
+        for replacement in ("", "&sid=not-hex", "&sid=00000000000000000"):
+            result = self.invoke("alpha", uri=URI.replace("&sid=abcd", replacement))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.output.exists())
+
     def test_file_input_keeps_alpha_compatibility(self):
         path = self.binary.with_name("node-uri")
         path.write_text(URI)

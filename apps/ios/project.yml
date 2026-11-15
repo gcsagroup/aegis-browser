@@ -89,6 +89,16 @@ targets:
         # AccessKit owns the static Go runtime and callback registry exactly once.
         link: false
     postBuildScripts:
+      - name: Select private Access subscription
+        script: |
+          /usr/bin/python3 -B "${SRCROOT}/scripts/private_test_subscription.py"
+        inputFiles:
+          - $(SRCROOT)/scripts/private_test_subscription.py
+          - $(AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE)
+          - $(AEGIS_PRIVATE_TEST_NODE_FILE)
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisPrivateTestSubscription.json
+        basedOnDependencyAnalysis: false
       - name: Select private Access test node
         script: |
           /usr/bin/python3 -B "${SRCROOT}/scripts/private_test_node.py"
@@ -119,6 +129,7 @@ targets:
         Release:
           AEGIS_FIREBASE_CHANNEL: disabled
       base:
+        AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE: /dev/null
         AEGIS_PRIVATE_TEST_NODE_FILE: /dev/null
         OTHER_LDFLAGS: "$(inherited) -ObjC -lresolv"
         FRAMEWORK_SEARCH_PATHS:

@@ -39,6 +39,92 @@ class AccessNavigationRetryTabHelperTest
   }
 };
 
+TEST_F(AccessNavigationRetryTabHelperTest,
+       ToolbarReloadsCommittedRedirectDestinationOnce) {
+  const GURL original("https://start.example/");
+  const GURL destination("https://destination.example/article#section");
+  web_contents()->WasShown();
+  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
+      original, web_contents());
+  navigation->Start();
+  navigation->Redirect(destination);
+  navigation->Commit();
+
+  auto reload = helper()->CaptureSiteProxyReload();
+  ASSERT_TRUE(reload);
+  EXPECT_TRUE(helper()->IsPreparingProxyRetry());
+  EXPECT_FALSE(helper()->CaptureSiteProxyReload());
+  const int entries = controller().GetEntryCount();
+  EXPECT_FALSE(controller().GetPendingEntry());
+  std::move(reload).Run();
+  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
+  ASSERT_TRUE(controller().GetPendingEntry());
+  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), destination);
+  auto reloading = content::NavigationSimulator::CreateFromPending(controller());
+  EXPECT_EQ(reloading->GetNavigationHandle()->GetRequestMethod(), "GET");
+  reloading->Commit();
+  EXPECT_EQ(controller().GetEntryCount(), entries);
+  EXPECT_FALSE(controller().GetPendingEntry());
+}
+
+TEST_F(AccessNavigationRetryTabHelperTest, ToolbarAbandonedRouteClearsStopState) {
+  web_contents()->WasShown();
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(
+      web_contents(), GURL("https://source.example/"));
+  auto pending = helper()->CaptureSiteProxyReload();
+  ASSERT_TRUE(pending);
+  EXPECT_TRUE(helper()->IsPreparingProxyRetry());
+  pending.Reset();
+  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
+  EXPECT_FALSE(controller().GetPendingEntry());
+}
+
+TEST_F(AccessNavigationRetryTabHelperTest,
+       ToolbarSkipsPostAndItsRedirectDestination) {
+  web_contents()->WasShown();
+  for (bool redirect : {false, true}) {
+    auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
+        GURL("https://source.example/form"), web_contents());
+    navigation->SetMethod("POST");
+    navigation->Start();
+    if (redirect) navigation->Redirect(GURL("https://destination.example/"));
+    navigation->Commit();
+    EXPECT_FALSE(helper()->CaptureSiteProxyReload()) << redirect;
+  }
+}
+
+TEST_F(AccessNavigationRetryTabHelperTest,
+       ToolbarIgnoresHiddenStoppedOrSupersededDocument) {
+  const GURL first("https://source.example/");
+  const GURL second("https://destination.example/");
+  web_contents()->WasShown();
+  content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), first);
+  auto hidden = helper()->CaptureSiteProxyReload();
+  ASSERT_TRUE(hidden);
+  web_contents()->WasHidden();
+  web_contents()->WasShown();
+  std::move(hidden).Run();
+  EXPECT_FALSE(controller().GetPendingEntry());
+
+  auto stopped = helper()->CaptureSiteProxyReload();
+  ASSERT_TRUE(stopped);
+  EXPECT_TRUE(helper()->IsPreparingProxyRetry());
+  helper()->NavigationStopped();
+  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
+  std::move(stopped).Run();
+  EXPECT_FALSE(controller().GetPendingEntry());
+
+  auto superseded = helper()->CaptureSiteProxyReload();
+  ASSERT_TRUE(superseded);
+  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
+      second, web_contents());
+  navigation->Start();
+  EXPECT_FALSE(helper()->CaptureSiteProxyReload());
+  std::move(superseded).Run();
+  ASSERT_TRUE(controller().GetPendingEntry());
+  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), second);
+}
+
 TEST_F(AccessNavigationRetryTabHelperTest, ReloadsOriginalUrlOnceAfterRedirect) {
   const GURL original("https://start.example/path?q=1#section");
   const GURL failed("https://target.example/redirect?q=2");

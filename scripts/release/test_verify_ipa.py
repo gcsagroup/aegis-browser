@@ -14,7 +14,7 @@ spec.loader.exec_module(ipa)
 
 
 class VerifyIPATests(unittest.TestCase):
-    def fixture(self, path, *, identifier="com.gcsa.aegis", extension_build="70", profile=True, manifest=None, icon_data=None, dictionary_versions=None):
+    def fixture(self, path, *, identifier="com.gcsa.aegis", extension_build="70", profile=True, manifest=None, icon_data=None, dictionary_versions=None, channel="prod", release_profile="alpha", private_resources=()):
         with zipfile.ZipFile(path, "w") as archive:
             for suffix, app_id, build in [("", identifier, "70"),
                                           ("PlugIns/SafariWebExtension.appex/", "com.gcsa.aegis.safari", extension_build),
@@ -23,7 +23,8 @@ class VerifyIPATests(unittest.TestCase):
                 archive.writestr(root + "Info.plist", plistlib.dumps({"CFBundleIdentifier": app_id,
                                  "CFBundleInfoDictionaryVersion": (dictionary_versions or {}).get(app_id, "6.0"),
                                  "CFBundleShortVersionString": "3.2", "CFBundleVersion": build,
-                                 "AegisReleaseProfile": "alpha"}))
+                                 "AegisAccessReleaseChannel": channel,
+                                 "AegisReleaseProfile": release_profile}))
                 if profile:
                     archive.writestr(root + "embedded.mobileprovision", "fixture")
             safari = "Payload/Aegis.app/PlugIns/SafariWebExtension.appex/"
@@ -39,6 +40,21 @@ class VerifyIPATests(unittest.TestCase):
             archive.writestr(safari + "icon.png", icon_data if icon_data is not None else image + chunk(b"IEND", b""))
             for name, content in ipa.notices.ipa_members().items():
                 archive.writestr(name, content)
+            for name in private_resources:
+                archive.writestr("Payload/Aegis.app/" + name, "private fixture")
+
+    def test_private_node_and_subscription_are_internal_only(self):
+        for channel in ('dev', 'alpha', 'beta', 'prod'):
+            for resource in ('AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json',
+                             'PlugIns/ShareExtension.appex/AegisPrivateTestSubscription.json'):
+                with self.subTest(channel=channel, resource=resource), tempfile.TemporaryDirectory() as temp:
+                    path = Path(temp) / 'test.ipa'
+                    self.fixture(path, channel=channel, release_profile=channel, private_resources=[resource])
+                    if channel in ('dev', 'alpha', 'beta'):
+                        self.assertTrue(ipa.verify(path, '3.2', '70', channel))
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'Private test resources'):
+                            ipa.verify(path, '3.2', '70', channel)
 
     def test_identity_and_extensions(self):
         with tempfile.TemporaryDirectory() as temp:

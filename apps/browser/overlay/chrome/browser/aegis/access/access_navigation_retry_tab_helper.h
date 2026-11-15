@@ -27,6 +27,9 @@ class AccessNavigationRetryTabHelper
                                        int64_t navigation_id);
   std::optional<AccessNavigationRetryTicket> FailureForRetry() const;
   base::OnceClosure CaptureRouteReadyCallback();
+  // Captures the current safe GET document for a trusted toolbar action.
+  // The callback is invalidated by navigation or Stop.
+  base::OnceClosure CaptureSiteProxyReload();
   using ProxyRetryHandler = base::RepeatingCallback<void(
       const GURL&, base::OnceCallback<void(bool)>)>;
   bool HasProxyRetryHandler() const { return !!proxy_retry_handler_; }
@@ -35,16 +38,22 @@ class AccessNavigationRetryTabHelper
   // error document. The target comes from this helper, never renderer IPC.
   bool RequestProxyRetry(base::OnceCallback<void(bool)> completion);
 
-  bool IsPreparingProxyRetry() const { return !!pending_retry_reply_; }
+  bool IsPreparingProxyRetry() const {
+    return !!pending_retry_reply_ || preparing_site_reload_;
+  }
 
   void DidStartNavigation(content::NavigationHandle* navigation) override;
   void DidFinishNavigation(content::NavigationHandle* navigation) override;
+  void OnVisibilityChanged(content::Visibility visibility) override;
   void NavigationStopped() override;
 
  private:
   friend class content::WebContentsUserData<AccessNavigationRetryTabHelper>;
   explicit AccessNavigationRetryTabHelper(content::WebContents* contents);
   const content::NavigationEntry* CurrentErrorEntry() const;
+  const content::NavigationEntry* ReloadableSiteEntry() const;
+  void FinishSiteProxyReload(int entry_id, const GURL& url, bool ready);
+  void CancelSiteProxyReload();
   void OnRouteReady(AccessNavigationRetryTicket ticket, int error_entry_id);
   void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
                        bool ready);
@@ -52,9 +61,12 @@ class AccessNavigationRetryTabHelper
   void UpdateStopControl();
 
   AccessNavigationRetryState state_;
+  bool committed_safe_get_ = false;
+  bool preparing_site_reload_ = false;
   ProxyRetryHandler proxy_retry_handler_;
   base::OnceCallback<void(bool)> pending_retry_reply_;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
+  base::WeakPtrFactory<AccessNavigationRetryTabHelper> site_reload_weak_{this};
   base::WeakPtrFactory<AccessNavigationRetryTabHelper> weak_factory_{this};
 };
 

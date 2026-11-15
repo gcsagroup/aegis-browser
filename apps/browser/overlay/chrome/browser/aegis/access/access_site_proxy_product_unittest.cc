@@ -425,6 +425,39 @@ class AccessSiteProxyProductTest : public testing::Test {
   OwnershipKey owner_;
 };
 
+#if BUILDFLAG(IS_MAC)
+TEST_F(AccessSiteProxyProductTest, DualSelectionReleasesPaidOnlyAfterCommittedLocalOff) {
+  Enable();
+  ASSERT_TRUE(transport_->SetAccountNodeSites({"news.example"}, "", 0, ""));
+  base::test::TestFuture<bool> retry;
+  bubble_->RequestFailedNavigationProxy(GURL("https://news.example./"), retry.GetCallback());
+  ASSERT_FALSE(retry.Get());
+  EXPECT_TRUE(Snapshot().toggle_on);
+  bool disabled = false;
+  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, false, base::BindLambdaForTesting([&] {
+    EXPECT_FALSE(Snapshot().toggle_on);
+    EXPECT_TRUE(transport_->SetAccountNodeSites({}, "", 0, ""));
+    disabled = true;
+  })));
+  EXPECT_FALSE(disabled);
+  ASSERT_TRUE(base::test::RunUntil([&] { return disabled; }));
+  EXPECT_TRUE(transport_->AccountSites().empty());
+  EXPECT_FALSE(Snapshot().toggle_on);
+}
+#endif
+
+TEST_F(AccessSiteProxyProductTest, ToolbarEnableCompletesOnlyAfterAcknowledgement) {
+  context_.hold_next = true;
+  base::test::TestFuture<void> ready;
+  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true,
+                                              ready.GetCallback()));
+  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
+  EXPECT_FALSE(ready.IsReady());
+  context_.Reply(true);
+  ASSERT_TRUE(ready.Wait());
+  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);
+}
+
 TEST_F(AccessSiteProxyProductTest, RecoveryTimesOutWhileCandidateAckIsStillHeld) {
   context_.hold_next = true;
   ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));

@@ -1,0 +1,183 @@
+From 169e81055a7e906c17f6cb4105748d5f89f7097b Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 12 Nov 2026 13:15:32 +0800
+Subject: [PATCH] fix(access-account): resolve session and freshness on
+ delivery
+
+---
+ .../browser/aegis/access/access_account_mac.h |  7 ++-
+ .../aegis/access/access_account_mac.mm        | 51 +++++++++++++++++--
+ .../aegis/aegis_service_access_account_mac.mm | 20 +++-----
+ 3 files changed, 57 insertions(+), 21 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_account_mac.h b/chrome/browser/aegis/access/access_account_mac.h
+index 680874088e8ce3e4fe56a4b1fcdf8005245e3576..e041d25f1c247a3476482692b6f5a00342f364ab 100644
+--- a/chrome/browser/aegis/access/access_account_mac.h
++++ b/chrome/browser/aegis/access/access_account_mac.h
+@@ -4,10 +4,9 @@
+ 
+ #import <Foundation/Foundation.h>
+ 
+-// A non-nil state supersedes the prepared reply. Run this check immediately
+-// before delivering it on the consumer sequence. It reads only file metadata.
+-typedef NSString* (^AegisAccountBindingChange)(void);
+-typedef void (^AegisAccountCompletion)(NSDictionary*, AegisAccountBindingChange);
++// Resolve on the consumer sequence immediately before presenting the reply.
++typedef NSDictionary* (^AegisAccountReply)(void);
++typedef void (^AegisAccountCompletion)(AegisAccountReply);
+ 
+ // The caller supplies its own regular Profile directory, never a renderer path.
+ // Completion runs off the UI sequence. No response or session is cached.
+diff --git a/chrome/browser/aegis/access/access_account_mac.mm b/chrome/browser/aegis/access/access_account_mac.mm
+index 3e670b2be381ee16cd954fc3a5fa47814847285c..fec2f916405182398e4e1883d0f265659e86938b 100644
+--- a/chrome/browser/aegis/access/access_account_mac.mm
++++ b/chrome/browser/aegis/access/access_account_mac.mm
+@@ -3,6 +3,7 @@
+ 
+ #include <fcntl.h>
+ #include <sys/stat.h>
++#include <time.h>
+ #include <unistd.h>
+ 
+ #include <algorithm>
+@@ -12,6 +13,7 @@
+ #include <string_view>
+ 
+ namespace {
++typedef NSString* (^AegisAccountBindingChange)(void);
+ constexpr NSUInteger kMaxBody = 64 * 1024;
+ NSDictionary* State(NSString* state) { return @{@"state" : state}; }
+ 
+@@ -37,6 +39,13 @@ bool Nonempty(id value) {
+   int fd = open(path.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+   if (fd < 0) {
+     *missing = errno == ENOENT;
++    if (*missing) {
++      *change = ^NSString* {
++        struct stat current;
++        if (lstat(path.fileSystemRepresentation, &current) == 0) return @"superseded";
++        return errno == ENOENT ? nil : @"unavailable";
++      };
++    }
+     return nil;
+   }
+   NSFileHandle* file = [[NSFileHandle alloc] initWithFileDescriptor:fd closeOnDealloc:YES];
+@@ -91,6 +100,12 @@ bool Nonempty(id value) {
+   return static_cast<int64_t>(t);
+ }
+ 
++NSString* Freshness(int64_t age) {
++  if (age <= 5000) return @"current";
++  if (age <= 15000) return @"delayed";
++  return @"unavailable";
++}
++
+ NSDictionary* Entitlement(NSData* data, NSString* account) {
+   id body = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+   if (![body isKindOfClass:NSDictionary.class] ||
+@@ -128,8 +143,7 @@ bool Nonempty(id value) {
+           *age < *received - *measured || *age > 9007199254740991LL - *measured) return nil;
+       now = *measured + *age;
+       known_now = true;
+-      if (*age <= 5000) freshness = @"current";
+-      else if (*age <= 15000) freshness = @"delayed";
++      freshness = Freshness(*age);
+     }
+     if (![freshness isEqual:out[@"freshness"]]) return nil;
+     bool expired = now >= std::min(*end, *expiry);
+@@ -142,6 +156,34 @@ bool Nonempty(id value) {
+   out[@"status"] = status;
+   return @{@"state": @"available", @"entitlement": out};
+ }
++
++AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange change,
++                               uint64_t receiptNanos) {
++  return ^NSDictionary* {
++    NSString* state = change ? change() : nil;
++    if (state) return State(state);
++    NSDictionary* entitlement = result[@"entitlement"];
++    if (!entitlement || [entitlement[@"status"] isEqual:@"not_subscribed"]) return result;
++
++    int64_t elapsed = (clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - receiptNanos) / NSEC_PER_MSEC;
++    if (!elapsed) return result;
++    NSMutableDictionary* updated = [entitlement mutableCopy];
++    int64_t now = [entitlement[@"receivedAt"] longLongValue] + elapsed;
++    if (entitlement[@"snapshotAgeMs"] != NSNull.null) {
++      int64_t measured = [entitlement[@"measuredAt"] longLongValue];
++      int64_t age = std::min<int64_t>(9007199254740991LL - measured,
++                                     [entitlement[@"snapshotAgeMs"] longLongValue] + elapsed);
++      updated[@"snapshotAgeMs"] = @(age);
++      updated[@"freshness"] = Freshness(age);
++      now = measured + age;
++    }
++    if (now >= std::min([entitlement[@"periodEnd"] longLongValue],
++                        [entitlement[@"expiresAt"] longLongValue])) {
++      updated[@"status"] = @"expired";
++    }
++    return @{@"state": @"available", @"entitlement": updated};
++  };
++}
+ }  // namespace
+ 
+ @interface AegisAccountTransfer : NSObject <NSURLSessionDataDelegate>
+@@ -178,6 +220,7 @@ - (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task
+ }
+ - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
+     didCompleteWithError:(NSError*)error {
++  uint64_t received = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
+   [session finishTasksAndInvalidate];
+   NSDictionary* result = nil;
+   if (!error && [task.response isKindOfClass:NSHTTPURLResponse.class]) {
+@@ -185,7 +228,7 @@ - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
+     if (status == 401) result = State(@"signed_out");
+     if (status == 200) result = Entitlement(self.body, self.binding[@"accountId"]);
+   }
+-  self.completion(result ?: State(@"unavailable"), self.bindingChange);
++  self.completion(PrepareReply(result ?: State(@"unavailable"), self.bindingChange, received));
+ }
+ @end
+ 
+@@ -196,7 +239,7 @@ void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion
+     AegisAccountBindingChange change = nil;
+     NSDictionary* binding = ReadBinding(path, &missing, &change);
+     if (!binding) {
+-      completion(State(missing ? @"signed_out" : @"unavailable"), nil);
++      completion(PrepareReply(State(missing ? @"signed_out" : @"unavailable"), change, 0));
+       return;
+     }
+     AegisAccountTransfer* transfer = [[AegisAccountTransfer alloc] init];
+diff --git a/chrome/browser/aegis/aegis_service_access_account_mac.mm b/chrome/browser/aegis/aegis_service_access_account_mac.mm
+index 00ea41c95e422bc50ff1bb4d90bd7fa1fd4cd16d..18c413ed95f13399b520bedce3665be1249b9d79 100644
+--- a/chrome/browser/aegis/aegis_service_access_account_mac.mm
++++ b/chrome/browser/aegis/aegis_service_access_account_mac.mm
+@@ -22,23 +22,17 @@
+   // and Shutdown invalidate the Profile capability before a reply can escape.
+   __block auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
+       [](base::WeakPtr<AegisService> service,
+-         base::OnceCallback<void(base::DictValue)> callback, base::DictValue result,
+-         AegisAccountBindingChange change) {
++         base::OnceCallback<void(base::DictValue)> callback, AegisAccountReply resolve) {
+         if (!service || !service->IsInitializedForProfile(service->profile())) return;
+-        // The response may have waited in the Profile UI queue after the
+-        // network finished. Verify the operator binding at the delivery point.
+-        NSString* state = change ? change() : nil;
+-        if (state) result = base::DictValue().Set("state", base::SysNSStringToUTF8(state));
+-        std::move(callback).Run(std::move(result));
+-      }, weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+-  AegisQueryAccessAccount(base::SysUTF8ToNSString(profile_->GetPath().value()),
+-      ^(NSDictionary* result, AegisAccountBindingChange change) {
++        NSDictionary* result = resolve();
+         NSData* json = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+         auto parsed = json ? base::JSONReader::ReadDict(
+             std::string_view(static_cast<const char*>(json.bytes), json.length),
+             base::JSON_PARSE_RFC) : std::nullopt;
+-        std::move(reply).Run(parsed ? std::move(*parsed)
+-                                    : base::DictValue().Set("state", "unavailable"), change);
+-      });
++        std::move(callback).Run(parsed ? std::move(*parsed)
++                                      : base::DictValue().Set("state", "unavailable"));
++      }, weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++  AegisQueryAccessAccount(base::SysUTF8ToNSString(profile_->GetPath().value()),
++      ^(AegisAccountReply resolve) { std::move(reply).Run(resolve); });
+ }
+ }  // namespace aegis

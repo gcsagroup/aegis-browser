@@ -28,4 +28,13 @@
 
 ## 验证边界
 
+显示名变更会改变含品牌名的 GRIT 文案 ID。更新品牌时须同时迁移已有中文翻译，保留简体中文、香港繁体和台湾繁体的密码导入、导出标题。以下回归使用已应用补丁的 Chromium 源码及其 GRIT，生成并读回四种语言的密码对话框 `.pak`，可检测 ID 不匹配造成的英文回退：
+
+```bash
+python3 apps/browser/scripts/grit-password-locales_test.py \
+  /path/to/chromium/src /path/to/test-output/password-locales
+```
+
+该回归验证资源生成和译文查找。实际 Windows 包仍需执行 `windows-uninstall-locales_test.py` 及原生界面验收。
+
 已通过策略源码生成器 14 项测试、策略模板 185 项测试，以及 x86/x64/ARM64 六组 MIDL 输出映射检查。这些结果不能替代 Windows 原生编译、安装、通知、服务权限和与 Chromium 共存验收；后者须在实际 Windows 包完成后执行。

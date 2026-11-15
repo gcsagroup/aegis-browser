@@ -323,6 +323,38 @@ final class AppLanguageTests: XCTestCase {
         }
     }
 
+    func testAddressSubmissionEndsEditingBeforeNavigation() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let host = FieldHostingController(rootView: FieldHarness(
+            language: AppLanguageSettings(store: .init(defaults: Defaults())), showsFind: false))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        try await waitUntil {
+            host.didAppear && self.field("address-field", in: host.view)?.isFirstResponder == true
+        }
+        let field = try XCTUnwrap(field("address-field", in: host.view))
+        let coordinator = try XCTUnwrap(field.delegate as? BrowserAddressField.Coordinator)
+        var submitted: String?
+        var focused = true
+        var destination = "https://example.org/"
+        coordinator.parent = BrowserAddressField(
+            address: Binding(get: { destination }, set: { destination = $0 }),
+            focused: Binding(get: { focused }, set: { focused = $0 }),
+            displayText: "example.org", selectionRequest: 0,
+            submit: { value in
+                XCTAssertFalse(field.isFirstResponder, "Navigation must start after the input session has ended")
+                XCTAssertFalse(focused)
+                submitted = value
+            })
+        field.text = destination
+        XCTAssertTrue(coordinator.textFieldShouldReturn(field))
+        XCTAssertEqual(submitted, "https://example.org/")
+        XCTAssertFalse(field.isFirstResponder)
+    }
+
     private struct FieldHarness: View {
         @ObservedObject var language: AppLanguageSettings
         let showsFind: Bool

@@ -118,10 +118,10 @@ final class AccessHostStorePolicyTests: XCTestCase {
         XCTAssertEqual(result.map(\.kind), [.forced])
     }
 
-    func testIdleBoundaryAtThirtyMinutes() throws {
+    func testIdleBoundaryAtOneMinute() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let almost = try record(host: "almost.example", idleSince: now.addingTimeInterval(-30 * 60 + 1))
-        let due = try record(host: "due.example", idleSince: now.addingTimeInterval(-30 * 60))
+        let almost = try record(host: "almost.example", idleSince: now.addingTimeInterval(-60 + 1))
+        let due = try record(host: "due.example", idleSince: now.addingTimeInterval(-60))
         let result = AccessHostStoreEvictionPolicy.evictions(records: [almost, due], now: now)
         XCTAssertEqual(result.map { $0.key.host.rawValue }, ["due.example"])
         XCTAssertEqual(result.map(\.kind), [.idle])

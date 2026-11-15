@@ -3,6 +3,34 @@ import CryptoKit
 import Foundation
 import UIKit
 
+/// Memory-only transport owned by an authenticated browser context. A retained
+/// download record cannot create a task once its original context ends.
+@MainActor
+public final class AccessDownloadTransport {
+    fileprivate private(set) var session: URLSession?
+    fileprivate let targetHost: String
+
+    fileprivate weak var downloads: DownloadManager?
+    private let onDemand: () -> Void
+
+    public var needsLease: Bool { downloads?.hasPendingTransfer(on: self) == true }
+
+    public init(configuration: URLSessionConfiguration, targetHost: String, downloads: DownloadManager,
+                onDemand: @escaping () -> Void) {
+        self.onDemand = onDemand
+        self.targetHost = targetHost
+        self.downloads = downloads
+        session = URLSession(configuration: configuration, delegate: downloads, delegateQueue: .main)
+    }
+
+    fileprivate func admitted() { onDemand() }
+
+    public func invalidate() {
+        session?.invalidateAndCancel()
+        session = nil
+    }
+}
+
 public struct DownloadTransferPreferences: Codable, Equatable, Sendable {
     public var allowsCellular = true
     public var allowsExpensive = true
@@ -41,6 +69,7 @@ public struct BrowserDownload: Codable, Identifiable, Equatable, Sendable {
     var inferredInterruption: Bool?
     var userStopState: State?
     var resumeDataUsable: Bool?
+    public var requiresAccessSession: Bool?
     public var transferPreferences: DownloadTransferPreferences?
     public var maximumBytes: Int64 { transferPreferences?.boundedMaximumBytes ?? 1_000_000_000 }
     public var currentURL: URL {
@@ -129,6 +158,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
     private var recovering = false
     private var recoveryRequested = false
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
+    private var accessTransfers: [UUID: AccessDownloadTransport] = [:]
     private var pausingTransfers: Set<String> = []
     private struct NativePause {
         enum Phase: Equatable { case registered, returned, disposed }
@@ -304,9 +334,10 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             // after the await to include stops accepted while discovery was pending.
             let beforeDiscovery = pendingReceipts()
             storageFailure = storageFailure ?? beforeDiscovery.error
-            let existing: [URLSessionTask]
+            var existing: [URLSessionTask]
             if let enumerateTasks { existing = await enumerateTasks(session) }
             else { existing = await session.allTasks }
+            for transfer in Set(accessTransfers.values.compactMap(\.session)) { existing += await transfer.allTasks }
             do { try flushPendingEvents() } catch { storageFailure = storageFailure ?? error }
             let afterDiscovery = pendingReceipts()
             storageFailure = storageFailure ?? afterDiscovery.error
@@ -517,6 +548,11 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             guard stopState(name) == .paused else { releasePause(name); continue }
             let taskIdentifier = owner.taskIdentifier
             let taskIdentity = owner.taskIdentity
+            if let index = itemIndex(name), items[index].requiresAccessSession == true {
+                download.cancel()
+                stagePauseData(name, taskIdentifier: taskIdentifier, taskIdentity: taskIdentity, data: nil)
+                continue
+            }
             cancelForResume(download) { data in
                 Task { @MainActor in
                     self.stagePauseData(name, taskIdentifier: taskIdentifier, taskIdentity: taskIdentity, data: data)
@@ -820,7 +856,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
     }
 
     @discardableResult
-    public func start(_ plan: DownloadPlan) throws -> UUID {
+    public func start(_ plan: DownloadPlan, accessSession: AccessDownloadTransport? = nil) throws -> UUID {
         guard isReady else { throw DownloadError.storageNotReady }
         guard !plan.urls.isEmpty, plan.urls.count <= 16, Set(plan.urls).count == plan.urls.count else { throw DownloadPlanError.invalidMirrors }
         let urls = try plan.urls.map { try Self.validatedURL($0.absoluteString) }
@@ -830,27 +866,49 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
               hash512.isEmpty || hash512.range(of: "^[a-f0-9]{128}$", options: .regularExpression) != nil else { throw DownloadError.invalidHash }
         guard plan.size == nil || (0...transferPreferences.boundedMaximumBytes).contains(plan.size!) else { throw DownloadError.tooLarge }
         try checkCapacity(required: plan.size ?? 0)
+        if let accessSession {
+            guard accessSession.downloads === self, accessSession.session != nil, urls.count == 1,
+                  urls[0].scheme == "https", BrowserAccessDownload.canonicalHost(of: urls[0]) == accessSession.targetHost
+            else { throw DownloadError.invalidURL }
+        }
         let item = BrowserDownload(id: UUID(), url: urls[0], filename: Self.safeFilename(plan.filename ?? urls[0].lastPathComponent),
                                    state: tasks.count < maximumConcurrentDownloads ? .running : .queued,
                                    expectedSHA256: hash.isEmpty ? nil : hash, mirrors: urls, mirrorIndex: 0,
                                    expectedSize: plan.size, expectedSHA512: hash512.isEmpty ? nil : hash512,
                                    plannedFilename: plan.filename, createdAt: Date(), transferID: UUID(), resumeDataUsable: false,
-                                   transferPreferences: transferPreferences)
+                                   requiresAccessSession: accessSession == nil ? nil : true, transferPreferences: transferPreferences)
         var candidate = items
         candidate.insert(item, at: 0)
         do { try persist(candidate) } catch { reportStorage(error); throw error }
         items = candidate
+        accessTransfers[item.id] = accessSession
+        accessSession?.admitted()
         if item.state == .running { begin(item, useResumeData: false) }
         return item.id
     }
 
+    fileprivate func hasPendingTransfer(on transport: AccessDownloadTransport) -> Bool {
+        items.contains { ($0.state == .queued || $0.state == .running) && accessTransfers[$0.id] === transport }
+    }
+
     private func begin(_ item: BrowserDownload, useResumeData: Bool) {
         let task: URLSessionDownloadTask
-        if useResumeData, let data = try? Data(contentsOf: resumeURL(item.id)) {
-            task = session.downloadTask(withResumeData: data)
+        let transport: URLSession
+        if item.requiresAccessSession == true {
+            guard let managed = accessTransfers[item.id]?.session else {
+                if let index = items.firstIndex(where: { $0.id == item.id }) {
+                    do { try failOrAdvance(index: index, message: AegisLocalization.string("账户代理会话已结束，请从当前网站重新开始下载。")) }
+                    catch { reportStorage(error) }
+                }
+                return
+            }
+            transport = managed
+        } else { transport = session }
+        if item.requiresAccessSession != true, useResumeData, let data = try? Data(contentsOf: resumeURL(item.id)) {
+            task = transport.downloadTask(withResumeData: data)
             try? FileManager.default.removeItem(at: resumeURL(item.id))
         } else {
-            task = session.downloadTask(with: (item.transferPreferences ?? DownloadTransferPreferences()).request(for: item.currentURL))
+            task = transport.downloadTask(with: (item.transferPreferences ?? DownloadTransferPreferences()).request(for: item.currentURL))
         }
         task.taskDescription = description(item)
         tasks[item.id] = task
@@ -933,6 +991,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         releasePause(description(items[index]))
         nativePauses[description(items[index])] = nil // The committed new generation retires this tombstone.
         items = candidate
+        accessTransfers[id]?.admitted()
         if !useResumeData { try? FileManager.default.removeItem(at: resumeURL(id)) }
         if items[index].state == .running { begin(items[index], useResumeData: useResumeData) }
     }
@@ -1205,7 +1264,8 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             if manifestLoaded && itemIndex(name) == nil { return }
             if durablyTerminal(name) { return }
             let failure = error as NSError
-            if failure.domain == NSURLErrorDomain,
+            let managed = itemIndex(name).map { items[$0].requiresAccessSession == true } ?? false
+            if !managed, failure.domain == NSURLErrorDomain,
                [NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet, NSURLErrorTimedOut].contains(failure.code),
                let data = failure.userInfo["NSURLSessionDownloadTaskResumeData"] as? Data,
                let index = itemIndex(name), stopState(name) == nil, items[index].state == .running {
@@ -1230,7 +1290,10 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             ingressRevision += 1
             let receiptURL = pendingDirectory.appendingPathComponent(UUID().uuidString + ".json")
             let exceedsLimit = itemIndex(name).map { items[$0].received > items[$0].maximumBytes || items[$0].expected > items[$0].maximumBytes } ?? false
-            let failureMessage = exceedsLimit ? DownloadError.tooLarge.localizedDescription : error.localizedDescription
+            let failureMessage: String
+            if exceedsLimit { failureMessage = DownloadError.tooLarge.localizedDescription }
+            else if !managed { failureMessage = error.localizedDescription }
+            else { failureMessage = AegisLocalization.string("账户代理下载已中断。") }
             let receipt = PendingDownloadReceipt(taskDescription: name, error: failureMessage, userStopState: stopState(name))
             pendingReceiptWrites[receiptURL] = receipt
             do {
@@ -1243,6 +1306,12 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
                 if recovering { recoveryRequested = true }
             }
             finishBackgroundEventsIfReady()
+        }
+    }
+
+    nonisolated public func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+        Task { @MainActor in
+            accessTransfers = accessTransfers.filter { $0.value.session != nil && $0.value.session !== session }
         }
     }
 
@@ -1310,6 +1379,10 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
                                        completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
         // 后台传输由系统管理重定向；前台测试和普通会话仍在每跳检查。
         Task { @MainActor in
+            if let name = task.taskDescription, let index = itemIndex(name), items[index].requiresAccessSession == true {
+                completionHandler(nil)
+                return
+            }
             guard let url = request.url, let cleaned = try? Self.validatedURL(url.absoluteString),
                   !(response.url?.scheme == "https" && cleaned.scheme != "https") else { completionHandler(nil); return }
             var next = request

@@ -71,7 +71,13 @@ private final class RecordingEmbeddedCoreForFactory: AccessEmbeddedCoreControlli
 final class AccessEmbeddedTeardownTests: XCTestCase {
     func testPublisherWaitsForOldStopBeforeNewReadyAndDial() async throws {
         let core = DelayedStopCore()
-        let session = AccessEmbeddedProxyEntrySession(core: core, configData: Data("{}".utf8))
+        let parameters = try AccessRealityVisionParameters(
+            address: "198.51.100.10", port: 443,
+            userID: "550e8400-e29b-41d4-a716-446655440000", serverName: "www.example.com",
+            publicKey: "abcdefghijklmnopqrstuvwxyzABCDEFG", shortID: "abcd1234"
+        )
+        let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: parameters)
+        let session = AccessEmbeddedProxyEntrySession(core: core, outbound: outbound)
         let publisher = AccessProxyEntryPublisher(
             provision: { try await session.provision(generation: $0, deadline: $1) },
             shutdown: { session.shutdown(identity: $0) },

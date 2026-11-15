@@ -69,7 +69,7 @@ public enum AccessRealityVisionOutboundConfigBuilder {
                     "fingerprint": parameters.fingerprint,
                     "publicKey": parameters.publicKey,
                     "shortId": parameters.shortID,
-                    "spiderX": "",
+                    "spiderX": parameters.spiderX,
                 ],
             ],
         ]

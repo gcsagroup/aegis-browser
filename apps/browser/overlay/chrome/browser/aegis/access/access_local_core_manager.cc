@@ -2,12 +2,20 @@
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
 #include <signal.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cerrno>
 #include <vector>
 
 #include "base/barrier_closure.h"
+#include "base/strings/string_util.h"
+
+#include "base/files/file_descriptor_watcher_posix.h"
+#include "base/base64.h"
+#include "chrome/browser/aegis/access/access_core_log_share.h"
 #include "base/command_line.h"
 #include "base/base_paths.h"
 #include "base/files/file.h"
@@ -69,6 +77,45 @@ std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput() {
 #endif
 }
 namespace {
+
+const base::DictValue* SelectedOutbound(const base::DictValue& node) {
+  const auto* outbounds = node.FindList("outbounds");
+  if (!outbounds || outbounds->empty() || !outbounds->front().is_dict()) {
+    return nullptr;
+  }
+  const auto& outbound = outbounds->front().GetDict();
+  const auto* protocol = outbound.FindString("protocol");
+  const auto* transport = outbound.FindStringByDottedPath("streamSettings.network");
+  const auto* security = outbound.FindStringByDottedPath("streamSettings.security");
+  return protocol && *protocol == "vless" && transport && *transport == "tcp" &&
+                 security && *security == "reality" ? &outbound : nullptr;
+}
+
+}  // namespace
+
+std::string ReadConfiguredAccessNodeId(const AccessLocalCoreInput& input) {
+  std::string node_json;
+  if (!base::ReadFileToStringWithMaxSize(input.node_config, &node_json, 1024 * 1024)) {
+    return {};
+  }
+  auto node = base::JSONReader::ReadDict(node_json, base::JSON_PARSE_RFC);
+  const auto* outbound = node ? SelectedOutbound(*node) : nullptr;
+  const auto* servers = outbound ? outbound->FindListByDottedPath("settings.vnext") : nullptr;
+  if (!servers || servers->empty() || !servers->front().is_dict()) {
+    return {};
+  }
+  const auto& server = servers->front().GetDict();
+  const auto* address = server.FindString("address");
+  const int port = server.FindInt("port").value_or(0);
+  if (!address || address->empty() || port <= 0 || port > 65535) {
+    return {};
+  }
+  const auto label = base::ToLowerASCII(*address) + "\n" + base::NumberToString(port);
+  const auto digest = crypto::hash::Sha256(base::as_byte_span(label));
+  return base::HexEncodeLower(base::span(digest).first<6>());
+}
+
+namespace {
 constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
     "aegis_access_local_core_canary", R"(
       semantics {
@@ -85,6 +132,37 @@ constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
       })");
 constexpr char kCanary[] = "https://www.gstatic.com/generate_204";
 std::string Token() { return base::Uuid::GenerateRandomV4().AsLowercaseString(); }
+// Refuse control characters before Xray can print a multiline node field as
+// an independent diagnostic. Bound redaction work even for large configs.
+bool CollectProtectedValues(const base::Value& value,
+                            std::vector<std::string>& values,
+                            std::string_view field = {}) {
+  if (value.is_dict()) {
+    for (auto entry : value.GetDict()) {
+      if (!CollectProtectedValues(entry.second, values, entry.first))
+        return false;
+    }
+  } else if (value.is_list()) {
+    for (const auto& item : value.GetList()) {
+      if (!CollectProtectedValues(item, values))
+        return false;
+    }
+  } else if (value.is_string()) {
+    const auto& text = value.GetString();
+    if (std::any_of(text.begin(), text.end(), [](unsigned char c) {
+          return c < 0x20 || c == 0x7f;
+        }))
+      return false;
+    const bool structural = (field == "protocol" && text == "vless") ||
+                            (field == "network" && text == "tcp") ||
+                            (field == "security" && text == "reality") ||
+                            (field == "flow" && text == "xtls-rprx-vision") ||
+                            (field == "encryption" && text == "none");
+    if (!structural && !text.empty() && values.size() < 256)
+      values.push_back(base::ToLowerASCII(text));
+  }
+  return true;
+}
 }  // namespace
 
 class AccessLocalCoreManager::ShutdownHandle
@@ -258,14 +336,8 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     if (!binary.IsAbsolute() || !bytes ||
         base::HexEncodeLower(crypto::hash::Sha256(*bytes)) != *pin)
       return false;
-    const auto* outbounds = node->FindList("outbounds");
-    if (!outbounds || outbounds->empty() || !outbounds->front().is_dict()) return false;
-    const auto& outbound = outbounds->front().GetDict();
-    const auto* protocol = outbound.FindString("protocol");
-    const auto* transport = outbound.FindStringByDottedPath("streamSettings.network");
-    const auto* security = outbound.FindStringByDottedPath("streamSettings.security");
-    if (!protocol || *protocol != "vless" || !transport || *transport != "tcp" ||
-        !security || *security != "reality") return false;
+    const auto* outbound = SelectedOutbound(*node);
+    if (!outbound) return false;
     // The selected outbound is copied privately; no subscription, system
     // routing, original V2Ray process or original input file is changed.
     if (!directory_.CreateUniqueTempDir() ||
@@ -280,13 +352,26 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     const auto password = Token();
     credentials_.emplace(base::UTF8ToUTF16(user), base::UTF8ToUTF16(password));
     registration_ = Token();
+    std::string level = "none";
+    protected_values_ = {user, password, registration_,
+                         base::ToLowerASCII(base::Base64Encode(user + ":" + password))};
+    if (!CollectProtectedValues(base::Value(outbound->Clone()), protected_values_))
+      return false;
+    if (protected_values_.size() >= 256)
+      protected_values_ = {""};  // A saturated budget suppresses every record.
+    if (input_.log_store) {
+      input_.log_store->SetProtectedValues(protected_values_);
+      std::tie(level, log_generation_) = input_.log_store->LaunchConfig();
+    }
+    auto log = base::DictValue().Set("loglevel", level);
+    if (CoreLogRank(level) >= 2) log.Set("access", "none");
     auto config = base::DictValue()
-        .Set("log", base::DictValue().Set("loglevel", "none"))
+        .Set("log", std::move(log))
         .Set("inbounds", base::ListValue().Append(base::DictValue()
             .Set("listen", "127.0.0.1").Set("port", port_).Set("protocol", "http")
             .Set("settings", base::DictValue().Set("accounts", base::ListValue()
                 .Append(base::DictValue().Set("user", user).Set("pass", password))))))
-        .Set("outbounds", base::ListValue().Append(outbound.Clone()));
+        .Set("outbounds", base::ListValue().Append(outbound->Clone()));
     const auto config_path = directory_.GetPath().AppendASCII("config.json");
     std::string serialized;
     if (!base::JSONWriter::Write(config, &serialized)) return false;
@@ -308,10 +393,63 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     base::File null_output(base::FilePath("/dev/null"),
                            base::File::FLAG_OPEN | base::File::FLAG_WRITE);
     if (!null_output.IsValid()) return false;
-    options.fds_to_remap = {{null_output.GetPlatformFile(), 1},
-                            {null_output.GetPlatformFile(), 2}};
+    base::ScopedFD read_end, write_end;
+    int output = null_output.GetPlatformFile();
+    auto create_log_pipe = input_.create_log_pipe_for_testing
+                               ? input_.create_log_pipe_for_testing : &base::CreatePipe;
+    if (level != "none" && create_log_pipe(&read_end, &write_end, /*non_blocking=*/true)) {
+      // Diagnostic capture is optional; a failed pipe keeps /dev/null.
+      log_read_ = base::File(std::move(read_end));
+      output = write_end.get();
+      log_clear_epoch_ = input_.log_store->RegisterPipe(log_read_.GetPlatformFile());
+      log_watch_ = base::FileDescriptorWatcher::WatchReadable(
+          log_read_.GetPlatformFile(),
+          base::BindRepeating(&Worker::DrainLog, base::Unretained(this)));
+    }
+    options.fds_to_remap = {{output, STDOUT_FILENO}, {output, STDERR_FILENO}};
     process_ = base::LaunchProcess(command, options);
     return process_.IsValid();
+  }
+  void DrainLog() {
+    std::array<char, 4096> chunk;
+    for (int i = 0; i < 16 && log_read_.IsValid(); ++i) {
+      const auto [count, error, epoch, prefix] =
+          input_.log_store->ReadPipe(log_read_, chunk);
+      if (epoch != log_clear_epoch_) {
+        log_clear_epoch_ = epoch;
+        framer_.DiscardPartial();
+        discard_until_empty_ = !prefix.has_value();
+        discard_bytes_ = prefix.value_or(0);
+      }
+      if (error == EAGAIN || error == EWOULDBLOCK) {
+        discard_until_empty_ = false;
+        discard_bytes_ = 0;
+        return;
+      }
+      if (!count || *count == 0) {
+        CloseLogPipe();
+        break;
+      }
+      std::string_view bytes(chunk.data(), *count);
+      const size_t discard = discard_until_empty_
+                                 ? bytes.size() : std::min(discard_bytes_, bytes.size());
+      if (discard) {
+        framer_.Discard(bytes.substr(0, discard));
+        if (!discard_until_empty_)
+          discard_bytes_ -= discard;
+        bytes.remove_prefix(discard);
+      }
+      framer_.Feed(bytes, [this, epoch](std::string_view line) {
+        input_.log_store->Add(log_generation_, epoch, line, protected_values_);
+      });
+    }
+  }
+  void CloseLogPipe() {
+    log_watch_.reset();
+    if (log_read_.IsValid()) {
+      input_.log_store->UnregisterPipe(log_read_.GetPlatformFile());
+      log_read_.Close();
+    }
   }
   void StartProbe() {
     if (!Running()) {
@@ -427,6 +565,12 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
       }
       process_.Close();
     }
+    DrainLog();
+    CloseLogPipe();
+    framer_ = CoreLogFramer();
+    discard_bytes_ = 0;
+    discard_until_empty_ = false;
+    protected_values_.clear();
     credentials_.reset();
     authenticated_ = false;
     const bool deleted = directory_.Delete();
@@ -435,6 +579,14 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
 
   AccessLocalCoreInput input_;
   std::shared_ptr<ShutdownHandle> shutdown_;
+  base::File log_read_;
+  std::unique_ptr<base::FileDescriptorWatcher::Controller> log_watch_;
+  CoreLogFramer framer_;
+  uint64_t log_generation_ = 0;
+  uint64_t log_clear_epoch_ = 0;
+  size_t discard_bytes_ = 0;
+  bool discard_until_empty_ = false;
+  std::vector<std::string> protected_values_;
   base::ScopedTempDir directory_;
   base::Process process_;
   uint16_t port_ = 0;
@@ -502,11 +654,11 @@ void AccessLocalCoreManager::StopAllForSessionEnding(base::OnceClosure completio
   for (auto& weak : ShutdownHandle::Registry()) {
     if (auto handle = weak.lock()) handles.push_back(std::move(handle));
   }
-  if (handles.empty()) {
-    std::move(completion).Run();
-    return;
-  }
-  auto stopped = base::BarrierClosure(handles.size(), std::move(completion));
+  auto stopped = base::BarrierClosure(
+      handles.size() + 1,
+      base::BindOnce(&AccessCoreLogStore::FlushAllForSessionEnding,
+                     std::move(completion)));
+  CoreLogShareSession::StopAllForSessionEnding(base::OnceClosure(stopped));
   for (auto& handle : handles) handle->RequestStop(base::OnceClosure(stopped));
 }
 void AccessLocalCoreManager::SetStoppedCallback(

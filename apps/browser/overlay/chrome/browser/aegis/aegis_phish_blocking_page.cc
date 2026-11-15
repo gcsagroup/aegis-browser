@@ -299,13 +299,13 @@ void AegisPhishBlockingPage::PopulateInterstitialStrings(
 
   load_time_data.Set("tabTitle", zh ? (tw ? u"疑似釣魚網站" : u"疑似钓鱼网站")
                                     : u"Suspected phishing");
-  load_time_data.Set("heading", zh ? (tw ? u"GCSA Aegis 檢測到疑似釣魚線索"
-                                         : u"GCSA Aegis 检测到疑似钓鱼线索")
-                                   : u"GCSA Aegis detected phishing signals");
+  load_time_data.Set("heading", zh ? (tw ? u"Aegis Browser 檢測到疑似釣魚線索"
+                                         : u"Aegis Browser 检测到疑似钓鱼线索")
+                                   : u"Aegis Browser detected phishing signals");
   std::u16string primary =
-      zh ? (tw ? u"GCSA Aegis 因為以下可見線索攔截了這個頁面："
-               : u"GCSA Aegis 因为以下可见线索拦截了这个页面：")
-         : u"GCSA Aegis blocked this page because of these visible signals:";
+      zh ? (tw ? u"Aegis Browser 因為以下可見線索攔截了這個頁面："
+               : u"Aegis Browser 因为以下可见线索拦截了这个页面：")
+         : u"Aegis Browser blocked this page because of these visible signals:";
   primary += u"<br><br>";
   primary += FormatReasons(assessment_, zh, tw);
   primary += u"<br><br>";

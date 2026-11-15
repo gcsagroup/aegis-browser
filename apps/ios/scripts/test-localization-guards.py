@@ -75,6 +75,77 @@ class LocalizationGuardTests(unittest.TestCase):
                 with patch.object(self.checks, "ROOT", root), self.assertRaises(ValueError):
                     self.checks.validate_agent_errors(self.coverage)
 
+    def test_project_regions_accept_approved_agent_regions_but_reject_extra_or_missing(self):
+        project = self.checks.plist(self.checks.ROOT / "Aegis.xcodeproj/project.pbxproj")
+        expected = set(self.coverage["resourceLocales"]) | set(self.coverage["requestedLocales"]) | {"Base"}
+        root = project["objects"][project["rootObject"]]
+        root["knownRegions"] = sorted(expected)
+        self.checks.validate_project_regions(project, self.coverage["resourceLocales"])
+        self.assertEqual(expected - set(self.coverage["resourceLocales"]) - {"Base"},
+                         {"en-GB", "en-HK", "zh-Hant-HK"})
+        for regions in [expected | {"xx-UNRELATED"}, expected - {"en-GB"},
+                        expected - {"de"}, expected - {"Base"}]:
+            with self.subTest(regions=sorted(regions)):
+                changed = copy.deepcopy(project)
+                changed["objects"][changed["rootObject"]]["knownRegions"] = sorted(regions)
+                with self.assertRaisesRegex(ValueError, "knownRegions"):
+                    self.checks.validate_project_regions(changed, self.coverage["resourceLocales"])
+
+    def test_unapproved_agent_locale_cannot_authorize_an_extra_project_region(self):
+        project = self.checks.plist(self.checks.ROOT / "Aegis.xcodeproj/project.pbxproj")
+        original = json.loads((self.checks.ROOT / "AgentKit/AgentErrors.xcstrings").read_text())
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "AgentKit").mkdir()
+            for entry in original["strings"].values():
+                entry["localizations"]["xx-UNRELATED"] = copy.deepcopy(entry["localizations"]["en"])
+            (root / "AgentKit/AgentErrors.xcstrings").write_text(json.dumps(original))
+            project["objects"][project["rootObject"]]["knownRegions"].append("xx-UNRELATED")
+            with patch.object(self.checks, "ROOT", root), self.assertRaises(ValueError):
+                self.checks.validate_project_regions(project, self.coverage["resourceLocales"])
+
+    def test_agent_regions_require_the_catalog_in_agent_resources(self):
+        project = self.checks.plist(self.checks.ROOT / "Aegis.xcodeproj/project.pbxproj")
+        objects = project["objects"]
+        target = next(value for value in objects.values()
+                      if value.get("isa") == "PBXNativeTarget" and value.get("name") == "AgentKit")
+        for key in target["buildPhases"]:
+            phase = objects[key]
+            if phase["isa"] == "PBXResourcesBuildPhase":
+                phase["files"] = [ref for ref in phase["files"]
+                                  if objects[objects[ref]["fileRef"]].get("path") != "AgentErrors.xcstrings"]
+        with self.assertRaisesRegex(ValueError, "Unbundled AgentErrors"):
+            self.checks.validate_project_regions(project, self.coverage["resourceLocales"])
+
+    def test_web_extension_locale_folder_accepts_only_exact_reference_forms(self):
+        reference = {"isa": "PBXFileReference", "path": "SharedWebExtension/_locales",
+                     "sourceTree": "SOURCE_ROOT", "name": "_locales", "lastKnownFileType": "folder"}
+        self.assertTrue(self.checks.is_web_extension_locale_folder(reference))
+        self.assertTrue(self.checks.is_web_extension_locale_folder(
+            dict(reference, path="_locales", sourceTree="<group>")))
+        for changes in [{"path": "unrelated/_locales"}, {"path": "../SharedWebExtension/_locales"},
+                        {"path": "SharedWebExtension/_locales/"}, {"path": "_locales"},
+                        {"sourceTree": "<group>"}, {"sourceTree": "<absolute>"}, {"sourceTree": None},
+                        {"lastKnownFileType": "text.json"}, {"lastKnownFileType": None},
+                        {"isa": "PBXGroup"}]:
+            with self.subTest(changes=changes):
+                self.assertFalse(self.checks.is_web_extension_locale_folder(dict(reference, **changes)))
+
+    def test_project_rejects_wrong_web_extension_locale_resource(self):
+        project = self.checks.plist(self.checks.ROOT / "Aegis.xcodeproj/project.pbxproj")
+        # Ensure the real generated project passes before testing mutations, so
+        # unrelated failures cannot make the rejection tests vacuously succeed.
+        self.checks.validate_project(self.coverage["resourceLocales"])
+        for changes in [{"path": "unrelated/_locales"}, {"sourceTree": "<absolute>"},
+                        {"lastKnownFileType": "text.json"}, {"path": "SharedWebExtension/locales"}]:
+            changed = copy.deepcopy(project)
+            for reference in changed["objects"].values():
+                if self.checks.is_web_extension_locale_folder(reference):
+                    reference.update(changes)
+            with self.subTest(changes=changes), patch.object(self.checks, "plist", return_value=changed):
+                with self.assertRaisesRegex(ValueError, "Missing exact WebExtension locale folder"):
+                    self.checks.validate_project(self.coverage["resourceLocales"])
+
     def test_project_membership_rejection(self):
         project = self.checks.plist(self.checks.ROOT / "Aegis.xcodeproj/project.pbxproj")
         objects = project["objects"]
@@ -139,7 +210,7 @@ class LocalizationGuardTests(unittest.TestCase):
                     patch.object(self.runner.subprocess, "Popen", side_effect=native_fixture) as process:
                 self.assertEqual(self.runner.main(), 0)
                 config = work / "None-en-en_GB17.xctestrun"
-                self.assertEqual(process.call_args.args[0][4], str(config))
+                self.assertEqual(process.call_args.args[0][4], str(config.resolve()))
                 settings = plistlib.loads(config.read_bytes())["AegisTests"]
                 self.assertEqual(settings["TestRegion"], "GB")
                 self.assertEqual(settings["EnvironmentVariables"]["AEGIS_EXPECTED_LANGUAGE"], "en-GB")
@@ -205,7 +276,7 @@ class LocalizationGuardTests(unittest.TestCase):
                 self.assertEqual(self.runner.main(), 1, "A zero process exit cannot replace locale evidence")
                 argv = process.call_args.args[0]
                 self.assertEqual(argv[:4], ["/usr/bin/xcrun", "xcodebuild", "test-without-building", "-xctestrun"])
-                self.assertEqual(argv[4], str(work / "en.xctestrun"))
+                self.assertEqual(argv[4], str((work / "en.xctestrun").resolve()))
                 self.assertEqual(argv[argv.index("-destination") + 1],
                                  "platform=iOS Simulator,id=D5367C00-914D-4ED9-89F1-746C5ED9277A")
                 self.assertIs(process.call_args.kwargs["shell"], False)

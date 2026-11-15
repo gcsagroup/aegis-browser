@@ -7,6 +7,8 @@ const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 export default defineConfig({
   test: {
     environment: "node",
+    // Subprocess-based protocol tests share CPU with other jobs on CI runners.
+    maxWorkers: 2,
     include: ["src/**/*.test.ts"],
     reporters: process.env.NODE_V8_COVERAGE
       ? [...configDefaults.reporters, fileURLToPath(new URL("./vitest-coverage-exit.mjs", import.meta.url))]

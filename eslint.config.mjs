@@ -1,5 +1,6 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import security from 'eslint-plugin-security';
 
 const ciNodeGlobals = {
   Buffer: 'readonly',
@@ -55,6 +56,20 @@ const localNodeScriptFiles = [
 ];
 
 export default tseslint.config(
+  {
+    files: [
+      "apps/browser/scripts/ios-access-phase1-evidence.mjs",
+      "apps/browser/scripts/ios-access-phase1-evidence_test.mjs",
+      "apps/browser/scripts/macos-access-phase1-evidence.mjs",
+      "apps/ios/scripts/simulator-input-manifest.mjs",
+      "apps/ios/scripts/test-simulator-input-evidence.mjs",
+      "packages/core/src/script-risk/evaluation/blind-protocol.test.ts"
+],
+    plugins: {security},
+    // Codacy enables this plugin independently. Register it so scoped,
+    // reasoned Codacy suppressions can also be parsed by the local ESLint gate.
+    linterOptions: {reportUnusedDisableDirectives: false},
+  },
   {
     ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '.artifacts/**'],
   },

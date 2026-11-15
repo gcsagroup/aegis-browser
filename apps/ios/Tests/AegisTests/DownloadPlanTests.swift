@@ -27,7 +27,7 @@ import XCTest
         await manager.retryStorage()
         try await waitUntil { manager.isReady }
         let urls = [URL(string: "http://127.0.0.1:8768/missing")!, URL(string: "http://127.0.0.1:8768/download.bin")!]
-        let id = try manager.start(DownloadPlan(urls: urls, filename: "mirror-result.bin", size: 44032))
+        let id = try manager.start(DownloadPlan(urls: urls, filename: "mirror-result.bin", size: 47_104))
         try await waitUntil { manager.items.first?.state == .completed }
         let item = try XCTUnwrap(manager.items.first)
         XCTAssertEqual(item.id, id); XCTAssertEqual(item.mirrorIndex, 1)
@@ -51,7 +51,7 @@ import XCTest
         await manager.retryStorage()
         try await waitUntil { manager.isReady }
         // 此值由独立的 Python hashlib 对验收原始字节计算。
-        let expected = "d6b4a64ad03b6cb52216292f2cf78c378811562e5914f1c5f6b92ac5fa3854183da49641e8ca249a0c25ff9eb3334380732395f6cdb041c17c97558d4069024a"
+        let expected = "81b79a751406532b280900f46bb284691d3d2c9e0818f6447bc3be11f86256707a80640755fc9e1e38bb8362efc7dc58e64504001b6d2f9dd57ad503e76e7a94"
         let id = try manager.start(DownloadPlan(urls: [URL(string: "http://127.0.0.1:8768/article")!, URL(string: "http://127.0.0.1:8768/download.bin")!], sha512: expected))
         try await waitUntil { manager.items.first { $0.id == id }?.state == .completed }
         XCTAssertEqual(manager.items.first?.mirrorIndex, 1)

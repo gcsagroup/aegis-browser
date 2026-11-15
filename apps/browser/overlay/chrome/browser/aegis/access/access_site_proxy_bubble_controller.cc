@@ -3,7 +3,9 @@
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 #include "chrome/browser/aegis/access/access_build_channel.h"
 
+#include <algorithm>
 #include <utility>
+#include "base/task/thread_pool.h"
 #include "base/command_line.h"
 #include "chrome/browser/aegis/access/access_identity_generation_source.h"
 #include "chrome/browser/aegis/access/access_published_request_runtime.h"
@@ -16,6 +18,17 @@
 #include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/channel_info.h"
+#include "chrome/browser/aegis/aegis_prefs.h"
+#include "components/prefs/pref_service.h"
+#include "build/build_config.h"
+#if BUILDFLAG(IS_MAC)
+#include "chrome/browser/lifetime/termination_notification.h"
+#include "chrome/browser/aegis/access/access_core_log_share.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/web_contents.h"
+#include "third_party/blink/public/mojom/webshare/webshare.mojom.h"
+#endif
 #include "components/aegis_access/access_proxy_route_adapter.h"
 #include "components/version_info/channel.h"
 #include "content/public/browser/browser_thread.h"
@@ -25,6 +38,35 @@ namespace {
 
 const void* const kAccessSiteProxyBubbleControllerKey =
     &kAccessSiteProxyBubbleControllerKey;
+
+#if BUILDFLAG(IS_MAC)
+const void* const kLogHistoryKey = &kLogHistoryKey;
+// Keep both stores on the original profile. Reopening an incognito window
+// reuses its own private store even while the previous core is shutting down.
+class ProfileLogHistories : public base::SupportsUserData::Data {
+ public:
+  scoped_refptr<AccessCoreLogStore> regular;
+  scoped_refptr<AccessCoreLogStore> private_history;
+};
+scoped_refptr<AccessCoreLogStore> GetCoreLogHistory(Profile* profile) {
+  Profile* original = profile->GetOriginalProfile();
+  auto* histories = static_cast<ProfileLogHistories*>(original->GetUserData(kLogHistoryKey));
+  if (!histories) {
+    auto owned = std::make_unique<ProfileLogHistories>();
+    histories = owned.get();
+    original->SetUserData(kLogHistoryKey, std::move(owned));
+  }
+  const bool is_private = profile->IsOffTheRecord();
+  auto& target = is_private ? histories->private_history : histories->regular;
+  if (!target) {
+    const auto level = original->GetPrefs()->GetString(
+        is_private ? kAccessPrivateCoreLogLevel : kAccessCoreLogLevel);
+    target = AccessCoreLogStore::Open(original->GetPath(),
+        is_private ? CoreLogProfile::kPrivate : CoreLogProfile::kRegular, level);
+  }
+  return target;
+}
+#endif
 
 bool IsNumericLoopbackHost(std::string_view host) {
   return host == "127.0.0.1" || host == "::1" || host == "[::1]";
@@ -76,6 +118,14 @@ AccessSiteProxyBubbleController::AccessSiteProxyBubbleController(
     Profile* profile)
     : profile_(profile) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if BUILDFLAG(IS_MAC)
+  if ((profile_->IsRegularProfile() || profile_->IsPrimaryOTRProfile()) &&
+      profile_->GetPrefs()->FindPreference(kAccessCoreLogLevel)) {
+    app_terminating_ = browser_shutdown::AddAppTerminatingCallback(
+        base::BindOnce(&CoreLogShareSession::ShutDown, base::Unretained(&log_share_)));
+    core_logs_ = GetCoreLogHistory(profile_);
+  }
+#endif
 }
 
 AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() {
@@ -174,12 +224,25 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
 }
 
 bool AccessSiteProxyBubbleController::RequestHostProxySession(
+    const AccessSiteHost& host, bool enabled) {
+  return RequestHostProxySession(host, enabled, {});
+}
+
+bool AccessSiteProxyBubbleController::RequestHostProxySession(
     const AccessSiteHost& requested_host,
-    bool enabled) {
+    bool enabled, base::OnceClosure on_ready) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const auto website = CanonicalWebsiteHost(requested_host);
   if (!website.host) return false;
   const auto host = *website.host;
+#if BUILDFLAG(IS_MAC)
+  if (enabled) {
+    auto* transport = AccessNetworkContextTransport::Get(profile_);
+    if (transport && std::ranges::any_of(transport->AccountSites(), [&](const auto& paid) {
+          return CanonicalWebsiteHost(AccessSiteHost{paid}).host == host;
+        })) return false;
+  }
+#endif
   ++state_revision_;
   if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
@@ -195,6 +258,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     verifying_host_.reset();
     ++committed_verification_attempt_;
     publication_in_flight_ = false;
+    on_enabled_.Reset();
     superseded_retry = std::move(retry_completion_);
     superseded_queue = std::move(queued_retry_);
     retry_url_ = GURL();
@@ -210,7 +274,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     // committed choice until the local transaction actually succeeds.
     host_states_[host].connection = AccessSiteConnectionState::kConnecting;
     host_states_[host].failure_reason.clear();
-    BeginDisablePublication(host);
+    BeginDisablePublication(host, std::move(on_ready));
     if (superseded_retry) std::move(superseded_retry).Run(false);
     if (superseded_queue) std::move(superseded_queue).Run(false);
     return true;
@@ -220,6 +284,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
   host_states_[host].failure_reason.clear();
 
   publication_in_flight_ = true;
+  on_enabled_ = std::move(on_ready);
   PrepareLocalCore(host);
   return true;
 }
@@ -365,10 +430,81 @@ std::string AccessSiteProxyBubbleController::LocalProxyGroup(
   return owner.channel == ChannelNamespace::kAlpha ? "alpha-authorized-test-node"
                                                   : "dev-authorized-local-node";
 }
+bool AccessSiteProxyBubbleController::CanViewCoreLogs() const {
+  return core_logs_ != nullptr;
+}
+void AccessSiteProxyBubbleController::SetCoreLogLevel(std::string_view level) {
+  if (!CanViewCoreLogs() ||
+      std::find(kCoreLogLevels.begin(), kCoreLogLevels.end(), level) == kCoreLogLevels.end())
+    return;
+  profile_->GetOriginalProfile()->GetPrefs()->SetString(
+      profile_->IsOffTheRecord() ? kAccessPrivateCoreLogLevel : kAccessCoreLogLevel,
+      std::string(level));
+  core_logs_->SetLevel(level);
+  ++state_revision_;
+}
+#if BUILDFLAG(IS_MAC)
+void AccessSiteProxyBubbleController::ReadConfiguredNodeId(
+    base::OnceCallback<void(std::string)> done) {
+  auto input = ResolveAccessLocalCoreInput();
+  if (!input) {
+    std::move(done).Run(std::string());
+    return;
+  }
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock()},
+      base::BindOnce(&ReadConfiguredAccessNodeId, std::move(*input)),
+      std::move(done));
+}
+
+void AccessSiteProxyBubbleController::ShareCoreLogs(
+    content::WebContents* tab,
+    std::string preview,
+    uint64_t version,
+    base::OnceCallback<void(CoreLogShareResult)> done) {
+  if (!CanViewCoreLogs() || !tab ||
+      tab->GetBrowserContext() != profile_ || preview.empty() || !core_logs_->CanShare(version)) {
+    std::move(done).Run(CoreLogShareResult::kFailed);
+    return;
+  }
+  auto picker_succeeded = std::make_shared<bool>(false);
+  log_share_.Start(profile_->GetOriginalProfile()->GetPath(), std::move(preview), base::BindOnce(
+      [](base::WeakPtr<content::WebContents> tab, content::GlobalRenderFrameHostId frame,
+         scoped_refptr<AccessCoreLogStore> store, uint64_t version,
+         std::shared_ptr<bool> picker_succeeded, base::FilePath path,
+         base::ScopedClosureRunner release) {
+        if (!tab || path.empty() || !store->CanShare(version) ||
+            tab->GetPrimaryMainFrame()->GetGlobalId() != frame ||
+            tab->GetVisibility() != content::Visibility::VISIBLE ||
+            !tab->GetRenderWidgetHostView()) {
+          return;
+        }
+        tab->GetRenderWidgetHostView()->ShowSharePicker("", "", GURL(), {path.value()},
+            base::BindOnce([](base::ScopedClosureRunner release, std::shared_ptr<bool> picker_succeeded,
+                              blink::mojom::ShareError result) {
+              *picker_succeeded = result != blink::mojom::ShareError::INTERNAL_ERROR;
+              release.RunAndReset();
+            }, std::move(release), std::move(picker_succeeded)));
+      }, tab->GetWeakPtr(), tab->GetPrimaryMainFrame()->GetGlobalId(), core_logs_,
+      version, picker_succeeded),
+      base::BindOnce([](std::shared_ptr<bool> picker_succeeded,
+                        base::OnceCallback<void(CoreLogShareResult)> done,
+                        bool cleaned) {
+        auto result = CoreLogShareResult::kFailed;
+        if (!cleaned) {
+          result = CoreLogShareResult::kCleanupFailed;
+        } else if (*picker_succeeded) {
+          result = CoreLogShareResult::kCompleted;
+        }
+        std::move(done).Run(result);
+      }, picker_succeeded, std::move(done)));
+}
+#endif
 void AccessSiteProxyBubbleController::CreateLocalCore() {
   if (local_core_) return;
-  const auto input = ResolveAccessLocalCoreInput();
+  auto input = ResolveAccessLocalCoreInput();
   if (!input) return;
+  input->log_store = core_logs_;
   local_core_ = std::make_unique<AccessLocalCoreManager>(*input);
   local_core_->SetStoppedCallback(base::BindRepeating(
       &AccessSiteProxyBubbleController::OnLocalCoreStopped,
@@ -564,6 +700,7 @@ void AccessSiteProxyBubbleController::OnRestoredCoreVerified(
   FinishCoreRequests(ready);
 }
 void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
+  auto on_enabled = std::move(on_enabled_);
   auto retry = std::move(retry_completion_);
   auto next = std::move(queued_retry_);
   GURL url = std::exchange(retry_url_, GURL());
@@ -574,6 +711,7 @@ void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
   if (next && !next.IsCancelled()) {
     RequestFailedNavigationProxy(url, std::move(next));
   }
+  if (ready && on_enabled) std::move(on_enabled).Run();
 }
 
 void AccessSiteProxyBubbleController::FinishCoreRequests(bool ready) {
@@ -776,7 +914,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
 }
 
 void AccessSiteProxyBubbleController::BeginDisablePublication(
-    const AccessSiteHost& host) {
+    const AccessSiteHost& host, base::OnceClosure on_disabled) {
   auto* transport = AccessNetworkContextTransport::Get(profile_);
   const auto owner = transport
       ? transport->OwnerForPartition(AccessChannelForCurrentBuild(), base::FilePath())
@@ -830,8 +968,14 @@ void AccessSiteProxyBubbleController::BeginDisablePublication(
   publication_in_flight_ = true;
   coordinator->CommitSiteGroupMutation(
       std::move(store), std::move(*plan.mutation.request), plan.selector,
-      base::BindOnce(&AccessSiteProxyBubbleController::OnPublicationComplete,
-                     weak_factory_.GetWeakPtr(), host, /*enabling=*/false));
+      base::BindOnce([](base::WeakPtr<AccessSiteProxyBubbleController> self,
+                        AccessSiteHost host, base::OnceClosure on_disabled,
+                        AccessMutationTransactionResult result) {
+        if (!self) return;
+        const bool committed = result.status == AccessMutationTransactionStatus::kCommitted;
+        self->OnPublicationComplete(host, false, std::move(result));
+        if (self && committed && on_disabled) std::move(on_disabled).Run();
+      }, weak_factory_.GetWeakPtr(), host, std::move(on_disabled)));
 }
 
 void AccessSiteProxyBubbleController::OnPublicationComplete(

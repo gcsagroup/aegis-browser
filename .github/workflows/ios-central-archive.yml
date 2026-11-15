@@ -1,0 +1,55 @@
+name: Aegis private central archive producer
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Approved canonical Aegis source SHA
+        required: true
+        type: string
+      version:
+        description: New Alpha marketing version
+        required: true
+        type: string
+      build:
+        description: Independently reserved unused Alpha build
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  archive:
+    if: github.event.repository.private == true && github.repository == vars.AEGIS_CENTRAL_PRODUCER_REPOSITORY && github.run_attempt == 1
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_CENTRAL_ARCHIVE_RUNNER_LABEL)) }}
+    environment: aegis-ios-central-archive
+    timeout-minutes: 50
+    env:
+      AEGIS_CENTRAL_SOURCE_SHA: ${{ vars.AEGIS_CENTRAL_SOURCE_SHA }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      VERSION: ${{ inputs.version }}
+      BUILD: ${{ inputs.build }}
+      APPLE_TEAM: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Require the exact frozen source before checkout
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ && "$SOURCE_SHA" == "$AEGIS_CENTRAL_SOURCE_SHA" ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: gcsagroup/aegis-browser
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Create development-signed archive without ASC credentials
+        env:
+          AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64: ${{ vars.AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64 }}
+        run: >-
+          python3 -B scripts/release/central-ios.py archive --version "$VERSION" --build "$BUILD"
+          --team "$APPLE_TEAM" --work "$RUNNER_TEMP/aegis-development"
+          --output "$RUNNER_TEMP/aegis-private-input"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: aegis-central-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/aegis-private-input/request.json
+            ${{ runner.temp }}/aegis-private-input/archive.zip
+          if-no-files-found: error
+          retention-days: 30

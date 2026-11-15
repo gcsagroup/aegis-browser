@@ -2349,8 +2349,8 @@ void AppMenuModel::Build() {
   if (const auto about = GetIndexOfCommandId(IDC_ABOUT)) {
     const std::string locale = g_browser_process->GetApplicationLocale();
     SetLabel(*about, locale.starts_with("zh")
-        ? (locale == "zh-TW" || locale == "zh-HK" ? u"關於 GCSA Aegis" : u"关于 GCSA Aegis")
-        : u"About GCSA Aegis");
+        ? (locale == "zh-TW" || locale == "zh-HK" ? u"關於 Aegis Browser" : u"关于 Aegis Browser")
+        : u"About Aegis Browser");
   }
 
   AddItemWithStringIdAndVectorIcon(

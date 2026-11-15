@@ -21,6 +21,12 @@ public enum RegisteredDomain {
         return normalized.lowercased()
     }
 
+    /// Recognize conventional HTTPS landing hosts only when the pinned PSL is available.
+    public static func isCanonicalLandingHost(_ target: String, for source: String) -> Bool {
+        guard !rules.isEmpty, let apex = of(source), apex == source else { return false }
+        return target == "www." + apex || target == "m." + apex
+    }
+
     public static func of(_ raw: String) -> String? {
         guard let host = normalizedHost(raw) else { return nil }
         if host.contains(":") || host.split(separator: ".").allSatisfy({ Int($0) != nil }) { return host }

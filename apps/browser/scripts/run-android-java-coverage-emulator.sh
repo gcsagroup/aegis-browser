@@ -55,6 +55,31 @@ if ! node apps/browser/scripts/android-agent-ui.mjs self-test \
   --driver-build "$RUNNER_TEMP/aegis-driver-coverage" \
   --coverage-output "$EVIDENCE_DIR/coverage" \
   --output "$EVIDENCE_DIR/self-test.json"; then
+  # Only this verified, disposable emulator is inspected. Keep system focus/ANR
+  # metadata, never screenshots, UI hierarchies, or an attempt to dismiss dialogs.
+  node --input-type=module - "$adb" > "$EVIDENCE_DIR/emulator-failure-metadata.txt" <<'NODE' || true
+    import {execFileSync} from 'node:child_process';
+    const adb = process.argv[2];
+    const probes = [
+      ['window-focus', ['shell', 'dumpsys', 'window', 'displays'], /^\s*(mCurrentFocus|mFocusedApp)=/u],
+      ['last-anr', ['shell', 'dumpsys', 'activity', 'lastanr'], /^\s*(ANR in |PID:|Reason:|ErrorId:|Frozen:|No ANR)/u],
+      ['system-errors', ['logcat', '-d', '-b', 'events', '-s', 'am_anr', 'am_crash'], /am_(anr|crash)/u],
+    ];
+    for (const [label, args, selected] of probes) {
+      console.log('[' + label + ']');
+      try {
+        const output = execFileSync(adb, ['-s', 'emulator-5554', ...args], {
+          encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        const lines = output.split(/\r?\n/u).filter(line => selected.test(line));
+        console.log(lines.slice(-12).map(line => line.slice(0, 512)).join('\n') || 'no matching metadata');
+      } catch (error) {
+        console.log('metadata unavailable: ' + (error.code ?? 'command failed'));
+      }
+    }
+NODE
+  cat "$EVIDENCE_DIR/emulator-failure-metadata.txt" >&2 || true
   # This emulator contains only the dedicated fixture helper; retain its crash class and stack for CI diagnosis.
   "$adb" -s "$serial" logcat -d -v brief 'AndroidRuntime:E' '*:S' | tail -n 120 >&2 || true
   exit 1

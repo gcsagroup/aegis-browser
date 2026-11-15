@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "chrome/browser/aegis/access/access_build_channel.h"
 #include "chrome/browser/aegis/gestures/gesture_settings.h"
 #include "chrome/common/aegis/features.h"
 #include "chrome/common/aegis/pref_names.h"
@@ -13,6 +14,9 @@
 namespace aegis {
 
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  const std::string core_log_level(access::DefaultCoreLogLevelForCurrentBuild());
+  registry->RegisterStringPref(kAccessCoreLogLevel, core_log_level);
+  registry->RegisterStringPref(kAccessPrivateCoreLogLevel, core_log_level);
   registry->RegisterDictionaryPref(kMouseGesturesPref,
                                    GestureSettings::Defaults().ToValue());
   registry->RegisterBooleanPref(prefs::kTrackerBlockingEnabled, true);
