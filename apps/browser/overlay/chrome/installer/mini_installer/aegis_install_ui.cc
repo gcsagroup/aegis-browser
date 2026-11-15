@@ -28,7 +28,7 @@ constexpr COLORREF kAccent = RGB(0, 128, 160);
 constexpr COLORREF kTrack = RGB(231, 238, 244);
 constexpr COLORREF kError = RGB(176, 55, 49);
 constexpr wchar_t kWindowClass[] = L"GCSAAegisInstallProgress";
-constexpr wchar_t kTitle[] = L"GCSA Aegis 安装程序";
+constexpr wchar_t kTitle[] = L"Aegis Browser 安装程序";
 
 // 使用系统 GDI+ 抗锯齿；资源不足时退回 GDI，不影响安装或文字可读性。
 // 图形对象在本次绘制内释放，文字仍使用 ClearType，不缩放整块位图。
@@ -134,7 +134,7 @@ void AegisInstallUi::CreateControls() {
   };
   logo_ = ::CreateWindow(L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON, 0,
                          0, 0, 0, window_, nullptr, nullptr, nullptr);
-  title_ = label(L"GCSA Aegis");
+    title_ = label(L"Aegis Browser");
   status_ = label(L"正在安装  0%");
   progress_ = ::CreateWindow(PROGRESS_CLASS, nullptr, WS_CHILD | WS_VISIBLE, 0,
                              0, 0, 0, window_, nullptr, nullptr, nullptr);

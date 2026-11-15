@@ -282,10 +282,10 @@ else
   copy_tree "$SOURCE_APP" "$STAGE/$PRODUCT_APP_NAME"
   APP_PATH="$STAGE/$PRODUCT_APP_NAME"
   # Display name in Finder/Dock; the source bundle keeps its branded executable.
-  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName GCSA-aegis" \
+  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $AEGIS_MAC_PRODUCT_NAME" \
     "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string GCSA-aegis" \
-      "$APP_PATH/Contents/Info.plist" || true
+    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $AEGIS_MAC_PRODUCT_NAME" \
+      "$APP_PATH/Contents/Info.plist"
   # Keep Aegis-added licenses inside the App so app-only ZIP/DMG copies retain them.
   # This changes only the staged copy and must precede signing.
   python3 -B "$REPO_ROOT/scripts/licenses/third_party_notices.py" install-macos "$APP_PATH"

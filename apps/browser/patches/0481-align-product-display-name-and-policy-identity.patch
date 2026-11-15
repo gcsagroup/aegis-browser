@@ -1,6 +1,6 @@
-From df70f6367eeac0d9e72a2fae16c29a3a45e5b709 Mon Sep 17 00:00:00 2001
+From aa9cbadea8dae04e859048804c207915ea331d45 Mon Sep 17 00:00:00 2001
 From: Aegis Browser <devnull@localhost>
-Date: Mon, 16 Nov 2026 02:43:44 +0800
+Date: Mon, 16 Nov 2026 03:06:26 +0800
 Subject: [PATCH] fix(branding): align visible product names and preserve
  Chinese translations
 
@@ -26,6 +26,8 @@ Subject: [PATCH] fix(branding): align visible product names and preserve
  chrome/browser/ui/toolbar/app_menu_model.cc   |   4 +-
  chrome/browser/ui/webui/aegis/aegis_ui.cc     |   6 +-
  .../ui/webui/aegis_agent/aegis_agent_ui.cc    |   4 +-
+ .../mini_installer/aegis_install_ui.cc        |   4 +-
+ .../aegis_install_ui_unittest.cc              |  10 +-
  .../template_writers/writer_configuration.py  |   7 +-
  .../writers/adm_writer_unittest.py            |  56 ++++----
  .../writers/plist_strings_writer_unittest.py  |  30 ++---
@@ -33,7 +35,7 @@ Subject: [PATCH] fix(branding): align visible product names and preserve
  .../version/resources/about_version.html      |   4 +-
  .../webui/version/resources/product_logo.svg  |   2 +-
  third_party/aegis_libtorrent/SOURCE_OFFER.txt |   2 +-
- 28 files changed, 243 insertions(+), 242 deletions(-)
+ 30 files changed, 253 insertions(+), 246 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
 index b7f56284d8791ab7fe69a9b2fc4c6603bb0a83ab..13ce4d1259b5d0d9c28b8da5ffb3c458d77ae02d 100644
@@ -969,6 +971,63 @@ index 2a3d2ad1398acff2e0a27ae769ab7ad37eb2d82a..a47bdcf471c92f4ca47bc5a362ec119b
    add("subtitle", "Tell Aegis the goal. It understands, plans, then acts.",
        "说出目标，Aegis 会先理解、制定计划，再操作浏览器。",
        "說出目標，Aegis 會先理解、制定計畫，再操作瀏覽器。");
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
+index d2d248b3a6c3cf0282dd6ac8d3812b9e55296e95..e85ffedd499239d46558dbbe10ba050454bea9ff 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui.cc
+@@ -28,7 +28,7 @@ constexpr COLORREF kAccent = RGB(0, 128, 160);
+ constexpr COLORREF kTrack = RGB(231, 238, 244);
+ constexpr COLORREF kError = RGB(176, 55, 49);
+ constexpr wchar_t kWindowClass[] = L"GCSAAegisInstallProgress";
+-constexpr wchar_t kTitle[] = L"GCSA Aegis 安装程序";
++constexpr wchar_t kTitle[] = L"Aegis Browser 安装程序";
+ 
+ // 使用系统 GDI+ 抗锯齿；资源不足时退回 GDI，不影响安装或文字可读性。
+ // 图形对象在本次绘制内释放，文字仍使用 ClearType，不缩放整块位图。
+@@ -134,7 +134,7 @@ void AegisInstallUi::CreateControls() {
+   };
+   logo_ = ::CreateWindow(L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON, 0,
+                          0, 0, 0, window_, nullptr, nullptr, nullptr);
+-  title_ = label(L"GCSA Aegis");
++    title_ = label(L"Aegis Browser");
+   status_ = label(L"正在安装  0%");
+   progress_ = ::CreateWindow(PROGRESS_CLASS, nullptr, WS_CHILD | WS_VISIBLE, 0,
+                              0, 0, 0, window_, nullptr, nullptr, nullptr);
+diff --git a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+index 1ea06b8aefac53f321cd00e11e03f51d96d374c9..44c862fb508e8ff8f8310240129342c906fc5042 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+@@ -161,7 +161,7 @@ TEST(AegisInstallUiTest, ExistingVersionWithoutWindowDoesNotShowError) {
+   dismissed_error = false;
+   const UINT_PTR timer = ::SetTimer(nullptr, 0, 100,
+       [](HWND, UINT, UINT_PTR, DWORD) {
+-        HWND dialog = ::FindWindow(L"#32770", L"GCSA Aegis 安装程序");
++        HWND dialog = ::FindWindow(L"#32770", L"Aegis Browser 安装程序");
+         DWORD pid = 0;
+         const DWORD thread = ::GetWindowThreadProcessId(dialog, &pid);
+         if (pid == ::GetCurrentProcessId() &&
+@@ -257,6 +257,11 @@ TEST(AegisInstallUiTest, OverallProgressDoesNotRestartWhenStageChanges) {
+ TEST(AegisInstallUiTest, FramelessWindowKeepsDraggingWithoutWindowButtons) {
+   AegisInstallUi ui(true);
+   HWND window = OwnWindow();
++  wchar_t title[256] = {};
++  ::GetWindowText(window, title, 256);
++  EXPECT_STREQ(L"Aegis Browser 安装程序", title);
++  EXPECT_NE(nullptr,
++            ::FindWindowEx(window, nullptr, L"Static", L"Aegis Browser"));
+   EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_CAPTION);
+   EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_THICKFRAME);
+   EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_BORDER);
+@@ -288,7 +293,8 @@ TEST(AegisInstallUiTest, FramelessWindowKeepsDraggingWithoutWindowButtons) {
+ TEST(AegisInstallUiTest, ProgressUpdatesDoNotRepaintUnrelatedContent) {
+   AegisInstallUi ui(true);
+   HWND window = OwnWindow();
+-  HWND brand = ::FindWindowEx(window, nullptr, L"Static", L"GCSA Aegis");
++  HWND brand = ::FindWindowEx(window, nullptr, L"Static", L"Aegis Browser");
++  EXPECT_NE(nullptr, brand);
+   observed_parent = window;
+   observed_brand = brand;
+   HHOOK hook = ::SetWindowsHookEx(WH_CALLWNDPROC, ObservePaint, nullptr,
 diff --git a/components/policy/tools/template_writers/writer_configuration.py b/components/policy/tools/template_writers/writer_configuration.py
 index 48541df6adb829fd4d0b239e625a724f69b075a4..d6fcb68c44fc8d9998da16d36ee162a58a8ab998 100755
 --- a/components/policy/tools/template_writers/writer_configuration.py
