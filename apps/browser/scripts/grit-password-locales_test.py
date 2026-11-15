@@ -1,11 +1,15 @@
-"""Read password-dialog and native menu resources using Chromium's real GRIT."""
+"""Read password-dialog and native menu resources using Chromium's real GRIT.
+
+Install the pinned dependency from grit-test-requirements.txt before running.
+"""
 
 import argparse
 import copy
 import io
 from pathlib import Path
 import sys
-import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as ET
 
 
 MESSAGES = (
@@ -25,6 +29,19 @@ EXPECTED = {
 }
 
 
+def parse_source(source):
+    """Reject DTDs, entity expansion and external references in source XML."""
+    return ET.parse(
+        source, forbid_dtd=True, forbid_entities=True, forbid_external=True,
+    ).getroot()
+
+
+def append_element(parent, tag, attributes=None):
+    child = parent.makeelement(tag, attributes or {})
+    parent.append(child)
+    return child
+
+
 def main():
     """Exercise message IDs, XTB lookup, fallback and binary resource decoding."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -36,19 +53,19 @@ def main():
     from grit.format import data_pack
 
     app = args.src / "chrome/app"
-    source = ET.parse(app / "chromium_strings.grd").getroot()
-    settings = ET.parse(app / "settings_strings.grdp").getroot()
+    source = parse_source(app / "chromium_strings.grd")
+    settings = parse_source(app / "settings_strings.grdp")
     # Retain production messages and translation paths. Isolating these desktop
     # labels avoids unrelated feature flags and resource IDs. The native menu
     # uses the product's untranslated proper name from settings_strings.grdp.
-    fixture = ET.Element("grit", {
+    fixture = source.makeelement("grit", {
         "base_dir": ".", "latest_public_release": "0",
         "current_release": "1", "source_lang_id": "en",
     })
-    outputs = ET.SubElement(fixture, "outputs")
-    translations = ET.SubElement(fixture, "translations")
+    outputs = append_element(fixture, "outputs")
+    translations = append_element(fixture, "translations")
     for lang in EXPECTED:
-        ET.SubElement(outputs, "output", {
+        append_element(outputs, "output", {
             "filename": f"passwords_{lang}.pak", "type": "data_package", "lang": lang,
         })
     for translation in source.findall("translations/file"):
@@ -57,8 +74,8 @@ def main():
     production_messages = source.find("release/messages")
     if production_messages is None:
         raise AssertionError("Missing production messages section")
-    messages = ET.SubElement(
-        ET.SubElement(fixture, "release", {"seq": "1"}),
+    messages = append_element(
+        append_element(fixture, "release", {"seq": "1"}),
         "messages", dict(production_messages.attrib),
     )
     for name in MESSAGES:
