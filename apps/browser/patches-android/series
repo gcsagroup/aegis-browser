@@ -318,3 +318,4 @@
 0318-wire-bounded-tracker-test-entry.patch
 0319-fix-desktop-test-browser-client-dependency.patch
 0320-align-product-version-267.patch
+0321-build-share-access-core-source-manifest.patch

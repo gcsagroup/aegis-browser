@@ -1,0 +1,255 @@
+From ab0716e33a28609c68b517407dac5eee17a9f6e4 Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Mon, 16 Nov 2026 11:56:37 +0800
+Subject: [PATCH] build: share Access core source manifest
+
+---
+ components/aegis_access/BUILD.gn            | 92 ++++++++-------------
+ components/aegis_access/access_sources.json | 66 +++++++++++++++
+ 2 files changed, 100 insertions(+), 58 deletions(-)
+ create mode 100644 components/aegis_access/access_sources.json
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index bcbd62e644ba653f7bfe6f680e1d64e2f1999c8b..cd66e78c53b7ebe66afd73f62bbb76a10ffc046d 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -3,15 +3,20 @@
+ 
+ import("//testing/test.gni")
+ 
++access_sources = read_file("access_sources.json", "json")
++access_core_sources = access_sources.core
++access_test_support = access_sources.test_support
++
+ declare_args() {
+   # Dedicated test entry only. Ordinary targets retain Chromium's existing main.
+   aegis_current151_tracker_bounded = false
+ }
+ 
+ action("generate_route_planner_vectors") {
+-  script = "generate_route_planner_vectors.py"
+-  inputs = [ "testdata/route_planner_vectors.json" ]
+-  outputs = [ "$target_gen_dir/route_planner_golden_vectors.inc" ]
++  vectors = access_sources.route_planner_vectors
++  script = vectors.script
++  inputs = [ vectors.input ]
++  outputs = [ "$target_gen_dir/" + vectors.output ]
+   args = [
+     rebase_path(inputs[0], root_build_dir),
+     rebase_path(outputs[0], root_build_dir),
+@@ -19,9 +24,10 @@ action("generate_route_planner_vectors") {
+ }
+ 
+ action("generate_policy_matcher_vectors") {
+-  script = "generate_policy_matcher_vectors.py"
+-  inputs = [ "testdata/policy_matcher_vectors.json" ]
+-  outputs = [ "$target_gen_dir/policy_matcher_golden_vectors.inc" ]
++  vectors = access_sources.policy_matcher_vectors
++  script = vectors.script
++  inputs = [ vectors.input ]
++  outputs = [ "$target_gen_dir/" + vectors.output ]
+   args = [
+     rebase_path(inputs[0], root_build_dir),
+     rebase_path(outputs[0], root_build_dir),
+@@ -29,75 +35,48 @@ action("generate_policy_matcher_vectors") {
+ }
+ 
+ source_set("access_route_types") {
+-  sources = [ "access_route_types.h" ]
++  sources = access_core_sources.access_route_types
+ }
+ 
+ source_set("access_identity_generation_state") {
+-  sources = [
+-    "access_identity_generation_state.cc",
+-    "access_identity_generation_state.h",
+-  ]
++  sources = access_core_sources.access_identity_generation_state
+ }
+ 
+ source_set("access_proxy_selection_generation_state") {
+-  sources = [
+-    "access_proxy_selection_generation_state.cc",
+-    "access_proxy_selection_generation_state.h",
+-  ]
++  sources = access_core_sources.access_proxy_selection_generation_state
+ }
+ 
+ source_set("access_base_proxy_config_generation_state") {
+-  sources = [
+-    "access_base_proxy_config_generation_state.cc",
+-    "access_base_proxy_config_generation_state.h",
+-  ]
++  sources = access_core_sources.access_base_proxy_config_generation_state
+ }
+ 
+ source_set("request_generation_tuple_builder") {
+-  sources = [
+-    "request_generation_tuple_builder.cc",
+-    "request_generation_tuple_builder.h",
+-  ]
++  sources = access_core_sources.request_generation_tuple_builder
+   public_deps = [ ":access_route_types" ]
+ }
+ 
+ source_set("browser_request_metadata_seed") {
+-  sources = [
+-    "browser_request_metadata_seed.cc",
+-    "browser_request_metadata_seed.h",
+-  ]
++  sources = access_core_sources.browser_request_metadata_seed
+   public_deps = [ ":access_route_types" ]
+ }
+ 
+ source_set("request_ownership_registry") {
+-  sources = [
+-    "request_ownership_registry.cc",
+-    "request_ownership_registry.h",
+-  ]
++  sources = access_core_sources.request_ownership_registry
+   public_deps = [ ":access_route_types" ]
+ }
+ 
+ source_set("request_dispatch_gate") {
+-  sources = [
+-    "request_dispatch_gate.cc",
+-    "request_dispatch_gate.h",
+-  ]
++  sources = access_core_sources.request_dispatch_gate
+   public_deps = [ ":request_ownership_registry" ]
+ }
+ 
+ source_set("policy_publication_ack_tracker") {
+-  sources = [
+-    "policy_publication_ack_tracker.cc",
+-    "policy_publication_ack_tracker.h",
+-  ]
++  sources = access_core_sources.policy_publication_ack_tracker
+   public_deps = [ ":request_ownership_registry" ]
+ }
+ 
+ source_set("published_request_runtime") {
+-  sources = [
+-    "published_request_runtime.cc",
+-    "published_request_runtime.h",
+-  ]
++  sources = access_core_sources.published_request_runtime
+   public_deps = [
+     ":aegis_access",
+     ":request_dispatch_gate",
+@@ -106,19 +85,16 @@ source_set("published_request_runtime") {
+ 
+ source_set("aegis_access") {
+   sources = [
+-    "access_policy_evaluator.cc",
+-    "access_policy_evaluator.h",
+-    "access_proxy_route_adapter.cc",
+-    "access_proxy_route_adapter.h",
+-    "access_route_planner.cc",
+-    "access_route_planner.h",
+-    "access_socks5_inbound_parser.cc",
+-    "access_socks5_inbound_parser.h",
+-    "request_policy_context.cc",
+-    "request_policy_context.h",
+-    "site_proxy_rule_group.cc",
+-    "site_proxy_rule_group.h",
+-  ]
++              "access_policy_evaluator.cc",
++              "access_policy_evaluator.h",
++              "access_proxy_route_adapter.cc",
++              "access_proxy_route_adapter.h",
++              "access_socks5_inbound_parser.cc",
++              "access_socks5_inbound_parser.h",
++              "request_policy_context.cc",
++              "request_policy_context.h",
++            ] + access_core_sources.access_route_planner +
++            access_core_sources.site_proxy_rule_group
+   public_deps = [
+     ":access_route_types",
+     ":request_ownership_registry",
+@@ -341,8 +317,8 @@ test("aegis_access_unittests") {
+ 
+ source_set("request_ownership_registry_test_support") {
+   testonly = true
+-  sources = [ "request_ownership_registry_test_support.cc" ]
+-  public = [ "request_ownership_registry_test_support.h" ]
++  sources = [ access_test_support.source ]
++  public = [ access_test_support.header ]
+   public_deps = [
+     ":request_ownership_registry",
+     "//base",
+diff --git a/components/aegis_access/access_sources.json b/components/aegis_access/access_sources.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce3d880390db19853414eabed36c691dbb471046
+--- /dev/null
++++ b/components/aegis_access/access_sources.json
+@@ -0,0 +1,66 @@
++{
++  "core": {
++    "access_route_types": [
++      "access_route_types.h"
++    ],
++    "access_identity_generation_state": [
++      "access_identity_generation_state.cc",
++      "access_identity_generation_state.h"
++    ],
++    "access_proxy_selection_generation_state": [
++      "access_proxy_selection_generation_state.cc",
++      "access_proxy_selection_generation_state.h"
++    ],
++    "access_base_proxy_config_generation_state": [
++      "access_base_proxy_config_generation_state.cc",
++      "access_base_proxy_config_generation_state.h"
++    ],
++    "request_generation_tuple_builder": [
++      "request_generation_tuple_builder.cc",
++      "request_generation_tuple_builder.h"
++    ],
++    "browser_request_metadata_seed": [
++      "browser_request_metadata_seed.cc",
++      "browser_request_metadata_seed.h"
++    ],
++    "request_ownership_registry": [
++      "request_ownership_registry.cc",
++      "request_ownership_registry.h"
++    ],
++    "request_dispatch_gate": [
++      "request_dispatch_gate.cc",
++      "request_dispatch_gate.h"
++    ],
++    "policy_publication_ack_tracker": [
++      "policy_publication_ack_tracker.cc",
++      "policy_publication_ack_tracker.h"
++    ],
++    "published_request_runtime": [
++      "published_request_runtime.cc",
++      "published_request_runtime.h"
++    ],
++    "access_route_planner": [
++      "access_route_planner.cc",
++      "access_route_planner.h"
++    ],
++    "site_proxy_rule_group": [
++      "site_proxy_rule_group.cc",
++      "site_proxy_rule_group.h"
++    ]
++  },
++  "test_main": "access_route_planner_native_test.cc",
++  "test_support": {
++    "source": "request_ownership_registry_test_support.cc",
++    "header": "request_ownership_registry_test_support.h"
++  },
++  "route_planner_vectors": {
++    "script": "generate_route_planner_vectors.py",
++    "input": "testdata/route_planner_vectors.json",
++    "output": "route_planner_golden_vectors.inc"
++  },
++  "policy_matcher_vectors": {
++    "script": "generate_policy_matcher_vectors.py",
++    "input": "testdata/policy_matcher_vectors.json",
++    "output": "policy_matcher_golden_vectors.inc"
++  }
++}
+-- 
+2.54.0 (Apple Git-157)
+

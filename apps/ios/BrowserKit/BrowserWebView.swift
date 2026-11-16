@@ -127,7 +127,7 @@ final class BrowserContentWebView: WKWebView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { onDidMoveToWindow?() }
+        onDidMoveToWindow?()
     }
 
     @objc private func showPageFind() {

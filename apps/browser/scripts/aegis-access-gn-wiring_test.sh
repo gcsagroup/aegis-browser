@@ -144,15 +144,15 @@ ownership_support_block="$(
 )"
 [[ "$ownership_support_block" == *'testonly = true'* ]] ||
   fail "shared ownership support must remain test-only"
-[[ "$ownership_support_block" == *'sources = [ "request_ownership_registry_test_support.cc" ]'* ]] ||
+[[ "$ownership_support_block" == *'sources = [ access_test_support.source ]'* ]] ||
   fail "shared ownership support must compile its out-of-line implementation"
 [[ "$ownership_support_block" == *'"//base",'* ]] ||
   fail "shared ownership support must expose its raw_ptr base dependency"
-[[ "$ownership_support_block" == *'public = [ "request_ownership_registry_test_support.h" ]'* ]] ||
+[[ "$ownership_support_block" == *'public = [ access_test_support.header ]'* ]] ||
   fail "shared ownership support must publish its header"
 [[ "$ownership_support_block" == *'public_deps = ['*'":request_ownership_registry",'*'"//base",'* ]] ||
   fail "shared ownership support must export the registry header dependency"
-[[ "$(rg -F -c '"request_ownership_registry_test_support.h"' "$COMPONENT_BUILD")" == 1 ]] ||
+[[ "$(rg -F -c 'access_test_support.header' "$COMPONENT_BUILD")" == 1 ]] ||
   fail "shared ownership support header must have exactly one owner"
 for support_consumer in aegis_access_unittests request_dispatch_gate_unittests request_ownership_registry_unittests; do
   consumer_block="$(awk -v target="$support_consumer" '$0 == "test(\"" target "\") {",/^}$/' "$COMPONENT_BUILD")"

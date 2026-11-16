@@ -53,6 +53,7 @@ def validate_catalog(contract, catalog, probes):
     additions.update(contract["paidAccessAddedKeys"])
     additions.update(contract["addressProxyAddedKeys"])
     additions.update(contract["subscriptionQuotaAddedKeys"])
+    additions.update(contract["locationPrivacyAddedKeys"])
     require(additions <= set(strings), 'Guard failed: additions <= set(strings)')
     require(len(strings) == contract["catalogKeyCount"] + len(additions), 'Guard failed: len(strings) == contract["catalogKeyCount"] + len(additions)')
     require(digest(sorted(set(strings) - additions)) == contract["catalogInventorySHA256"], "Catalog key inventory changed")

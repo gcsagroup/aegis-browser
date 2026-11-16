@@ -24,6 +24,42 @@ final class AccessEmbeddedProxyEntryFactoryTests: XCTestCase {
         }
     }
 
+    func testAccountProviderLoadsBeforeCoreStartWithoutStaticConfiguration() async throws {
+        let json = """
+        {"status":"verified_build","xrayCore":{"commit":"676eaf66f8f05d4d558ee7a74b4736623d3feeb9","tag":"v26.11.9"},"artifacts":{"iosArm64Sha256":"aa","iosArm64SimulatorSha256":"bb"}}
+        """
+        let core = RecordingEmbeddedCoreForFactory()
+        var reads = 0
+        let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(lockData: Data(json.utf8), configPath: nil,
+            verifiedCore: core, parameters: {
+                reads += 1
+                return try AccessRealityVisionParameters(address: "node.invalid", port: 443,
+                    userID: "550e8400-e29b-41d4-a716-446655440000", serverName: "www.example.com",
+                    publicKey: "fixture-key", shortID: "")
+            })
+        XCTAssertEqual(reads, 0, "Do not fetch credentials during app initialization")
+        let id = UUID()
+        let result = try await publisher.prepare(.init(operationID: id, deadline: .seconds(5)))
+        XCTAssertEqual(reads, 1)
+        XCTAssertTrue(publisher.validateReady(result))
+        publisher.cancel(operationID: id)
+    }
+
+    func testAccountProviderFailureCannotFallBackToStaticNode() async throws {
+        let json = """
+        {"status":"verified_build","xrayCore":{"commit":"676eaf66f8f05d4d558ee7a74b4736623d3feeb9","tag":"v26.11.9"},"artifacts":{"iosArm64Sha256":"aa","iosArm64SimulatorSha256":"bb"}}
+        """
+        let core = RecordingEmbeddedCoreForFactory()
+        let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(lockData: Data(json.utf8),
+            configPath: "/unused/static/node", verifiedCore: core, parameters: { throw URLError(.cannotConnectToHost) })
+        do {
+            _ = try await publisher.prepare(.init(operationID: UUID(), deadline: .seconds(5)))
+            XCTFail("Account failure must not reuse a static node")
+        } catch { }
+        XCTAssertFalse(core.isRunning)
+        XCTAssertNil(publisher.currentEndpoint)
+    }
+
     func testSourceCandidateStaysFailClosed() async {
         let json = """
         {"status":"source_candidate","xrayCore":{"commit":"676eaf66f8f05d4d558ee7a74b4736623d3feeb9","tag":"v26.11.9"},"artifacts":{"iosArm64Sha256":"aa","iosArm64SimulatorSha256":"bb"}}
@@ -69,6 +105,43 @@ private final class RecordingEmbeddedCoreForFactory: AccessEmbeddedCoreControlli
 
 @MainActor
 final class AccessEmbeddedTeardownTests: XCTestCase {
+    func testRevocationStopsRetainedTransportAndNextPrepareWaitsAndReauthorizes() async throws {
+        let core = DelayedStopCore()
+        let parameters = try AccessRealityVisionParameters(address: "node.invalid", port: 443,
+            userID: "550e8400-e29b-41d4-a716-446655440000", serverName: "www.example.com", publicKey: "fixture-key", shortID: "")
+        var authorized = true
+        var reads = 0
+        let session = AccessEmbeddedProxyEntrySession(core: core, parameters: {
+            reads += 1
+            guard authorized else { throw URLError(.userAuthenticationRequired) }
+            return parameters
+        })
+        let publisher = AccessProxyEntryPublisher(provision: { try await session.provision(generation: $0, deadline: $1) },
+            shutdown: { session.shutdown(identity: $0) }, healthCheck: { session.isRuntimeHealthy && authorized })
+        let firstID = UUID()
+        let first = try await publisher.prepare(.init(operationID: firstID, deadline: .seconds(5)))
+        let key = AccessHostStoreKey(scopeID: "retained", host: try AccessSiteHost("site.invalid"), isPrivate: false)
+        XCTAssertTrue(publisher.retain(first.endpoint, for: key))
+        publisher.cancel(operationID: firstID)
+        authorized = false
+        // Exercise the actual health watcher rather than manually marking metadata failed.
+        for _ in 0..<150 where core.stopCount == 0 { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(core.stopCount, 1)
+        XCTAssertFalse(session.isRuntimeHealthy, "Retained listener must be closed on revocation")
+        XCTAssertNil(publisher.currentEndpoint)
+        let nextID = UUID()
+        let next = Task { try await publisher.prepare(.init(operationID: nextID, deadline: .seconds(5))) }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(reads, 1, "New authorization must wait for old transport teardown")
+        core.finishStop()
+        do { _ = try await next.value; XCTFail("Revoked account reused its running transport") } catch { }
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(core.startCount, 1)
+        XCTAssertFalse(core.isRunning)
+        publisher.release(for: key)
+        publisher.cancel(operationID: nextID)
+    }
+
     func testPublisherWaitsForOldStopBeforeNewReadyAndDial() async throws {
         let core = DelayedStopCore()
         let parameters = try AccessRealityVisionParameters(

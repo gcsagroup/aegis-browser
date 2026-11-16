@@ -165,7 +165,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
 
     /// Marks the current generation finished. A later success for that generation stays failed.
     public func closeCurrentGeneration() {
-        guard let instance else { return }
+        guard let instance, !closedGenerations.contains(instance.endpoint.generation) else { return }
         healthTask?.cancel()
         healthTask = nil
         closedGenerations.insert(instance.endpoint.generation)
@@ -174,6 +174,9 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         failed.listenerReady = false
         failed.runtimeHealthy = false
         self.instance = failed
+        // Failed metadata must not leave retained WebKit consumers on a live transport.
+        // The session owns an asynchronous stop barrier before any later provision.
+        shutdown(instance.endpoint.identity)
         emit(failed.endpoint)
     }
 
@@ -215,6 +218,6 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         healthTask = nil
         let identity = instance.endpoint.identity
         self.instance = nil
-        shutdown(identity)
+        if !closedGenerations.contains(instance.endpoint.generation) { shutdown(identity) }
     }
 }

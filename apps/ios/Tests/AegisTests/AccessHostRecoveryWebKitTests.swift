@@ -10,6 +10,78 @@ import XCTest
 /// Failed page reloads through the app HTTP CONNECT listener, not a test-only proxy socket.
 @MainActor
 final class AccessHostRecoveryWebKitTests: XCTestCase {
+    func testFirstPublicNavigationUsesTheDefaultProtectedRoute() async throws {
+        let opener = AnsweringOpener(finishAfterRecording: true)
+        let listener = try await makeListener(port: 18_277, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let coordinator = AccessHostStoreCoordinator(publisher: readyPublisher(port: 18_277), defaultLocationPrivacy: true)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        browser.hostCoordinator = coordinator
+        defer { browser.closeWindow() }
+        let tab = try XCTUnwrap(browser.activeTab)
+        try await tab.prepareContentRulesForTests()
+        let window = show(tab.webView)
+        defer { window.isHidden = true }
+        tab.loadFromAddressBar(URL(string: "https://location.example.invalid/first")!)
+        try await waitUntil(seconds: 10, {
+            self.attach(tab.webView, to: window)
+            return opener.authorities.contains("location.example.invalid:443")
+        }, message: "First visit must reach the controlled CONNECT listener")
+        XCTAssertEqual(tab.boundHostName, "location.example.invalid")
+        XCTAssertFalse(try XCTUnwrap(tab.websiteDataStore.proxyConfigurations.first).allowFailover)
+        tab.commitPendingMainFrameForTests()
+        _ = coordinator.setAutoRecoveryEnabled(true, for: tab)
+        XCTAssertTrue(coordinator.snapshot(for: tab).autoRecoveryEnabled)
+        let boundStore = tab.websiteDataStore
+        let host = try AccessSiteHost("location.example.invalid")
+        var endpoint = try XCTUnwrap(coordinator.registry.endpoint(scopeID: tab.browsingScopeID, host: host, isPrivate: false))
+        endpoint.state = .unavailable
+        coordinator.registry.setEndpoint(endpoint, scopeID: tab.browsingScopeID, host: host, isPrivate: false)
+        XCTAssertEqual(coordinator.setAutoRecoveryEnabled(false, for: tab), .revoked)
+        XCTAssertTrue(tab.websiteDataStore === boundStore)
+        XCTAssertEqual(tab.boundHostName, host.rawValue)
+
+    }
+
+    func testUnavailableDefaultResumesOnlyTheHeldNavigationUsingItsOriginalStore() async throws {
+        let publisher = AccessProxyEntryPublisher { _, _ in throw AccessSiteSessionError.nodeUnavailable }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, defaultLocationPrivacy: true)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        browser.hostCoordinator = coordinator
+        defer { browser.closeWindow() }
+        let tab = try XCTUnwrap(browser.activeTab)
+        // Instrument the original store with a loopback witness. The managed service always fails.
+        let witness = AnsweringOpener(finishAfterRecording: true)
+        let listener = try await makeListener(port: 18_278, tunnels: witness)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let original = tab.originalWebsiteDataStore
+        let prior = original.proxyConfigurations
+        var observer = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: 18_278))
+        observer.allowFailover = false
+        original.proxyConfigurations = [observer]
+        defer { original.proxyConfigurations = prior }
+        let window = show(tab.webView)
+        defer { window.isHidden = true }
+        let url = URL(string: "https://default-off.invalid/page")!
+        tab.loadFromAddressBar(url)
+        XCTAssertNotNil(tab.heldProxyRequestForTests)
+        let navigationID = tab.currentAttemptIDForTests
+        try await waitUntil(seconds: 15, {
+            self.attach(tab.webView, to: window)
+            return witness.authorities.contains("default-off.invalid:443")
+        }, message: "Cold fallback must actually send the original request")
+        XCTAssertEqual(tab.currentAttemptIDForTests, navigationID)
+        XCTAssertFalse(tab.canTryDefaultRoute(for: url))
+        XCTAssertNil(tab.heldProxyRequestForTests)
+        XCTAssertTrue(tab.websiteDataStore === tab.originalWebsiteDataStore)
+        XCTAssertFalse(coordinator.requiresProxy(tab: tab, url: url))
+        XCTAssertFalse(coordinator.requiresProxyPreparation(tab: tab, url: url))
+        XCTAssertFalse(coordinator.snapshot(for: tab, forLocationControl: true).toggleOn)
+        XCTAssertEqual(publisher.provisionCount, 1)
+    }
+
     func testExplicitOnCannotSendToOriginWhilePreparationFails() async throws {
         let origin = OriginReceipt(port: 18_274)
         try await origin.start()
@@ -259,7 +331,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertEqual(snapshot.attachment, .notAttached)
         XCTAssertEqual(
             AccessSiteProxyToggleModel.attachmentLine(for: snapshot.attachment, intent: snapshot.intent),
-            "尚未接入代理，当前页面仍使用原连接"
+            "当前页面仍使用原连接"
         )
         XCTAssertNil(snapshot.failureReason)
     }
@@ -709,6 +781,21 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertNil(retainedView.load(URLRequest(url: url)))
         XCTAssertNil(tab.webView.load(URLRequest(url: url)))
         tab.load(url)
+        // The terminal-document receipt stops new fetches; packets already sent
+        // can still arrive at the witness. Require those tails to drain within
+        // two seconds, then observe stability for several 40 ms pulse periods.
+        func retiredTraffic() -> [Int] {
+            [opener.transcript.components(separatedBy: "/pulse?terminal").count,
+             origin.transcript.components(separatedBy: "terminal").count,
+             opener.transcript.components(separatedBy: "/pulse?earlier").count,
+             origin.transcript.components(separatedBy: "earlier").count]
+        }
+        var lastTraffic = retiredTraffic(), quietSince = Date()
+        try await waitUntil(seconds: 2, {
+            let current = retiredTraffic()
+            if current != lastTraffic { lastTraffic = current; quietSince = Date() }
+            return Date().timeIntervalSince(quietSince) >= 0.2
+        }, message: "Retired documents must stop emitting pulses after in-flight packets drain")
         let closedCount = opener.transcript.components(separatedBy: "/pulse?terminal").count
         let directCount = origin.transcript.components(separatedBy: "terminal").count
         let earlierCount = opener.transcript.components(separatedBy: "/pulse?earlier").count

@@ -203,7 +203,7 @@ struct MarkdownReaderView: View {
       }
       .navigationTitle(model.document?.title ?? AegisLocalization.string("Markdown 阅读")).navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.accessibilityIdentifier("markdown-reader-done") }
         ToolbarItem(placement: .topBarLeading) {
           Menu {
             Button("打开文件", systemImage: "doc") { importingResources = false; importing = true }
@@ -258,7 +258,7 @@ struct MarkdownReaderView: View {
                   catch { model.errorPresentation = .error(error) }
                 }
             }
-          }.localizedNavigationTitle("文档来源").toolbar { Button("完成") { sourceInfo = false } }
+          }.localizedNavigationTitle("文档来源").toolbar { Button("完成") { sourceInfo = false }.accessibilityIdentifier("markdown-source-done") }
         }
       }
       .onChange(of: model.needsResources) { _, value in if value { importingResources = true; importing = true; model.needsResources = false } }

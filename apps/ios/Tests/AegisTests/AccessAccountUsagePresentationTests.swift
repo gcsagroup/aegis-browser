@@ -4,6 +4,17 @@ import XCTest
 final class AccessAccountUsagePresentationTests: XCTestCase {
     private typealias Presentation = AccessAccountUsagePresentation
 
+    func testAccessibleAmountsIncludeUnitsAndPreserveExactBytes() {
+        let english = Locale(identifier: "en_US")
+        XCTAssertEqual(Presentation.accessibleBytes(nil, locale: english), "—")
+        XCTAssertEqual(Presentation.accessibleBytes("01", locale: english), "—")
+        for count in ["1", "3000000000", String(UInt64.max)] {
+            let spoken = Presentation.accessibleBytes(count, locale: english)
+            XCTAssertEqual(spoken.filter(\.isNumber), count)
+            XCTAssertTrue(spoken.lowercased().contains("byte") || spoken.hasSuffix(" B"))
+        }
+    }
+
     func testByteFormattingPreservesIntegerPrecisionAndAcceptsUInt64Maximum() {
         let cases: [(String, String)] = [
             ("0", "0 B"), ("1", "1 B"), ("1023", "1023 B"),
@@ -19,6 +30,17 @@ final class AccessAccountUsagePresentationTests: XCTestCase {
         }
         // This is below a hundredth-PiB boundary; Float conversion must not round it across.
         XCTAssertEqual(Presentation.formattedBytes("9018458253809418"), "8.00 PiB")
+    }
+
+    func testUsageMeterPreservesUnknownAndBoundsLargeCounters() {
+        for (used, quota): (String?, String?) in [(nil, "100"), ("0", nil), ("0", "0"),
+                                                   ("01", "10"), ("-1", "10"), ("1", "+10")] {
+            XCTAssertNil(Presentation.usedFraction(used: used, quota: quota))
+        }
+        XCTAssertEqual(Presentation.usedFraction(used: "0", quota: "100"), 0)
+        XCTAssertEqual(Presentation.usedFraction(used: "25", quota: "100"), 0.25)
+        XCTAssertEqual(Presentation.usedFraction(used: "101", quota: "100"), 1)
+        XCTAssertEqual(Presentation.usedFraction(used: "18446744073709551615", quota: "18446744073709551615"), 1)
     }
 
     func testUnknownAndNoncanonicalBytesAreNotDisplayedAsZero() {

@@ -48,7 +48,7 @@ final class AccessSiteProxySessionStore: ObservableObject {
     /// A failed navigation may put another site's recovery controls above the last committed document.
     func paidDownloadHost(for tab: BrowserTab) -> AccessSiteHost? {
         guard !tab.isDisposed,
-              let displayed = snapshot(for: tab).host,
+              let displayed = snapshot(for: tab, forLocationControl: true).host,
               displayed == AccessSiteProxyToggleModel.resolveTrustedHost(from: tab.committedMainFrameURL ?? tab.url)
         else { return nil }
         return displayed
@@ -79,7 +79,7 @@ final class AccessSiteProxySessionStore: ObservableObject {
     }
 
     func setSiteProxyEnabled(_ enabled: Bool, for tab: BrowserTab, displayedHost: AccessSiteHost) {
-        hostRouting?.setSiteProxyEnabled(enabled, for: tab, displayedHost: displayedHost)
+        hostRouting?.setSiteProxyEnabled(enabled, for: tab, displayedHost: displayedHost, forLocationControl: true)
         revision &+= 1
     }
 
@@ -102,9 +102,9 @@ final class AccessSiteProxySessionStore: ObservableObject {
         return started
     }
 
-    func snapshot(for tab: BrowserTab) -> AccessSiteProxyToggleSnapshot {
+    func snapshot(for tab: BrowserTab, forLocationControl: Bool = false) -> AccessSiteProxyToggleSnapshot {
         if let hostRouting {
-            return hostRouting.snapshot(for: tab)
+            return hostRouting.snapshot(for: tab, forLocationControl: forLocationControl)
         }
         return snapshot(for: tab.requestedURL ?? tab.url)
     }
