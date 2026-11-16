@@ -13,7 +13,7 @@ const core = resolve(root, 'packages/core');
 const preload = join(core, 'vitest-coverage-exit.mjs');
 
 function runFork(body, {enabled = true, coverage = true, traceExit = false, vitestCoverage = false,
-  rawDirectory = 'existing', delayStop = false, cleanupProbe = false, githubActions} = {}) {
+  rawDirectory = 'existing', delayStop = false, delayParentStop = false, cleanupProbe = false, githubActions} = {}) {
   mkdirSync(join(core, '.artifacts'), {recursive: true});
   const directory = mkdtempSync(join(core, '.artifacts', 'v8-exit-'));
   const raw = rawDirectory === 'existing' ? join(directory, 'raw') : join(directory, 'nested', 'raw');
@@ -97,6 +97,11 @@ function runFork(body, {enabled = true, coverage = true, traceExit = false, vite
     'const fork = childProcess.fork;',
     'childProcess.fork = function (...args) {',
     '  const child = Reflect.apply(fork, this, args);',
+    // Occupy the parent before Vitest processes the ACK and starts its kill timer.
+    delayParentStop ? `  child.on('message', message => {
+      if (message?.__vitest_worker_response__ && message.type === 'stopped')
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+    });` : '',
     '  child.once("exit", (code, signal) => writeFileSync(' +
       JSON.stringify(join(directory, 'worker-exit.json')) + ', JSON.stringify({pid: child.pid, code, signal})));',
     '  return child;',
@@ -156,7 +161,7 @@ test('a fresh nested coverage directory preserves production coverage; Vitest V8
   `, {rawDirectory: 'missing', traceExit: true, vitestCoverage});
   assert.equal(result.status, 0, result.stderr);
   const termination = JSON.parse(readFileSync(join(directory, 'worker-exit.json')));
-  assert.equal(termination.code, 0);
+  assert.equal(termination.code, 0, JSON.stringify(termination));
   const own = reports.find(({name}) => name.startsWith('coverage-' + termination.pid + '-') && name.endsWith('-0.json'));
   assert.ok(own, 'The fresh directory must contain this exact worker report');
   if (vitestCoverage) {
@@ -173,6 +178,19 @@ test('a fresh nested coverage directory preserves production coverage; Vitest V8
   }
 });
 }
+
+test('an acknowledged coverage worker waits for SIGTERM while the parent is busy', () => {
+  const {result, directory} = runFork(`
+    process.prependOnceListener('SIGTERM', () =>
+      writeFileSync(new URL('./received-sigterm', import.meta.url), 'received'));
+    expect(executedBeforeStop()).toBe(42);
+  `, {traceExit: true, delayParentStop: true});
+  assert.equal(result.status, 0, result.stderr);
+  const termination = JSON.parse(readFileSync(join(directory, 'worker-exit.json')));
+  assert.equal(termination.code, 0, JSON.stringify(termination));
+  assert.equal(termination.signal, null);
+  assert.equal(readFileSync(join(directory, 'received-sigterm'), 'utf8'), 'received');
+});
 
 test('a non-directory coverage ancestor remains an explicit failed Vitest run', () => {
   const {result} = runFork('expect(executedBeforeStop()).toBe(42);', {rawDirectory: 'blocked'});
