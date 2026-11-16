@@ -479,3 +479,4 @@
 0477-fix-account-fence-client-disconnect.patch
 0478-feat-macos-access-quota-ui.patch
 0479-fix-access-settings-refresh-static-checks.patch
+0480-fix-macos-ignored-ax-button.patch
