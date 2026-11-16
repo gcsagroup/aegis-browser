@@ -1231,9 +1231,9 @@
     "The document changed. Select the image folder again.",
     "文檔已變化，請重新選擇圖片目錄。"
   ],
-  "文档超过 2 MiB，请使用原文件查看。": [
-    "Document exceeds 2 MiB. View the original file instead.",
-    "文檔超過 2 MiB，請使用原文件查看。"
+  "文档超过 16 MiB，请查看原文件。": [
+    "The document exceeds 16 MiB. View the original file.",
+    "文件超過 16 MiB，請查看原始檔案。"
   ],
   "未配置模型服务": [
     "No model service configured",
@@ -1275,9 +1275,9 @@
     "No readable text found on this page.",
     "頁面沒有可讀取的文本。"
   ],
-  "文档超过 2 MiB 或格式无效，请查看原始文件。": [
-    "The document exceeds 2 MiB or is invalid. View the original file.",
-    "文檔超過 2 MiB 或格式無效，請查看原始文件。"
+  "文档超过 16 MiB 或格式无效，请查看原始文件。": [
+    "The document exceeds 16 MiB or is invalid. View the original file.",
+    "文檔超過 16 MiB 或格式無效，請查看原始文件。"
   ],
   "第 {current} / {total} 处匹配": [
     "Match {current} of {total}",

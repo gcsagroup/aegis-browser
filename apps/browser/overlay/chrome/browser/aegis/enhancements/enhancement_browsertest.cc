@@ -335,9 +335,18 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
             content::EvalJs(
                 frame,
                 "document.querySelector('#document img').getAttribute('src')"));
-  EXPECT_EQ(
-      false,
-      content::EvalJs(frame, "AegisMarkdown.load({text:'x'.repeat(2097153)})"));
+  EXPECT_EQ(true, content::EvalJs(
+                      frame, "AegisMarkdown.load({text:'# 长文\\n\\n' + "
+                             "'x'.repeat(3 * 1024 * 1024) + "
+                             "'\\n\\n## 末尾'})"));
+  EXPECT_EQ("末尾", content::EvalJs(
+                        frame, "document.querySelector('#document h2').textContent"));
+  EXPECT_EQ(false, content::EvalJs(
+                       frame, "AegisMarkdown.load({text:'é'.repeat(8 * 1024 * "
+                              "1024) + 'x'})"));
+  EXPECT_EQ(true, content::EvalJs(
+                      frame, "document.getElementById('notice').textContent"
+                             ".includes('16 MiB')"));
 }
 
 // Use the in-process browser test's trusted WebContents access. The production

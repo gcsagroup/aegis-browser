@@ -11,7 +11,7 @@ function viewer() {
   w.matchMedia = () => ({matches: false});
   Object.defineProperty(w.navigator, 'language', {value: 'zh-CN'});
   w.HTMLElement.prototype.scrollIntoView = () => {};
-  for (const script of ['vendor/markdown-it.min.js', 'vendor/task-lists.min.js', 'vendor/highlight.min.js', 'vendor/purify.min.js', 'i18n.js', 'viewer.js'])
+  for (const script of ['vendor/markdown-it.min.js', 'vendor/task-lists.min.js', 'vendor/highlight.min.js', 'vendor/purify.min.js', 'i18n.js', 'core.js', 'viewer.js'])
     w.eval(read('enhancements_shared/' + script));
   return dom;
 }
@@ -30,11 +30,29 @@ test('阅读外观不授予图片权限，换文档撤销图片授权与旧源�
   assert.equal(doc.querySelector('article img').getAttribute('src'), 'https://example.com/p.png');
   w.AegisMarkdown.command('source-toggle');
   assert.equal(doc.getElementById('source').hidden, false);
+  assert.equal(doc.getElementById('source').textContent, payload.text);
   w.AegisMarkdown.load({...payload, title: '另一份文档'});
   assert.equal(doc.getElementById('source').hidden, true);
+  assert.equal(doc.getElementById('source').textContent, '');
   assert.equal(doc.querySelector('article img').getAttribute('src'), '');
   assert.equal(doc.getElementById('remote-images').textContent, '加载外部图片');
   dom.window.close();
+});
+test('阅读器接受超过旧上限的完整文档，按 UTF-8 字节拦截超限文档', () => {
+  const dom = viewer(), w = dom.window, doc = w.document;
+  try {
+    const maximumBytes = w.AegisEnhancementsCore.limits.markdown;
+    assert.equal(maximumBytes, 16 * 1024 * 1024);
+    const text = '# 长文验收\n\n```text\n' + 'x'.repeat(3 * 1024 * 1024) + '\n```\n\n## 文档末尾';
+    assert.equal(w.AegisMarkdown.load({text}), true);
+    assert.equal(doc.querySelector('article h2').textContent, '文档末尾');
+    assert.equal(w.AegisMarkdown.text(), text);
+    assert.equal(w.AegisMarkdown.load({text: 'é'.repeat(maximumBytes / 2) + 'x'}), false);
+    assert.match(doc.getElementById('notice').textContent, /16 MiB/);
+    assert.equal(doc.querySelector('article h2').textContent, '文档末尾');
+  } finally {
+    w.close();
+  }
 });
 test('阅读器拒绝非受信来源命令，并按需展开查找和目录', () => {
   const dom = viewer(), w = dom.window, doc = w.document;

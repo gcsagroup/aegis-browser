@@ -62,6 +62,27 @@ final class ShareInboxTests: XCTestCase {
         XCTAssertEqual(try inbox.consume(now: now.addingTimeInterval(1))?.url.absoluteString, value)
     }
 
+    func testMarkdownShareAtLimitAndLegacyEnvelope() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let inbox = try MarkdownShareInbox(root: temporaryURL)
+        let text = String(repeating: "é", count: MarkdownDocumentLimits.maximumBytes / 2)
+        let bytes = Data(text.utf8)
+        try inbox.store(title: "large.md", data: bytes, now: now)
+        let document = try XCTUnwrap(inbox.consume(now: now))
+        XCTAssertEqual(document.title, "large.md")
+        XCTAssertTrue(document.text == text)
+        XCTAssertNil(try inbox.consume(now: now))
+        XCTAssertThrowsError(try inbox.store(title: "too-large.md", data: bytes + Data([65]), now: now)) {
+            XCTAssertTrue($0.localizedDescription.contains("16 MiB"))
+        }
+
+        let old = MarkdownShareEnvelope(
+            nonce: UUID(), title: "old.md", text: "# 原文", expiresAt: now.addingTimeInterval(60)
+        )
+        try JSONEncoder().encode(old).write(to: temporaryURL.appendingPathComponent("markdown-inbox-v1.json"))
+        XCTAssertEqual(try inbox.consume(now: now)?.text, old.text)
+    }
+
     func testRejectsFutureOrExtendedLifetimeEnvelope() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let inbox = try ShareInbox(baseURL: temporaryURL)

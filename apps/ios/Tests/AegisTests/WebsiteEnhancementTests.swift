@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import UIKit
 import WebKit
 import XCTest
 
@@ -9,6 +10,7 @@ import XCTest
 final class WebsiteEnhancementTests: XCTestCase {
   private var directory: URL!
   private var tabs: [BrowserTab] = []
+  private var window: UIWindow?
   override func setUp() async throws {
     directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -16,6 +18,8 @@ final class WebsiteEnhancementTests: XCTestCase {
   override func tearDown() async throws {
     tabs.forEach { $0.stop() }
     tabs = []
+    window?.isHidden = true
+    window = nil
     try? FileManager.default.removeItem(at: directory)
   }
   private func source(
@@ -32,6 +36,17 @@ final class WebsiteEnhancementTests: XCTestCase {
     XCTAssertTrue(predicate())
   }
   private func load(_ tab: BrowserTab, _ path: String = "/enhancements/page") async throws {
+    // BrowserTab 等待 WebView 挂载后才发起本机 HTTP 请求。
+    if tab.webView.window == nil {
+      let scene = try XCTUnwrap(UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }.first { $0.activationState != .unattached })
+      let window = self.window ?? UIWindow(windowScene: scene)
+      window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+      tab.webView.frame = window.bounds
+      window.addSubview(tab.webView)
+      window.makeKeyAndVisible()
+      self.window = window
+    }
     tab.load(URL(string: "http://127.0.0.1:8768" + path)!)
     try await wait { !tab.isLoading && tab.url?.path == path }
     XCTAssertNil(tab.loadingError)
@@ -186,8 +201,13 @@ final class WebsiteEnhancementTests: XCTestCase {
       try document.loadResources(
         from: directory, references: ["image.png", "../outside.png", "https://example.com/a.png"]),
       1)
+    XCTAssertEqual(MarkdownDocument.maximumBytes, 16 * 1024 * 1024)
+    try Data(repeating: 65, count: MarkdownDocument.maximumBytes).write(to: file)
+    XCTAssertEqual(try MarkdownDocument.read(file).text.utf8.count, MarkdownDocument.maximumBytes)
     try Data(repeating: 65, count: MarkdownDocument.maximumBytes + 1).write(to: file)
-    XCTAssertThrowsError(try MarkdownDocument.read(file))
+    XCTAssertThrowsError(try MarkdownDocument.read(file)) {
+      XCTAssertTrue($0.localizedDescription.contains("16 MiB"))
+    }
     var remote = MarkdownDocument(
       title: "Remote", text: "", sourceURL: URL(string: "https://example.com/a.md"))
     XCTAssertThrowsError(try remote.loadResources(from: directory, references: ["image.png"]))
