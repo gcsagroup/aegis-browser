@@ -924,7 +924,10 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.setAutoRecoveryEnabled(false, for: shop), .revoked)
         XCTAssertNotNil(coordinator.registry.store(scopeID: "ordinary", host: login, isPrivate: false))
         XCTAssertTrue(coordinator.snapshot(for: loginTab).autoRecoveryEnabled)
+        let retired = expectation(description: "Last-grant document became inert")
+        loginTab.afterCurrentDocumentBecomesInert { retired.fulfill() }
         XCTAssertEqual(coordinator.setAutoRecoveryEnabled(false, for: account), .revoked)
+        await fulfillment(of: [retired], timeout: 2)
         XCTAssertNil(coordinator.registry.store(scopeID: "ordinary", host: login, isPrivate: false))
         XCTAssertFalse(coordinator.snapshot(for: loginTab).autoRecoveryEnabled)
     }
