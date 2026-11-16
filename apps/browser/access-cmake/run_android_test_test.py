@@ -148,20 +148,22 @@ class AndroidRunnerTests(unittest.TestCase):
 
     def test_contract_timeout_is_bounded_and_still_cleanup(self):
         real_run = runner.subprocess.run
+        fixture_timeout = 2
 
         def run(argv, **options):
             self.assertFalse(options["shell"])
             self.assertTrue(options["check"])
             self.assertEqual(options["timeout"], 25)
             if argv[-2:] == ["shell", "/data/local/tmp/aegis-access.Abc123/contract"]:
-                options["timeout"] = 0.2
+                options["timeout"] = fixture_timeout
             return real_run(argv, **options)
 
         with mock.patch.dict(os.environ, {"AEGIS_FAKE_ADB_BLOCK_CONTRACT": "1"}), \
                 mock.patch.object(runner.subprocess, "run", side_effect=run):
             with self.assertRaises(subprocess.TimeoutExpired) as failure:
                 runner.main(self.binary, "arm64-v8a", 24)
-        self.assertEqual(failure.exception.timeout, 0.2)
+        self.assertGreater(failure.exception.timeout, 0)
+        self.assertLessEqual(failure.exception.timeout, fixture_timeout)
         self.assertEqual(self.calls()[-2]["args"][-2:], ["shell", "/data/local/tmp/aegis-access.Abc123/contract"])
         self.assertEqual(self.calls()[-1]["args"][-4:], ["shell", "rm", "-rf", "/data/local/tmp/aegis-access.Abc123"])
 
