@@ -33,6 +33,9 @@ elif args[:1] == ['push'] and os.environ.get('AEGIS_FAKE_ADB_FAILURE') == 'push'
 elif args[:2] == ['shell', 'chmod'] and os.environ.get('AEGIS_FAKE_ADB_FAILURE') == 'chmod':
     sys.exit(8)
 elif len(args) == 2 and args[0] == 'shell' and args[1].endswith('/contract'):
+    if os.environ.get('AEGIS_FAKE_ADB_BLOCK_CONTRACT') == '1':
+        import time
+        time.sleep(60)
     sys.exit(9 if os.environ.get('AEGIS_FAKE_ADB_FAILURE') == 'contract' else 0)
 """
 
@@ -53,6 +56,7 @@ class AndroidRunnerTests(unittest.TestCase):
         environment = mock.patch.dict(os.environ, {
             "ADB": str(self.executable), "ANDROID_SERIAL": "emulator-5554",
             "AEGIS_FAKE_ADB_LOG": str(self.log), "AEGIS_FAKE_ADB_FAILURE": "",
+            "AEGIS_FAKE_ADB_BLOCK_CONTRACT": "0",
             "AEGIS_FAKE_ADB_DIRECTORY": "/data/local/tmp/aegis-access.Abc123",
         })
         environment.start()
@@ -150,12 +154,15 @@ class AndroidRunnerTests(unittest.TestCase):
             self.assertTrue(options["check"])
             self.assertEqual(options["timeout"], 25)
             if argv[-2:] == ["shell", "/data/local/tmp/aegis-access.Abc123/contract"]:
-                raise subprocess.TimeoutExpired(cmd="adb", timeout=options["timeout"])
+                options["timeout"] = 0.2
             return real_run(argv, **options)
 
-        with mock.patch.object(runner.subprocess, "run", side_effect=run):
-            with self.assertRaises(subprocess.TimeoutExpired):
+        with mock.patch.dict(os.environ, {"AEGIS_FAKE_ADB_BLOCK_CONTRACT": "1"}), \
+                mock.patch.object(runner.subprocess, "run", side_effect=run):
+            with self.assertRaises(subprocess.TimeoutExpired) as failure:
                 runner.main(self.binary, "arm64-v8a", 24)
+        self.assertEqual(failure.exception.timeout, 0.2)
+        self.assertEqual(self.calls()[-2]["args"][-2:], ["shell", "/data/local/tmp/aegis-access.Abc123/contract"])
         self.assertEqual(self.calls()[-1]["args"][-4:], ["shell", "rm", "-rf", "/data/local/tmp/aegis-access.Abc123"])
 
 
