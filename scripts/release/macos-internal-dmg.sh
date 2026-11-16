@@ -20,7 +20,7 @@ is_mac_app() {
 find_app() {
   local root candidate
   local roots=()
-  local names=('GCSA Aegis.app' 'GCSA-aegis.app' 'Aegis.app')
+  local names=('Aegis Browser.app' 'GCSA Aegis.app' 'GCSA-aegis.app' 'Aegis.app')
   [[ -n "${AEGIS_MACOS_APP_ROOT:-}" ]] && roots+=("$AEGIS_MACOS_APP_ROOT")
   roots+=(
     "$HOME/Projects/GCSA-aegis-build/macos/src/out/AegisRelease"
@@ -48,7 +48,7 @@ find_app() {
     "/Volumes/CI/Codex"
   )
   local name
-  for name in "GCSA Aegis.app" "GCSA-aegis.app" "Aegis.app"; do
+  for name in "${names[@]}"; do
     for root in "${roots[@]}"; do
       [[ -d "$root" ]] || continue
       while IFS= read -r candidate; do
@@ -64,7 +64,7 @@ find_app() {
 
 APP="$(find_app || true)"
 if [[ -z "$APP" ]]; then
-  printf 'No GCSA Aegis.app with Contents/MacOS under the Mac release output. Refusing to invent a DMG.\n' >&2
+  printf 'No Aegis Browser.app with Contents/MacOS under the Mac release output. Refusing to invent a DMG.\n' >&2
   report_roots=(
     "${AEGIS_MACOS_APP_ROOT:-}"
     "$HOME/Projects/GCSA-aegis-build/macos/src/out/AegisRelease"
@@ -81,7 +81,7 @@ if [[ -z "$APP" ]]; then
       continue
     fi
     printf 'exists %s\n' "$root" >&2
-    for name in "GCSA Aegis.app" "GCSA-aegis.app" "Aegis.app"; do
+    for name in "Aegis Browser.app" "GCSA Aegis.app" "GCSA-aegis.app" "Aegis.app"; do
       if [[ -d "$root/$name" ]]; then
         if [[ -d "$root/$name/Contents/MacOS" && ! -L "$root/$name" ]]; then
           printf 'present %s/%s Contents/MacOS=yes\n' "$root" "$name" >&2

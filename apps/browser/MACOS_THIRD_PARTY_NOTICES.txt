@@ -940,7 +940,7 @@ libtorrent-rasterbar 2.1.1 — bundled routing-header source
 
 The unmodified include/libtorrent/aux_/route.h source, including its Apple/APSL
 and UC Berkeley notices, accompanies the macOS distribution in:
-  GCSA-aegis.app/Contents/Resources/AegisLibtorrentRouteSource.txt
+  Aegis Browser.app/Contents/Resources/AegisLibtorrentRouteSource.txt
 
 Its exact source is also retained in Aegis's source tree as UPSTREAM_ROUTE_H.txt
 next to this notice. Source SHA-256:
@@ -1054,7 +1054,7 @@ applications, and to alter it and redistribute it freely, subject to the followi
 Local translation and model runtime — sources and modifications
 Source file: apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
 
-GCSA Aegis 本机翻译与实验模型
+Aegis Browser 本机翻译与实验模型
 
 Bergamot Translator 0.4.9：MPL 2.0
 来源：https://github.com/browsermt/bergamot-translator

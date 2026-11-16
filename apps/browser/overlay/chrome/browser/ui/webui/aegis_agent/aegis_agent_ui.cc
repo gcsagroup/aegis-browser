@@ -292,8 +292,8 @@ void AddStrings(content::WebUIDataSource *source) {
   add("readingFull", "Storage is full or fields are invalid. Check quote and text limits.", "资料库已满或内容格式不符，请检查引文和长度限制。", "資料庫已滿或內容格式不符，請檢查引文和長度限制。");
   add("readingSelection", "Select 1–16 tabs to save, exactly 2 to split, or 1 to read.", "暂存需选择 1–16 个标签，分屏需 2 个，读取需 1 个。", "暫存需選取 1–16 個分頁，分割需 2 個，讀取需 1 個。");
   add("readingStorage", "Encrypted storage unavailable or unreadable. Existing data was not overwritten.", "加密存储不可用或无法读取，原有资料未被覆盖。", "加密儲存無法使用或讀取，原有資料未被覆寫。");
-  add("title", "GCSA Aegis AI Assistant", "GCSA Aegis AI 助手",
-      "GCSA Aegis AI 助手");
+  add("title", "Aegis Browser AI Assistant", "Aegis Browser AI 助手",
+      "Aegis Browser AI 助手");
   add("subtitle", "Tell Aegis the goal. It understands, plans, then acts.",
       "说出目标，Aegis 会先理解、制定计划，再操作浏览器。",
       "說出目標，Aegis 會先理解、制定計畫，再操作瀏覽器。");
