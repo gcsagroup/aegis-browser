@@ -155,7 +155,7 @@ final class AegisUITests: XCTestCase {
         model.tap(); model.clearAndType("aegis-simulator-fixture")
         app.buttons["save-model"].tap()
         closeModelSettings(app)
-        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        enterPrivateBrowsing(in: app)
         navigate(app, to: "http://127.0.0.1:8768/article?case=" + marker)
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
         tapBrowserButton("agent-button", in: app)
@@ -199,7 +199,7 @@ final class AegisUITests: XCTestCase {
         app.terminate(); app.launchArguments += ["--ui-testing-assistant-history-keep", "--ui-testing-windows-keep"]; app.launch()
         XCTAssertTrue(app.buttons["page-protection"].waitForExistence(timeout: 8))
         XCTAssertFalse((app.buttons["page-protection"].value as? String ?? "").contains("私密浏览"))
-        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        enterPrivateBrowsing(in: app)
         XCTAssertEqual(app.textFields["address-field"].value as? String, "aegis://start")
         tapBrowserButton("agent-button", in: app); app.buttons["assistant-history"].tap()
         let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
@@ -1035,6 +1035,33 @@ final class AegisUITests: XCTestCase {
         }
         XCTAssertTrue(button.waitForExistence(timeout: 5))
         button.tap()
+    }
+
+    private func enterPrivateBrowsing(in app: XCUIApplication) {
+        // SwiftUI's nested Menu is a PopUpButton in modern AX snapshots and a
+        // Button in legacy snapshots. Do not force either type or match both profiles.
+        let types = [XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.popUpButton.rawValue,
+                     XCUIElement.ElementType.menuItem.rawValue]
+        app.buttons["browser-more"].tap()
+        let profile = app.descendants(matching: .any).matching(NSPredicate(
+            format: "elementType IN %@ AND (identifier == %@ OR label == %@)", types, "profile-menu", "普通")).firstMatch
+        let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { object, _ in
+            guard let element = object as? XCUIElement else { return false }
+            return element.exists && element.isHittable
+        }, object: profile)
+        XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 5), .completed)
+        profile.tap()
+        let choice = app.descendants(matching: .any).matching(NSPredicate(
+            format: "elementType IN %@ AND label == %@", types, "私密")).firstMatch
+        let choiceReady = XCTNSPredicateExpectation(predicate: NSPredicate { object, _ in
+            guard let element = object as? XCUIElement else { return false }
+            return element.exists && element.isHittable
+        }, object: choice)
+        XCTAssertEqual(XCTWaiter.wait(for: [choiceReady], timeout: 5), .completed)
+        choice.tap()
+        let switched = XCTNSPredicateExpectation(predicate: NSPredicate(
+            format: "value == %@", "私密浏览：不记录历史，保存和发送资料前需确认"), object: app.buttons["page-protection"])
+        XCTAssertEqual(XCTWaiter.wait(for: [switched], timeout: 5), .completed)
     }
 
     private func revealAssistantHistory(in app: XCUIApplication) {
