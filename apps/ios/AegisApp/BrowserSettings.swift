@@ -69,12 +69,16 @@ struct BrowserSettingsView: View {
                     LabeledContent("网页引擎") { Text("系统 WebKit") }
                     NavigationLink("开源许可与鸣谢") { ThirdPartyNoticesView() }
                         .accessibilityIdentifier("third-party-notices-link")
-                    if let website = URL(string: "https://browser.erjinyi.com/") {
+                    if let website = URL(string: "https://www.gcsa.com/") {
                         Link("官方网站", destination: website)
                             .accessibilityIdentifier("aegis-website-link")
-                        Link("技术支持", destination: website.appendingPathComponent("support"))
+                    }
+                    if let support = URL(string: "https://www.gcsa.com/about#contact") {
+                        Link("技术支持", destination: support)
                             .accessibilityIdentifier("aegis-support-link")
-                        Link("隐私政策", destination: website.appendingPathComponent("privacy"))
+                    }
+                    if let privacyPolicy = URL(string: "https://gist.github.com/GCSA-ToolsTeam/7d8772461740216defce94e5be654cc5") {
+                        Link("隐私政策", destination: privacyPolicy)
                             .accessibilityIdentifier("aegis-privacy-policy-link")
                     }
 #if DEBUG
