@@ -191,10 +191,10 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     }
 
     func prepareProxyNavigation(tab: BrowserTab, request: URLRequest) -> Bool {
-        guard let url = request.url, let host = Self.httpHost(url), requiresProxyPreparation(tab: tab, url: url),
-              let pending = tab.holdForProxy(request) else { return false }
+        guard let url = request.url, let host = Self.httpHost(url), requiresProxyPreparation(tab: tab, url: url) else { return false }
         let key = AccessHostStoreKey(scopeID: tab.browsingScopeID, host: host, isPrivate: tab.profile.isPrivate)
         let optional = usesDefaultRoute(key) && tab.boundHostName != host.rawValue
+        guard let pending = optional ? tab.holdForOptionalProxy(request) : tab.holdForProxy(request) else { return false }
         _ = beginPrepare(for: tab, key: key, failure: nil, trigger: optional ? .automatic : .userRetry,
                          addressNavigation: pending, automaticFirstVisit: optional)
         return true

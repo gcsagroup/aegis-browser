@@ -111,6 +111,25 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         XCTAssertTrue(oldController.userScripts.isEmpty)
     }
 
+    func testOptionalHoldIgnoresOldCallbacksAndExplicitChoiceStillRetiresDocument() throws {
+        let tab = makeTab()
+        tab.loadFromAddressBar(URL(string: "https://192.0.2.1/optional-hold")!)
+        let view = tab.webView
+        let pending = try XCTUnwrap(tab.holdForOptionalProxy(try XCTUnwrap(tab.safeRouteReloadRequest)))
+        XCTAssertTrue(tab.webView === view)
+        let epoch = tab.navigationEpoch
+        tab.webView(view, didStartProvisionalNavigation: nil)
+        tab.webView(view, didFailProvisionalNavigation: nil, withError: URLError(.cancelled))
+        XCTAssertTrue(tab.matchesPendingAddressNavigation(pending))
+        XCTAssertEqual(tab.navigationEpoch, epoch)
+        XCTAssertNil(tab.loadingError)
+        XCTAssertNotNil(tab.heldProxyRequestForTests)
+        XCTAssertTrue(tab.ensureProxyHold(pending))
+        XCTAssertTrue(tab.matchesPendingAddressNavigation(pending))
+        XCTAssertNil(view.load(URLRequest(url: pending.url)), "Explicit protection must retire even an optional hold's live document")
+        XCTAssertFalse(tab.webView === view)
+    }
+
     func testExplicitAddressProxyHoldIgnoresOldDirectTimeout() async throws {
         let clock = AccessManualPreparationClock()
         let publisher = AccessProxyEntryPublisher { generation, _ in

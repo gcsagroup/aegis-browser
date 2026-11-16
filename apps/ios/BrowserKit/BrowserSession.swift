@@ -743,13 +743,23 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     /// Holds an already authorized site's request before WebKit can send it.
     /// The coordinator validates the exact navigation again when its entry is ready.
     public func holdForProxy(_ request: URLRequest) -> BrowserPendingAddressNavigation? {
+        holdForProxy(request, preservingDocument: false)
+    }
+
+    /// An optional route has not changed the document's connection policy yet.
+    /// Preserve its history until alignStore actually selects a different store.
+    public func holdForOptionalProxy(_ request: URLRequest) -> BrowserPendingAddressNavigation? {
+        holdForProxy(request, preservingDocument: true)
+    }
+
+    private func holdForProxy(_ request: URLRequest, preservingDocument: Bool) -> BrowserPendingAddressNavigation? {
         guard !isDisposed, request.url == attempt.url, Self.safeProxyURL(attempt.url),
               ["GET", "HEAD"].contains(attempt.method), !attempt.hasReplayableBody,
               !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(request) else { return nil }
         loadTask?.cancel()
         invalidateDeferredDocumentLoad()
         retireAllNavigationIdentities()
-        terminateDocumentForProxyHold()
+        if !preservingDocument { terminateDocumentForProxyHold() }
         requestedURL = attempt.url
         isLoading = true
         isSuspended = false
@@ -757,6 +767,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         pendingProxyRequest = request
         let pending = BrowserPendingAddressNavigation(navigationID: attempt.navigationID, url: attempt.url)
         pendingAddressNavigation = pending
+        if preservingDocument { loadedWebView?.stopLoading() }
         return pending
     }
 
@@ -774,7 +785,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     /// Reuse the held request, including its headers, for the same navigation.
     public func ensureProxyHold(_ pending: BrowserPendingAddressNavigation) -> Bool {
         guard matchesPendingAddressNavigation(pending) else { return false }
-        if let request = pendingProxyRequest { return request.url == pending.url }
+        if let request = pendingProxyRequest { return holdForProxy(request) == pending }
         guard let request = safeRouteReloadRequest else { return false }
         return holdForProxy(request) == pending
     }
@@ -1469,7 +1480,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        guard webView === loadedWebView else { return }
+        guard webView === loadedWebView, pendingProxyRequest == nil else { return }
         cancelJavaScriptDialog()
         if let navigation {
             guard let recorded = navigationState.bindNext(navigation) else { return }
@@ -1560,7 +1571,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
-        guard webView === loadedWebView else { return }
+        guard webView === loadedWebView, pendingProxyRequest == nil else { return }
         let nsError = error as NSError
         let recorded: MainFrameAttempt
         if let navigation {
