@@ -1190,6 +1190,87 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         XCTAssertEqual(tab.committedMainFrameURL, newer); XCTAssertFalse(tab.isLoading)
     }
 
+    func testWebKitOwnedHistoryKeepsExactItemsWithoutOptionalPreparation() async throws {
+        let origin = try PreservingRedirectOrigin(status: 307)
+        defer { origin.stop() }
+        let root = try await origin.redirectURL().deletingLastPathComponent()
+        let first = root.appendingPathComponent("page"), second = root.appendingPathComponent("next")
+        let tab = makeTab()
+        let window = try await attachPage(tab, at: first)
+        defer { window.isHidden = true }
+        let view = tab.webView, history = view.backForwardList
+        view.allowsBackForwardNavigationGestures = true
+        let firstItem = try XCTUnwrap(history.currentItem)
+        tab.load(second)
+        await waitUntil { tab.committedMainFrameURL == second && !tab.isLoading }
+        let secondItem = try XCTUnwrap(history.currentItem)
+        tab.load(first)
+        await waitUntil { tab.committedMainFrameURL == first && !tab.isLoading }
+        let duplicate = try XCTUnwrap(history.currentItem)
+        let coordinator = OptionalHistoryPreparation()
+        tab.hostCoordinator = coordinator
+        _ = view.goBack() // Like a gesture, this traversal belongs to WebKit rather than navigateHistory.
+        await waitUntil { history.currentItem === secondItem && !tab.isLoading }
+        XCTAssertTrue(history.forwardItem === duplicate)
+        _ = try await view.evaluateJavaScript("history.back(); true")
+        await waitUntil { history.currentItem === firstItem && !tab.isLoading }
+        XCTAssertEqual(history.forwardList, [secondItem, duplicate])
+        _ = try await view.evaluateJavaScript("history.forward(); true")
+        await waitUntil { history.currentItem === secondItem && !tab.isLoading }
+        _ = view.goForward()
+        await waitUntil { history.currentItem === duplicate && !tab.isLoading }
+        XCTAssertTrue(history.backItem === secondItem)
+        XCTAssertTrue(coordinator.held.isEmpty, "Optional preparation cannot cancel a traversal whose exact target is private to WebKit")
+        XCTAssertTrue(tab.webView === view)
+    }
+
+    func testOptionalHistoryFallbackRejectsChangedHistoryContext() async throws {
+        let origin = try PreservingRedirectOrigin(status: 307)
+        defer { origin.stop() }
+        let root = try await origin.redirectURL().deletingLastPathComponent()
+        let first = root.appendingPathComponent("page"), second = root.appendingPathComponent("next")
+        let tab = makeTab()
+        let window = try await attachPage(tab, at: first)
+        defer { window.isHidden = true }
+        tab.load(second)
+        await waitUntil { tab.committedMainFrameURL == second && !tab.isLoading }
+        let coordinator = OptionalHistoryPreparation()
+        tab.hostCoordinator = coordinator
+        tab.goBack()
+        await waitUntil { coordinator.held.count == 1 }
+        let pending = try XCTUnwrap(coordinator.held.last), view = tab.webView
+        _ = try await view.evaluateJavaScript("history.pushState({}, '', '/changed-during-preparation'); true")
+        let changed = try XCTUnwrap(view.backForwardList.currentItem), back = view.backForwardList.backList
+        tab.continueWithoutDefaultRoute(pending)
+        await waitUntil { !tab.isLoading }
+        XCTAssertTrue(view.backForwardList.currentItem === changed)
+        XCTAssertEqual(view.backForwardList.backList, back)
+        XCTAssertEqual(view.url?.path, "/changed-during-preparation")
+        XCTAssertNotNil(tab.loadingError)
+    }
+
+    func testWebKitOwnedHistoryStillHoldsForRequiredProtection() async throws {
+        let origin = try PreservingRedirectOrigin(status: 307)
+        defer { origin.stop() }
+        let root = try await origin.redirectURL().deletingLastPathComponent()
+        let first = root.appendingPathComponent("page"), second = root.appendingPathComponent("next")
+        let tab = makeTab()
+        let window = try await attachPage(tab, at: first)
+        defer { window.isHidden = true }
+        tab.load(second)
+        await waitUntil { tab.committedMainFrameURL == second && !tab.isLoading }
+        let view = tab.webView, coordinator = OptionalHistoryPreparation()
+        coordinator.required = true
+        tab.hostCoordinator = coordinator
+        _ = view.goBack()
+        await waitUntil { coordinator.held.count == 1 }
+        tab.failPendingProxyNavigation(try XCTUnwrap(coordinator.held.last))
+        XCTAssertFalse(tab.isLoading); XCTAssertNotNil(tab.loadingError)
+        XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
+        XCTAssertNil(view.load(URLRequest(url: first)), "Required protection must keep the original realm terminal")
+        XCTAssertEqual(tab.committedMainFrameURL, second)
+    }
+
     func testReal307308And303RedirectsNeverInventSafePostReplay() async throws {
         for status in [307, 308, 303] {
             let origin = try PreservingRedirectOrigin(status: status)
@@ -1768,13 +1849,15 @@ private final class OpaqueFrameProbe: NSObject, WKScriptMessageHandler {
 @MainActor
 private final class OptionalHistoryPreparation: BrowserHostStoreCoordinating {
     var enabled = true
+    var required = false
     var held: [BrowserPendingAddressNavigation] = []
     // Local HTTP is exempt in production; this adapter controls only the optional
     // service outcome while history, policy callbacks and recovery use real WebKit.
     func requiresProxyPreparation(tab: BrowserTab, url: URL) -> Bool { enabled && tab.canTryDefaultRoute(for: url) }
+    func requiresProxy(tab: BrowserTab, url: URL) -> Bool { required }
     func prepareProxyNavigation(tab: BrowserTab, request: URLRequest) -> Bool {
-        guard let url = request.url, requiresProxyPreparation(tab: tab, url: url),
-              let pending = tab.holdForOptionalProxy(request) else { return false }
+        guard let url = request.url, requiresProxyPreparation(tab: tab, url: url) else { return false }
+        guard let pending = required ? tab.holdForProxy(request) : tab.holdForOptionalProxy(request) else { return false }
         held.append(pending)
         return true
     }

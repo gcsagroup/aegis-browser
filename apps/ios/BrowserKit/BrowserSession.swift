@@ -186,6 +186,13 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
     private var pendingProxyRequest: URLRequest?
     private var unavailableDefaultRoute: BrowserPendingAddressNavigation?
+    private struct HistoryNavigation {
+        weak var view: WKWebView?
+        let source: WKBackForwardListItem?
+        let target: WKBackForwardListItem
+        let navigationID: String
+    }
+    private var historyNavigation: HistoryNavigation?
 
     public func canTryDefaultRoute(for url: URL) -> Bool {
         unavailableDefaultRoute != BrowserPendingAddressNavigation(navigationID: attempt.navigationID, url: url)
@@ -195,12 +202,39 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public func continueWithoutDefaultRoute(_ pending: BrowserPendingAddressNavigation) {
         guard matchesPendingAddressNavigation(pending), let request = pendingProxyRequest else { return }
         unavailableDefaultRoute = pending
+        if let history = historyNavigation, history.navigationID == pending.navigationID {
+            resumeHeldHistory(history, pending: pending)
+            return
+        }
         pendingAddressNavigation = nil
         pendingProxyRequest = nil
         if contentRuleList == nil || securityLists.count < 2 {
             resumeAfterContentRules(request)
         } else {
             commitPreservingMethod(request, continuesAttempt: true)
+        }
+    }
+
+    private func resumeHeldHistory(_ history: HistoryNavigation, pending: BrowserPendingAddressNavigation) {
+        loadTask?.cancel()
+        let generation = loadGeneration
+        // Leave the cancelled policy callback before asking WebKit to traverse.
+        // The owned task is revoked by Stop, a newer navigation or view teardown.
+        loadTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, !Task.isCancelled, generation == self.loadGeneration,
+                  self.matchesPendingAddressNavigation(pending), self.pendingProxyRequest != nil else { return }
+            guard let view = history.view, view === self.loadedWebView,
+                  view.backForwardList.currentItem === history.source,
+                  (view.backForwardList.backList + view.backForwardList.forwardList).contains(where: { $0 === history.target }) else {
+                self.failPendingProxyNavigation(pending)
+                return
+            }
+            self.pendingAddressNavigation = nil
+            self.pendingProxyRequest = nil
+            self.navigationState.continueLoad(url: history.target.url, method: self.attempt.method,
+                                              unsafeReplay: self.attempt.hasReplayableBody)
+            self.issueHistoryNavigation(to: history.target, in: view)
         }
     }
     private var terminatingProxyDocuments = 0
@@ -411,6 +445,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         hostCoordinator?.pendingRecoveryInvalidated(tab: self)
         pendingAddressNavigation = nil
         pendingProxyRequest = nil
+        historyNavigation = nil
         if realignedNavigationURL != url { realignedNavigationURL = nil }
         if contentRulesNavigationURL != url { contentRulesNavigationURL = nil }
         pendingAttachedLoad = nil
@@ -775,6 +810,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         guard matchesPendingAddressNavigation(pending) else { return }
         pendingAddressNavigation = nil
         pendingProxyRequest = nil
+        historyNavigation = nil
         isLoading = false
         loadingErrorPresentation = .resource("代理入口还不能使用")
         lastMainFrameFailure = BrowserMainFrameFailure(failureID: UUID(), navigationID: attempt.navigationID,
@@ -929,6 +965,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let request = pendingProxyRequest ?? URLRequest(url: pending.url, timeoutInterval: 30)
         pendingAddressNavigation = nil
         pendingProxyRequest = nil
+        historyNavigation = nil
         loadTask?.cancel()
         invalidateDeferredDocumentLoad()
         retireAllNavigationIdentities()
@@ -1195,13 +1232,20 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     private func navigateHistory(to item: WKBackForwardListItem?) {
         guard let item else { return }
+        let view = webView
         beginUserNavigation(url: item.url, method: "GET", hasReplayableBody: true, policyType: .backForward)
+        historyNavigation = HistoryNavigation(view: view, source: view.backForwardList.currentItem,
+                                              target: item, navigationID: attempt.navigationID)
         loadTask?.cancel()
         navigationEpoch &+= 1
         lastPolicyIntervention = nil
+        issueHistoryNavigation(to: item, in: view)
+    }
+
+    private func issueHistoryNavigation(to item: WKBackForwardListItem, in view: WKWebView) {
         let navigationID = attempt.navigationID
         navigationState.programmaticPolicyNavigationID = navigationID
-        guard let navigation = webView.go(to: item) else {
+        guard let navigation = view.go(to: item) else {
             retireUnboundAttempt(navigationID: navigationID)
             if navigationState.programmaticPolicyNavigationID == navigationID { navigationState.programmaticPolicyNavigationID = nil }
             return
@@ -1334,11 +1378,25 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             return
         }
         let routedStore = hostCoordinator?.dataStoreForMainFrame(tab: self, url: requestURL)
+        let history = navigationAction.navigationType == .backForward ? historyNavigation : nil
+        let ownedHistory = history?.view === webView && history?.target.url == requestURL
+            && history?.navigationID == attempt.navigationID
+            && navigationState.programmaticPolicyNavigationID == attempt.navigationID
+        // Gestures and page history.back/forward own an exact item that WKAction
+        // does not expose. Keep their traversal instead of guessing by URL or
+        // cancelling an optional check into a fresh GET. Required routes still hold.
+        let keepsWebKitHistory = navigationAction.navigationType == .backForward && !ownedHistory
+            && hostCoordinator?.requiresProxy(tab: self, url: requestURL) != true
         if hostCoordinator?.requiresProxyPreparation(tab: self, url: requestURL) == true,
+           !keepsWebKitHistory,
            ["GET", "HEAD"].contains(method.uppercased()),
            !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(navigationAction.request) {
+            if ownedHistory {
+                adoptMainFrameNavigation(url: requestURL, method: method, continuesExistingNavigation: false,
+                    hasReplayableBody: false, policyType: .backForward)
+            }
             finish(.cancel)
-            commitPreservingMethod(navigationAction.request)
+            commitPreservingMethod(navigationAction.request, continuesAttempt: ownedHistory)
             return
         }
         if decision.kind != .blocked, rejectUnavailableLanding(requestURL, store: routedStore) {
@@ -1499,6 +1557,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView === loadedWebView, isCurrent(navigation) else { return }
         clearPendingAddressNavigation()
+        historyNavigation = nil
         provisionalNavigation = nil
         provisionalDeadline?.cancel()
         navigationState.clearRedirectConfirmation()
