@@ -128,7 +128,7 @@ struct AegisStrings {
 AegisStrings StringsForLocale(const std::string& locale) {
   if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
     return {
-        .title = "GCSA Aegis",
+        .title = "Aegis Browser",
         .subtitle = "防護中心",
         .overview_title = "防護概覽",
         .overview_blocked = "已攔截請求",
@@ -263,7 +263,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
   }
   if (locale.starts_with("zh")) {
     return {
-        .title = "GCSA Aegis",
+        .title = "Aegis Browser",
         .subtitle = "防护中心",
         .overview_title = "防护概览",
         .overview_blocked = "已拦截请求",
@@ -397,7 +397,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
     };
   }
   return {
-      .title = "GCSA Aegis",
+      .title = "Aegis Browser",
       .subtitle = "Protection center",
       .overview_title = "Protection overview",
       .overview_blocked = "Requests blocked",

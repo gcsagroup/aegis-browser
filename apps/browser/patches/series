@@ -479,3 +479,5 @@
 0477-fix-account-fence-client-disconnect.patch
 0478-feat-macos-access-quota-ui.patch
 0479-fix-access-settings-refresh-static-checks.patch
+0480-fix-desktop-persistence-and-windows-tests-267.patch
+0481-align-product-display-name-and-policy-identity.patch

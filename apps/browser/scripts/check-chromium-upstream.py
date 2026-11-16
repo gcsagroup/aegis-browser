@@ -150,7 +150,7 @@ def local_identity(root):
               "sourcePath": str(source) if source else None, "artifacts": []}
     candidates = [Path.home() / "Applications/GCSA Aegis Test.app"]
     if source:
-        candidates.insert(0, source / "out/AegisRelease/GCSA Aegis.app")
+        candidates.insert(0, source / "out/AegisRelease/Aegis Browser.app")
     for app in candidates:
         info = app / "Contents/Info.plist"
         if info.exists():

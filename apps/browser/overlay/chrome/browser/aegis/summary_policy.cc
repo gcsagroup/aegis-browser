@@ -518,15 +518,15 @@ ModelPrompt BuildFixedPrompt(const PreparedSummary& prepared,
   const std::string normalized = NormalizedLocale(locale);
   if (normalized == "zh-TW") {
     prompt.system =
-        "你是 GCSA-aegis 隱私助手。根據頁面摘錄給出簡潔摘要、要點列表"
+        "你是 Aegis Browser 隱私助手。根據頁面摘錄給出簡潔摘要、要點列表"
         "與隱私/安全風險。不要編造頁面中沒有的事實。用繁體中文回答。";
   } else if (normalized == "zh-CN") {
     prompt.system =
-        "你是 GCSA-aegis 隐私助手。根据页面摘录给出简洁摘要、要点列表"
+        "你是 Aegis Browser 隐私助手。根据页面摘录给出简洁摘要、要点列表"
         "和隐私/安全风险。不要编造页面中没有的事实。用简体中文回答。";
   } else {
     prompt.system =
-        "You are the GCSA-aegis privacy assistant. Summarize the page "
+        "You are the Aegis Browser privacy assistant. Summarize the page "
         "excerpt, list key points, and note privacy/security risks. Do not "
         "invent facts. Answer in English.";
   }

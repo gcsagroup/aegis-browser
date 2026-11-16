@@ -1259,8 +1259,8 @@ function runSelfTest() {
       assert(rejected, 'path traversal was accepted');
     });
     record('品牌 App 身份绑定使用 Info.plist 中的可执行文件名', () => {
-      const app = join(root, 'GCSA Aegis.app');
-      const executableName = 'GCSA Aegis';
+      const app = join(root, 'Aegis Browser.app');
+      const executableName = 'Aegis Browser';
       mkdirSync(join(app, 'Contents', 'MacOS'), {recursive: true});
       mkdirSync(
         join(
@@ -1286,13 +1286,13 @@ function runSelfTest() {
       const evidence = artifactEvidence(root, app);
       assert(
         evidence.criticalFiles.some(
-          (entry) => entry.name === 'Contents/MacOS/GCSA Aegis',
+          (entry) => entry.name === 'Contents/MacOS/Aegis Browser',
         ),
         'branded executable was not bound',
       );
       assert(
         evidence.criticalFiles.some((entry) =>
-          entry.name.endsWith('/GCSA Aegis Framework'),
+          entry.name.endsWith('/Aegis Browser Framework'),
         ),
         'branded framework was not bound',
       );

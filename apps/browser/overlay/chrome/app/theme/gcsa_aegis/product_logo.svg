@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
-  <title id="title">GCSA Aegis</title>
+  <title id="title">Aegis Browser</title>
   <desc id="desc">Shield, letter G, and three network nodes.</desc>
   <defs>
     <linearGradient id="brand-gradient" gradientUnits="userSpaceOnUse" x1="179" y1="512" x2="857" y2="512">

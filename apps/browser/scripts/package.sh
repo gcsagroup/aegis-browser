@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Package a distributable GCSA-aegis Mac .app (+ zip/dmg).
 #
-# Expects a non-component build (self-contained GCSA Aegis.app).
+# Expects a non-component build (self-contained Aegis Browser.app).
 # Dev component builds are refused unless ALLOW_COMPONENT_PACKAGE=1.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
@@ -19,7 +19,7 @@ else
 fi
 
 VERSION="$(read_pinned_value "$VERSION_FILE" 2>/dev/null || echo "0.0.0")"
-APP_VERSION="${AEGIS_PACKAGE_VERSION:-6.1.0.266}"
+APP_VERSION="${AEGIS_PACKAGE_VERSION:-6.1.0.267}"
 CPU="$(uname -m)"
 [[ "$CPU" == x86_64 ]] && CPU=x64
 STAMP="$(date -u +%Y%m%d)"
@@ -282,10 +282,10 @@ else
   copy_tree "$SOURCE_APP" "$STAGE/$PRODUCT_APP_NAME"
   APP_PATH="$STAGE/$PRODUCT_APP_NAME"
   # Display name in Finder/Dock; the source bundle keeps its branded executable.
-  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName GCSA-aegis" \
+  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $AEGIS_MAC_PRODUCT_NAME" \
     "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string GCSA-aegis" \
-      "$APP_PATH/Contents/Info.plist" || true
+    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $AEGIS_MAC_PRODUCT_NAME" \
+      "$APP_PATH/Contents/Info.plist"
   # Keep Aegis-added licenses inside the App so app-only ZIP/DMG copies retain them.
   # This changes only the staged copy and must precede signing.
   python3 -B "$REPO_ROOT/scripts/licenses/third_party_notices.py" install-macos "$APP_PATH"
