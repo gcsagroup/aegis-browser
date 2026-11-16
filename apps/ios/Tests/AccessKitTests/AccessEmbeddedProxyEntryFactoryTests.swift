@@ -119,7 +119,7 @@ final class AccessEmbeddedTeardownTests: XCTestCase {
         core.onStop = { [weak core] _ in core?.finishStop(); coreStopped.fulfill() }
         defer { core.finishStop() }
         let firstGate = AccessProvisionTestGate(entered: expectation(description: "shared listener provisioned"))
-        let thirdGate = AccessProvisionTestGate(entered: expectation(description: "unexpected second flight"))
+        let thirdGate = AccessProvisionTestGate(entered: XCTestExpectation(description: "unexpected second flight"))
         defer { firstGate.finish(); thirdGate.finish() }
         let thirdBoundary = expectation(description: "third caller joined or started provision")
         var signalledThird = false
@@ -139,33 +139,27 @@ final class AccessEmbeddedTeardownTests: XCTestCase {
             return ready
         }, shutdown: { stopped.append($0); session.shutdown(identity: $0) })
         let cancelledID = UUID(), survivorID = UUID(), thirdID = UUID()
-        // Introduce the third caller from the cancelled caller's completion,
-        // rather than enqueueing all three before the provision is returned.
-        let cancelled = Task(priority: cancelledPriority) { @MainActor () -> Task<AccessProxyEntryPrepareResult, Error>? in
+        let survivor = Task(priority: survivorPriority) {
+            try await publisher.prepare(.init(operationID: survivorID, deadline: .seconds(5)))
+        }
+        await fulfillment(of: [firstGate.entered], timeout: 2)
+        let cancelledEntered = expectation(description: "cancelled caller joined shared flight")
+        // The third caller enters directly from the cancelled caller's completion,
+        // without another task hop that would first let the survivor publish.
+        let third = Task(priority: cancelledPriority) { @MainActor () throws -> AccessProxyEntryPrepareResult in
+            cancelledEntered.fulfill()
             do {
                 _ = try await publisher.prepare(.init(operationID: cancelledID, deadline: .seconds(5)))
                 XCTFail("Cancelled caller claimed the provision")
-                return nil
             } catch is CancellationError {
-                return Task { @MainActor in
-                    defer { signalThird() }
-                    return try await publisher.prepare(.init(operationID: thirdID, deadline: .seconds(5)))
-                }
-            } catch {
-                XCTFail("Unexpected preparation error: \(error)")
-                return nil
+                defer { signalThird() }
+                return try await publisher.prepare(.init(operationID: thirdID, deadline: .seconds(5)))
             }
+            throw AccessSiteSessionError.prepareFailed("Cancelled caller did not enter third preparation")
         }
-        let survivorEntered = expectation(description: "surviving caller entered")
-        let survivor = Task(priority: survivorPriority) {
-            survivorEntered.fulfill()
-            return try await publisher.prepare(.init(operationID: survivorID, deadline: .seconds(5)))
-        }
-        await fulfillment(of: [firstGate.entered, survivorEntered], timeout: 2)
+        await fulfillment(of: [cancelledEntered], timeout: 2)
         publisher.cancel(operationID: cancelledID)
         firstGate.finish()
-        let thirdTask = await cancelled.value
-        let third = try XCTUnwrap(thirdTask)
         // Either the third caller already got the shared result, or a faulty
         // split flight reached its real session provision and is held above.
         await fulfillment(of: [thirdBoundary], timeout: 2)
