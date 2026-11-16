@@ -1044,15 +1044,21 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(profile.waitForExistence(timeout: 5))
         profile.tap()
         let choices = app.buttons.matching(NSPredicate(format: "label == %@", "私密"))
-        let ordinary = app.buttons.matching(NSPredicate(format: "label == %@", "普通"))
+        let mainMenuAction = app.buttons["新建标签页"]
         var previousFrame = CGRect.null
         var settledFrame = CGRect.null
         let choiceReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            // The expanded submenu has a current-profile header and an ordinary
-            // choice. A virtual AX item alone can exist before that layout is ready.
-            guard ordinary.count == 2, choices.count == 1 else { return false }
+            // Wait until the parent menu's own action is no longer interactive;
+            // do not depend on how an OS version exposes the submenu header.
+            guard (!mainMenuAction.exists || !mainMenuAction.isHittable), choices.count == 1 else {
+                previousFrame = .null
+                return false
+            }
             let choice = choices.element, frame = choice.frame
-            guard choice.isHittable, !frame.isEmpty, app.frame.contains(frame) else { return false }
+            guard choice.isHittable, !frame.isEmpty, app.frame.contains(frame) else {
+                previousFrame = .null
+                return false
+            }
             defer { previousFrame = frame }
             guard frame == previousFrame else { return false }
             settledFrame = frame
