@@ -151,11 +151,16 @@ import UIKit
         browser.activate(tab.id)
         // 模拟系统委托回调，验证连续终止时不会无限重载。
         tab.webViewWebContentProcessDidTerminate(tab.webView)
+        XCTAssertTrue(tab.isLoading)
+        // Complete the first recovery before simulating the next process exit;
+        // the test's healthy WebView still delivers real reload callbacks.
+        try await waitUntil { !tab.isLoading && tab.url?.path == "/article-two" }
+        XCTAssertNil(tab.loadingError)
         tab.webViewWebContentProcessDidTerminate(tab.webView)
         XCTAssertNotNil(tab.loadingError)
         XCTAssertFalse(tab.isLoading)
         tab.reload()
-        try await waitUntil { !tab.isLoading }
+        try await waitUntil { !tab.isLoading && tab.webView.url?.path == "/article-two" }
         XCTAssertNil(tab.loadingError)
         browser.standardTabs.forEach { $0.stop() }
     }

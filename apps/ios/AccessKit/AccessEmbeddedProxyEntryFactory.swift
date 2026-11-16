@@ -5,8 +5,8 @@ import Synchronization
 /// Builds the product proxy entry publisher.
 ///
 /// Stay fail-closed unless: lock is `verified_build`, the thin
-/// `AegisEmbeddedCore` module is linked, a local Reality Vision config is
-/// present, and loopback CONNECT can start. Digests alone never dial.
+/// `AegisEmbeddedCore` module is linked, a local or account-provided Reality
+/// Vision config is present, and loopback CONNECT can start. Digests alone never dial.
 @MainActor
 public enum AccessEmbeddedProxyEntryFactory {
     public static let lockResourceName = "embedded-core-lock"
@@ -16,7 +16,9 @@ public enum AccessEmbeddedProxyEntryFactory {
     public static func makeProductPublisher(
         lockData: Data? = nil,
         configPath: String? = AccessLocalV2RayConfigLoader.productPath(),
-        verifiedCore: (any AccessEmbeddedCoreControlling)? = nil
+        verifiedCore: (any AccessEmbeddedCoreControlling)? = nil,
+        parameters: (@MainActor () async throws -> AccessRealityVisionParameters)? = nil,
+        connectionAllowed: (@MainActor () -> Bool)? = nil
     ) -> any AccessProxyEntryPublishing {
         do {
             let data = try lockData ?? loadBundledLockData()
@@ -34,12 +36,15 @@ public enum AccessEmbeddedProxyEntryFactory {
             guard adapter.mayDial else {
                 return AccessFailClosedProxyEntryPublisher()
             }
-            guard let configPath else {
-                return AccessFailClosedProxyEntryPublisher()
+            let session: AccessEmbeddedProxyEntrySession
+            if let parameters {
+                session = AccessEmbeddedProxyEntrySession(core: core, parameters: parameters)
+            } else {
+                guard let configPath else { return AccessFailClosedProxyEntryPublisher() }
+                let local = try AccessLocalV2RayConfigLoader.load(path: configPath)
+                let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: local.parameters)
+                session = AccessEmbeddedProxyEntrySession(core: core, outbound: outbound)
             }
-            let local = try AccessLocalV2RayConfigLoader.load(path: configPath)
-            let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: local.parameters)
-            let session = AccessEmbeddedProxyEntrySession(core: core, outbound: outbound)
             return AccessProxyEntryPublisher(
                 provision: { generation, deadline in
                     try await session.provision(generation: generation, deadline: deadline)
@@ -48,7 +53,7 @@ public enum AccessEmbeddedProxyEntryFactory {
                     session.shutdown(identity: identity)
                 },
                 healthCheck: {
-                    session.isRuntimeHealthy
+                    session.isRuntimeHealthy && (connectionAllowed?() ?? true)
                 }
             )
         } catch {
@@ -73,7 +78,7 @@ public enum AccessEmbeddedProxyEntryFactory {
 @MainActor
 final class AccessEmbeddedProxyEntrySession {
     private let core: any AccessEmbeddedCoreControlling
-    private let outbound: AccessRealityVisionOutboundConfig
+    private let loadOutbound: @MainActor () async throws -> AccessRealityVisionOutboundConfig
     private var listener: AccessHTTPInboundListener?
     private var identity: String?
     private var startedCore = false
@@ -82,7 +87,13 @@ final class AccessEmbeddedProxyEntrySession {
 
     init(core: any AccessEmbeddedCoreControlling, outbound: AccessRealityVisionOutboundConfig) {
         self.core = core
-        self.outbound = outbound
+        self.loadOutbound = { outbound }
+    }
+
+    init(core: any AccessEmbeddedCoreControlling,
+         parameters: @escaping @MainActor () async throws -> AccessRealityVisionParameters) {
+        self.core = core
+        self.loadOutbound = { try AccessRealityVisionOutboundConfigBuilder.build(parameters: await parameters()) }
     }
 
     func provision(generation: UInt64, deadline: Duration) async throws -> AccessProxyEntryPublisher.Provision {
@@ -110,6 +121,10 @@ final class AccessEmbeddedProxyEntrySession {
         }
 
         if !core.isRunning {
+            // Fetch account-selected credentials only when a new core generation is needed.
+            // Failure propagates; never reuse a bundled static node in this path.
+            let outbound = try await loadOutbound()
+            try Task.checkCancellation()
             do {
                 logCapture = try await Self.startCoreWithDiagnostics(
                     core: core, outbound: outbound, diagnostics: .shared,

@@ -11,6 +11,110 @@ final class SettingsLayoutUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    func testAddressBarLocationPrivacyUsesOriginalConnectionWithoutServiceAndTogglesCurrentSite() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        let field = app.textFields["address-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("https://example.invalid/\n")
+        let icon = app.buttons["address-location-privacy"]
+        XCTAssertTrue(icon.waitForExistence(timeout: 10))
+        XCTAssertFalse(icon.isSelected)
+        XCTAssertEqual(icon.label, "隐藏地理位置")
+        XCTAssertEqual(icon.value as? String, "使用浏览器原有连接")
+        capture("地址栏-无服务时使用原连接", app)
+        icon.tap()
+        let retry = app.buttons["page-load-proxy-retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 12))
+        XCTAssertEqual(retry.label, "重试")
+        XCTAssertTrue(icon.isSelected)
+        XCTAssertEqual(icon.value as? String, "连接暂不可用")
+        capture("地址栏-手动开启隐藏地理位置", app)
+        app.buttons["page-protection"].tap()
+        app.buttons["site-details"].tap()
+        let siteSwitch = app.switches["access-site-proxy-toggle"]
+        XCTAssertTrue(siteSwitch.waitForExistence(timeout: 5))
+        XCTAssertEqual(siteSwitch.value as? String, "1")
+        siteSwitch.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        app.navigationBars["当前网站"].buttons["完成"].tap()
+        XCTAssertTrue(icon.waitForExistence(timeout: 10))
+        XCTAssertFalse(icon.isSelected)
+        field.tap()
+        XCTAssertFalse(icon.exists)
+        XCTAssertTrue((field.value as? String ?? "").contains("example.invalid"))
+    }
+
+    func testLocationPrivacyControlsHideNodeDetailsAndKeepFailedTarget() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        let address = app.textFields["address-field"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        address.tap()
+        address.typeText("http://127.0.0.1:64999/missing\n")
+        let retry = app.buttons["page-load-proxy-retry"]
+        let failedHost = app.staticTexts["page-load-failed-host"]
+        XCTAssertTrue(failedHost.waitForExistence(timeout: 15))
+        XCTAssertFalse(retry.exists)
+        XCTAssertTrue(app.buttons["重试"].isHittable)
+        XCTAssertEqual(failedHost.label, "本机页面")
+        XCTAssertFalse((failedHost.value as? String ?? "").contains("127.0.0.1"))
+        capture("加载失败-隐藏地理位置", app)
+        app.buttons["page-protection"].tap()
+        app.buttons["site-details"].tap()
+        let toggle = app.switches["access-site-proxy-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.label, "隐藏地理位置")
+        XCTAssertEqual(app.staticTexts["access-site-proxy-host"].label, "本机页面")
+        XCTAssertFalse(app.descendants(matching: .any)["access-proxy-configured-node"].exists)
+        XCTAssertFalse(app.staticTexts["VLESS · TCP · REALITY · Vision"].exists)
+        XCTAssertFalse(app.switches["access-site-auto-recovery-toggle"].exists)
+        XCTAssertFalse(app.buttons["access-dev-allow-block-allow"].exists)
+        assertInsideWindow(toggle, app)
+        capture("当前网站-隐藏地理位置", app)
+    }
+
+    func testAccountUsageEntryShowsHonestEmptyStateInChinese() {
+        inspectAccountUsage(language: "zh-Hans", largeText: false)
+    }
+
+    func testAccountUsageEntryIsReachableInEnglishAtLargestTextSize() {
+        inspectAccountUsage(language: "en", largeText: true)
+    }
+
+    private func inspectAccountUsage(language: String, largeText: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "-AppleLanguages", "(\(language))",
+            "-UIPreferredContentSizeCategoryName", largeText ? "UICTContentSizeCategoryAccessibilityXXXL" : "UICTContentSizeCategoryL"]
+        app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+        app.launchEnvironment["AEGIS_ACCOUNT_SIM_ORIGIN"] = "http://127.0.0.1:1"
+        app.launchEnvironment["AEGIS_ACCOUNT_SIM_ACTION"] = "clear"
+        app.launch()
+        defer { app.terminate() }
+        let entry = app.buttons["access-usage-link"]
+        XCTAssertTrue(reveal(entry, app))
+        assertInsideWindow(entry, app)
+        XCTAssertEqual(entry.label, language == "en" ? "IP location privacy" : "隐藏地理位置服务")
+        if language == "zh-Hans" { capture("设置-隐私保护", app) }
+        entry.tap()
+        let page = app.descendants(matching: .any).matching(identifier: "access-usage-page").firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars[language == "en" ? "IP location privacy" : "隐藏地理位置服务"].exists)
+        // This build has no bundled test subscription or bound account. Unknown is not zero.
+        XCTAssertFalse(app.descendants(matching: .any)["access-usage-progress"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["access-usage-used"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["access-proxy-configured-node"].exists)
+        let emptyState = app.descendants(matching: .any).matching(identifier: "access-usage-unlinked").firstMatch
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 5))
+        assertInsideWindow(emptyState, app)
+        XCTAssertFalse(app.buttons["access-usage-refresh"].exists)
+        capture("账号与用量-\(language)-\(largeText ? "最大字体" : "普通字体")", app)
+    }
+
     func testSettingsPagesAtStandardSize() {
         inspectSettings(largeText: false)
     }

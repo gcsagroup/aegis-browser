@@ -65,6 +65,19 @@ private final class ToggleTestOrchestrator: AccessSiteSessionOrchestrating {
 }
 
 final class AccessSiteProxyToggleModelTests: XCTestCase {
+    func testDisplayNameClassifiesLocalAddressesWithoutChangingOrResolvingPublicHosts() {
+        for host in ["localhost.", "test.LOCALHOST", "127.0.4.7", "127.1", "[::1]", "::ffff:127.0.0.1"] {
+            XCTAssertEqual(AccessSiteDisplayName.localLabel(for: host)?.key, "本机页面", host)
+        }
+        for host in ["router.local", "10.1.0.2", "172.31.0.2", "192.168.1.1", "169.254.0.1", "[fd00::2]", "[fe80::3]"] {
+            XCTAssertEqual(AccessSiteDisplayName.localLabel(for: host)?.key, "局域网网站", host)
+        }
+        for host in ["example.org", "localhost.example.org", "127.0.0.1.example.org", "172.32.0.1", "8.8.8.8"] {
+            XCTAssertNil(AccessSiteDisplayName.localLabel(for: host))
+            XCTAssertEqual(AccessSiteDisplayName.title(host), host)
+        }
+    }
+
     func testTrustedHostFromHTTPSNavigation() throws {
         let host = AccessSiteProxyToggleModel.resolveTrustedHost(
             from: URL(string: "https://Example.COM:443/path?q=1")
@@ -99,7 +112,7 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
         XCTAssertEqual(after.connectionStatus, .unavailable)
         XCTAssertEqual(
             AccessSiteProxyToggleModel.intentLine(for: after.intentStatus),
-            "本站代理已开启 · 连接尚未就绪"
+            "已开启，等待连接"
         )
         XCTAssertFalse(
             AccessSiteProxyToggleModel.intentLine(for: after.intentStatus)
@@ -122,7 +135,7 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
         XCTAssertEqual(off.intentStatus, .offBrowserDefault)
         XCTAssertEqual(
             AccessSiteProxyToggleModel.intentLine(for: .offBrowserDefault),
-            "未使用本服务代理 / 使用浏览器原有连接"
+            "使用浏览器原有连接"
         )
     }
 
@@ -140,7 +153,7 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
         }
         XCTAssertEqual(
             AccessSiteProxyToggleModel.attachmentLine(for: .attachedUnavailable, intent: .off),
-            "代理请求失败，未切回原连接"
+            "连接失败，未切回原连接"
         )
     }
 
