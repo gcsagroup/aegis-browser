@@ -72,9 +72,9 @@ final class AegisUITests: XCTestCase {
         app.buttons["私密"].tap()
         XCTAssertEqual(app.buttons["page-protection"].value as? String, "私密浏览：不记录历史，保存和发送资料前需确认")
         app.buttons["browser-more"].tap()
-        XCTAssertTrue(app.buttons["agent-button"].exists)
-        XCTAssertTrue(app.buttons["agent-button"].isEnabled)
-        XCTAssertTrue(app.buttons["data-button"].isEnabled)
+        XCTAssertTrue(browserButton("agent-button", in: app).exists)
+        XCTAssertTrue(browserButton("agent-button", in: app).isEnabled)
+        XCTAssertTrue(browserButton("data-button", in: app).isEnabled)
     }
 
     func testPrivateBookmarkOrganizerUsesSavedBookmarksAndRequiresApproval() {
@@ -98,13 +98,13 @@ final class AegisUITests: XCTestCase {
         tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
         navigate(app, to: "http://127.0.0.1:8768/article?case=" + marker)
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
-        tapBrowserButton("page-actions", in: app); app.buttons["toggle-bookmark"].tap()
+        tapBrowserButton("page-actions", in: app); browserButton("toggle-bookmark", in: app).tap()
         XCTAssertTrue(app.alerts["修改已保存的收藏？"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "http://127.0.0.1:8768/article?case=" + marker)).firstMatch.exists)
         app.alerts.buttons["取消"].tap()
         tapBrowserButton("page-actions", in: app)
-        XCTAssertEqual(app.buttons["toggle-bookmark"].label, "添加收藏")
-        app.buttons["toggle-bookmark"].tap(); app.alerts["修改已保存的收藏？"].buttons["确认修改"].firstMatch.tap()
+        XCTAssertEqual(browserButton("toggle-bookmark", in: app).label, "添加收藏")
+        browserButton("toggle-bookmark", in: app).tap(); app.alerts["修改已保存的收藏？"].buttons["确认修改"].firstMatch.tap()
         tapBrowserButton("data-button", in: app)
         XCTAssertTrue(app.staticTexts["private-library-notice"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch.waitForExistence(timeout: 5))
@@ -148,13 +148,13 @@ final class AegisUITests: XCTestCase {
         let marker = "AEGISPRIVATE_" + UUID().uuidString
         navigate(app, to: "http://127.0.0.1:8768/article-two")
         XCTAssertTrue(app.webViews.staticTexts["绿地改造补充说明"].waitForExistence(timeout: 12))
-        app.buttons["browser-more"].tap(); app.buttons["设置"].tap(); app.buttons["模型服务"].tap()
+        openModelSettings(app)
         let endpoint = app.textFields["model-endpoint"]
         endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
         let model = app.textFields["model-name"]
         model.tap(); model.clearAndType("aegis-simulator-fixture")
         app.buttons["save-model"].tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        closeModelSettings(app)
         tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
         navigate(app, to: "http://127.0.0.1:8768/article?case=" + marker)
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
@@ -211,9 +211,7 @@ final class AegisUITests: XCTestCase {
         let app = launchApp()
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
-        app.buttons["browser-more"].tap()
-        app.buttons["设置"].tap()
-        app.buttons["模型服务"].tap()
+        openModelSettings(app)
         let endpoint = app.textFields["model-endpoint"]
         XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
         endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
@@ -221,8 +219,7 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["连接成功，请选择模型并保存。"].waitForExistence(timeout: 12))
         app.buttons["save-model"].tap()
         XCTAssertTrue(app.staticTexts["模型设置已保存。"].waitForExistence(timeout: 5))
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["完成"].tap()
+        closeModelSettings(app)
         tapBrowserButton("agent-button", in: app)
         XCTAssertTrue(app.buttons["read-pages"].waitForExistence(timeout: 5))
         app.buttons["read-pages"].tap()
@@ -738,8 +735,8 @@ final class AegisUITests: XCTestCase {
         app.alerts.buttons["用普通标签打开"].tap()
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
         app.buttons["browser-more"].tap()
-        XCTAssertTrue(app.buttons["agent-button"].exists)
-        XCTAssertTrue(app.buttons["agent-button"].isEnabled)
+        XCTAssertTrue(browserButton("agent-button", in: app).exists)
+        XCTAssertTrue(browserButton("agent-button", in: app).isEnabled)
         attachScreenshot("外部链接经明确确认后打开", app)
     }
 
@@ -812,13 +809,13 @@ final class AegisUITests: XCTestCase {
         let app = launchApp()
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
-        app.buttons["browser-more"].tap(); app.buttons["设置"].tap(); app.buttons["模型服务"].tap()
+        openModelSettings(app)
         let endpoint = app.textFields["model-endpoint"]
         endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
         let model = app.textFields["model-name"]
         model.tap(); model.clearAndType("stream-slow")
         app.buttons["save-model"].tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        closeModelSettings(app)
         tapBrowserButton("agent-button", in: app); app.buttons["read-pages"].tap()
         XCTAssertTrue(app.staticTexts["等待确认发送"].waitForExistence(timeout: 8))
         let analyze = app.buttons["analyze-pages"]
@@ -856,6 +853,76 @@ final class AegisUITests: XCTestCase {
         find.typeText("12")
         XCTAssertEqual(find.value as? String, "12")
         attachScreenshot("iPad 键盘新建关闭地址与查找", app)
+    }
+
+    func testIPadCommandsDoNotCloseUnderlyingTabInReadingOrMarkdown() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("仅 iPad 键盘验收") }
+        let app = launchApp()
+        let originalDocument = "http://127.0.0.1:8768/enhancements/document.md"
+        navigate(app, to: originalDocument)
+        let rawPage = app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "# Markdown 验收")).firstMatch
+        XCTAssertTrue(rawPage.waitForExistence(timeout: 12))
+        let windowCount = app.windows.count
+        tapBrowserButton("reading-library-button", in: app)
+        XCTAssertTrue(app.buttons["reading-capture-page"].waitForExistence(timeout: 5))
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertEqual(app.state, .runningForeground)
+        returnToBrowserAfterShortcutPresentation("reading-capture-page", done: "reading-library-done", in: app)
+        XCTAssertEqual(app.windows.count, windowCount)
+        XCTAssertEqual(app.buttons["browser-more"].value as? String, "标签 1")
+        XCTAssertEqual(app.textFields["address-field"].value as? String, originalDocument)
+        XCTAssertTrue(rawPage.waitForExistence(timeout: 5))
+        app.buttons["page-protection"].tap(); app.buttons["site-details"].tap()
+        let read = app.buttons["site-read-markdown"]
+        XCTAssertTrue(scrollUntilVisible(read, in: app)); read.tap()
+        XCTAssertTrue(app.buttons["markdown-actions"].waitForExistence(timeout: 10))
+        // Configure automatic preview using the auxiliary child reader. Hardware
+        // shortcuts below exercise the actual root route after a new navigation.
+        app.buttons["markdown-actions"].tap()
+        app.buttons["文档来源与预览设置"].tap()
+        let automatic = app.switches["本站自动预览 Markdown"]
+        XCTAssertTrue(automatic.waitForExistence(timeout: 5))
+        if automatic.value as? String != "1" { tapPortableSwitch(automatic) }
+        XCTAssertEqual(automatic.value as? String, "1")
+        app.buttons["markdown-source-done"].tap() // Source settings.
+        app.typeKey("w", modifierFlags: .command) // The nested WebKit responder must consume this.
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertTrue(app.buttons["markdown-actions"].waitForExistence(timeout: 5))
+        attachScreenshot("子 Markdown 的关闭快捷键保留前台窗口", app)
+        app.buttons["markdown-reader-done"].tap() // Child Markdown reader.
+        app.buttons["website-details-done"].tap() // Website sheet.
+        XCTAssertTrue(app.buttons["browser-more"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, windowCount)
+        XCTAssertEqual(app.buttons["browser-more"].value as? String, "标签 1")
+        XCTAssertEqual(app.textFields["address-field"].value as? String, originalDocument)
+        XCTAssertTrue(rawPage.waitForExistence(timeout: 5))
+        let rootDocument = "http://127.0.0.1:8768/enhancements/document.md?case=root-route"
+        navigate(app, to: rootDocument)
+        XCTAssertTrue(app.buttons["markdown-actions"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.webViews.staticTexts["Markdown 验收"].firstMatch.waitForExistence(timeout: 10))
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertEqual(app.state, .runningForeground)
+        returnToBrowserAfterShortcutPresentation("markdown-actions", done: "markdown-reader-done", in: app)
+        XCTAssertTrue(app.buttons["markdown-actions"].waitForNonExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, windowCount)
+        XCTAssertEqual(app.buttons["browser-more"].value as? String, "标签 1")
+        XCTAssertEqual(app.textFields["address-field"].value as? String, rootDocument)
+        XCTAssertTrue(rawPage.waitForExistence(timeout: 5))
+        attachScreenshot("阅读库与根 Markdown 阻止浏览器关闭快捷键", app)
+    }
+
+    private func returnToBrowserAfterShortcutPresentation(_ marker: String, done doneID: String, in app: XCUIApplication) {
+        // UIKit may consume Cmd-W to close a front presentation. Wait for that
+        // native outcome before using a freshly queried Done button if it stays.
+        // At most one explicit close is allowed; a second sheet would fail below.
+        if !app.buttons[marker].waitForNonExistence(timeout: 2) {
+            let done = app.buttons[doneID]
+            XCTAssertTrue(done.waitForExistence(timeout: 5)); done.tap()
+        }
+        XCTAssertEqual(app.state, .runningForeground)
+        let browserVisible = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"), object: app.buttons["browser-more"])
+        XCTAssertEqual(XCTWaiter.wait(for: [browserVisible], timeout: 5), .completed)
     }
 
     func testDownloadBatchRemovalKeepsFilesRecoverable() {
@@ -950,8 +1017,17 @@ final class AegisUITests: XCTestCase {
         attachScreenshot("集中浏览器操作菜单", app)
     }
 
+    private func browserButton(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        let labels = ["reading-library-button": ["阅读库"], "open-browser-settings": ["设置"],
+                      "agent-button": ["AI 助手"], "data-button": ["资料"], "downloads-button": ["下载"],
+                      "profile-menu": ["普通", "私密"], "page-actions": ["页面操作"],
+                      "toggle-bookmark": ["添加收藏", "移除收藏"]]
+        guard let labels = labels[identifier] else { return app.buttons[identifier] }
+        return app.buttons.matching(NSPredicate(format: "identifier == %@ OR label IN %@", identifier, labels)).firstMatch
+    }
+
     private func tapBrowserButton(_ identifier: String, in app: XCUIApplication) {
-        let button = app.buttons[identifier]
+        let button = browserButton(identifier, in: app)
         if !button.exists || !button.isHittable {
             let more = app.buttons["browser-more"]
             XCTAssertTrue(more.waitForExistence(timeout: 8))
@@ -1214,14 +1290,31 @@ final class AegisUITests: XCTestCase {
         return false
     }
 
+    private func openModelSettings(_ app: XCUIApplication) {
+        tapBrowserButton("open-browser-settings", in: app)
+        let hub = app.buttons["aegis-feature-settings"]
+        XCTAssertTrue(hub.waitForExistence(timeout: 5)); hub.tap()
+        let service = app.buttons["model-service-settings"]
+        XCTAssertTrue(scrollUntilVisible(service, in: app)); service.tap()
+        XCTAssertTrue(app.textFields["model-endpoint"].waitForExistence(timeout: 5))
+    }
+
+    private func closeModelSettings(_ app: XCUIApplication) {
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let done = app.buttons["settings-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5)); done.tap()
+        XCTAssertTrue(app.buttons["browser-more"].waitForExistence(timeout: 5))
+    }
+
     private func configurePortableModel(_ app: XCUIApplication) {
-        app.buttons["browser-more"].tap(); app.buttons["设置"].tap(); app.buttons["模型服务"].tap()
+        openModelSettings(app)
         let endpoint = app.textFields["model-endpoint"]
         endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
         let model = app.textFields["model-name"]
         model.tap(); model.clearAndType("aegis-simulator-fixture")
         app.buttons["save-model"].tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        closeModelSettings(app)
     }
 
     func testWebKitProtectionSettingsAndNativePageRecovery() {

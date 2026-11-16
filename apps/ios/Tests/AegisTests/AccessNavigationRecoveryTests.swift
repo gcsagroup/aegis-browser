@@ -59,10 +59,25 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         let oldView = tab.webView
         let oldStore = tab.websiteDataStore
         XCTAssertEqual(oldStore.proxyConfigurations.count, 1)
+        // The initial ordinary-to-proxy switch has a different retirement receipt.
+        // Settle it before observing the proxy document this test actually retires.
+        let startupRetired = expectation(description: "Startup document became inert")
+        tab.afterProxyHoldDocumentStops { startupRetired.fulfill() }
+        await fulfillment(of: [startupRetired], timeout: 2)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = UIViewController(); window.makeKeyAndVisible()
+        oldView.frame = window.bounds; window.rootViewController?.view.addSubview(oldView)
+        defer { window.isHidden = true }
+        let proxyDocumentRetired = expectation(description: "Proxy document became inert")
+        tab.afterCurrentDocumentBecomesInert { proxyDocumentRetired.fulfill() }
         tab.loadFromAddressBar(URL(string: "https://192.0.2.1/new")!)
         coordinator.releaseIdleResources()
         XCTAssertEqual(oldStore.proxyConfigurations.count, 1, "Old realm still owns its mandatory route")
-        await waitUntil { tab.currentNavigationForTests != nil }
+        // A replacement can be parked waiting for its UIWindow. Its navigation
+        // is not evidence that the old realm has stopped; await the owned receipt.
+        await fulfillment(of: [proxyDocumentRetired], timeout: 2)
         coordinator.releaseIdleResources()
         XCTAssertTrue(oldStore.proxyConfigurations.isEmpty)
         XCTAssertNil(oldView.load(URLRequest(url: URL(string: "https://192.0.2.1/late")!)))

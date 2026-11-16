@@ -7,35 +7,20 @@ struct AegisRootView: View {
     @EnvironmentObject private var browser: BrowserSession
     @EnvironmentObject private var accountSession: AccessAccountSession
     @Environment(\.scenePhase) private var scenePhase
-    @State private var externalURL: URL?
-    @State private var showsExternalConfirmation = false
     @State private var address = ""
-    @State private var showsTabs = false
-    @State private var showsAgent = false
-    @State private var showsData = false
-    @State private var showsSettings = false
-    @State private var showsFilters = false
-    @State private var showsDownloads = false
-    @State private var presentedDownload: (url: URL, access: BrowserAccessDownload?)?
-    @State private var showsFind = false
-    @State private var showsReading = false
+    @StateObject private var presentation = BrowserPresentationCoordinator()
+    @StateObject private var closeCommand = BrowserWindowCloseCommand()
 
     @Environment(\.locale) private var localizationLocale
     var body: some View {
         let _ = localizationLocale
+        let presented = presentation.current
         Group {
             if let tab = browser.activeTab {
                 BrowserPane(
                     tab: tab,
                     address: $address,
-                    showsTabs: $showsTabs,
-                    showsAgent: $showsAgent,
-                    showsData: $showsData,
-                    showsSettings: $showsSettings,
-                    showsFilters: $showsFilters,
-                    showsDownloads: $showsDownloads,
-                    showsFind: $showsFind,
-                    showsReading: $showsReading
+                    presentation: presentation
                 )
             } else {
                 ContentUnavailableView {
@@ -47,7 +32,7 @@ struct AegisRootView: View {
                             .contentShape(Rectangle())
                     }.buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("new-tab-button")
-                    Button { showsTabs = true } label: {
+                    Button { presentation.request(.tabs) } label: {
                         Label("标签 \(browser.displayedTabs.count)", systemImage: "rectangle.stack")
                             .frame(minWidth: 44, minHeight: 44)
                             .contentShape(Rectangle())
@@ -55,71 +40,69 @@ struct AegisRootView: View {
                         .accessibilityValue(browser.selectedGroupName)
                         .accessibilityIdentifier("tabs-button")
                 }
-                .focusedSceneValue(\.browserKeyboardActions, BrowserKeyboardActions(
-                    newTab: { _ = browser.newTab() }, closeTab: {}, editAddress: {},
-                    find: {}, reload: {}, back: {}, forward: {}))
+                .focusedSceneValue(\.browserKeyboardActions, BrowserKeyboardActions.forWindow(browser, presentation: presentation))
             }
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .sheet(isPresented: $showsTabs) { TabSwitcher() }
-        .sheet(isPresented: $showsAgent) {
-            PageAssistantView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+        .background(BrowserWindowCloseAttachment(browser: browser, presentation: presentation, owner: closeCommand)
+            .frame(width: 0, height: 0))
+        .sheet(item: Binding(
+            get: { presentation.isDismissing || presented?.route.isAlert == true ? nil : presented },
+            set: { if $0 == nil, let presented { presentation.dismiss(presented.id) } }
+        ), onDismiss: {
+            if let presented {
+                if case let .downloads(_, access) = presented.route { browser.releasePresentedAccessDownload(access) }
+                presentation.didDismiss(presented.id)
+            }
+        }) { request in
+            presentationContent(request.route).onAppear { presentation.didPresent(request.id) }
         }
-        .sheet(isPresented: $showsData) { BrowserLibraryView(dataStore: browser.dataStore, workspaces: browser.workspaceStore) }
-        .sheet(isPresented: $showsSettings) { BrowserSettingsView() }
 #if DEBUG
         .task {
             let arguments = ProcessInfo.processInfo.arguments
             if arguments.contains("--ui-testing"), arguments.contains("--ui-testing-settings") {
-                showsSettings = true
+                presentation.request(.settings)
             }
         }
 #endif
-        .sheet(isPresented: $showsReading) { ReadingLibraryView() }
-        .sheet(item: $browser.pendingMarkdown) { document in MarkdownReaderView(initial: document) }
-        .sheet(isPresented: $showsFilters) { CurrentWebsiteView().environmentObject(accountSession) }
-        .sheet(isPresented: $showsDownloads, onDismiss: { presentedDownload = nil; browser.pendingDownloadURL = nil }) {
-            DownloadsView(initialURL: presentedDownload?.url, protectedContext: presentedDownload?.access)
+        .onReceive(browser.markdownRequests) { event in
+            guard let document = browser.consumePendingMarkdown(documentID: event.id) else { return }
+            presentation.request(.markdown(document))
         }
-        .sheet(isPresented: $showsFind) {
-            if let tab = browser.activeTab { FindInPageView(tab: tab).id(tab.id) }
+        .onReceive(browser.downloadRequests) { event in
+            guard let download = browser.consumePendingDownload(eventID: event.id) else { return }
+            presentation.request(.downloads(download.url, download.access))
         }
-        .onChange(of: browser.pendingDownloadURL) { _, url in
-            guard let url, !showsDownloads else { return }
-            presentedDownload = (url, browser.pendingAccessDownload)
-            showsDownloads = true
-        }
-        .onChange(of: browser.activeTabID) { _, _ in updateAddress(); showsFind = false }
-        .onChange(of: browser.profile) { _, profile in
+        .onChange(of: browser.activeTabID) { _, _ in
             updateAddress()
-            showsAgent = false
-            showsData = false
-            showsDownloads = false
-            showsFind = false
+            presentation.invalidate { if case .find = $0 { true } else { false } }
+        }
+        .onChange(of: browser.isWindowClosed) { _, closed in
+            if closed { presentation.closeWindow() }
+        }
+        .onChange(of: browser.profile) { _, _ in
+            updateAddress()
+            presentation.invalidate { $0.isProfileBound }
             browser.pendingDownloadURL = nil
         }
         .onOpenURL { input in
             if input.isFileURL, MarkdownDocument.accepts(input) {
-                browser.pendingMarkdown = try? MarkdownDocument.read(input)
+                if let document = try? MarkdownDocument.read(input) { presentation.request(.markdown(document)) }
                 return
             }
             guard let url = ExternalPageLink.destination(input) else { return }
-            externalURL = url
-            showsExternalConfirmation = true
+            presentation.request(.external(url))
         }
-        .alert("在普通浏览中打开分享页面？", isPresented: $showsExternalConfirmation) {
-            Button("用普通标签打开") {
-                guard let externalURL else { return }
-                browser.switchProfile(to: .standard)
-                browser.newTab().load(externalURL)
-            }
-            Button("取消", role: .cancel) { externalURL = nil }
-        } message: { Text(externalURL?.absoluteString ?? "") }
+        .background(BrowserRouteAlert(request: presented, isDismissing: presentation.isDismissing,
+                                      makeAlert: makeAlert, onDismiss: { id in
+            presentation.dismiss(id)
+            presentation.didDismiss(id)
+        }).frame(width: 0, height: 0))
         .onAppear {
             updateAddress()
             consumeSharedURLIfPresent()
+            while let document = browser.consumePendingMarkdown() { presentation.request(.markdown(document)) }
+            while let download = browser.consumePendingDownload() { presentation.request(.downloads(download.url, download.access)) }
         }
         .task(id: scenePhase) {
             guard scenePhase == .active, !browser.profile.isPrivate else { return }
@@ -132,11 +115,70 @@ struct AegisRootView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else {
                 browser.persistSession()
-                showsAgent = false
-                showsFind = false
+                presentation.invalidate { $0.isDocumentBound }
                 return
             }
             consumeSharedURLIfPresent()
+        }
+    }
+
+    private func makeAlert(_ request: BrowserPresentationCoordinator.Request, finished: @escaping @MainActor () -> Void) -> UIAlertController {
+        presentation.didPresent(request.id)
+        let title: String
+        let message: String
+        switch request.route {
+        case let .external(url):
+            title = AegisLocalization.string("在普通浏览中打开分享页面？")
+            message = url.absoluteString
+        case let .privateBookmark(_, url, _):
+            title = AegisLocalization.string("修改已保存的收藏？")
+            message = AegisLocalization.string("此操作会在普通收藏中添加或移除下面的网址，退出私密浏览后仍然保留。") + "\n\n" + url.absoluteString
+        case let .windowError(error):
+            title = AegisLocalization.string("无法新建窗口"); message = error.text
+        default: return UIAlertController()
+        }
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        switch request.route {
+        case let .external(url):
+            alert.addAction(UIAlertAction(title: AegisLocalization.string("用普通标签打开"), style: .default) { _ in
+                presentation.dismiss(request.id)
+                browser.switchProfile(to: .standard)
+                browser.newTab().load(url)
+                finished()
+            })
+        case let .privateBookmark(id, url, epoch):
+            alert.addAction(UIAlertAction(title: AegisLocalization.string("确认修改"), style: .default) { _ in
+                if browser.profile.isPrivate, let tab = browser.activeTab,
+                   tab.id == id, tab.url == url, tab.navigationEpoch == epoch { browser.toggleBookmark(privateSaveConfirmed: true) }
+                presentation.dismiss(request.id); finished()
+            })
+        case .windowError:
+            alert.addAction(UIAlertAction(title: AegisLocalization.string("完成"), style: .default) { _ in
+                presentation.dismiss(request.id); finished()
+            })
+        default: break
+        }
+        if case .windowError = request.route { return alert }
+        alert.addAction(UIAlertAction(title: AegisLocalization.string("取消"), style: .cancel) { _ in
+            presentation.dismiss(request.id); finished()
+        })
+        return alert
+    }
+
+    @ViewBuilder private func presentationContent(_ route: BrowserPresentationCoordinator.Route) -> some View {
+        switch route {
+        case .tabs: TabSwitcher()
+        case .assistant: PageAssistantView().presentationDetents([.large]).presentationDragIndicator(.visible)
+        case .library: BrowserLibraryView(dataStore: browser.dataStore, workspaces: browser.workspaceStore)
+        case .settings: BrowserSettingsView()
+        case .website: CurrentWebsiteView().environmentObject(accountSession)
+        case let .downloads(url, access): DownloadsView(initialURL: url, protectedContext: access)
+        case let .find(id, instance):
+            if let tab = browser.activeTab, tab.id == id, tab.instanceID == instance { FindInPageView(tab: tab).id(tab.instanceID) }
+        case .reading: ReadingLibraryView()
+        case let .markdown(document): MarkdownReaderView(initial: document)
+        case .windows: BrowserWindowsView()
+        case .external, .privateBookmark, .windowError: EmptyView()
         }
     }
 
@@ -146,14 +188,13 @@ struct AegisRootView: View {
 
     private func consumeSharedURLIfPresent() {
         if let inbox = try? MarkdownShareInbox(), let value = try? inbox.consume() {
-            browser.pendingMarkdown = MarkdownDocument(title: value.title, text: value.text)
+            presentation.request(.markdown(MarkdownDocument(title: value.title, text: value.text)))
             return
         }
         guard let inbox = try? ShareInbox(),
               let envelope = try? inbox.consume()
         else { return }
-        externalURL = envelope.url
-        showsExternalConfirmation = true
+        presentation.request(.external(envelope.url))
     }
 }
 
@@ -165,22 +206,11 @@ private struct BrowserPane: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var tab: BrowserTab
-    @State private var managesWindows = false
-    @State private var windowError: AegisLocalizedMessage?
     @State private var toolbarCollapsed = false
     @Binding var address: String
-    @Binding var showsTabs: Bool
-    @Binding var showsAgent: Bool
-    @Binding var showsData: Bool
-    @Binding var showsSettings: Bool
-    @Binding var showsFilters: Bool
-    @Binding var showsDownloads: Bool
-    @Binding var showsFind: Bool
-    @Binding var showsReading: Bool
+    @ObservedObject var presentation: BrowserPresentationCoordinator
     @State private var addressFocused = false
     @State private var addressSelectionRequest = 0
-    @State private var confirmsPrivateBookmark = false
-    @State private var pendingBookmark: (id: UUID, url: URL, epoch: UInt64)?
 
     private var toolbarAtTop: Bool {
         UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
@@ -198,7 +228,7 @@ private struct BrowserPane: View {
                 Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal)
             }
             ActiveTabView(tab: tab, address: $address, addressIsEditing: addressFocused,
-                          onFind: { showsFind = true }, onScroll: updateToolbar)
+                          onFind: { keyboardActions?.find() }, onScroll: updateToolbar)
                 .id(tab.id)
         }
         .safeAreaInset(edge: toolbarAtTop ? .top : .bottom, spacing: 0) { toolbar }
@@ -206,23 +236,7 @@ private struct BrowserPane: View {
         .focusedSceneValue(\.browserKeyboardActions, keyboardActions)
         .onChange(of: tab.id) { _, _ in toolbarCollapsed = false; addressFocused = false }
         .onChange(of: tab.navigationEpoch) { _, _ in toolbarCollapsed = false }
-        .sheet(isPresented: $managesWindows) { BrowserWindowsView() }
-        .alert("无法新建窗口", isPresented: Binding(get: { windowError != nil }, set: { if !$0 { windowError = nil } })) {
-            Button("完成") { windowError = nil }
-        } message: { Text(windowError?.text ?? "") }
-        .alert("修改已保存的收藏？", isPresented: $confirmsPrivateBookmark) {
-            Button("确认修改") {
-                guard let pendingBookmark, browser.profile.isPrivate,
-                      tab.id == pendingBookmark.id, tab.url == pendingBookmark.url,
-                      tab.navigationEpoch == pendingBookmark.epoch else { return }
-                browser.toggleBookmark(privateSaveConfirmed: true)
-                self.pendingBookmark = nil
-            }
-            Button("取消", role: .cancel) { pendingBookmark = nil }
-        } message: {
-            Text(AegisLocalization.string("此操作会在普通收藏中添加或移除下面的网址，退出私密浏览后仍然保留。")
-                 + "\n\n" + (pendingBookmark?.url.absoluteString ?? ""))
-        }
+
     }
 
     private func updateToolbar(_ collapsed: Bool) {
@@ -231,23 +245,16 @@ private struct BrowserPane: View {
     }
 
     private func editAddress() {
+        guard let current = browser.activeTab, !current.isDisposed else { return }
         toolbarCollapsed = false
-        address = tab.addressBarURL?.absoluteString ?? address
+        address = current.addressBarURL?.absoluteString ?? address
         addressFocused = true
         addressSelectionRequest += 1
     }
 
     private var keyboardActions: BrowserKeyboardActions? {
-        guard !showsTabs, !showsAgent, !showsData, !showsSettings, !showsFilters,
-              !showsDownloads, !showsFind, !managesWindows else { return nil }
-        return BrowserKeyboardActions(
-            newTab: { _ = browser.newTab() },
-            closeTab: { browser.close(tab.id) },
-            editAddress: editAddress,
-            find: { showsFind = true },
-            reload: { tab.reload() },
-            back: { tab.goBack() },
-            forward: { tab.goForward() })
+        BrowserKeyboardActions.forWindow(browser, presentation: presentation, editAddress: editAddress)
+
     }
 
     /// 浏览时只显示主机名；输入和辅助功能始终可取得完整网址。
@@ -296,7 +303,7 @@ private struct BrowserPane: View {
             }
             HStack(spacing: 0) {
                 if !isCollapsed && !addressFocused {
-                    Button { showsFilters = true } label: {
+                    Button { presentation.request(.website) } label: {
                         Image(systemName: browser.profile.isPrivate ? "eye.slash.fill" : "shield.lefthalf.filled")
                             .foregroundStyle(browser.profile.isPrivate ? Color.purple : Color.secondary)
                             .frame(width: 44, height: 44)
@@ -309,6 +316,7 @@ private struct BrowserPane: View {
                                     displayText: displayedAddress, displayAddress: tab.addressBarURL?.absoluteString,
                                     selectionRequest: addressSelectionRequest) { destination in
                     browser.navigate(address: destination)
+                    browser.activeTab?.webView.becomeFirstResponder()
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 44)
                 .padding(.horizontal, addressFocused || isCollapsed ? 14 : 0)
@@ -336,7 +344,7 @@ private struct BrowserPane: View {
                     tab.webView.becomeFirstResponder()
                 }.frame(minWidth: 44, minHeight: 44)
             } else {
-                Button { showsTabs = true } label: {
+                Button { presentation.request(.tabs) } label: {
                     ZStack {
                         Image(systemName: "square.on.square")
                         Text(browser.displayedTabs.count.formatted())
@@ -377,20 +385,19 @@ private struct BrowserPane: View {
                 }.accessibilityIdentifier("profile-menu")
             }
             Section {
-                Button("资料", systemImage: "books.vertical") { showsData = true }
+                Button("资料", systemImage: "books.vertical") { presentation.request(.library) }
                     .accessibilityIdentifier("data-button")
-                Button("AI 助手", systemImage: "sparkles") { showsAgent = true }
+                Button("AI 助手", systemImage: "sparkles") { presentation.request(.assistant) }
                     .disabled(!browser.agentIsAvailable)
                     .accessibilityIdentifier("agent-button")
-                Button("下载", systemImage: "arrow.down.circle") { showsDownloads = true }.accessibilityIdentifier("downloads-button")
-                Button("阅读库", systemImage: "text.book.closed") { showsReading = true }
+                Button("下载", systemImage: "arrow.down.circle") { presentation.request(.downloads(nil, nil)) }.accessibilityIdentifier("downloads-button")
+                Button("阅读库", systemImage: "text.book.closed") { presentation.request(.reading) }
                     .accessibilityIdentifier("reading-library-button")
             }
             Menu {
                 Button(browser.bookmarkIsActive ? "移除收藏" : "添加收藏", systemImage: browser.bookmarkIsActive ? "star.fill" : "star") {
                     if browser.profile.isPrivate, let url = tab.url {
-                        pendingBookmark = (tab.id, url, tab.navigationEpoch)
-                        confirmsPrivateBookmark = true
+                        presentation.request(.privateBookmark(tab.id, url, tab.navigationEpoch))
                     } else { browser.toggleBookmark() }
                 }.accessibilityIdentifier("toggle-bookmark")
                 Button("前进", systemImage: "chevron.right") { tab.goForward() }.disabled(!tab.canGoForward)
@@ -401,7 +408,7 @@ private struct BrowserPane: View {
                 } else if tab.url?.host != nil {
                     Button("临时允许本站安全资源（10 分钟）", systemImage: "shield.slash") { tab.temporarilyRestoreSecurityResources() }
                 }
-                Button("在页面中查找", systemImage: "doc.text.magnifyingglass") { showsFind = true }
+                Button("在页面中查找", systemImage: "doc.text.magnifyingglass") { presentation.request(.find(tab.id, tab.instanceID)) }
                     .accessibilityIdentifier("find-in-page")
                 if let url = tab.url, ["http", "https"].contains(url.scheme ?? "") {
                     ShareLink(item: url) { Label("分享页面", systemImage: "square.and.arrow.up") }
@@ -415,8 +422,8 @@ private struct BrowserPane: View {
             } label: { Label("页面操作", systemImage: "doc.text") }
                 .accessibilityIdentifier("page-actions")
             Section {
-                BrowserWindowActions(managesWindows: $managesWindows, error: $windowError)
-                Button("设置", systemImage: "gearshape") { showsSettings = true }
+                BrowserWindowActions(managesWindows: Binding(get: { false }, set: { if $0 { presentation.request(.windows) } }), error: Binding(get: { nil }, set: { if let error = $0 { presentation.request(.windowError(error)) } }))
+                Button("设置", systemImage: "gearshape") { presentation.request(.settings) }
                     .accessibilityIdentifier("open-browser-settings")
             }
         } label: {

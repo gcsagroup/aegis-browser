@@ -64,7 +64,7 @@ struct ReadingLibraryView: View {
             .searchable(text: $query, prompt: "搜索标题、正文、批注或译文")
             .sheet(isPresented: $showsMarkdown) { MarkdownReaderView() }
             .localizedNavigationTitle("阅读与批注")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.accessibilityIdentifier("reading-library-done") } }
         }
         .fullScreenCover(item: $draft) { ReadingEditor(record: $0) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf]) { result in

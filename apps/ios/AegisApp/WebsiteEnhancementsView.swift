@@ -514,7 +514,7 @@ struct CurrentWebsiteView: View {
         )
           .id(tab.id)
           .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
-          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.accessibilityIdentifier("website-done") } }
       }
     }
   }
@@ -562,7 +562,7 @@ private struct CurrentWebsitePanel: View {
       NavigationLink("保护明细") {
         Form { detailedControls }
           .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
-          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: onDone) } }
+          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: onDone).accessibilityIdentifier("website-details-done") } }
       }.accessibilityIdentifier("site-details")
     }
     .onAppear { if let url = tab.url { paused = TrackingProtection.isExcepted(url) } }

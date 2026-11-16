@@ -3,11 +3,16 @@ import AgentKit
 import BrowserKit
 import SwiftUI
 
-final class AegisAppDelegate: NSObject, UIApplicationDelegate {
+final class AegisAppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         _ = AccessDiagnosticArchive.hasPendingCleanup
         AegisFirebase.shared.start()
         return true
+    }
+
+    override func buildMenu(with builder: any UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        BrowserWindowCloseCommand.replaceCloseMenu(in: builder)
     }
 
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {
