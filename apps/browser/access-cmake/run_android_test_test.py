@@ -150,7 +150,7 @@ class AndroidRunnerTests(unittest.TestCase):
             self.assertTrue(options["check"])
             self.assertEqual(options["timeout"], 25)
             if argv[-2:] == ["shell", "/data/local/tmp/aegis-access.Abc123/contract"]:
-                raise subprocess.TimeoutExpired(argv, options["timeout"])
+                raise subprocess.TimeoutExpired(cmd="adb", timeout=options["timeout"])
             return real_run(argv, **options)
 
         with mock.patch.object(runner.subprocess, "run", side_effect=run):
