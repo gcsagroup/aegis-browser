@@ -53,3 +53,16 @@ arm64 构建与执行分布在两台主机。执行前校验了构建制品的 S
 [API 25 模拟器作业](https://github.com/quinn521/aegis-browser/actions/runs/43820147022/job/133141130940) 完成了 x86_64 编译，但 adb 等待 `sys.boot_completed` 时没有取得就绪结果，作业达到 30 分钟上限后取消。CTest 未启动，API 25 模拟器上的拒绝行为仍未验证。
 
 此前在 `b3a09156` 上，Windows 因无可用主机未执行，Android 因 NDK 下载超时未编译，当时只有模拟 adb 的证据。本次执行补齐了独立核心的编译与模拟器运行。Android 物理真机和三端浏览器产品闭环仍未验收。
+
+## T3 原生复验（2026-11-17）
+
+本轮复验 [#360 的合并提交 `367f98bc`](https://github.com/quinn521/aegis-browser/commit/367f98bc7f1eb813bd854688def3e18f34e50966)，源码树为 `cbadb5456b103f4f07c39331f26fe1e301b2686e`。[验证工作流](https://github.com/quinn521/aegis-browser/actions/runs/43914376943) 由 `edb49148` 触发。Windows 和 Android 构建作业分别检出并核对被测提交和源码树，使用 Debug、Ninja 及仓库注册的 `aegis_access_contract`。
+
+| 平台 | 编译与运行 | CTest 实际结果 | 测试程序 SHA-256 |
+| --- | --- | --- | --- |
+| Windows x64 | [Windows Server 2025 原生作业](https://github.com/quinn521/aegis-browser/actions/runs/43914376943/job/133464470368) 使用 `windows-x64`、clang-cl 20.1.8、Windows SDK 10.0.26100.0、CMake/CTest 4.4.5。编译清单中 11 个 C++ 源文件，`dumpbin` 确认 x64，随后在同一主机执行 | 1/1 通过，892 项断言，退出码 0 | `e846da00db62a377c450c25661e1498e4818fef286d80c6766a1cb48f5e0f020` |
+| Android arm64-v8a | [NDK 构建作业](https://github.com/quinn521/aegis-browser/actions/runs/43914376943/job/133464470611) 在 Ubuntu 24.04 使用 `android-arm64`、NDK r30（30.0.16248370）、Clang 21.0.0、CMake 3.31.6，编译清单中 11 个 C++ 源文件。macOS 上的 CTest 3.31.10 经 adb 将该 ELF 推送到 API 36 arm64-v8a 模拟器并执行 | [1/1 通过，892 项断言](evidence/367f98bc-android-arm64-ctest.xml)，退出码 0 | `2619bc01e1628afa0320befbc1ca95686d2e2ffc0ed16ddc4d77967e2a63e7aa` |
+
+Android 编译目标为 `aarch64-none-linux-android26`，生成的 CTest 注册参数为 `arm64-v8a 26`。执行前校验了构建包内的提交标识、ELF 和注册文件摘要。跨主机执行仅映射解释器、该提交的测试脚本及 ELF 路径，保留测试名、ABI、最低 API 和 210 秒超时。[原始 JUnit](evidence/367f98bc-android-arm64-ctest.xml) 记录了设备 ABI、API、推送和断言结果。
+
+本轮两项独立核心复验均已完成，无剩余阻塞。Android 物理真机和三端完整浏览器产品验收仍未完成。本轮未重跑 x86_64 的 API 25 部署前拒绝及 API 26、36 的 CTest；这些模拟器的[上轮结果](https://github.com/quinn521/aegis-browser/actions/runs/43864304043) 归属 #360 的 PR HEAD `0e3d6e46`。
