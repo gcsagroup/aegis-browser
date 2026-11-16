@@ -56,10 +56,17 @@ if(BUILD_TESTING)
   target_include_directories(aegis_access_native_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
   target_link_libraries(aegis_access_native_test PRIVATE aegis_access_core)
   if(ANDROID)
+    # The legacy NDK toolchain sets CMAKE_SYSTEM_VERSION to 1 and uses
+    # ANDROID_PLATFORM_LEVEL for the API in the compiler target.
+    if(DEFINED ANDROID_PLATFORM_LEVEL)
+      set(test_min_api "${ANDROID_PLATFORM_LEVEL}")
+    else()
+      set(test_min_api "${CMAKE_SYSTEM_VERSION}")
+    endif()
     add_test(NAME aegis_access_contract
              COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/run_android_test.py"
                      "$<TARGET_FILE:aegis_access_native_test>"
-                     "${ANDROID_ABI}" "${CMAKE_SYSTEM_VERSION}")
+                     "${ANDROID_ABI}" "${test_min_api}")
   else()
     add_test(NAME aegis_access_contract COMMAND aegis_access_native_test)
   endif()
