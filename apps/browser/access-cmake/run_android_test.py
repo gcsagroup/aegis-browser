@@ -3,20 +3,44 @@
 import os
 from pathlib import Path
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404 - only the validated local adb tool is executed, without a shell.
 import sys
 
 
-def adb(*args, **kwargs):
-    return subprocess.run(
-        [os.environ.get("ADB", "adb"), *args],
-        check=True,
-        timeout=25,
-        **kwargs,
-    )
+class Adb:
+    def __init__(self):
+        configured = os.environ.get("ADB", "adb")
+        if "\0" in configured or Path(configured).name.lower() not in {"adb", "adb.exe"}:
+            raise ValueError("ADB must name the adb executable, not a command or another program")
+        found = shutil.which(configured)
+        if not found:
+            raise ValueError(f"Android adb executable not found: {configured!r}")
+        executable = Path(found).resolve(strict=True)
+        if (executable.name.lower() not in {"adb", "adb.exe"}
+                or not executable.is_file() or not os.access(executable, os.X_OK)):
+            raise ValueError(f"Not an Android adb executable: {executable}")
+        self.executable = str(executable)
+
+    def run(self, *args, capture_output=False, text=False):
+        if any(not isinstance(arg, str) or "\0" in arg for arg in args):
+            raise ValueError("adb arguments must be literal non-NUL strings")
+        # ADB/PATH are trusted local SDK configuration, never device/server input.
+        # The executable is resolved once and basename-checked above; callers use
+        # fixed adb operations. Local paths stay absolute argv data, and the only
+        # variable remote shell path is strictly validated after mktemp below.
+        # Dynamic-argv/env audit rules cannot infer these boundaries. Offline
+        # tests exercise real argv delivery, rejected tools and remote injection.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        return subprocess.run([self.executable, *args], shell=False, check=True, timeout=25,  # nosec B603
+                              capture_output=capture_output, text=text)
 
 
 def main(binary, abi, min_api):
+    binary = Path(binary).resolve(strict=True)
+    if not binary.is_file():
+        raise ValueError(f"Android test binary is not a regular file: {binary}")
+    adb = Adb().run
     print("Android test device:", flush=True)
     serial = adb("get-serialno", capture_output=True, text=True).stdout.strip()
     if not serial or serial == "unknown":

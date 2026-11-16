@@ -40,6 +40,8 @@
 
 `begin → unbound(allowSequence)`；app load 返回对象或 `didStart → bound(WKNavigation identity)`；重定向只更新已确认同链；新 policy action 创建新 attempt。`commit/finish/fail/stop/store teardown → retire matching identity`。安全重试仅消费仍匹配的 failureID/recoveryOperationID，不因提取改变现有重试资格或 host-coordinator 调用顺序。
 
+后退/前进保留遍历语义。应用按钮在 `navigateHistory` 捕获原 WebView、起始 item、精确目标 item 和 navigationID；可选代理失败只在同视图、同起始历史上下文和同代次下重新 `go(to:)`，不以 URL 重新 `load` 或追加历史。新导航、Stop、换库或历史上下文变化使旧恢复失效。WebKit 自发的手势或网页 `history.back/forward` 不公开精确目标，因此可选准备不能取消其遍历后再猜测目标；显式/强制代理仍拦截并保持 fail closed。`AccessNavigationRecoveryTests` 通过真实 HTTP 页与 WebKit 回调验证同 URL 不同 item、双向历史、迟到恢复、上下文变化和强制保护。
+
 ### C：页面助手
 
 `selection → reading(captured identities) → preview → consent(captured config, goal, sources, lifetime) → sending → completed`。选择变化、文档变化、profile/窗口失效、close/cancel 转入 revoked/idle；读取和模型 task 的晚到回调被忽略。重试重新建立 consent；完成结果对应发送时的 goal/sources，保留现有保存/导出确认。

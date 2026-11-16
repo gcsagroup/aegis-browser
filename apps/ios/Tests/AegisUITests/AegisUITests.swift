@@ -155,7 +155,7 @@ final class AegisUITests: XCTestCase {
         model.tap(); model.clearAndType("aegis-simulator-fixture")
         app.buttons["save-model"].tap()
         closeModelSettings(app)
-        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        enterPrivateBrowsing(in: app)
         navigate(app, to: "http://127.0.0.1:8768/article?case=" + marker)
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
         tapBrowserButton("agent-button", in: app)
@@ -199,7 +199,7 @@ final class AegisUITests: XCTestCase {
         app.terminate(); app.launchArguments += ["--ui-testing-assistant-history-keep", "--ui-testing-windows-keep"]; app.launch()
         XCTAssertTrue(app.buttons["page-protection"].waitForExistence(timeout: 8))
         XCTAssertFalse((app.buttons["page-protection"].value as? String ?? "").contains("私密浏览"))
-        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        enterPrivateBrowsing(in: app)
         XCTAssertEqual(app.textFields["address-field"].value as? String, "aegis://start")
         tapBrowserButton("agent-button", in: app); app.buttons["assistant-history"].tap()
         let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
@@ -816,7 +816,9 @@ final class AegisUITests: XCTestCase {
         model.tap(); model.clearAndType("stream-slow")
         app.buttons["save-model"].tap()
         closeModelSettings(app)
-        tapBrowserButton("agent-button", in: app); app.buttons["read-pages"].tap()
+        tapBrowserButton("agent-button", in: app)
+        let read = app.buttons["read-pages"]
+        XCTAssertTrue(read.waitForExistence(timeout: 5)); read.tap()
         XCTAssertTrue(app.staticTexts["等待确认发送"].waitForExistence(timeout: 8))
         let analyze = app.buttons["analyze-pages"]
         XCTAssertTrue(scrollUntilVisible(analyze, in: app)); analyze.tap()
@@ -1018,23 +1020,75 @@ final class AegisUITests: XCTestCase {
     }
 
     private func browserButton(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        browserButtons(identifier, in: app).firstMatch
+    }
+
+    private func browserButtons(_ identifier: String, in app: XCUIApplication) -> XCUIElementQuery {
         let labels = ["reading-library-button": ["阅读库"], "open-browser-settings": ["设置"],
                       "agent-button": ["AI 助手"], "data-button": ["资料"], "downloads-button": ["下载"],
                       "profile-menu": ["普通", "私密"], "page-actions": ["页面操作"],
                       "toggle-bookmark": ["添加收藏", "移除收藏"]]
-        guard let labels = labels[identifier] else { return app.buttons[identifier] }
-        return app.buttons.matching(NSPredicate(format: "identifier == %@ OR label IN %@", identifier, labels)).firstMatch
+        guard let labels = labels[identifier] else { return app.buttons.matching(identifier: identifier) }
+        return app.buttons.matching(NSPredicate(format: "identifier == %@ OR label IN %@", identifier, labels))
     }
 
     private func tapBrowserButton(_ identifier: String, in app: XCUIApplication) {
         let button = browserButton(identifier, in: app)
         if !button.exists || !button.isHittable {
-            let more = app.buttons["browser-more"]
-            XCTAssertTrue(more.waitForExistence(timeout: 8))
-            more.tap()
+            tapVisibleBrowserControl(app.buttons.matching(identifier: "browser-more"), in: app, timeout: 8)
         }
-        XCTAssertTrue(button.waitForExistence(timeout: 5))
-        button.tap()
+        let parentAction = app.buttons["新建标签页"]
+        let leavesParentMenu = parentAction.exists && parentAction.isHittable
+        tapVisibleBrowserControl(browserButtons(identifier, in: app), in: app)
+        if leavesParentMenu {
+            let exited = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                !parentAction.exists || !parentAction.isHittable
+            }, object: app)
+            XCTAssertEqual(XCTWaiter.wait(for: [exited], timeout: 5), .completed)
+        }
+    }
+
+    private func tapVisibleBrowserControl(_ choices: XCUIElementQuery, in app: XCUIApplication,
+                                          timeout: TimeInterval = 5, ready: @escaping () -> Bool = { true }) {
+        var previousFrame = CGRect.null
+        var settledFrame = CGRect.null
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard ready() else { previousFrame = .null; return false }
+            let frames = choices.allElementsBoundByIndex.compactMap { choice -> CGRect? in
+                guard choice.exists, choice.isEnabled, choice.isHittable else { return nil }
+                let frame = choice.frame
+                return !frame.isEmpty && app.frame.contains(frame) ? frame : nil
+            }
+            // A native Menu can expose virtual and rendered nodes for one row.
+            // Resolve one visible hit region, without depending on that AX topology.
+            guard let frame = frames.first, frames.allSatisfy({ $0 == frame }) else {
+                previousFrame = .null
+                return false
+            }
+            defer { previousFrame = frame }
+            guard frame == previousFrame else { return false }
+            settledFrame = frame
+            return true
+        }, object: app)
+        let result = XCTWaiter.wait(for: [visible], timeout: timeout)
+        if result != .completed { add(XCTAttachment(string: app.debugDescription)) }
+        XCTAssertEqual(result, .completed)
+        guard result == .completed else { return }
+        // Send one physical tap to the settled row. Re-activating a virtual Menu
+        // node can leave the row highlighted without invoking its action.
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+            dx: settledFrame.midX - app.frame.minX, dy: settledFrame.midY - app.frame.minY)).tap()
+    }
+
+    private func enterPrivateBrowsing(in app: XCUIApplication) {
+        tapBrowserButton("profile-menu", in: app)
+        let mainMenuAction = app.buttons["新建标签页"]
+        tapVisibleBrowserControl(app.buttons.matching(NSPredicate(format: "label == %@", "私密")), in: app) {
+            !mainMenuAction.exists || !mainMenuAction.isHittable
+        }
+        let switched = XCTNSPredicateExpectation(predicate: NSPredicate(
+            format: "value == %@", "私密浏览：不记录历史，保存和发送资料前需确认"), object: app.buttons["page-protection"])
+        XCTAssertEqual(XCTWaiter.wait(for: [switched], timeout: 5), .completed)
     }
 
     private func revealAssistantHistory(in app: XCUIApplication) {
