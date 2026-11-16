@@ -200,6 +200,24 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         return lastMainFrameFailure?.url ?? url
     }
     private var pendingProxyRequest: URLRequest?
+    private var unavailableDefaultRoute: BrowserPendingAddressNavigation?
+
+    public func canTryDefaultRoute(for url: URL) -> Bool {
+        unavailableDefaultRoute != BrowserPendingAddressNavigation(navigationID: attempt.navigationID, url: url)
+    }
+
+    /// Resume only the unsent, safe request belonging to this exact automatic check.
+    public func continueWithoutDefaultRoute(_ pending: BrowserPendingAddressNavigation) {
+        guard matchesPendingAddressNavigation(pending), let request = pendingProxyRequest else { return }
+        unavailableDefaultRoute = pending
+        pendingAddressNavigation = nil
+        pendingProxyRequest = nil
+        if contentRuleList == nil || securityLists.count < 2 {
+            resumeAfterContentRules(request)
+        } else {
+            commitPreservingMethod(request, continuesAttempt: true)
+        }
+    }
     private var terminatingProxyDocuments = 0
     private var afterProxyDocumentStops: (@MainActor () -> Void)?
     private var documentDisposalCompletion: (@MainActor () -> Void)?
@@ -1248,29 +1266,26 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
     }
 
-    /// Content rules are not ready on the first recovery load. Fetch them without minting a new navigation.
-    private func scheduleRecoveryAfterRules(_ url: URL) {
+    /// Keep the original request and navigation identity while WebKit's initial rules load.
+    private func resumeAfterContentRules(_ request: URLRequest) {
         loadTask?.cancel()
         let generation = loadGeneration
-        let operationID = attempt.recoveryOperationID
-        let method = attempt.method
+        let navigationID = attempt.navigationID
         loadTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let list = try await TrackingProtection.shared.ruleList()
                 try Task.checkCancellation()
-                guard generation == self.loadGeneration, self.attempt.recoveryOperationID == operationID else { return }
+                guard generation == self.loadGeneration, self.attempt.navigationID == navigationID else { return }
                 self.contentRuleList = list
                 for category in ["mining", "fingerprinting"] {
                     self.securityLists[category] = try await self.securityRuleStore.list(category: category)
                 }
                 try Task.checkCancellation()
-                guard generation == self.loadGeneration, self.attempt.recoveryOperationID == operationID else { return }
-                var request = URLRequest(url: url)
-                request.httpMethod = method
+                guard generation == self.loadGeneration, self.attempt.navigationID == navigationID else { return }
                 self.commitPreservingMethod(request, continuesAttempt: true)
             } catch {
-                guard generation == self.loadGeneration, self.attempt.recoveryOperationID == operationID else { return }
+                guard generation == self.loadGeneration, self.attempt.navigationID == navigationID else { return }
                 self.isLoading = false
                 self.loadingErrorAllowsProxyRetry = false
                 self.loadingErrorPresentation = .resource("跟踪保护初始化失败，请重试。")
@@ -1459,7 +1474,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             guard contentRulesNavigationURL != requestURL else { return }
             contentRulesNavigationURL = requestURL
             if attempt.recoveryOperationID != nil {
-                scheduleRecoveryAfterRules(requestURL)
+                resumeAfterContentRules(navigationAction.request)
             } else {
                 load(requestURL)
             }
@@ -2647,7 +2662,11 @@ public final class BrowserSession: ObservableObject {
                 child.load(request)
                 return .opened(nil)
             }
-            guard !(self.hostCoordinator?.requiresProxyPreparation(tab: tab, url: url) ?? false),
+            // WebKit must deliver an unsafe request itself, in the existing store.
+            // Optional first-visit preparation is not a requirement to change route.
+            let needsProtectedPreparation = self.hostCoordinator?.requiresProxy(tab: tab, url: url) == true
+                && self.hostCoordinator?.requiresProxyPreparation(tab: tab, url: url) == true
+            guard !needsProtectedPreparation,
                   !(self.hostCoordinator?.wouldSwitchStore(tab: tab, url: url) ?? false) else { return .declined }
             let child = self.makeTab(profile: profile, suppliedConfiguration: configuration,
                                      originalStore: tab.originalWebsiteDataStore)

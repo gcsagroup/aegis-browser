@@ -1375,8 +1375,11 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
     }
 
     private func readDirectQuota(_ app: XCUIApplication, name: String) throws -> [String: UInt64] {
-        app.buttons["page-protection"].tap()
-        app.buttons["site-details"].tap()
+        app.buttons["browser-more"].tap()
+        tapMenuItem(labels: ["设置"], in: app)
+        let entry = app.buttons["access-usage-link"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.tap()
         let refresh = app.buttons["access-usage-refresh"]
         for _ in 0..<8 where !refresh.isHittable { app.swipeUp() }
         XCTAssertTrue(refresh.waitForExistence(timeout: 10))
@@ -1388,7 +1391,10 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
             values = [:]
             func visit(_ snapshot: XCUIElementSnapshot) {
                 for key in ["quota", "uploaded", "downloaded", "used", "remaining"] where snapshot.identifier == "access-usage-" + key {
-                    if let raw = snapshot.value as? String, let bytes = UInt64(raw) { values[key] = bytes }
+                    if let spoken = snapshot.value as? String,
+                       let bytes = UInt64(spoken.filter(\.isNumber)) {
+                        values[key] = bytes
+                    }
                 }
                 for child in snapshot.children { visit(child) }
             }
@@ -1400,6 +1406,7 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         let used = try XCTUnwrap(values["used"])
         XCTAssertEqual(used, try XCTUnwrap(values["uploaded"]) + XCTUnwrap(values["downloaded"]))
         XCTAssertEqual(values["remaining"], used < 10_000_000_000 ? 10_000_000_000 - used : 0)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.navigationBars.buttons["完成"].tap()
         return values
     }
@@ -1681,7 +1688,7 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         // the visible action again; a vanished banner is not a successful tap.
         retry = recoveryButton(app)
         if let retry {
-            let pending = retry.label == "通过代理打开"
+            let pending = retry.label == "隐藏位置并打开"
             let exposedTarget = ux["target"] as? String ?? "NOT_EXPOSED"
             let observedAddress = ux["observed_address"] as? String ?? "UNREADABLE"
             receipt["recovery_target"] = exposedTarget
@@ -1762,7 +1769,33 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         }
     }
 
-    private let recoveryLabels = ["通过代理打开", "通过代理重试"]
+    private let recoveryLabels = ["隐藏位置并打开", "隐藏位置并重试"]
+
+    private func isRecoveryAction(identifier: String, label: String) -> Bool {
+        recoveryLabels.contains(label) || (identifier == "page-load-proxy-retry" && label == "重试")
+    }
+
+    func testProtectedRetryIsRecognizedWhileOrdinaryRetryIsExcluded() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+        let field = app.textFields["address-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("http://127.0.0.1:64999/missing\n")
+        XCTAssertTrue(app.buttons["重试"].waitForExistence(timeout: 15))
+        XCTAssertNil(recoveryButton(app), "An ordinary retry must not be a proxy action")
+        app.buttons["address-location-privacy"].tap()
+        let protectedRetry = app.buttons["page-load-proxy-retry"]
+        XCTAssertTrue(protectedRetry.waitForExistence(timeout: 12))
+        XCTAssertEqual(protectedRetry.label, "重试")
+        let action = recoveryButton(app)
+        XCTAssertNotNil(action)
+        XCTAssertEqual(action?.label, "重试")
+        action?.coordinate.tap()
+        XCTAssertTrue(protectedRetry.waitForExistence(timeout: 12))
+    }
 
     private struct ObservedRecoveryAction {
         let label: String
@@ -1773,11 +1806,10 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         guard let snapshot = try? app.snapshot() else { return nil }
         let candidates = nativeDescendants(snapshot).filter {
             $0.elementType == .button && $0.isEnabled
-                && ($0.identifier == "page-load-proxy-retry" || recoveryLabels.contains($0.label))
+                && isRecoveryAction(identifier: $0.identifier, label: $0.label)
                 && !$0.frame.isEmpty && $0.frame.intersects(snapshot.frame)
         }
-        guard candidates.count == 1, let candidate = candidates.first,
-              recoveryLabels.contains(candidate.label) else { return nil }
+        guard candidates.count == 1, let candidate = candidates.first else { return nil }
         // Identifier propagation must never turn a container or an unrelated
         // descendant into a tap target. Require a unique native button and label.
         // isHittable can itself raise an XCTest failure while the pending
@@ -1787,7 +1819,7 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         guard let current = try? app.snapshot() else { return nil }
         let currentCandidates = nativeDescendants(current).filter {
             $0.elementType == .button && $0.isEnabled
-                && ($0.identifier == "page-load-proxy-retry" || recoveryLabels.contains($0.label))
+                && isRecoveryAction(identifier: $0.identifier, label: $0.label)
                 && !$0.frame.isEmpty && !$0.frame.isInfinite && !$0.frame.isNull
                 && current.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY))
         }
@@ -1806,18 +1838,18 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         let pending = nodes.first { $0.elementType == .staticText && $0.identifier == "page-load-pending-host" }
         let failed = nodes.first { $0.elementType == .staticText && $0.identifier == "page-load-failed-host" }
         let status = nodes.first { $0.elementType == .staticText && $0.identifier == "page-load-pending-status" }
-        let knownStatus = ["正在准备代理连接…", "正在连接此网址。你可以选择通过代理打开。"]
+        let knownStatus = ["正在准备连接…", "正在连接…"]
         let targetNode = pending ?? failed
         let targetValue = targetNode?.value as? String
         let target = targetValue ?? targetNode?.label
-        let controls = nodes.filter { $0.identifier == "page-load-proxy-retry" || recoveryLabels.contains($0.label) }
+        let controls = nodes.filter { isRecoveryAction(identifier: $0.identifier, label: $0.label) }
         return ["result": "OBSERVED", "observed_address": sanitizedURL(address?.value as? String ?? ""),
                 "target": target.map(sanitizedURL) ?? "NOT_EXPOSED",
                 "target_source": pending != nil ? "PENDING_NATIVE_HOST" : failed != nil ? "FAILED_NATIVE_HOST" : "NOT_EXPOSED",
                 "pending_status": status.map { knownStatus.contains($0.label) ? $0.label : "UNRECOGNIZED" } ?? "NOT_EXPOSED",
                 "recovery_controls": controls.prefix(8).map { item in
                     ["type": item.elementType.rawValue, "identifier_match": item.identifier == "page-load-proxy-retry",
-                     "label": recoveryLabels.contains(item.label) ? item.label : "UNRECOGNIZED",
+                     "label": isRecoveryAction(identifier: item.identifier, label: item.label) ? item.label : "UNRECOGNIZED",
                      "enabled": item.isEnabled, "frame": String(describing: item.frame)] as [String: Any]
                 }]
     }
@@ -1970,10 +2002,10 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
             if done.exists, done.isHittable { done.tap() }
             return ["result": "ROUTE_HOST_UNAVAILABLE", "menu_closed": !done.exists]
         }
-        let route = app.staticTexts["access-proxy-page-route"]
+        let route = app.staticTexts["access-site-proxy-connection"]
         let routeText = route.exists ? route.label : ""
         var result: [String: Any] = ["result": "OBSERVED", "host": routeHost.label.lowercased(),
-                                   "local_entry_ready": routeText == "本地代理入口已就绪；远端连接未验证",
+                                   "local_entry_ready": ["服务连接已就绪", "自动重试已连接"].contains(routeText),
                                    "remote_connection_verified": false]
         let connection = app.staticTexts["access-site-proxy-connection"]
         result["connection_ui"] = connection.exists ? connection.label : "UNAVAILABLE"

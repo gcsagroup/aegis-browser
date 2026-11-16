@@ -1405,6 +1405,14 @@ extension AccessNavigationRecoveryTests {
     }
 
     func testNewWindowPostDeclinesStoreSwitchWithoutSendingGetOrBody() async throws {
+        try await assertNewWindowPostDeclinesProtectedRoute(ready: true)
+    }
+
+    func testNewWindowPostDeclinesRequiredUnpreparedRouteWithoutSendingGetOrBody() async throws {
+        try await assertNewWindowPostDeclinesProtectedRoute(ready: false)
+    }
+
+    private func assertNewWindowPostDeclinesProtectedRoute(ready: Bool) async throws {
         let service = try PreservingRedirectOrigin(status: 307, finishRedirect: true)
         defer { service.stop() }
         let page = try await service.redirectURL().deletingLastPathComponent().appendingPathComponent("page")
@@ -1422,7 +1430,9 @@ extension AccessNavigationRecoveryTests {
         let coordinator = AccessHostStoreCoordinator()
         browser.hostCoordinator = coordinator
         let destination = try AccessSiteHost("localhost")
-        coordinator.registry.setEndpoint(readyEndpoint(), scopeID: "ordinary", host: destination, isPrivate: false)
+        if ready {
+            coordinator.registry.setEndpoint(readyEndpoint(), scopeID: "ordinary", host: destination, isPrivate: false)
+        }
         coordinator.setProxyEnabled(true, host: destination, scopeID: "ordinary", isPrivate: false)
         var target = try XCTUnwrap(URLComponents(url: page, resolvingAgainstBaseURL: false))
         target.host = "localhost"; target.path = "/kept"
@@ -1520,6 +1530,14 @@ extension AccessNavigationRecoveryTests {
     }
 
     func testAllowedNewWindowFormReachesFixtureAsOriginalPost() async throws {
+        try await assertAllowedNewWindowPost(coordinator: nil)
+    }
+
+    func testOptionalPreparationPreservesOriginalNewWindowPostWithoutReplay() async throws {
+        try await assertAllowedNewWindowPost(coordinator: OptionalWindowPreparation())
+    }
+
+    private func assertAllowedNewWindowPost(coordinator: (any BrowserHostStoreCoordinating)?) async throws {
         let service = try PreservingRedirectOrigin(status: 307, finishRedirect: true)
         defer { service.stop() }
         let page = try await service.redirectURL().deletingLastPathComponent().appendingPathComponent("page")
@@ -1535,6 +1553,15 @@ extension AccessNavigationRecoveryTests {
         let parent = try XCTUnwrap(session.activeTab)
         let window = try await attachPage(parent, at: page)
         defer { window.isHidden = true }
+        if coordinator != nil {
+            // A fresh public destination under default privacy has optional
+            // preparation, while the existing original route is still allowed.
+            let policy = AccessHostStoreCoordinator(defaultLocationPrivacy: true)
+            let publicURL = URL(string: "https://optional-popup.example.invalid/kept")!
+            XCTAssertTrue(policy.requiresProxyPreparation(tab: parent, url: publicURL))
+            XCTAssertFalse(policy.requiresProxy(tab: parent, url: publicURL))
+            session.hostCoordinator = coordinator
+        }
         _ = try await parent.webView.evaluateJavaScript("const f=document.forms[0]; f.action='/kept'; f.target='_blank'; f.requestSubmit(); true")
         await waitUntil({ session.activeTab?.id != parent.id }, timeout: 10)
         let child = try XCTUnwrap(session.activeTab)
@@ -1631,6 +1658,18 @@ private final class OpaqueFrameProbe: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.body as? String == "ready" { frame = message.frameInfo }
     }
+}
+
+@MainActor
+private final class OptionalWindowPreparation: BrowserHostStoreCoordinating {
+    func requiresProxyPreparation(tab: BrowserTab, url: URL) -> Bool { true }
+    func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool { false }
+    func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore? { nil }
+    func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError) {}
+    func pendingRecoveryInvalidated(tab: BrowserTab) {}
+    func tabClosed(_ tab: BrowserTab) {}
+    func ordinaryHostStores() -> [WKWebsiteDataStore] { [] }
+    func endPrivateSession(scopeID: String) {}
 }
 
 @MainActor

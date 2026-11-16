@@ -1,6 +1,55 @@
 import AccessKit
 import BrowserKit
 import Foundation
+import Darwin
+
+enum AccessLocalSite {
+    case loopback, localNetwork
+
+    /// Classify literal addresses and local names without resolving the destination.
+    static func classify(_ rawHost: String) -> Self? {
+        let host = rawHost.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))
+        if host == "localhost" || host.hasSuffix(".localhost") { return .loopback }
+        if host.hasSuffix(".local") || host == "home.arpa" || host.hasSuffix(".home.arpa") { return .localNetwork }
+        var v4 = in_addr()
+        if inet_aton(host, &v4) == 1 { return ipv4Scope(UInt32(bigEndian: v4.s_addr)) }
+        var v6 = in6_addr()
+        guard inet_pton(AF_INET6, host, &v6) == 1 else { return host.contains(".") ? nil : .localNetwork }
+        return withUnsafeBytes(of: v6) { bytes in
+            if bytes.prefix(15).allSatisfy({ $0 == 0 }), bytes[15] == 1 { return .loopback }
+            if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 255, bytes[11] == 255 {
+                return ipv4Scope(bytes.suffix(4).reduce(0) { ($0 << 8) | UInt32($1) })
+            }
+            if bytes[0] & 0xfe == 0xfc || (bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80) {
+                return .localNetwork
+            }
+            return nil
+        }
+    }
+
+    private static func ipv4Scope(_ address: UInt32) -> Self? {
+        if address >> 24 == 127 { return .loopback }
+        if address >> 24 == 10 || address >> 20 == 0xac1 ||
+            address >> 16 == 0xc0a8 || address >> 16 == 0xa9fe { return .localNetwork }
+        return nil
+    }
+
+}
+
+enum AccessSiteDisplayName {
+    static func localLabel(for rawHost: String) -> LocalizedStringResource? {
+        switch AccessLocalSite.classify(rawHost) {
+        case .loopback: return "本机页面"
+        case .localNetwork: return "局域网网站"
+        case nil: return nil
+        }
+    }
+
+    static func title(_ host: String?) -> String {
+        guard let host, !host.isEmpty else { return AegisLocalization.string("当前网站") }
+        return localLabel(for: host).map { AegisLocalization.string($0) } ?? host
+    }
+}
 
 /// Short intent-line ids. UI localizes; never conflate with connection copy.
 enum AccessSiteProxyIntentStatusId: String, Equatable, Sendable {
@@ -141,37 +190,37 @@ enum AccessSiteProxyToggleModel {
         )
     }
 
-    // MARK: - Copy (zh-Hans source keys; catalog can absorb later)
+    // MARK: - Localized copy (zh-Hans source keys)
 
     static func intentLine(for status: AccessSiteProxyIntentStatusId) -> String {
         switch status {
         case .noTrustedSite:
-            return "当前页不是可代理的网站"
+            return "此页面暂不支持"
         case .offBrowserDefault:
-            return "未使用本服务代理 / 使用浏览器原有连接"
+            return "使用浏览器原有连接"
         case .automaticConnected:
-            return "本站自动重试正在使用代理"
+            return "自动重试已连接"
         case .automaticUnavailable:
-            return "本站自动重试的代理连接不可用"
+            return "自动重试连接不可用"
         case .allowNotConnected:
-            return "本站代理已开启 · 连接尚未就绪"
+            return "已开启，等待连接"
         case .allowConnected:
-            return "本站代理已开启"
+            return "已为本站开启"
         case .blockLocalRefuse:
-            return "本站代理已本地拒绝"
+            return "已在本机停用"
         }
     }
 
     static func connectionLine(for status: AccessSiteProxyConnectionStatusId) -> String {
         switch status {
         case .idle:
-            return "连接：空闲"
+            return "使用浏览器原有连接"
         case .connecting:
-            return "连接：正在连接"
+            return "正在准备连接"
         case .ready:
-            return "连接：已就绪"
+            return "服务连接已就绪"
         case .unavailable:
-            return "连接：不可用"
+            return "连接暂不可用"
         }
     }
 
@@ -179,10 +228,10 @@ enum AccessSiteProxyToggleModel {
         switch attachment {
         case .notAttached:
             guard intent == .allow else { return nil }
-            return "尚未接入代理，当前页面仍使用原连接"
+            return "当前页面仍使用原连接"
         case .attachedUnavailable:
             // Bound auto-recovery may have no manual allow intent; still explain the fault.
-            return "代理请求失败，未切回原连接"
+            return "连接失败，未切回原连接"
         case .ready:
             return nil
         }

@@ -526,8 +526,6 @@ private struct CurrentWebsitePanel: View {
   let isPrivate: Bool
   let onDone: () -> Void
   @ObservedObject var accessSiteProxy: AccessSiteProxySessionStore
-  @EnvironmentObject private var accountSession: AccessAccountSession
-  @EnvironmentObject private var subscriptionUsage: AccessSubscriptionUsageSession
   @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
   @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var markdownDocument: MarkdownDocument?
@@ -583,22 +581,10 @@ private struct CurrentWebsitePanel: View {
       AccessSiteProxyToggleView(store: accessSiteProxy, url: tab.url, tab: tab)
         .onAppear { accessSiteProxy.hostRouting = hostStores }
         .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
-      if !isPrivate {
-        if subscriptionUsage.isSelected {
-          AccessSubscriptionUsageView(session: subscriptionUsage)
-        } else {
-          AccessAccountUsageView(session: accountSession)
-        }
-      } else {
-        Section("Access 账户额度") {
-          Text("私密会话不显示普通账户的额度；请在普通窗口查询。")
-            .font(.footnote).foregroundStyle(.secondary)
-        }
-      }
       AccessDevAllowBlockSectionView(store: accessSiteProxy, url: tab.url)
       if let url = tab.url, ScriptMatch.origin(url) != nil {
         Section {
-          Text(url.host ?? url.absoluteString).font(.headline).textSelection(.enabled)
+          Text(verbatim: AccessSiteDisplayName.title(url.host)).font(.headline).textSelection(.enabled)
           if isPrivate { Text("私密会话：网站规则与脚本仅保留在本次会话。").font(.footnote) }
         }
         WebsiteQuickRuleSection(store: store, tab: tab, url: url, message: $message)

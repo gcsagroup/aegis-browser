@@ -158,6 +158,7 @@ struct AegisRootView: View {
 }
 
 private struct BrowserPane: View {
+    @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
     @EnvironmentObject private var browser: BrowserSession
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -252,13 +253,36 @@ private struct BrowserPane: View {
     /// 浏览时只显示主机名；输入和辅助功能始终可取得完整网址。
     private var displayedAddress: String {
         guard let url = tab.addressBarURL, url.scheme != "aegis" else { return AegisLocalization.string("起始页") }
-        return url.host(percentEncoded: true) ?? url.absoluteString
+        guard let host = url.host(percentEncoded: true) else { return url.absoluteString }
+        if AccessLocalSite.classify(host) == .loopback {
+            return AccessSiteDisplayName.title(host)
+        }
+        return host
     }
 
     private var filterStatus: String {
         if !TrackingProtection.enabled { return AegisLocalization.string("广告过滤已关闭") }
         if let url = tab.url, TrackingProtection.isExcepted(url) { return AegisLocalization.string("此网站已暂停过滤") }
         return AegisLocalization.string("广告过滤已启用")
+    }
+
+    @ViewBuilder
+    private var locationPrivacyButton: some View {
+        let snapshot = hostStores.snapshot(for: tab, forLocationControl: true)
+        if let host = snapshot.host {
+            Button {
+                hostStores.setSiteProxyEnabled(!snapshot.toggleOn, for: tab, displayedHost: host, forLocationControl: true)
+            } label: {
+                Image(systemName: snapshot.toggleOn ? "location.slash.fill" : "location")
+                    .foregroundStyle(snapshot.toggleOn && snapshot.attachment == .ready ? Color.accentColor : .secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("隐藏地理位置")
+            .accessibilityValue(Text(LocalizedStringKey(AccessSiteProxyToggleModel.connectionLine(for: snapshot.connectionStatus))))
+            .accessibilityAddTraits(snapshot.toggleOn ? .isSelected : [])
+            .accessibilityIdentifier("address-location-privacy")
+        }
     }
 
     private var toolbar: some View {
@@ -291,6 +315,7 @@ private struct BrowserPane: View {
                 .onChange(of: addressFocused) { _, focused in
                     if focused { toolbarCollapsed = false }
                 }
+                if !addressFocused { locationPrivacyButton }
                 if !isCollapsed && !addressFocused {
                     Button {
                         if tab.isLoading { tab.stop() } else { tab.reload() }
@@ -419,6 +444,10 @@ struct ProxyRetryButton: UIViewRepresentable {
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.numberOfLines = 0
         button.accessibilityIdentifier = "page-load-proxy-retry"
+        var configuration = UIButton.Configuration.tinted()
+        configuration.cornerStyle = .medium
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+        button.configuration = configuration
         button.contentHorizontalAlignment = .leading
         button.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.action() }, for: .touchUpInside)
         return button
@@ -445,6 +474,8 @@ struct ProxyRetryButton: UIViewRepresentable {
 struct PageLoadFailureBanner: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var tab: BrowserTab
+    var locationPrivacyOn = false
+    var offersLocationService = true
     var autoRecoveryOn: Bool = false
     var autoRecoveryLine: String? = nil
     var setAutoRecovery: ((BrowserTab, Bool) -> Void)? = nil
@@ -457,51 +488,65 @@ struct PageLoadFailureBanner: View {
         if let error = tab.loadingError {
             VStack(alignment: .leading, spacing: 8) {
                 if let failure = tab.lastMainFrameFailure {
-                    Text(failure.url.host(percentEncoded: true) ?? failure.url.absoluteString)
+                    Text(verbatim: AccessSiteDisplayName.title(failure.url.host(percentEncoded: true)))
                         .font(.callout.weight(.semibold))
                         .accessibilityIdentifier("page-load-failed-host")
-                        .accessibilityValue(failure.url.absoluteString)
                 }
-                Text("页面加载失败：\(error)").font(.caption)
-                Button("重试") { tab.reload() }
-                if setAutoRecovery != nil {
-                    Toggle(AccessAutoRecoveryCopy.toggleTitle, isOn: Binding(
-                        get: { autoRecoveryOn },
-                        set: { setAutoRecovery?(tab, $0) }
-                    ))
-                    .accessibilityIdentifier("page-load-auto-recovery")
-                    Text(AccessAutoRecoveryCopy.explanation).font(.caption)
-                    Text(AccessAutoRecoveryCopy.scopeWarning).font(.caption)
-                    if let autoRecoveryLine {
-                        Text(autoRecoveryLine)
-                            .font(.caption)
-                            .accessibilityIdentifier("page-load-auto-recovery-status")
-                    }
-                }
-                if tab.loadingErrorAllowsProxyRetry {
-                    ProxyRetryButton(title: AegisLocalization.string("通过代理重试")) { proxyRetry(tab) }
+                Label("页面暂时无法打开", systemImage: "exclamationmark.circle")
+                    .font(.headline)
+                if tab.loadingErrorAllowsProxyRetry && (locationPrivacyOn || offersLocationService) {
+                    ProxyRetryButton(title: AegisLocalization.string(locationPrivacyOn ? "重试" : "隐藏位置并重试")) { proxyRetry(tab) }
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
+                if !locationPrivacyOn || !tab.loadingErrorAllowsProxyRetry {
+                    Button("重试") { tab.reload() }.frame(minHeight: 44)
+                }
+                if let autoRecoveryLine {
+                    Text(LocalizedStringKey(autoRecoveryLine))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("page-load-auto-recovery-status")
+                }
+                DisclosureGroup("错误详情") {
+                    if let host = tab.lastMainFrameFailure?.url.host,
+                       AccessSiteDisplayName.localLabel(for: host) != nil {
+                        Text("请检查本地服务是否可用。").font(.caption)
+                    } else {
+                        Text("页面加载失败：\(error)").font(.caption).textSelection(.enabled)
+                    }
+                    if setAutoRecovery != nil {
+                        Toggle(LocalizedStringKey(AccessAutoRecoveryCopy.toggleTitle), isOn: Binding(
+                            get: { autoRecoveryOn },
+                            set: { setAutoRecovery?(tab, $0) }
+                        ))
+                        .accessibilityIdentifier("page-load-auto-recovery")
+                        Text(LocalizedStringKey(AccessAutoRecoveryCopy.explanation)).font(.caption)
+                        Text(LocalizedStringKey(AccessAutoRecoveryCopy.scopeWarning)).font(.caption)
+                    }
+                }
+
             }
             .padding(12)
-            .foregroundStyle(.red)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("page-load-error")
-        } else if let pending = tab.pendingAddressNavigation, tab.matchesPendingAddressNavigation(pending),
+        } else if (offersLocationService || addressProxyPreparing), let pending = tab.pendingAddressNavigation,
+                  tab.matchesPendingAddressNavigation(pending),
                   let openAddressViaProxy {
             VStack(alignment: .leading, spacing: 8) {
-                Text(pending.url.host(percentEncoded: true) ?? pending.url.absoluteString)
+                Text(verbatim: AccessSiteDisplayName.title(pending.url.host(percentEncoded: true)))
                     .font(.callout.weight(.semibold))
                     .accessibilityIdentifier("page-load-pending-host")
-                    .accessibilityValue(pending.url.absoluteString)
-                Text(AegisLocalization.string(addressProxyPreparing ? "正在准备代理连接…" : "正在连接此网址。你可以选择通过代理打开。"))
+                Text(AegisLocalization.string(addressProxyPreparing ? "正在准备连接…" : "正在连接…"))
                     .font(.caption)
                     .accessibilityIdentifier("page-load-pending-status")
-                ProxyRetryButton(title: AegisLocalization.string("通过代理打开")) { openAddressViaProxy(tab, pending) }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .disabled(addressProxyPreparing)
+                if !addressProxyPreparing {
+                    ProxyRetryButton(title: AegisLocalization.string("隐藏位置并打开")) { openAddressViaProxy(tab, pending) }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
             }
             .padding(12)
             .accessibilityElement(children: .contain)
@@ -524,6 +569,8 @@ private struct ActiveTabView: View {
         VStack(spacing: 0) {
             PageLoadFailureBanner(
                 tab: tab,
+                locationPrivacyOn: hostStores.snapshot(for: tab, forLocationControl: true).toggleOn,
+                offersLocationService: hostStores.offersLocationService,
                 autoRecoveryOn: hostStores.snapshot(for: tab).autoRecoveryEnabled,
                 autoRecoveryLine: hostStores.snapshot(for: tab).autoRecoveryLine,
                 setAutoRecovery: { failed, enabled in

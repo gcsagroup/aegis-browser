@@ -129,6 +129,7 @@
 		5C8B2D0685911D3B6C598530 /* AccessHTTPConnectError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037C51E582A13D84AA1C122E /* AccessHTTPConnectError.swift */; };
 		5C901E7B8FC0791C7D5EDE36 /* AccessSiteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14CB480FBDB81848B1B7F0E /* AccessSiteIntent.swift */; };
 		5DF62DBA94A18602DE5C64AA /* BrowserLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377FD9FAC5FA036BC6F4BA0D /* BrowserLibraryView.swift */; };
+		5DF6C5DD65244348EE137046 /* AccessUsagePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE69F147725CCB975EFDA4B /* AccessUsagePage.swift */; };
 		5E0260208A956B2D7C036DB8 /* icon-256.png in Resources */ = {isa = PBXBuildFile; fileRef = 79B8057C45E31C106CCBD50F /* icon-256.png */; };
 		5E94F6A20FEE46649FAE643D /* FirebaseInstallationCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76362E1332AEE6CE280B693 /* FirebaseInstallationCleanup.swift */; };
 		5F330B083DC9F2371801C627 /* AccessDevAllowBlockSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DFE3B27F6365B330F0E739 /* AccessDevAllowBlockSectionView.swift */; };
@@ -188,6 +189,7 @@
 		838C5737D8815AB996BC45E6 /* AgentContractCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E3D6DAEB88166AA1F5B336 /* AgentContractCodec.swift */; };
 		83D2FC94549BF491098DFAF2 /* AegisEmbeddedCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 40E16AA269A91C551848C9F3 /* AegisEmbeddedCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		840B56758529F2B35742BBF9 /* SafariReadOnlyGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162273D7FA6961C1D03FB8CD /* SafariReadOnlyGateTests.swift */; };
+		857C11DBFB6FC8DD89F67A46 /* AccessUsageSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C6CF9E940DE74ED2C5C5B /* AccessUsageSummaryView.swift */; };
 		86BF60B407B9E218F98DCAE5 /* ModelClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1246D801533AFA1F4A96EBA5 /* ModelClientTests.swift */; };
 		8783373417B125F59C243517 /* AegisRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC674B39EE41277890C67F8 /* AegisRootView.swift */; };
 		8946A639356E25B573D8FE76 /* AccessGoEmbeddedCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E32CFDCF103DF2CE4B825E4E /* AccessGoEmbeddedCore.swift */; };
@@ -544,6 +546,7 @@
 		0B0D310258CB99216B852E7F /* AccessXrayArchitecture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayArchitecture.swift; sourceTree = "<group>"; };
 		0C34171E4342B874705C4B95 /* AgentContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContractTests.swift; sourceTree = "<group>"; };
 		0CC213A9D5D231E96A959722 /* AccessSiteSessionRequestRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionRequestRoute.swift; sourceTree = "<group>"; };
+		0CE69F147725CCB975EFDA4B /* AccessUsagePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessUsagePage.swift; sourceTree = "<group>"; };
 		0CF1474EAC3EC76E13129569 /* ThirdPartyNotices.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdPartyNotices.txt; sourceTree = "<group>"; };
 		0D21D9714182E32AD3DD6145 /* AccessHTTPSInboundTLSProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundTLSProviding.swift; sourceTree = "<group>"; };
 		0D3FD32CB43DF1561D037997 /* AccessHTTPRealityPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPRealityPath.swift; sourceTree = "<group>"; };
@@ -756,6 +759,7 @@
 		A61C95EFF88AFC8B68F424D3 /* easyprivacy.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = easyprivacy.txt; sourceTree = "<group>"; };
 		A65BD41B70253D0AE73A17A0 /* AccessXrayRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntime.swift; sourceTree = "<group>"; };
 		A70BD69C7AB42C81B299137D /* AccessSiteSessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionState.swift; sourceTree = "<group>"; };
+		A71C6CF9E940DE74ED2C5C5B /* AccessUsageSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessUsageSummaryView.swift; sourceTree = "<group>"; };
 		A7358C4C5542A529FBD945C5 /* AccessBrowsingIsolationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingIsolationError.swift; sourceTree = "<group>"; };
 		A76362E1332AEE6CE280B693 /* FirebaseInstallationCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseInstallationCleanup.swift; sourceTree = "<group>"; };
 		A7FF10EF054B2E1A9B253FE0 /* AccessSubscriptionUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSubscriptionUsageView.swift; sourceTree = "<group>"; };
@@ -1455,6 +1459,8 @@
 				76A7A3DC4F70E812DCA5DA4B /* AccessSiteProxyToggleView.swift */,
 				3E6C902394C2430A497155B6 /* AccessSubscriptionUsageSession.swift */,
 				A7FF10EF054B2E1A9B253FE0 /* AccessSubscriptionUsageView.swift */,
+				0CE69F147725CCB975EFDA4B /* AccessUsagePage.swift */,
+				A71C6CF9E940DE74ED2C5C5B /* AccessUsageSummaryView.swift */,
 				397CB2F7CB8A372260242996 /* AegisApp.swift */,
 				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
 				ABC674B39EE41277890C67F8 /* AegisRootView.swift */,
@@ -2132,6 +2138,8 @@
 				C53281994D7A64D56514744D /* AccessSiteProxyToggleView.swift in Sources */,
 				8F1191F2E7F99D45A44715A5 /* AccessSubscriptionUsageSession.swift in Sources */,
 				5605CEDA844AB6D0C7B46FA6 /* AccessSubscriptionUsageView.swift in Sources */,
+				5DF6C5DD65244348EE137046 /* AccessUsagePage.swift in Sources */,
+				857C11DBFB6FC8DD89F67A46 /* AccessUsageSummaryView.swift in Sources */,
 				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
 				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
 				8783373417B125F59C243517 /* AegisRootView.swift in Sources */,

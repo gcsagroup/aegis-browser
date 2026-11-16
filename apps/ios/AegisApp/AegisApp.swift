@@ -33,7 +33,7 @@ struct AegisApp: App {
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
     @StateObject private var accountSession = AccessAccountSession.product()
-    @StateObject private var subscriptionUsage = AccessSubscriptionUsageSession.product()
+    @StateObject private var subscriptionUsage: AccessSubscriptionUsageSession
     @StateObject private var readingLibrary: ReadingLibrary
     @StateObject private var accessSiteProxyRegistry: AccessSiteProxyStoreRegistry
     @StateObject private var hostStores: AccessHostStoreCoordinator
@@ -100,10 +100,23 @@ struct AegisApp: App {
         }
         _windows = StateObject(wrappedValue: BrowserWindowStore(persistenceURL: windowsURL, legacyURLs: workspaceStore.sessionURLs))
         let registry = AccessSiteProxyStoreRegistry()
-        let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher()
+        let subscription = AccessSubscriptionUsageSession.product()
+        _subscriptionUsage = StateObject(wrappedValue: subscription)
+        let publisher: any AccessProxyEntryPublishing
+        if subscription.managesConnections {
+            publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(parameters: {
+                try await subscription.connectionParameters()
+            }, connectionAllowed: {
+                subscription.permitsExistingConnection
+            })
+        } else {
+            publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher()
+        }
         let hostStores = AccessHostStoreCoordinator(
             publisher: publisher,
-            channel: AccessProductChannel.resolve()
+            channel: AccessProductChannel.resolve(),
+            defaultLocationPrivacy: !(publisher is AccessFailClosedProxyEntryPublisher),
+            locationPreferences: defaults
         )
         registry.hostRouting = hostStores
         hostStores.startForegroundSweep()
