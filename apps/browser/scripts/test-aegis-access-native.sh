@@ -5,8 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BROWSER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd "$BROWSER_DIR/../.." && pwd)"
 COMPONENT_DIR="$BROWSER_DIR/overlay/components/aegis_access"
-VECTOR_FILE="$COMPONENT_DIR/testdata/route_planner_vectors.json"
-POLICY_VECTOR_FILE="$COMPONENT_DIR/testdata/policy_matcher_vectors.json"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/aegis-access-native.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -49,10 +47,35 @@ run_python() {
   fi
 }
 
-run_python "$COMPONENT_DIR/generate_route_planner_vectors.py" \
-  "$VECTOR_FILE" "$TEST_ROOT/route_planner_golden_vectors.inc"
-run_python "$COMPONENT_DIR/generate_policy_matcher_vectors.py" \
-  "$POLICY_VECTOR_FILE" "$TEST_ROOT/policy_matcher_golden_vectors.inc"
+# Read the same module and vector inputs as CMake and GN.
+manifest_entries="$(python3 - "$COMPONENT_DIR/access_sources.json" <<'PYTHON'
+import json
+from pathlib import Path
+import sys
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for files in manifest["core"].values():
+    for path in files:
+        if path.endswith(".cc"):
+            print("core", path, sep="\t")
+print("test", manifest["test_support"]["source"], sep="\t")
+print("test", manifest["test_main"], sep="\t")
+for key in ("route_planner_vectors", "policy_matcher_vectors"):
+    entry = manifest[key]
+    print("vectors", entry["script"], entry["input"], entry["output"], sep="\t")
+PYTHON
+)"
+CORE_SOURCES=()
+TEST_SOURCES=()
+while IFS=$'\t' read -r kind path input output; do
+  case "$kind" in
+    core) CORE_SOURCES+=("$COMPONENT_DIR/$path") ;;
+    test) TEST_SOURCES+=("$COMPONENT_DIR/$path") ;;
+    vectors)
+      run_python "$COMPONENT_DIR/$path" "$COMPONENT_DIR/$input" "$TEST_ROOT/$output"
+      ;;
+  esac
+done <<< "$manifest_entries"
 vector_count="$(grep -c '^vectors.push_back' "$TEST_ROOT/policy_matcher_golden_vectors.inc" || true)"
 if [[ "$vector_count" != 14 ]]; then
   printf 'FAIL: expected 14 shared policy matcher vectors\n' >&2
@@ -65,19 +88,7 @@ fi
   ${COVERAGE_FLAGS[@]+"${COVERAGE_FLAGS[@]}"} \
   -I"$TEST_ROOT" \
   -I"$BROWSER_DIR/overlay" \
-  "$COMPONENT_DIR/access_route_planner.cc" \
-  "$COMPONENT_DIR/site_proxy_rule_group.cc" \
-  "$COMPONENT_DIR/request_ownership_registry.cc" \
-  "$COMPONENT_DIR/request_ownership_registry_test_support.cc" \
-  "$COMPONENT_DIR/request_dispatch_gate.cc" \
-  "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
-  "$COMPONENT_DIR/published_request_runtime.cc" \
-  "$COMPONENT_DIR/access_identity_generation_state.cc" \
-  "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
-  "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
-  "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
-  "$COMPONENT_DIR/policy_publication_ack_tracker.cc" \
-  "$COMPONENT_DIR/access_route_planner_native_test.cc" \
+  "${CORE_SOURCES[@]}" "${TEST_SOURCES[@]}" \
   -o "$TEST_ROOT/aegis_access_native_test"
 
 if [[ -n "$COVERAGE_DIR" ]]; then
@@ -109,31 +120,23 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     -instr-profile="$COVERAGE_DIR/aegis-access.profdata" \
     -format=lcov \
     > "$COVERAGE_DIR/lcov.unfiltered.info"
-  awk -v project_root="$PROJECT_ROOT/" '
+  AEGIS_ACCESS_COVERAGE_SOURCES="$(printf '%s\n' "${CORE_SOURCES[@]}")" \
+    awk -v project_root="$PROJECT_ROOT/" '
+    BEGIN {
+      count = split(ENVIRON["AEGIS_ACCESS_COVERAGE_SOURCES"], paths, "\n")
+      for (i = 1; i <= count; i++) production[paths[i]] = 1
+    }
     /^SF:/ {
       source = substr($0, 4)
-      route = project_root "apps/browser/overlay/components/aegis_access/access_route_planner.cc"
-      group = project_root "apps/browser/overlay/components/aegis_access/site_proxy_rule_group.cc"
-      ownership = project_root "apps/browser/overlay/components/aegis_access/request_ownership_registry.cc"
-      dispatch_gate = project_root "apps/browser/overlay/components/aegis_access/request_dispatch_gate.cc"
-      metadata_seed = project_root "apps/browser/overlay/components/aegis_access/browser_request_metadata_seed.cc"
-      published_runtime = project_root "apps/browser/overlay/components/aegis_access/published_request_runtime.cc"
-      identity_generation = project_root "apps/browser/overlay/components/aegis_access/access_identity_generation_state.cc"
-      selection_generation = project_root "apps/browser/overlay/components/aegis_access/access_proxy_selection_generation_state.cc"
-      base_proxy_generation = project_root "apps/browser/overlay/components/aegis_access/access_base_proxy_config_generation_state.cc"
-      tuple_builder = project_root "apps/browser/overlay/components/aegis_access/request_generation_tuple_builder.cc"
-      publication_acks = project_root "apps/browser/overlay/components/aegis_access/policy_publication_ack_tracker.cc"
-      keep = (source == route || source == group || source == ownership || source == dispatch_gate || source == metadata_seed || source == published_runtime || source == identity_generation || source == selection_generation || source == base_proxy_generation || source == tuple_builder || source == publication_acks)
-      if (keep) {
-        print "SF:" substr(source, length(project_root) + 1)
-      }
+      keep = source in production
+      if (keep) print "SF:" substr(source, length(project_root) + 1)
       next
     }
     keep { print }
     /^end_of_record$/ { keep = 0 }
   ' "$COVERAGE_DIR/lcov.unfiltered.info" > "$COVERAGE_DIR/lcov.info"
-  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != 11 ]]; then
-    printf 'FAIL: native LCOV must contain exactly the eleven standalone production units\n' >&2
+  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != "${#CORE_SOURCES[@]}" ]]; then
+    printf 'FAIL: native LCOV must contain every standalone production unit\n' >&2
     exit 1
   fi
   rm "$COVERAGE_DIR/lcov.unfiltered.info"
@@ -141,32 +144,12 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     -instr-profile="$COVERAGE_DIR/aegis-access.profdata" \
     -summary-only \
     --sources \
-    "$COMPONENT_DIR/access_route_planner.cc" \
-    "$COMPONENT_DIR/site_proxy_rule_group.cc" \
-    "$COMPONENT_DIR/request_ownership_registry.cc" \
-    "$COMPONENT_DIR/request_dispatch_gate.cc" \
-    "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
-    "$COMPONENT_DIR/published_request_runtime.cc" \
-    "$COMPONENT_DIR/access_identity_generation_state.cc" \
-    "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
-    "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
-    "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
-    "$COMPONENT_DIR/policy_publication_ack_tracker.cc" \
+    "${CORE_SOURCES[@]}" \
     > "$COVERAGE_DIR/coverage-summary.json"
   "$LLVM_COV" report "$TEST_ROOT/aegis_access_native_test" \
     -instr-profile="$COVERAGE_DIR/aegis-access.profdata" \
     --sources \
-    "$COMPONENT_DIR/access_route_planner.cc" \
-    "$COMPONENT_DIR/site_proxy_rule_group.cc" \
-    "$COMPONENT_DIR/request_ownership_registry.cc" \
-    "$COMPONENT_DIR/request_dispatch_gate.cc" \
-    "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
-    "$COMPONENT_DIR/published_request_runtime.cc" \
-    "$COMPONENT_DIR/access_identity_generation_state.cc" \
-    "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
-    "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
-    "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
-    "$COMPONENT_DIR/policy_publication_ack_tracker.cc" \
+    "${CORE_SOURCES[@]}" \
     > "$COVERAGE_DIR/coverage.txt"
 else
   "$TEST_ROOT/aegis_access_native_test"

@@ -482,3 +482,4 @@
 0480-fix-desktop-persistence-and-windows-tests-267.patch
 0481-align-product-display-name-and-policy-identity.patch
 0482-fix-macos-ignored-ax-button.patch
+0483-build-share-access-core-source-manifest.patch
