@@ -1,50 +1,52 @@
 name: iOS Coverage
-on:
-  workflow_dispatch: null
+run-name: Aegis 1.0.3 About links on iPhone and iPad
+on: workflow_dispatch
 permissions:
   contents: read
-  actions: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && 'main' || format('dispatch-{0}', github.run_id) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  ios-coverage:
-    name: ios-coverage
+  about-links:
     runs-on: macos-26
-    timeout-minutes: 60
-    env:
-      IOS_REPORT_DIR: /tmp/aegis-ios-${{ github.run_id }}-${{ github.run_attempt }}
+    timeout-minutes: 50
     steps:
-      - name: Check out tested source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
+          ref: af1e351afec9afc76590b6ad19ec15fcf38a338b
           persist-credentials: false
-      - name: Install Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 22.23.1
-      - name: Require repository Admin for manual operation
-        run: node scripts/ci/ios-operator.mjs --context coverage
-        env:
-          GH_TOKEN: ${{ github.token }}
-      - name: Run iPhone and iPad tests with Swift coverage
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-        run: bash apps/ios/scripts/run-simulator-tests.sh --execute --output-dir "$IOS_REPORT_DIR"
-      - name: Upload Swift coverage evidence
-        if: ${{ always() }}
+      - name: Select Xcode and available iOS devices
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = af1e351afec9afc76590b6ad19ec15fcf38a338b
+          if [[ -d /Applications/Xcode_26.6.app ]]; then sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer; fi
+          xcodebuild -version
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          groups = json.loads((Path(os.environ['RUNNER_TEMP'])/'devices.json').read_text())['devices']
+          for runtime in sorted((k for k in groups if '.iOS-' in k),key=lambda k:tuple(map(int,k.split('.iOS-')[-1].split('-'))),reverse=True):
+              choices = [next((d for d in groups[runtime] if d['name'].startswith(t) and d['isAvailable']),None) for t in ('iPhone','iPad')]
+              if all(choices): break
+          else: raise SystemExit('No available simulator runtime with iPhone and iPad')
+          for key,d in zip(('PHONE','TABLET'),choices):
+              print(runtime,d['name'],d['udid'])
+              with open(os.environ['GITHUB_ENV'],'a') as f: print(f"{key}={d['udid']}",file=f)
+          PY
+      - name: Build candidate for simulator tests
+        run: |
+          xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Debug -destination "id=$PHONE" -derivedDataPath "$RUNNER_TEMP/about-dd" -onlyUsePackageVersionsFromResolvedFile build-for-testing
+      - name: Test About links on iPhone and iPad
+        run: |
+          set -uo pipefail
+          rc=0
+          for device in PHONE TABLET; do
+            xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Debug -destination "id=${!device}" -derivedDataPath "$RUNNER_TEMP/about-dd" -onlyUsePackageVersionsFromResolvedFile -parallel-testing-enabled NO -collect-test-diagnostics never -only-testing:AegisUITests/SettingsLayoutUITests/testAboutLinksAtLargestTextSize -resultBundlePath "$RUNNER_TEMP/$device.xcresult" test-without-building || rc=1
+            xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/$device.xcresult" --compact > "$RUNNER_TEMP/$device-summary.json" || rc=1
+            jq -e '.passedTests == 1 and .failedTests == 0 and .skippedTests == 0' "$RUNNER_TEMP/$device-summary.json" || rc=1
+          done
+          exit "$rc"
+      - name: Preserve device summaries
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: swift-coverage-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ env.IOS_REPORT_DIR }}/*.xcresult
-            ${{ env.IOS_REPORT_DIR }}/*-xcodebuild.log
-            ${{ env.IOS_REPORT_DIR }}/*-summary.json
-            ${{ env.IOS_REPORT_DIR }}/*-coverage.json
-            ${{ env.IOS_REPORT_DIR }}/*-coverage.txt
-            ${{ env.IOS_REPORT_DIR }}/ios-input-sha256-*.txt
-            ${{ env.IOS_REPORT_DIR }}/run-metadata.txt
-            ${{ env.IOS_REPORT_DIR }}/simulator-runtime.json
-          if-no-files-found: error
-          retention-days: 14
+          name: about-links-results
+          path: ${{ runner.temp }}/*-summary.json
