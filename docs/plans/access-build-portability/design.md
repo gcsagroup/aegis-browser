@@ -17,4 +17,6 @@ ctest --test-dir out/macos-arm64 --no-tests=error --output-on-failure
 
 Windows 使用 `windows-x64`；Android 设备使用 `android-arm64`，x86_64 模拟器使用 `android-x64`。目录名对应预设。Android 的 CTest 会通过 adb 复制并执行测试，收集退出码并清除设备上的临时文件。
 
+Android runner 从本地 `ADB` 路径或 `PATH` 查找 SDK 的 `adb`/`adb.exe`，解析为绝对可执行文件；`ADB` 不接受附带参数的命令、其他程序或指向其他程序的符号链接。工具链配置属于本机信任边界，设备输出不能选择主机程序。`ANDROID_SERIAL` 继续传给 adb，并以查询到的序列号固定后续调用。主机不使用 shell；远端 shell 只使用固定操作和经严格校验的临时目录。离线验证运行 `python3 -B run_android_test_test.py`，使用临时假 adb，不连接设备，并进入现有脚本质量门。
+
 Android 原序列包含六个旧版核心文件。Android 补丁同步共享核心源码，保留原有 Chromium 接入层。独立测试从产品仓库的 overlay 构建。两个补丁序列的投影回放检查确保清单和共享文件逐字节一致。
