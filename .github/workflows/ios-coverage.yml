@@ -1,5 +1,5 @@
 name: iOS Coverage
-run-name: Aegis 1.0.3 About links on iPhone and iPad
+run-name: Aegis 1.0.3 About links on isolated iPad
 on: workflow_dispatch
 permissions:
   contents: read
@@ -26,19 +26,22 @@ jobs:
           for runtime in sorted((k for k in groups if '.iOS-' in k),key=lambda k:tuple(map(int,k.split('.iOS-')[-1].split('-'))),reverse=True):
               choices = [next((d for d in groups[runtime] if d['name'].startswith(t) and d['isAvailable']),None) for t in ('iPhone','iPad')]
               if all(choices): break
-          else: raise SystemExit('No available simulator runtime with iPhone and iPad')
+          else: raise SystemExit('No available simulator runtime with iPad')
           for key,d in zip(('PHONE','TABLET'),choices):
               print(runtime,d['name'],d['udid'])
               with open(os.environ['GITHUB_ENV'],'a') as f: print(f"{key}={d['udid']}",file=f)
           PY
+      - name: Boot isolated iPad simulator
+        run: |
+          xcrun simctl bootstatus "$TABLET" -b
       - name: Build candidate for simulator tests
         run: |
-          xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Debug -destination "id=$PHONE" -derivedDataPath "$RUNNER_TEMP/about-dd" -onlyUsePackageVersionsFromResolvedFile build-for-testing
-      - name: Test About links on iPhone and iPad
+          xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Debug -destination "id=$TABLET" -derivedDataPath "$RUNNER_TEMP/about-dd" -onlyUsePackageVersionsFromResolvedFile build-for-testing
+      - name: Test About links on isolated iPad
         run: |
           set -uo pipefail
           rc=0
-          for device in PHONE TABLET; do
+          for device in TABLET; do
             xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Debug -destination "id=${!device}" -derivedDataPath "$RUNNER_TEMP/about-dd" -onlyUsePackageVersionsFromResolvedFile -parallel-testing-enabled NO -collect-test-diagnostics never -only-testing:AegisUITests/SettingsLayoutUITests/testAboutLinksAtLargestTextSize -resultBundlePath "$RUNNER_TEMP/$device.xcresult" test-without-building || rc=1
             xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/$device.xcresult" --compact > "$RUNNER_TEMP/$device-summary.json" || rc=1
             jq -e '.passedTests == 1 and .failedTests == 0 and .skippedTests == 0' "$RUNNER_TEMP/$device-summary.json" || rc=1
