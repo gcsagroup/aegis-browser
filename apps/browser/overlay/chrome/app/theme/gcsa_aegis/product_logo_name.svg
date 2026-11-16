@@ -17,5 +17,5 @@
       <circle cx="226" cy="490" r="47"/><circle cx="810" cy="490" r="47"/><circle cx="512" cy="800" r="47"/>
     </g>
   </g>
-  <text x="22" y="15.8" fill="#0B2538" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" letter-spacing="-.25">GCSA Aegis</text>
+  <text x="22" y="15.8" fill="#0B2538" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" letter-spacing="-.25" textLength="72" lengthAdjust="spacingAndGlyphs">Aegis Browser</text>
 </svg>

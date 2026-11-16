@@ -1,4 +1,4 @@
-GCSA Aegis 本机翻译与实验模型
+Aegis Browser 本机翻译与实验模型
 
 Bergamot Translator 0.4.9：MPL 2.0
 来源：https://github.com/browsermt/bergamot-translator

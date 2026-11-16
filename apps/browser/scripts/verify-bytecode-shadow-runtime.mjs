@@ -99,7 +99,7 @@ function printUsage() {
   node apps/browser/scripts/verify-bytecode-shadow-runtime.mjs [选项]
 
 选项：
-  --app PATH          被测 GCSA Aegis.app
+  --app PATH          被测 Aegis Browser.app
   --binary PATH       被测浏览器可执行文件；与 --app 二选一
   --report PATH       JSON 报告路径；拒绝覆盖已有文件
   --timeout-ms N      每个 OFF/ON/CANARY/STRESS fixture 的单一超时预算，默认 ${DEFAULT_TIMEOUT_MS}

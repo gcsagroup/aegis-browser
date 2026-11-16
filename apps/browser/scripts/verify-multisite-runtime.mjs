@@ -99,7 +99,7 @@ function printUsage() {
   node apps/browser/scripts/verify-multisite-runtime.mjs [选项]
 
 选项：
-  --chromium PATH      Release GCSA Aegis.app 或浏览器可执行文件
+  --chromium PATH      Release Aegis Browser.app 或浏览器可执行文件
                        默认：${DEFAULT_RELEASE_APP}
   --url URL            覆盖默认站点；可重复指定
   --feature-mode MODE  default、aegis-off、tracker-off、filter-off、
