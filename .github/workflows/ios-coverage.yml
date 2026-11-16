@@ -10,12 +10,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 8ee63eeb10896d654daf97681f77fd445cd91a8b
+          ref: df7da157baf9fca40e48505877cb4c5b09340bb0
           persist-credentials: false
       - name: Select Xcode and available iOS devices
         run: |
           set -eu
-          test "$(git rev-parse HEAD)" = 8ee63eeb10896d654daf97681f77fd445cd91a8b
+          test "$(git rev-parse HEAD)" = df7da157baf9fca40e48505877cb4c5b09340bb0
           if [[ -d /Applications/Xcode_26.6.app ]]; then sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer; fi
           xcodebuild -version
           xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
