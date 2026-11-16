@@ -1,6 +1,7 @@
 import AegisPolicyKit
 import Combine
 import Foundation
+import Network
 import UIKit
 import WebKit
 
@@ -110,6 +111,11 @@ public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
     public var title: String { self == .standard ? AegisLocalization.string("普通") : AegisLocalization.string("私密") }
     public var isPrivate: Bool { self == .privateMode }
+}
+
+enum BrowserNewWindowResult {
+    case opened(WKWebView?)
+    case declined
 }
 
 @MainActor
@@ -263,7 +269,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         view.isInspectable = inspectionEnabled
         view.scrollView.keyboardDismissMode = .onDrag
         view.onDidMoveToWindow = { [weak self] in
-            self?.flushPendingAttachedLoad()
+            guard let self else { return }
+            if self.loadedWebView?.window == nil { self.cancelJavaScriptDialog() }
+            else { self.flushPendingAttachedLoad() }
         }
         loadedWebView = view
         // 页面标题也可能在导航完成之后更新，标签和操作预览必须跟随真实标题。
@@ -327,7 +335,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private var loadGeneration = UUID()
 
     var onNavigation: ((BrowserTab) -> Void)?
-    var onNewWindow: ((URL, Bool) -> Void)?
+    var onNewWindow: ((WKWebViewConfiguration, URLRequest, Bool) -> BrowserNewWindowResult)?
+    private(set) var javaScriptDialog: BrowserJavaScriptDialog?
     var inheritedHardenedSecurity = false
     private var activeHardenedSecurity = false
     var onDownload: ((URL) -> Void)?
@@ -338,13 +347,31 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private var realignedNavigationURL: URL?
     private var contentRulesNavigationURL: URL?
 
+    /// WebKit owns the initial new-window request. Prepare policy without issuing a replacement GET.
+    fileprivate func prepareNewWindow(_ request: URLRequest, from parent: BrowserTab) -> Bool {
+        guard let url = request.url, contentRuleList == nil else { return false }
+        if ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+           parent.contentRuleList == nil || parent.securityLists.count != 2 { return false }
+        contentRuleList = parent.contentRuleList
+        securityLists = parent.securityLists
+        inheritedHardenedSecurity = parent.activeHardenedSecurity
+        activeHardenedSecurity = inheritedHardenedSecurity ||
+            (preferences.site(for: url).hardenedSecurity ?? preferences.values.hardenedSecurity ?? false)
+        PageProtection.applySystem(configuration, hardened: activeHardenedSecurity)
+        requestedURL = url
+        preserveExplicitHTTP(url)
+        configureTrackingProtection(for: url)
+        return true
+    }
+
     init(id: UUID = UUID(), profile: BrowserProfile, configuration: WKWebViewConfiguration,
          preferences: BrowserPreferences = BrowserPreferences(), securityRuleStore: SecurityRuleStore = .shared,
-         enhancementStore: WebsiteEnhancementStore = WebsiteEnhancementStore()) {
+         enhancementStore: WebsiteEnhancementStore = WebsiteEnhancementStore(),
+         originalWebsiteDataStore: WKWebsiteDataStore? = nil) {
         self.id = id
         self.profile = profile
         self.configuration = configuration
-        self.originalWebsiteDataStore = configuration.websiteDataStore
+        self.originalWebsiteDataStore = originalWebsiteDataStore ?? configuration.websiteDataStore
         self.preferences = preferences
         self.securityRuleStore = securityRuleStore
         self.enhancementStore = enhancementStore
@@ -370,6 +397,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         hasReplayableBody: Bool = false,
         policyType: WKNavigationType? = nil
     ) {
+        cancelJavaScriptDialog()
         afterProxyDocumentStops = nil
         documentStopDeadline?.cancel()
         documentStopDeadline = nil
@@ -1067,6 +1095,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         // 切换时先记录位置；WebView 离开窗口后，系统可能重设其滚动偏移。
         if isActive, !value, !restoresScrollOffset, let view = loadedWebView { savedScrollOffset = view.scrollView.contentOffset }
         isActive = value
+        if !value { cancelJavaScriptDialog() }
         guard value else { return }
         lastActivatedAt = Date()
         if loadedWebView == nil, protectionIncident == nil, loadingError == nil {
@@ -1126,6 +1155,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func releaseWebView(keepTerminalDelegate: Bool = false) {
+        cancelJavaScriptDialog()
         provisionalDeadline?.cancel()
         userScripts?.navigated()
         inspectionEnabled = false
@@ -1412,7 +1442,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let storeMismatch = (routedStore ?? originalWebsiteDataStore) !== websiteDataStore
         if decision.kind != .blocked,
            navigationAction.targetFrame?.isMainFrame != false,
-           storeMismatch || (hostMismatch && !["POST", "PATCH"].contains(method.uppercased())),
+           storeMismatch || (hostMismatch && navigationAction.navigationType != .backForward
+                              && !["POST", "PATCH"].contains(method.uppercased())),
            realignedNavigationURL != requestURL {
             realignedNavigationURL = requestURL
             finish(.cancel)
@@ -1569,6 +1600,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard webView === loadedWebView else { return }
+        cancelJavaScriptDialog()
         if let navigation {
             let recorded: MainFrameAttempt
             if let existing = attemptsByNavigation[ObjectIdentifier(navigation)] {
@@ -1769,21 +1801,113 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                         for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard navigationAction.targetFrame == nil, let url = navigationAction.request.url else { return nil }
+        guard webView === loadedWebView, !isDisposed, isActive,
+              navigationAction.targetFrame == nil, let url = navigationAction.request.url else { return nil }
         guard navigationAction.navigationType == .linkActivated || preferences.values.allowPopups else { return nil }
-        if navigationDecision(url).kind != .blocked { onNewWindow?(url, activeHardenedSecurity) }
-        return nil
+        var request = navigationAction.request
+        let decision = navigationDecision(url, method: request.httpMethod ?? "GET")
+        guard decision.kind != .blocked else { lastPolicyIntervention = decision; return nil }
+        if decision.kind == .sanitized {
+            lastPolicyIntervention = decision
+            guard ["GET", "HEAD"].contains((request.httpMethod ?? "GET").uppercased()),
+                  !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(request),
+                  let cleaned = URL(string: decision.effectiveURL) else { return nil }
+            request.url = cleaned
+        }
+        switch onNewWindow?(configuration, request, activeHardenedSecurity) ?? .declined {
+        case .opened(let child): return child
+        case .declined:
+            loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
+            return nil
+        }
+    }
+
+    private func cancelJavaScriptDialog() {
+        let pending = javaScriptDialog
+        javaScriptDialog = nil
+        pending?.cancel()
+    }
+
+    /// WebKit can report an empty/opaque origin. Never feed it to trapping
+    /// URLComponents setters or infer its identity from the top-level document.
+    static func securityOriginURL(scheme: String, host: String, port: Int) -> URL? {
+        let scheme = scheme.lowercased(), host = host.lowercased()
+        guard ["http", "https"].contains(scheme), !host.isEmpty, (0...65535).contains(port) else { return nil }
+        let authorityHost: String
+        if host.contains(":") {
+            let literal = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
+            let allowed = CharacterSet(charactersIn: "0123456789abcdef:.")
+            guard literal.unicodeScalars.allSatisfy({ allowed.contains($0) }), IPv6Address(literal) != nil else { return nil }
+            authorityHost = "[\(literal)]"
+        } else {
+            let allowed = CharacterSet.alphanumerics.union(.nonBaseCharacters).union(CharacterSet(charactersIn: "-._"))
+            guard host.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
+            let labels = (host.hasSuffix(".") ? String(host.dropLast()) : host).split(separator: ".", omittingEmptySubsequences: false)
+            guard labels.allSatisfy({ !$0.isEmpty }) else { return nil }
+            authorityHost = host
+        }
+        // A zero WKSecurityOrigin port denotes the scheme's default port.
+        let suffix = port == 0 ? "" : ":\(port)"
+        guard let parts = URLComponents(string: "\(scheme)://\(authorityHost)\(suffix)"),
+              parts.user == nil, parts.password == nil, parts.path.isEmpty,
+              parts.query == nil, parts.fragment == nil, let url = parts.url,
+              BrowserPreferences.origin(url) != nil else { return nil }
+        return url
+    }
+
+    private func presentJavaScriptDialog(_ view: WKWebView, frame: WKFrameInfo, message: String,
+                                         kind: BrowserJavaScriptDialog.Kind,
+                                         completion: @escaping (Bool, String?) -> Void) {
+        guard view === loadedWebView, !isDisposed, isActive, javaScriptDialog == nil,
+              UIApplication.shared.applicationState == .active, let window = view.window,
+              window.windowScene?.activationState == .foregroundActive,
+              var presenter = window.rootViewController else { completion(false, nil); return }
+        let origin = frame.securityOrigin
+        guard let url = Self.securityOriginURL(scheme: origin.protocol, host: origin.host, port: origin.port),
+              let identity = BrowserPreferences.origin(url) else { completion(false, nil); return }
+        while let presented = presenter.presentedViewController { presenter = presented }
+        guard !(presenter is UIAlertController), !presenter.isBeingDismissed,
+              presenter.viewIfLoaded?.window === window else { completion(false, nil); return }
+        let dialogID = UUID()
+        let dialog = BrowserJavaScriptDialog(id: dialogID, origin: identity, message: message, kind: kind,
+                                             scene: window.windowScene) { [weak self] accepted, text in
+            if self?.javaScriptDialog?.id == dialogID { self?.javaScriptDialog = nil }
+            completion(accepted, text)
+        }
+        javaScriptDialog = dialog
+        dialog.present(from: presenter)
+    }
+
+    public func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                        initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor () -> Void) {
+        presentJavaScriptDialog(webView, frame: frame, message: message, kind: .alert) { _, _ in completionHandler() }
+    }
+
+    public func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                        initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (Bool) -> Void) {
+        presentJavaScriptDialog(webView, frame: frame, message: message, kind: .confirm) { accepted, _ in completionHandler(accepted) }
+    }
+
+    public func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                        defaultText: String?, initiatedByFrame frame: WKFrameInfo,
+                        completionHandler: @escaping @MainActor (String?) -> Void) {
+        presentJavaScriptDialog(webView, frame: frame, message: prompt, kind: .prompt(defaultText)) { accepted, text in
+            completionHandler(accepted ? (text ?? "") : nil)
+        }
     }
 
     public func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
                         initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
                         decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
-        var originParts = URLComponents()
-        originParts.scheme = origin.protocol; originParts.host = origin.host
-        if origin.port != 0 { originParts.port = origin.port }
-        guard frame.isMainFrame, let url = frame.request.url, let originURL = originParts.url,
-              let current = self.url, BrowserPreferences.origin(url) == BrowserPreferences.origin(current),
-              BrowserPreferences.origin(originURL) == BrowserPreferences.origin(current) else { decisionHandler(.deny); return }
+        let frameOrigin = frame.securityOrigin
+        guard webView === loadedWebView, !isDisposed, isActive, frame.isMainFrame,
+              let originURL = Self.securityOriginURL(scheme: origin.protocol, host: origin.host, port: origin.port),
+              let frameOriginURL = Self.securityOriginURL(scheme: frameOrigin.protocol, host: frameOrigin.host, port: frameOrigin.port),
+              let identity = BrowserPreferences.origin(originURL),
+              let url = frame.request.url, let requestIdentity = BrowserPreferences.origin(url),
+              let current = self.url, let currentIdentity = BrowserPreferences.origin(current),
+              requestIdentity == currentIdentity, identity == currentIdentity,
+              BrowserPreferences.origin(frameOriginURL) == identity else { decisionHandler(.deny); return }
         let site = preferences.site(for: url)
         let blocked = (type != .microphone && site.camera == .deny) || (type != .camera && site.microphone == .deny)
         // “询问”交给系统与 WebKit，不授予静默或跨来源权限。
@@ -2024,6 +2148,9 @@ public final class BrowserSession: ObservableObject {
     private var retiredPrivateWebsiteDataStores: [WKWebsiteDataStore] = []
     private var pendingPrivateTabClosures: [String: Int] = [:]
     private var endingPrivateSessions: [String: () -> Void] = [:]
+    private var pendingTabDisposals: Set<UUID> = []
+    private var ordinaryDisposalStores: [UUID: WKWebsiteDataStore] = [:]
+    private var disposalWaiters: [(ids: Set<UUID>, finish: @MainActor () -> Void)] = []
     @Published public var activeTabID: UUID?
     @Published public var profile: BrowserProfile = .standard
     @Published public private(set) var extensionStatus = "WebExtension 正在初始化"
@@ -2093,6 +2220,7 @@ public final class BrowserSession: ObservableObject {
         } : [])) : []
         standardGroups = preferences.values.startup == .restore ? snapshot?.groups ?? [] : []
         standardGroupID = preferences.values.startup == .restore ? snapshot?.selectedGroupID : nil
+        if !standardGroups.contains(where: { $0.id == standardGroupID }) { standardGroupID = nil }
         if restored.isEmpty {
             let first = makeTab(profile: .standard)
             if preferences.values.startup == .homePage { first.prepareForRestore(url: preferences.homeURL) }
@@ -2107,6 +2235,7 @@ public final class BrowserSession: ObservableObject {
             }
             activeTabID = snapshot?.activeTabID ?? standardTabs.first?.id
         }
+        if !displayedTabs.contains(where: { $0.id == activeTabID }) { activeTabID = displayedTabs.first?.id }
         standardActiveID = activeTabID
         updateActiveTab()
         bookmarkChanges = dataStore.$bookmarks.sink { [weak self] bookmarks in
@@ -2226,8 +2355,8 @@ public final class BrowserSession: ObservableObject {
 
     /// Every terminal entry point shares the document-confirmed cleanup. A
     /// private scope also waits for tabs removed by earlier close calls.
-    private func disposeTabs(_ tabs: [BrowserTab], endingPrivateScopeID: String? = nil) {
-        let tabs = tabs.filter { !$0.isDisposed }
+    private func disposeTabs(_ requestedTabs: [BrowserTab], endingPrivateScopeID: String? = nil) {
+        let tabs = requestedTabs.filter { !$0.isDisposed }
         let coordinator = hostCoordinator
         for tab in tabs where tab.profile.isPrivate {
             pendingPrivateTabClosures[tab.browsingScopeID, default: 0] += 1
@@ -2237,6 +2366,8 @@ public final class BrowserSession: ObservableObject {
         }
         for tab in tabs {
             let store = tab.websiteDataStore
+            pendingTabDisposals.insert(tab.instanceID)
+            if !tab.profile.isPrivate { ordinaryDisposalStores[tab.instanceID] = store }
             tab.dispose { [self] in
                 coordinator?.tabClosed(tab)
                 if tab.profile.isPrivate {
@@ -2245,9 +2376,18 @@ public final class BrowserSession: ObservableObject {
                     pendingPrivateTabClosures[scope, default: 0] -= 1
                     finishPrivateSessionIfReady(scope)
                 }
+                pendingTabDisposals.remove(tab.instanceID)
+                ordinaryDisposalStores[tab.instanceID] = nil
+                finishDisposalWaiters()
             }
         }
         if let scope = endingPrivateScopeID { finishPrivateSessionIfReady(scope) }
+    }
+
+    private func finishDisposalWaiters() {
+        let ready = disposalWaiters.filter { $0.ids.isDisjoint(with: pendingTabDisposals) }
+        disposalWaiters.removeAll { $0.ids.isDisjoint(with: pendingTabDisposals) }
+        ready.forEach { $0.finish() }
     }
 
     private func finishPrivateSessionIfReady(_ scope: String) {
@@ -2355,22 +2495,42 @@ public final class BrowserSession: ObservableObject {
 
     public func clearWebsiteData(records: [WKWebsiteDataRecord]? = nil) async {
         guard !profile.isPrivate else { return }
-        // WebKit 的普通网站存储由各窗口共享，清除前同时停止所有普通页面。
-        for session in Self.sessions.compactMap(\.value) {
-            session.standardTabs.forEach { $0.onAccessContextClosed?(); $0.stop() }
+        let sessions = Self.sessions.compactMap(\.value)
+        // Capture before teardown/unbind and before the first await. Registry pruning,
+        // profile changes and window closure cannot change this operation's store set.
+        var stores = [WKWebsiteDataStore.default()]
+        var closures: [(BrowserSession, Set<UUID>)] = []
+        for session in sessions {
+            stores += session.hostCoordinator?.ordinaryHostStores() ?? []
+            stores += session.standardTabs.flatMap { [$0.originalWebsiteDataStore, $0.websiteDataStore] }
+            stores += Array(session.ordinaryDisposalStores.values)
+            let ids = Set(session.standardTabs.map(\.instanceID)).union(session.ordinaryDisposalStores.keys)
+            closures.append((session, ids))
+            guard !session.isWindowClosed else { continue }
+            session.disposeTabs(session.standardTabs)
             session.standardGroups = []; session.standardGroupID = nil
             session.standardTabs = [session.makeTab(profile: .standard)]
             session.standardActiveID = session.standardTabs.first?.id
             if !session.profile.isPrivate { session.activeTabID = session.standardActiveID }
             session.persistSession(); session.refreshBookmarkState()
         }
-        let stores = [WKWebsiteDataStore.default()] + (hostCoordinator?.ordinaryHostStores() ?? [])
+        var seen: Set<ObjectIdentifier> = []
+        stores = stores.filter { seen.insert(ObjectIdentifier($0)).inserted }
+        for (session, ids) in closures {
+            await withCheckedContinuation { continuation in
+                let waiting = ids.intersection(session.pendingTabDisposals)
+                if waiting.isEmpty { continuation.resume() }
+                else { session.disposalWaiters.append((waiting, { continuation.resume() })) }
+            }
+        }
         if let records {
             for store in stores {
                 let hosted = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
                 let names = Set(records.map(\.displayName))
                 let matching = hosted.filter { names.contains($0.displayName) }
-                await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: matching.isEmpty ? records : matching)
+                if !matching.isEmpty {
+                    await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: matching)
+                }
             }
         } else {
             for store in stores {
@@ -2427,7 +2587,9 @@ public final class BrowserSession: ObservableObject {
         return BrowserPreferences.searchURL(trimmed, values: preferences)
     }
 
-    private func makeTab(profile: BrowserProfile, id: UUID = UUID()) -> BrowserTab {
+    private func makeTab(profile: BrowserProfile, id: UUID = UUID(),
+                         suppliedConfiguration: WKWebViewConfiguration? = nil,
+                         originalStore: WKWebsiteDataStore? = nil) -> BrowserTab {
         let runtime = profile.isPrivate ? privateRuntime : standardRuntime
         let initialStore: WKWebsiteDataStore = profile.isPrivate ? .nonPersistent() : .default()
         let factory: (WKWebsiteDataStore) -> WKWebViewConfiguration = { [preferences] store in
@@ -2440,7 +2602,11 @@ public final class BrowserSession: ObservableObject {
             runtime.apply(to: configuration)
             return configuration
         }
-        let configuration = factory(initialStore)
+        let configuration = suppliedConfiguration ?? factory(initialStore)
+        if suppliedConfiguration != nil {
+            // Preserve WebKit's process pool/opener configuration; isolate our tab-local hooks.
+            configuration.userContentController = WKUserContentController()
+        }
 
         #if DEBUG
         let rules = ProcessInfo.processInfo.arguments.contains("--ui-testing-security") ? SecurityRuleStore(fixtureRules: true) : .shared
@@ -2448,7 +2614,8 @@ public final class BrowserSession: ObservableObject {
         let rules = SecurityRuleStore.shared
         #endif
         let tab = BrowserTab(id: id, profile: profile, configuration: configuration, preferences: preferences, securityRuleStore: rules,
-                             enhancementStore: profile.isPrivate ? privateEnhancements : standardEnhancements)
+                             enhancementStore: profile.isPrivate ? privateEnhancements : standardEnhancements,
+                             originalWebsiteDataStore: originalStore)
         tab.configurationFactory = factory
         tab.hostCoordinator = hostCoordinator
         tab.browsingScopeID = profile.isPrivate ? privateSessionID.uuidString : "ordinary"
@@ -2464,11 +2631,41 @@ public final class BrowserSession: ObservableObject {
             guard let self, let tab, self.activeTabID == tab.id else { return }
             self.pendingMarkdown = document
         }
-        tab.onNewWindow = { [weak self] url, hardened in
-            guard let self, self.profile == profile else { return }
-            let child = self.newTab()
+        tab.onNewWindow = { [weak self, weak tab] configuration, request, hardened in
+            guard let self, let tab, !self.isWindowClosed, self.profile == profile, self.activeTab === tab,
+                  let url = request.url, configuration.websiteDataStore === tab.websiteDataStore else { return .declined }
+            if ["GET", "HEAD"].contains((request.httpMethod ?? "GET").uppercased()),
+               !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(request) {
+                // Safe requests use normal destination policy, store selection and
+                // proxy preparation. Returning nil prevents WebKit's original load.
+                let child = self.makeTab(profile: profile)
+                child.inheritedHardenedSecurity = hardened
+                child.groupID = self.selectedGroupID
+                if profile.isPrivate { self.privateTabs.append(child) } else { self.standardTabs.append(child) }
+                self.activeTabID = child.id
+                self.refreshBookmarkState(); self.persistSession()
+                child.load(request)
+                return .opened(nil)
+            }
+            guard !(self.hostCoordinator?.requiresProxyPreparation(tab: tab, url: url) ?? false),
+                  !(self.hostCoordinator?.wouldSwitchStore(tab: tab, url: url) ?? false) else { return .declined }
+            let child = self.makeTab(profile: profile, suppliedConfiguration: configuration,
+                                     originalStore: tab.originalWebsiteDataStore)
             child.inheritedHardenedSecurity = hardened
-            child.load(url)
+            child.boundHostName = tab.boundHostName
+            let routed = self.hostCoordinator?.dataStoreForMainFrame(tab: child, url: url)
+            guard (routed ?? child.originalWebsiteDataStore) === configuration.websiteDataStore,
+                  self.hostCoordinator?.requiresProxy(tab: child, url: url) != true || routed != nil,
+                  child.prepareNewWindow(request, from: tab) else {
+                self.disposeTabs([child])
+                return .declined
+            }
+            let view = child.webView
+            child.groupID = self.selectedGroupID
+            if profile.isPrivate { self.privateTabs.append(child) } else { self.standardTabs.append(child) }
+            self.activeTabID = child.id
+            self.refreshBookmarkState(); self.persistSession()
+            return .opened(view)
         }
         tab.onDownload = { [weak self, weak tab] url in
             guard let self, let tab, self.profile == profile else { return }

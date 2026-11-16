@@ -126,6 +126,45 @@ public final class BrowserPreferences: ObservableObject {
         values = next; error = nil
     }
 
+    /// A window edits a snapshot. Apply only its changes to the latest shared values.
+    /// Validation and encoding happen before publication, so a failed save is atomic.
+    public func saveChanges(_ draft: BrowserPreferenceValues, since baseline: BrowserPreferenceValues) throws {
+        var next = values
+        func apply<Value: Equatable>(_ key: WritableKeyPath<BrowserPreferenceValues, Value>) {
+            if draft[keyPath: key] != baseline[keyPath: key] { next[keyPath: key] = draft[keyPath: key] }
+        }
+        apply(\.searchEngine); apply(\.removedSearchEngines); apply(\.customSearch)
+        apply(\.startup); apply(\.homepage); apply(\.newTabsUseHomepage)
+        apply(\.zoom); apply(\.desktop); apply(\.javaScript); apply(\.allowPopups)
+        apply(\.requireMediaGesture); apply(\.saveHistory); apply(\.linkSanitization)
+        apply(\.phishingProtection); apply(\.miningProtection); apply(\.fingerprintProtection)
+        apply(\.hardenedSecurity); apply(\.strictFingerprinting); apply(\.automaticFilterUpdates)
+        for origin in Set(baseline.sites.keys).union(draft.sites.keys) where draft.sites[origin] != baseline.sites[origin] {
+            if let site = draft.sites[origin] {
+                next.sites[origin] = Self.merging(site, since: baseline.sites[origin] ?? SitePreferences(),
+                                                 into: next.sites[origin] ?? SitePreferences())
+            } else { next.sites[origin] = nil }
+        }
+        try save(next)
+    }
+
+    public func saveSiteChanges(_ draft: SitePreferences, since baseline: SitePreferences, for url: URL) throws {
+        guard Self.origin(url) != nil else { throw BrowserPreferenceError.invalidSite }
+        guard draft != baseline else { return }
+        try setSite(Self.merging(draft, since: baseline, into: site(for: url)), for: url)
+    }
+
+    private static func merging(_ draft: SitePreferences, since baseline: SitePreferences,
+                                into latest: SitePreferences) -> SitePreferences {
+        var next = latest
+        func apply<Value: Equatable>(_ key: WritableKeyPath<SitePreferences, Value>) {
+            if draft[keyPath: key] != baseline[keyPath: key] { next[keyPath: key] = draft[keyPath: key] }
+        }
+        apply(\.zoom); apply(\.desktop); apply(\.javaScript); apply(\.markdownPreview)
+        apply(\.hardenedSecurity); apply(\.strictFingerprinting); apply(\.camera); apply(\.microphone)
+        return next
+    }
+
     public func setSite(_ site: SitePreferences?, for url: URL) throws {
         guard let origin = Self.origin(url) else { throw BrowserPreferenceError.invalidSite }
         var next = values
@@ -143,7 +182,9 @@ public final class BrowserPreferences: ObservableObject {
         guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
               let host = url.host?.lowercased(), !host.isEmpty, url.user == nil, url.password == nil else { return nil }
         var parts = URLComponents()
-        parts.scheme = scheme; parts.host = host
+        // URL.host may omit IPv6 brackets; URLComponents.host requires them.
+        let authorityHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        parts.scheme = scheme; parts.host = authorityHost
         if let port = url.port, port != (scheme == "https" ? 443 : 80) { parts.port = port }
         return parts.string
     }

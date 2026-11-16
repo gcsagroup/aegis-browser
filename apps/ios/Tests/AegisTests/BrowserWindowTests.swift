@@ -130,6 +130,57 @@ import XCTest
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "unreadable original")
     }
 
+    func testEmptyGroupAfterMovingLastTabRestoresAndNewTabUsesSelectedGroup() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("windows.json")
+        let store = BrowserWindowStore(persistenceURL: file)
+        let id = try store.createWindow()
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), windowID: id, windowStore: store)
+        defer { browser.closeWindow() }
+        let ungrouped = try XCTUnwrap(browser.activeTab)
+        let group = try browser.createGroup(name: "Synthetic group")
+        let last = try XCTUnwrap(browser.activeTab)
+        browser.moveTab(last.id, to: nil)
+        XCTAssertNil(browser.activeTab)
+        XCTAssertEqual(browser.selectedGroupID, group)
+        browser.persistSession()
+        let reopened = BrowserSession(dataStore: browser.dataStore, windowID: id,
+                                      windowStore: BrowserWindowStore(persistenceURL: file))
+        defer { reopened.closeWindow() }
+        XCTAssertNil(reopened.activeTab)
+        XCTAssertEqual(reopened.selectedGroupID, group)
+        let added = reopened.newTab()
+        XCTAssertEqual(added.groupID, group)
+        XCTAssertTrue(reopened.activeTab === added)
+        reopened.close(added.id)
+        XCTAssertNil(reopened.activeTab)
+        reopened.selectGroup(nil)
+        XCTAssertEqual(Set(reopened.displayedTabs.map(\.id)), [ungrouped.id, last.id])
+    }
+
+    func testLegacySnapshotWithStaleActiveOrGroupSelectionIsRecoverable() throws {
+        let store = BrowserWindowStore()
+        let group = BrowserTabGroup(name: "Empty group")
+        let ungrouped = SavedBrowserTab(id: UUID(), url: URL(string: "aegis://start")!, groupID: nil)
+        let id = UUID()
+        // Older snapshots could point at a tab outside the selected empty group.
+        try store.save(BrowserWindowSnapshot(id: id, tabs: [ungrouped], groups: [group],
+                                             selectedGroupID: group.id, activeTabID: ungrouped.id))
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), windowID: id, windowStore: store)
+        defer { browser.closeWindow() }
+        XCTAssertNil(browser.activeTabID)
+        XCTAssertNil(browser.activeTab)
+        browser.selectGroup(nil)
+        XCTAssertEqual(browser.activeTab?.id, ungrouped.id)
+        try store.save(BrowserWindowSnapshot(id: id, tabs: [ungrouped], groups: [],
+                                             selectedGroupID: UUID(), activeTabID: UUID()))
+        let stale = BrowserSession(dataStore: browser.dataStore, windowID: id, windowStore: store)
+        defer { stale.closeWindow() }
+        XCTAssertNil(stale.selectedGroupID)
+        XCTAssertEqual(stale.activeTab?.id, ungrouped.id)
+    }
+
     func testOpenWindowCannotBeDeletedAndWriteFailureDoesNotPublish() throws {
         let store = BrowserWindowStore()
         let id = try store.createWindow(); store.register(id)

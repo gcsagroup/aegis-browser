@@ -19,8 +19,6 @@ struct AegisRootView: View {
     @State private var presentedDownload: (url: URL, access: BrowserAccessDownload?)?
     @State private var showsFind = false
     @State private var showsReading = false
-    @State private var findText = ""
-    @State private var findMessage: AegisLocalizedMessage?
 
     @Environment(\.locale) private var localizationLocale
     var body: some View {
@@ -40,7 +38,26 @@ struct AegisRootView: View {
                     showsReading: $showsReading
                 )
             } else {
-                ContentUnavailableView("没有标签页", systemImage: "rectangle.stack")
+                ContentUnavailableView {
+                    Label("没有标签页", systemImage: "rectangle.stack")
+                } actions: {
+                    Button { _ = browser.newTab() } label: {
+                        Label("新建标签页", systemImage: "plus")
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("new-tab-button")
+                    Button { showsTabs = true } label: {
+                        Label("标签 \(browser.displayedTabs.count)", systemImage: "rectangle.stack")
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.bordered)
+                        .accessibilityValue(browser.selectedGroupName)
+                        .accessibilityIdentifier("tabs-button")
+                }
+                .focusedSceneValue(\.browserKeyboardActions, BrowserKeyboardActions(
+                    newTab: { _ = browser.newTab() }, closeTab: {}, editAddress: {},
+                    find: {}, reload: {}, back: {}, forward: {}))
             }
         }
         .background(Color(uiColor: .systemGroupedBackground))
@@ -67,35 +84,20 @@ struct AegisRootView: View {
             DownloadsView(initialURL: presentedDownload?.url, protectedContext: presentedDownload?.access)
         }
         .sheet(isPresented: $showsFind) {
-            NavigationStack {
-                Form {
-                    FindQueryField(text: $findText)
-                    Button("查找下一个") {
-                        Task { @MainActor in
-                            do {
-                                let result = try await browser.activeTab?.webView.find(findText, configuration: .init())
-                                findMessage = result?.matchFound == true
-                                    ? .resource("已找到匹配内容。")
-                                    : .resource("未找到匹配内容。")
-                            } catch { findMessage = .error(error) }
-                        }
-                    }.disabled(findText.isEmpty)
-                    Text(findMessage?.text ?? "")
-                }.localizedNavigationTitle("在页面中查找")
-                    .toolbar { Button("完成") { showsFind = false }.keyboardShortcut(.escape, modifiers: []) }
-            }.presentationDetents([.medium])
+            if let tab = browser.activeTab { FindInPageView(tab: tab).id(tab.id) }
         }
         .onChange(of: browser.pendingDownloadURL) { _, url in
             guard let url, !showsDownloads else { return }
             presentedDownload = (url, browser.pendingAccessDownload)
             showsDownloads = true
         }
-        .onChange(of: browser.activeTabID) { _, _ in updateAddress() }
+        .onChange(of: browser.activeTabID) { _, _ in updateAddress(); showsFind = false }
         .onChange(of: browser.profile) { _, profile in
             updateAddress()
             showsAgent = false
             showsData = false
             showsDownloads = false
+            showsFind = false
             browser.pendingDownloadURL = nil
         }
         .onOpenURL { input in
@@ -131,6 +133,7 @@ struct AegisRootView: View {
             guard phase == .active else {
                 browser.persistSession()
                 showsAgent = false
+                showsFind = false
                 return
             }
             consumeSharedURLIfPresent()
@@ -308,6 +311,16 @@ private struct BrowserPane: View {
                     tab.webView.becomeFirstResponder()
                 }.frame(minWidth: 44, minHeight: 44)
             } else {
+                Button { showsTabs = true } label: {
+                    ZStack {
+                        Image(systemName: "square.on.square")
+                        Text(browser.displayedTabs.count.formatted())
+                            .font(.caption2.bold()).padding(2)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 3))
+                    }.frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(Text("标签 \(browser.displayedTabs.count)"))
+                .accessibilityIdentifier("tabs-button")
                 moreMenu
             }
             if isCollapsed { Spacer(minLength: 0) }
@@ -326,9 +339,6 @@ private struct BrowserPane: View {
     private var moreMenu: some View {
         Menu {
             Section {
-                Button { showsTabs = true } label: {
-                    Label("标签 \(browser.displayedTabs.count)", systemImage: "square.on.square")
-                }.accessibilityIdentifier("tabs-button")
                 Button("新建标签页", systemImage: "plus") { _ = browser.newTab() }
                     .accessibilityIdentifier("new-tab-button")
                 Menu {

@@ -5,6 +5,7 @@ import WebKit
 struct BrowserGeneralSettingsView: View {
     @ObservedObject var preferences: BrowserPreferences
     @State private var draft = BrowserPreferenceValues()
+    @State private var baseline = BrowserPreferenceValues()
     @State private var message: AegisLocalizedMessage?
 
     @Environment(\.locale) private var localizationLocale
@@ -77,7 +78,11 @@ struct BrowserGeneralSettingsView: View {
             }
             Section {
                 Button("保存浏览设置") {
-                    do { try preferences.save(draft); message = .resource("浏览设置已保存。") }
+                    do {
+                        try preferences.saveChanges(draft, since: baseline)
+                        baseline = preferences.values; draft = baseline
+                        message = .resource("浏览设置已保存。")
+                    }
                     catch { message = .error(error) }
                 }.accessibilityIdentifier("save-browser-preferences")
                 if let message { Text(message.text).accessibilityIdentifier("browser-preferences-status") }
@@ -86,7 +91,7 @@ struct BrowserGeneralSettingsView: View {
         }
         .localizedNavigationTitle("浏览设置")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { draft = preferences.values }
+        .onAppear { baseline = preferences.values; draft = baseline }
     }
 }
 
@@ -183,6 +188,7 @@ struct SitePreferenceEditor: View {
     @ObservedObject var preferences: BrowserPreferences
     let url: URL
     @State private var draft = SitePreferences()
+    @State private var baseline = SitePreferences()
     @State private var message: AegisLocalizedMessage?
     @State private var confirmsSave = false
     @Environment(\.locale) private var localizationLocale
@@ -235,14 +241,18 @@ struct SitePreferenceEditor: View {
                 if let message { Text(message.text) }
             }
         }.localizedNavigationTitle("网站设置").navigationBarTitleDisplayMode(.inline)
-            .onAppear { draft = preferences.site(for: url) }
+            .onAppear { baseline = preferences.site(for: url); draft = baseline }
             .alert("保存私密网站的设置？", isPresented: $confirmsSave) {
                 Button("确认保存") { save() }
                 Button("取消", role: .cancel) { }
             } message: { Text("网站地址与设置会保留在本机，普通和私密浏览均会使用。\n\(BrowserPreferences.origin(url) ?? "")") }
     }
     private func save() {
-        do { try preferences.setSite(draft, for: url); message = .resource("网站设置已保存。") }
+        do {
+            try preferences.saveSiteChanges(draft, since: baseline, for: url)
+            baseline = preferences.site(for: url); draft = baseline
+            message = .resource("网站设置已保存。")
+        }
         catch { message = .error(error) }
     }
 }

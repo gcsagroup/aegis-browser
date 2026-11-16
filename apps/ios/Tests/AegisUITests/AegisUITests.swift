@@ -592,12 +592,12 @@ final class AegisUITests: XCTestCase {
         let app = launchApp()
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 15))
-        app.buttons["browser-more"].tap(); app.buttons["manage-browser-windows"].tap()
+        app.buttons["browser-more"].tap(); app.buttons["窗口管理"].tap()
         XCTAssertTrue(app.buttons["重命名当前窗口"].waitForExistence(timeout: 5))
         app.buttons["重命名当前窗口"].tap()
         app.alerts.textFields.firstMatch.tap(); app.alerts.textFields.firstMatch.typeText("研究窗口")
         app.alerts.buttons["保存"].tap(); app.buttons["完成"].tap()
-        app.buttons["browser-more"].tap(); app.buttons["new-browser-window"].tap()
+        app.buttons["browser-more"].tap(); app.buttons["新建窗口"].tap()
         let blank = app.textFields.matching(NSPredicate(format: "identifier == 'address-field' AND value == 'aegis://start'")).firstMatch
         XCTAssertTrue(blank.waitForExistence(timeout: 15))
         let newWindow = try XCTUnwrap(app.windows.allElementsBoundByIndex.first { window in
@@ -610,7 +610,7 @@ final class AegisUITests: XCTestCase {
         let secondWindow = try XCTUnwrap(app.windows.allElementsBoundByIndex.first { window in
             window.textFields.matching(NSPredicate(format: "identifier == 'address-field' AND value CONTAINS 'article-two'")).count > 0
         })
-        secondWindow.buttons["browser-more"].tap(); app.buttons["manage-browser-windows"].tap()
+        secondWindow.buttons["browser-more"].tap(); app.buttons["窗口管理"].tap()
         app.buttons["重命名当前窗口"].tap()
         app.alerts.textFields.firstMatch.tap(); app.alerts.textFields.firstMatch.typeText("对照窗口")
         app.alerts.buttons["保存"].tap()
@@ -630,15 +630,15 @@ final class AegisUITests: XCTestCase {
         expectation(for: NSPredicate(format: "hittable == true"), evaluatedWith: more)
         waitForExpectations(timeout: 10)
         more.tap()
-        XCTAssertTrue(app.buttons["manage-browser-windows"].waitForExistence(timeout: 5))
-        app.buttons["manage-browser-windows"].tap()
+        XCTAssertTrue(app.buttons["窗口管理"].waitForExistence(timeout: 5))
+        app.buttons["窗口管理"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '对照窗口'")).firstMatch.tap()
         XCTAssertTrue(app.webViews.staticTexts["绿地改造补充说明"].waitForExistence(timeout: 15))
         attachScreenshot("iPad 关闭后重新打开原窗口页面", app)
         let reopened = try XCTUnwrap(app.windows.allElementsBoundByIndex.first { window in
             window.textFields.matching(NSPredicate(format: "identifier == 'address-field' AND value CONTAINS 'article-two'")).count > 0
         })
-        reopened.buttons["browser-more"].tap(); app.buttons["manage-browser-windows"].tap()
+        reopened.buttons["browser-more"].tap(); app.buttons["窗口管理"].tap()
         app.buttons["close-browser-window"].tap()
     }
 
@@ -926,19 +926,26 @@ final class AegisUITests: XCTestCase {
             guard let element = issue.element else { return false }
             return pageFrame.contains(element.frame)
         }
-        for id in ["page-protection", "browser-more"] {
+        for id in ["page-protection", "tabs-button", "browser-more"] {
             XCTAssertGreaterThanOrEqual(app.buttons[id].frame.height, 44)
             XCTAssertGreaterThanOrEqual(app.buttons[id].frame.width, 44)
         }
         XCTAssertGreaterThanOrEqual(app.textFields["address-field"].frame.height, 44)
+        XCTAssertEqual(app.buttons.matching(identifier: "tabs-button").count, 1)
+        XCTAssertTrue(app.buttons["tabs-button"].isHittable)
         app.buttons["page-protection"].tap()
         XCTAssertTrue(app.switches["content-filter-toggle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["site-privacy-status"].exists)
+        XCTAssertTrue(app.buttons["site-details"].exists)
+        XCTAssertFalse(app.switches["access-site-proxy-toggle"].exists)
         XCTAssertTrue(app.staticTexts["filter-network-count"].exists)
         attachScreenshot("地址栏直接打开广告过滤", app)
         app.buttons["完成"].tap()
         app.buttons["browser-more"].tap()
-        for id in ["tabs-button", "new-tab-button", "profile-menu", "data-button", "agent-button"] {
-            XCTAssertTrue(app.buttons[id].exists, "菜单入口应保留：\(id)")
+        for (id, label) in [("new-tab-button", "新建标签页"), ("profile-menu", "普通"),
+                            ("data-button", "资料"), ("agent-button", "AI 助手")] {
+            let entry = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label)).firstMatch
+            XCTAssertTrue(entry.waitForExistence(timeout: 5), "菜单入口应保留：\(label)")
         }
         attachScreenshot("集中浏览器操作菜单", app)
     }
@@ -1369,6 +1376,7 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
 
     private func readDirectQuota(_ app: XCUIApplication, name: String) throws -> [String: UInt64] {
         app.buttons["page-protection"].tap()
+        app.buttons["site-details"].tap()
         let refresh = app.buttons["access-usage-refresh"]
         for _ in 0..<8 where !refresh.isHittable { app.swipeUp() }
         XCTAssertTrue(refresh.waitForExistence(timeout: 10))
@@ -1427,6 +1435,7 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
             attachJSON(route, name: "site-switch-\(site.id)-route.json")
         }
         app.buttons["page-protection"].tap()
+        app.buttons["site-details"].tap()
         let currentHost = app.staticTexts["access-site-proxy-host"]
         XCTAssertTrue(currentHost.waitForExistence(timeout: 5))
         XCTAssertTrue(first.contains(currentHost.label.lowercased()))
@@ -1843,6 +1852,7 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
             let done = app.navigationBars.buttons["完成"]
             if done.exists, done.isHittable { done.tap(); _ = done.waitForNonExistence(timeout: 3) }
         }
+        app.buttons["site-details"].tap()
         let committedHost = app.staticTexts["access-site-proxy-host"]
         guard committedHost.waitForExistence(timeout: 5), committedHost.label.lowercased() == addressHost else {
             return ["performed": false, "result": "COMMITTED_HOST_MISMATCH"]
@@ -1953,6 +1963,7 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         }
         guard button.exists, button.isHittable else { return ["result": "MENU_UNAVAILABLE", "menu_closed": true] }
         button.tap()
+        app.buttons["site-details"].tap()
         let routeHost = app.staticTexts["access-site-proxy-host"]
         guard routeHost.waitForExistence(timeout: 5) else {
             let done = app.navigationBars.buttons["完成"]
@@ -2038,5 +2049,82 @@ final class AegisRealWebsiteSmokeTests: XCTestCase {
         }
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+}
+
+extension AegisUITests {
+    func testEmptySelectedGroupKeepsWindowActionsAfterCloseMoveAndRelaunch() {
+        let app = launchApp()
+        app.buttons["tabs-button"].tap()
+        app.buttons["tab-group-selector"].tap()
+        app.buttons["新建标签组"].tap()
+        let name = app.alerts.textFields.firstMatch
+        name.tap()
+        name.typeText("Audit")
+        app.alerts.buttons["保存"].tap()
+        XCTAssertTrue(app.buttons["tab-group-selector"].label.contains("Audit"))
+        app.buttons["完成"].tap()
+        app.buttons["browser-more"].tap()
+        app.buttons["页面操作"].tap()
+        app.buttons["关闭当前标签"].tap()
+        XCTAssertTrue(app.staticTexts["没有标签页"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["new-tab-button"].isHittable)
+        XCTAssertTrue(app.buttons["tabs-button"].isHittable)
+        for id in ["new-tab-button", "tabs-button"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].frame.height, 44)
+            XCTAssertGreaterThanOrEqual(app.buttons[id].frame.width, 44)
+        }
+        app.terminate()
+        app.launchArguments.append("--ui-testing-windows-keep")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["没有标签页"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["new-tab-button"].isHittable)
+        app.buttons["new-tab-button"].tap()
+        XCTAssertTrue(app.textFields["address-field"].waitForExistence(timeout: 5))
+        app.buttons["tabs-button"].tap()
+        XCTAssertTrue(app.buttons["tab-group-selector"].label.contains("Audit"))
+        let move = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ OR label == %@", "move-tab-", "移动标签")).firstMatch
+        XCTAssertTrue(move.waitForExistence(timeout: 5)); move.tap()
+        app.buttons["移出标签组"].tap()
+        XCTAssertTrue(app.buttons["tab-group-selector"].label.contains("Audit"))
+        app.buttons["完成"].tap()
+        XCTAssertTrue(app.staticTexts["没有标签页"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["new-tab-button"].isHittable)
+        XCTAssertTrue(app.buttons["tabs-button"].isHittable)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.staticTexts["没有标签页"].waitForExistence(timeout: 8))
+        app.buttons["tabs-button"].tap()
+        XCTAssertTrue(app.buttons["tab-group-selector"].waitForExistence(timeout: 5))
+        app.buttons["tab-group-selector"].tap()
+        app.buttons["所有标签"].tap()
+        app.buttons["完成"].tap()
+        XCTAssertTrue(app.textFields["address-field"].waitForExistence(timeout: 5))
+        attachScreenshot("空分组重启后可切组恢复浏览", app)
+    }
+
+    func testPrivateFindQueryAndResultDoNotSurviveProfileSwitch() {
+        let app = launchApp()
+        app.buttons["browser-more"].tap()
+        app.buttons["普通"].tap()
+        app.buttons["私密"].tap()
+        app.buttons["browser-more"].tap()
+        app.buttons["页面操作"].tap()
+        app.buttons["在页面中查找"].tap()
+        let field = app.textFields["find-text"]
+        XCTAssertTrue(field.waitForExistence(timeout: 8))
+        field.tap()
+        field.typeText("privacy427")
+        XCTAssertEqual(field.value as? String, "privacy427")
+        app.buttons["完成"].tap()
+        app.buttons["browser-more"].tap()
+        app.buttons["私密"].tap()
+        app.buttons["普通"].tap()
+        app.buttons["browser-more"].tap()
+        app.buttons["页面操作"].tap()
+        app.buttons["在页面中查找"].tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 8))
+        XCTAssertNotEqual(field.value as? String, "privacy427")
+        XCTAssertEqual(app.staticTexts["find-result"].label, "")
+        attachScreenshot("普通模式不保留私密查找词与结果", app)
     }
 }
