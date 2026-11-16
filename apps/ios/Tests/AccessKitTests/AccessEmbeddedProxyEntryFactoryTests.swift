@@ -105,6 +105,68 @@ private final class RecordingEmbeddedCoreForFactory: AccessEmbeddedCoreControlli
 
 @MainActor
 final class AccessEmbeddedTeardownTests: XCTestCase {
+    func testCancelledReplacementStopsItsListenerAndNextPrepareWaitsForItsCore() async throws {
+        let core = DelayedStopCore()
+        defer { core.finishStop() }
+        let stops = (1...3).map { expectation(description: "core stop \($0) entered") }
+        let finalStopFinished = expectation(description: "final stop completed")
+        core.onStop = { count in if count <= stops.count { stops[count - 1].fulfill() } }
+        core.onStopFinished = { count in if count == 3 { finalStopFinished.fulfill() } }
+        let gate = AccessProvisionTestGate(entered: expectation(description: "replacement listener is live"))
+        defer { gate.finish() }
+        let thirdEntered = expectation(description: "third preparation entered session")
+        let parameters = try AccessRealityVisionParameters(address: "node.invalid", port: 443,
+            userID: "550e8400-e29b-41d4-a716-446655440000", serverName: "www.example.com", publicKey: "fixture-key", shortID: "")
+        var reads = 0
+        let session = AccessEmbeddedProxyEntrySession(core: core, parameters: { reads += 1; return parameters })
+        var replacement: AccessProxyEntryPublisher.Provision?
+        var stopped: [String] = []
+        let publisher = AccessProxyEntryPublisher(provision: { generation, deadline in
+            if generation == 3 { thirdEntered.fulfill() }
+            let provisioned = try await session.provision(generation: generation, deadline: deadline)
+            if generation == 2 { replacement = provisioned; await gate.wait() }
+            return provisioned
+        }, shutdown: { identity in stopped.append(identity); session.shutdown(identity: identity) })
+        let oldID = UUID(), replacementID = UUID(), thirdID = UUID()
+        let first = try await publisher.prepare(.init(operationID: oldID, deadline: .seconds(5)))
+        let oldHost = AccessHostStoreKey(scopeID: "ordinary", host: try AccessSiteHost("retained.invalid"), isPrivate: false)
+        XCTAssertTrue(publisher.retain(first.endpoint, for: oldHost))
+        publisher.cancel(operationID: oldID)
+        publisher.closeCurrentGeneration()
+        let next = Task { try await publisher.prepare(.init(operationID: replacementID, deadline: .seconds(5))) }
+        await fulfillment(of: [stops[0]], timeout: 2)
+        XCTAssertEqual(core.startCount, 1)
+        core.finishStop()
+        await fulfillment(of: [gate.entered], timeout: 2)
+        let second = try XCTUnwrap(replacement)
+        XCTAssertNotEqual(first.endpoint.identity, second.endpoint.identity)
+        XCTAssertTrue(session.isRuntimeHealthy); XCTAssertEqual(core.startCount, 2)
+        publisher.cancel(operationID: replacementID)
+        gate.finish()
+        do { _ = try await next.value; XCTFail("Cancelled replacement was published") }
+        catch is CancellationError { }
+        XCTAssertFalse(session.isRuntimeHealthy, "Unclaimed listener must close even while old host stores remain retained")
+        await fulfillment(of: [stops[1]], timeout: 2)
+        XCTAssertTrue(core.isRunning, "The synthetic stop barrier is still pending")
+        let third = Task { try await publisher.prepare(.init(operationID: thirdID, deadline: .seconds(5))) }
+        await fulfillment(of: [thirdEntered], timeout: 2)
+        XCTAssertEqual(reads, 2); XCTAssertEqual(core.startCount, 2)
+        XCTAssertNil(publisher.currentEndpoint)
+        core.finishStop()
+        let ready = try await third.value
+        XCTAssertEqual(reads, 3); XCTAssertEqual(core.startCount, 3)
+        XCTAssertTrue(publisher.validateReady(ready)); XCTAssertTrue(session.isRuntimeHealthy)
+        publisher.cancel(operationID: thirdID)
+        await fulfillment(of: [stops[2]], timeout: 2)
+        publisher.release(for: oldHost)
+        publisher.cancel(operationID: replacementID)
+        publisher.closeCurrentGeneration()
+        XCTAssertEqual(stopped, [first.endpoint.identity, second.endpoint.identity, ready.endpoint.identity])
+        core.finishStop()
+        await fulfillment(of: [finalStopFinished], timeout: 2)
+        XCTAssertFalse(core.isRunning)
+    }
+
     func testRevocationStopsRetainedTransportAndNextPrepareWaitsAndReauthorizes() async throws {
         let core = DelayedStopCore()
         let parameters = try AccessRealityVisionParameters(address: "node.invalid", port: 443,
@@ -212,10 +274,13 @@ final class AccessEmbeddedTeardownTests: XCTestCase {
 
 private final class DelayedStopCore: AccessEmbeddedCoreControlling, @unchecked Sendable {
     // All test mutations run on MainActor, including the async native stub.
+    @MainActor init() {}
     @MainActor private var running = false
     @MainActor private(set) var startCount = 0
     @MainActor private(set) var stopCount = 0
     @MainActor private var stopContinuation: CheckedContinuation<Void, Never>?
+    @MainActor var onStop: ((Int) -> Void)?
+    @MainActor var onStopFinished: ((Int) -> Void)?
     var isRunning: Bool { MainActor.assumeIsolated { running } }
     @MainActor func start(configData: Data) { startCount += 1; running = true }
     @MainActor func dial(host: String, port: UInt16) throws -> any AccessRealityPathStream {
@@ -223,8 +288,9 @@ private final class DelayedStopCore: AccessEmbeddedCoreControlling, @unchecked S
         return AccessMemoryRealityStream()
     }
     @MainActor func stop() async {
-        await withCheckedContinuation { stopContinuation = $0; stopCount += 1 }
+        await withCheckedContinuation { stopContinuation = $0; stopCount += 1; onStop?(stopCount) }
         running = false
+        onStopFinished?(stopCount)
     }
     @MainActor func finishStop() { stopContinuation?.resume(); stopContinuation = nil }
 }

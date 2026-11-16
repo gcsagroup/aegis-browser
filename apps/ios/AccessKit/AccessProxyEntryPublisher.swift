@@ -25,8 +25,17 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
     private let provision: @MainActor (UInt64, Duration) async throws -> Provision
     private let shutdown: @MainActor (String) -> Void
     private let healthCheck: (@MainActor () -> Bool)?
+    private struct ProvisionID: Hashable {
+        let identity: String
+        let generation: UInt64
+        init(_ endpoint: AccessManagedProxyEndpoint) {
+            identity = endpoint.identity
+            generation = endpoint.generation
+        }
+    }
     private var instance: Provision?
-    private var consumers: [AccessHostStoreKey: String] = [:]
+    private var consumers: [AccessHostStoreKey: ProvisionID] = [:]
+    private var stoppedProvisions: Set<ProvisionID> = []
     /// Waiters keyed by operation, scoped to the generation they joined.
     private var waiters: [UUID: UInt64] = [:]
     private var inflight: Task<Provision, Error>?
@@ -91,7 +100,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         do {
             provisioned = try await task.value
         } catch {
-            waiters.removeValue(forKey: request.operationID)
+            if waiters[request.operationID] == generation { waiters.removeValue(forKey: request.operationID) }
             if inflightGeneration == generation {
                 closedGenerations.insert(generation)
                 inflight = nil
@@ -109,13 +118,10 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         if inflightGeneration == generation {
             inflight = nil
         }
-        guard waiters[request.operationID] != nil else {
+        guard waiters[request.operationID] == generation else {
             // Last waiter cancelled while provision finished: destroy the unclaimed entry.
             // If other waiters remain for this generation, leave the provision for them.
-            if !waiters.values.contains(generation), consumers.isEmpty, instance == nil {
-                closedGenerations.insert(provisioned.endpoint.generation)
-                shutdown(provisioned.endpoint.identity)
-            }
+            discardIfUnclaimed(provisioned, preparedFor: generation)
             throw CancellationError()
         }
         guard !closedGenerations.contains(generation) else {
@@ -124,6 +130,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         }
         guard provisioned.endpoint.generation == generation else {
             waiters.removeValue(forKey: request.operationID)
+            discardIfUnclaimed(provisioned, preparedFor: generation)
             throw AccessSiteSessionError.prepareFailed("入口版本与这次准备不一致")
         }
         instance = provisioned
@@ -139,7 +146,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
     }
 
     public func validateReady(_ result: AccessProxyEntryPrepareResult) -> Bool {
-        guard waiters[result.operationID] != nil else { return false }
+        guard waiters[result.operationID] == result.endpoint.generation else { return false }
         guard let instance, isHealthy(instance) else { return false }
         guard !closedGenerations.contains(instance.endpoint.generation) else { return false }
         guard result.endpoint.identity == instance.endpoint.identity else { return false }
@@ -154,7 +161,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         guard endpoint.identity == instance.endpoint.identity,
               endpoint.generation == instance.endpoint.generation
         else { return false }
-        consumers[key] = endpoint.identity
+        consumers[key] = ProvisionID(endpoint)
         return true
     }
 
@@ -176,7 +183,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         self.instance = failed
         // Failed metadata must not leave retained WebKit consumers on a live transport.
         // The session owns an asynchronous stop barrier before any later provision.
-        shutdown(instance.endpoint.identity)
+        stopOnce(instance)
         emit(failed.endpoint)
     }
 
@@ -212,12 +219,31 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         streamContinuation?.yield(endpoint)
     }
 
+    private func discardIfUnclaimed(_ provision: Provision, preparedFor generation: UInt64) {
+        let id = ProvisionID(provision.endpoint)
+        guard !waiters.values.contains(generation), !consumers.values.contains(id) else { return }
+        // A cancelled sibling can finish after a winner publishes this transport.
+        // shutdown takes only an identity, so never stop a newer live publication
+        // using that same identity either. Older failed metadata owns neither.
+        if let instance, instance.endpoint.identity == id.identity,
+           instance.endpoint.generation >= id.generation,
+           !closedGenerations.contains(instance.endpoint.generation) { return }
+        closedGenerations.insert(id.generation)
+        stopOnce(provision)
+    }
+
+    private func stopOnce(_ provision: Provision) {
+        guard stoppedProvisions.insert(ProvisionID(provision.endpoint)).inserted else { return }
+        shutdown(provision.endpoint.identity)
+    }
+
     private func reapIfIdle() {
-        guard waiters.isEmpty, consumers.isEmpty, let instance else { return }
+        guard let instance, !waiters.values.contains(instance.endpoint.generation),
+              !consumers.values.contains(ProvisionID(instance.endpoint)) else { return }
         healthTask?.cancel()
         healthTask = nil
-        let identity = instance.endpoint.identity
         self.instance = nil
-        if !closedGenerations.contains(instance.endpoint.generation) { shutdown(identity) }
+        closedGenerations.insert(instance.endpoint.generation)
+        stopOnce(instance)
     }
 }
