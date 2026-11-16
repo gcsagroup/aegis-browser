@@ -82,6 +82,97 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertEqual(publisher.provisionCount, 1)
     }
 
+    func testUnavailableDefaultPreservesLoadedDocumentAndBothHistoryDirections() async throws {
+        try await assertOptionalPreparationRetiresOnlyWhenStoreChanges(succeeds: false)
+    }
+
+    func testReadyDefaultRetiresLoadedDocumentOnlyWhenBindingManagedStore() async throws {
+        try await assertOptionalPreparationRetiresOnlyWhenStoreChanges(succeeds: true)
+    }
+
+    private func assertOptionalPreparationRetiresOnlyWhenStoreChanges(succeeds: Bool) async throws {
+        let target = URL(string: "https://optional-history.invalid/destination")!
+        let origin = OriginReceipt(port: 18_294, body: "<title>Direct history</title><a id='next' href='\(target.absoluteString)'>Next</a>")
+        try await origin.start()
+        defer { origin.stop() }
+        let witness = AnsweringOpener(finishAfterRecording: true)
+        let listener = try await makeListener(port: 18_295, tunnels: witness)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let gate = WindowPrepareGate()
+        defer { gate.finish() }
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            await gate.wait()
+            guard succeeds else { throw AccessSiteSessionError.nodeUnavailable }
+            return .init(endpoint: .init(identity: "optional-history", generation: generation,
+                loopbackHost: "127.0.0.1", port: 18_295, state: .ready),
+                listenerReady: true, runtimeHealthy: true, bridgeInstalled: true)
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, defaultLocationPrivacy: true)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        browser.hostCoordinator = coordinator
+        defer { browser.closeWindow() }
+        let tab = try XCTUnwrap(browser.activeTab)
+        try await tab.prepareContentRulesForTests()
+        let window = show(tab.webView)
+        defer { window.isHidden = true }
+        let first = URL(string: "http://localhost:\(origin.port)/first")!
+        let second = URL(string: "http://localhost:\(origin.port)/second")!
+        tab.load(first)
+        try await waitUntil({ tab.committedMainFrameURL == first && !tab.isLoading }, message: "First direct page must commit")
+        let view = tab.webView, store = tab.websiteDataStore
+        let firstItem = try XCTUnwrap(view.backForwardList.currentItem)
+        tab.load(second)
+        try await waitUntil({ tab.committedMainFrameURL == second && !tab.isLoading }, message: "Second direct page must commit")
+        let secondItem = try XCTUnwrap(view.backForwardList.currentItem)
+        let backList = view.backForwardList.backList
+        XCTAssertTrue(view.backForwardList.backItem === firstItem)
+        _ = try await view.evaluateJavaScript("document.querySelector('#next').click(); true")
+        try await waitUntil({ gate.started }, message: "The real page link must enter optional preparation")
+        XCTAssertNotNil(tab.heldProxyRequestForTests)
+        XCTAssertTrue(tab.webView === view, "Optional preparation must preserve the existing document before a store is selected")
+        XCTAssertTrue(tab.websiteDataStore === store)
+        XCTAssertTrue(view.backForwardList.currentItem === secondItem)
+        XCTAssertEqual(view.backForwardList.backList, backList)
+        XCTAssertNil(tab.boundHostName)
+        XCTAssertFalse(coordinator.snapshot(for: tab, forLocationControl: true).toggleOn)
+        gate.finish()
+
+        if succeeds {
+            try await waitUntil(seconds: 10, {
+                self.attach(tab.webView, to: window)
+                return witness.authorities.contains("optional-history.invalid:443")
+            }, message: "The successful preparation must send through the managed listener")
+            XCTAssertFalse(tab.webView === view)
+            XCTAssertFalse(tab.websiteDataStore === store)
+            XCTAssertEqual(tab.boundHostName, target.host)
+            XCTAssertTrue(coordinator.registry.store(scopeID: tab.browsingScopeID,
+                host: try AccessSiteHost("optional-history.invalid"), isPrivate: false) === tab.websiteDataStore)
+            XCTAssertFalse(try XCTUnwrap(tab.websiteDataStore.proxyConfigurations.first).allowFailover)
+            XCTAssertNil(view.load(URLRequest(url: first)), "A store switch must still terminally retire the old realm")
+        } else {
+            try await waitUntil({ tab.heldProxyRequestForTests == nil }, message: "The failed optional preparation must resume its request")
+            XCTAssertTrue(tab.webView === view)
+            XCTAssertTrue(tab.websiteDataStore === store)
+            XCTAssertTrue(view.backForwardList.currentItem === secondItem)
+            XCTAssertEqual(view.backForwardList.backList, backList)
+            XCTAssertFalse(coordinator.requiresProxy(tab: tab, url: target))
+            XCTAssertNil(tab.boundHostName)
+            tab.stop()
+            tab.goBack()
+            try await waitUntil({ tab.committedMainFrameURL == first && !tab.isLoading }, message: "Back must reach the original live history item")
+            XCTAssertTrue(view.backForwardList.currentItem === firstItem)
+            XCTAssertTrue(view.backForwardList.forwardItem === secondItem)
+            XCTAssertTrue(tab.canGoForward)
+            tab.goForward()
+            try await waitUntil({ tab.committedMainFrameURL == second && !tab.isLoading }, message: "Forward must return to the second live history item")
+            XCTAssertTrue(view.backForwardList.currentItem === secondItem)
+            XCTAssertTrue(view.backForwardList.backItem === firstItem)
+            XCTAssertTrue(tab.webView === view); XCTAssertTrue(tab.websiteDataStore === store)
+        }
+        XCTAssertEqual(publisher.provisionCount, 1)
+    }
+
     func testExplicitOnCannotSendToOriginWhilePreparationFails() async throws {
         let origin = OriginReceipt(port: 18_274)
         try await origin.start()
