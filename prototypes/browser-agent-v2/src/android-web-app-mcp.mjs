@@ -1,14 +1,6 @@
-import { createRequire } from 'node:module';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-const require = createRequire(import.meta.url);
-const metadata = require.resolve('chrome-devtools-mcp/package.json');
-const entry = pathToFileURL(path.resolve(path.dirname(metadata), require(metadata).bin['chrome-devtools-mcp']));
-
 export async function serveAndroidWebAppInspection(endpoint, signal) {
   const { McpServer, StdioServerTransport, puppeteer, zod } =
-    await import(new URL('../third_party/index.js', entry));
+    await import('chrome-devtools-mcp/out/Default/gen/src/third_party/index.js');
   const server = new McpServer({ name: 'aegis-android-web-app', version: '1.0.0' });
   server.registerTool('inspect_web_app', {
     description: '读取 Aegis Android 已打开页面的 Web App Manifest 与 Chromium 安装条件。',

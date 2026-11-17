@@ -3,7 +3,7 @@ const assets = new URL('ocr_assets/', location.href);
 const workerPath = new URL('worker.min.js', assets).href;
 
 if (globalThis.trustedTypes) {
-  trustedTypes.createPolicy('default', {
+  globalThis.trustedTypes.createPolicy('default', {
     createScriptURL(value) {
       if (value === workerPath) return value;
       throw new TypeError('Unexpected OCR worker');

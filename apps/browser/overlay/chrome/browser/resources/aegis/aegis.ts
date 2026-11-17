@@ -1557,7 +1557,7 @@ async function initializeImageOcrSettings() {
   try {
     renderSaved(await requestSettings<ImageOcrSettings>('getImageOcrSettings'));
     fields.disabled = false;
-  } catch (_) {
+  } catch (error) {
     status.textContent = settingsText('无法读取设置，请重新打开此页。', 'Could not load settings. Reopen this page.', '無法讀取設定，請重新開啟此頁。');
   }
 }
@@ -1575,7 +1575,7 @@ async function init() {
       const result: AegisStatus = await sendWithPromise('openBrowserAgent', section);
       if (result.ok === false) throw new Error(result.error || 'unavailable');
     });
-    void initializeImageOcrSettings();
+    void initializeImageOcrSettings().catch((error) => { console.error(error); });
   }
   bindToggle('tracker', 'trackerBlocking');
   bindToggle('phish', 'phishInterstitial');

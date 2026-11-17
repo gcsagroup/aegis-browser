@@ -88,25 +88,31 @@ async function recordIdentity() {
   } else {
     const simctl = (...args) => execFileSync('xcrun', ['simctl', ...args], { encoding: 'utf8', timeout: 8000 }).trim();
     const { devices } = JSON.parse(simctl('list', 'devices', 'booted', '-j'));
-    const runtime = Object.keys(devices).find(key => devices[key].some(item => item.udid === simulator));
-    assert.ok(runtime, '指定的 iOS 验收模拟器尚未启动');
-    const target = devices[runtime].find(item => item.udid === simulator);
+    const entry = Object.entries(devices).find(([, targets]) => targets.some(item => item.udid === simulator));
+    assert.ok(entry, '指定的 iOS 验收模拟器尚未启动');
+    const [runtime, targets] = entry;
+    const target = targets.find(item => item.udid === simulator);
     const app = simctl('get_app_container', simulator, 'com.gcsa.aegis', 'app');
     const info = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(app, 'Info.plist')], {
       encoding: 'utf8', timeout: 8000,
     }));
-    const executable = await readFile(path.join(app, info.CFBundleExecutable));
+    const executableName = info.CFBundleExecutable;
+    assert.match(executableName, /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/, '无效的验收 App 可执行文件名');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 通过文件名校验后，只读取验收 App 包内的可执行文件。
+    const executable = await readFile(path.join(app, executableName));
     identity = { platform, kind: 'simulator', device: target.name, runtime,
       bundleId: info.CFBundleIdentifier, version: info.CFBundleShortVersionString, build: info.CFBundleVersion,
       executableSha256: createHash('sha256').update(executable).digest('hex') };
   }
   assert.ok(identity.version && identity.build, '无法确认实际安装版本');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
   await writeFile(path.join(runRoot, 'installed-identity.json'), JSON.stringify(identity, null, 2) + '\n', { mode: 0o600 });
 }
 const screenshotPath = path.join(workingDirectory, 'mobile-fixture.png');
 const assertPNG = data => assert.equal(data.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
 try {
   const config = path.join(workingDirectory, 'config.json');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
   await writeFile(config, '{}', { mode: 0o600 });
   if (android) {
     adb('reverse', '--no-rebind', forwardedFixture, forwardedFixture);
@@ -153,6 +159,7 @@ try {
     journal.assertion('导航、DOM、点击及输入', true);
 
     await call('take_screenshot', { ...target, filePath: screenshotPath });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     assertPNG(await readFile(screenshotPath));
     assert.match(text(await call('list_console_messages', { ...target, types: ['error'] })), /AEGIS_FIXTURE_CONSOLE_ERROR/);
     const network = text(await call('list_network_requests', { ...target, resourceTypes: ['fetch'] }));
@@ -166,11 +173,13 @@ try {
     await call('navigate_page', { ...target, type: 'reload', ignoreCache: true });
     await call('wait_for', { ...target, text: ['诊断状态 503'], timeout: 8000 });
     await call('performance_stop_trace', { ...target, filePath: tracePath });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     assert.equal((await readFile(tracePath)).subarray(0, 2).toString('hex'), '1f8b');
     journal.assertion('Android 浏览器性能 trace', true);
 
     const route = fixture.origin + '/devtools/api';
     const body = path.join(workingDirectory, 'mock.json');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     await writeFile(body, '{"diagnostic":"mobile-mock"}', { mode: 0o600 });
     const rule = { ...target, route, resourceType: 'fetch' };
     const apiHits = hits.get('/devtools/api') ?? 0;
@@ -272,6 +281,7 @@ try {
     assert.equal(shot?.mimeType, 'image/png');
     const png = Buffer.from(shot.data, 'base64');
     assertPNG(png);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     await writeFile(screenshotPath, png, { mode: 0o600 });
     journal.assertion('真实 WebKit PNG 截图', true);
     await call('navigate_page', { url: fixture.origin + '/login' });

@@ -244,7 +244,8 @@ class LocalFixtureServer {
     };
     this.controlledResponses.set(pathname, record);
     return {
-      release: (body) => this.release(record, body),
+      release: (body = '<!doctype html><title>Aegis pending grant control</title>') =>
+        this.release(record, body),
       url: `${this.origin}${pathname}`,
       waitForRequest: () =>
         withTimeout(
@@ -731,7 +732,7 @@ async function provePendingInitialGrantUsable(
   const target = await endpoint.newTarget(controlled.url);
   await controlled.waitForRequest();
   await verifyPendingDocumentGrant(target.webSocketDebuggerUrl, timeoutMs);
-  controlled.release('<!doctype html><title>Aegis pending grant control</title>');
+  controlled.release();
 }
 
 async function verifyCrossDocumentInvalidatesGrant(endpoint, fixture, timeoutMs) {

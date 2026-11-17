@@ -2,7 +2,7 @@ import {sendWithPromise} from 'chrome://resources/js/cr.js';
 
 const locale = navigator.language.toLowerCase();
 const language = /^zh-(tw|hk|mo|hant)/.test(locale) ? 2 : locale.startsWith('zh') ? 1 : 0;
-const copy = {
+const copy = new Map(Object.entries({
   screenshot: ['Full page screenshot', '整页截图', '整頁截圖'],
   recognize: ['Recognize image text', '识别图片文字', '辨識圖片文字'],
   unavailable: ['The page could not be captured.', '无法截取这个网页。', '無法截取這個網頁。'],
@@ -33,10 +33,10 @@ const copy = {
   remoteDone: ['Recognized on server.', '已用服务器识别。', '已用伺服器辨識。'],
   settingsChanged: ['Server settings changed. Open the upload preview again.', '服务器设置已变更，请重新打开上传预览。', '伺服器設定已變更，請重新開啟上傳預覽。'],
   limited: ['Crop to a smaller area to send it.', '请裁成更小的区域后发送。', '請裁成更小的區域後傳送。'],
-};
+}));
 
 const $ = id => document.getElementById(id);
-const t = key => copy[key][language];
+const t = key => copy.get(key).at(language);
 const status = key => { $('status').textContent = key ? t(key) : ''; };
 const source = $('source');
 const paper = $('paper');
@@ -144,7 +144,7 @@ function base64Image(blob) {
 async function refreshRemoteAvailability() {
   try {
     $('server').hidden = !await sendWithPromise('aegisCaptureGetRemoteDestination');
-  } catch (_) {
+  } catch (error) {
     $('server').hidden = true;
   }
 }

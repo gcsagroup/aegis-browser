@@ -1,15 +1,13 @@
 import http.client
 import io
 import json
+import secrets
 import threading
 import unittest
 
 from PIL import Image, PngImagePlugin
 
 from services.webpage_ocr.server import MAX_BODY, OCR_PATH, OCRServer
-
-
-TOKEN = "controlled-test-token-with-no-access-0000"
 
 
 def png(size=(5, 7)):
@@ -23,6 +21,7 @@ def png(size=(5, 7)):
 class ServiceTest(unittest.TestCase):
     def setUp(self):
         self.images = []
+        self.token = secrets.token_urlsafe(32)
         self.allow_engine = threading.Event()
         self.allow_engine.set()
         self.engine_entered = threading.Event()
@@ -34,7 +33,7 @@ class ServiceTest(unittest.TestCase):
                 raise RuntimeError()
             return ["简体订单", "繁體資料", "E1024"]
 
-        self.server = OCRServer(("127.0.0.1", 0), TOKEN, recognize, max_per_minute=6)
+        self.server = OCRServer(("127.0.0.1", 0), self.token, recognize, max_per_minute=6)
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.start()
         self.addCleanup(self.server_thread.join)
@@ -42,11 +41,11 @@ class ServiceTest(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         self.addCleanup(self.allow_engine.set)
 
-    def call(self, body=None, *, path=OCR_PATH, token=TOKEN, headers=None):
+    def call(self, body=None, *, path=OCR_PATH, token=None, headers=None):
         client = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=8)
         try:
             client.request("POST", path, body if body is not None else png(), {
-                "Authorization": "Bearer " + token,
+                "Authorization": "Bearer " + (self.token if token is None else token),
                 "Content-Type": "image/png",
                 **(headers or {}),
             })
@@ -56,7 +55,7 @@ class ServiceTest(unittest.TestCase):
             client.close()
 
     def test_exact_route_and_credentials_before_decode(self):
-        self.assertEqual(self.call(token="bad")[0], 401)
+        self.assertEqual(self.call(token=secrets.token_urlsafe(32))[0], 401)
         self.assertEqual(self.call(path=OCR_PATH + "?url=https://internal")[0], 404)
         self.assertEqual(self.images, [])
 

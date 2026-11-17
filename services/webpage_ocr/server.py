@@ -131,8 +131,8 @@ class OCRHandler(BaseHTTPRequestHandler):
         self.request.settimeout(5)
         super().setup()
 
-    def log_message(self, _format, *_args):
-        # 基础 HTTP 日志包含客户端地址和原始请求行。
+    # 保留标准库的回调签名，避免默认日志记录客户端地址和原始请求行。
+    def log_message(self, format, *args):  # pylint: disable=redefined-builtin
         pass
 
     def _reply(self, status, **payload):

@@ -54,16 +54,19 @@ const webAppIcon = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAIAAADdvvtQAAAB
 
 function route(url) {
   if (url.pathname === '/mobile-web-app') {
+    // eslint-disable-next-line xss/no-mixed-html -- 本机测试页的标题、正文和清单路径均为常量。
     return html('Aegis 移动网页应用', '<p>移动网页应用测试标记</p>')
       .replace('</head>', '<link rel="manifest" href="/mobile-web-app.webmanifest"></head>');
   }
   if (url.pathname === '/mobile-web-app/install' || url.pathname === '/mobile-web-app/start') {
     const marker = url.pathname.endsWith('/start') ? 'PWA_START_READBACK' : 'PWA_INSTALL_LANDING';
-    return html('Aegis PWA QA', `<p>${marker}</p><p id="mode"></p>`, `
+    const page = html('Aegis PWA QA', `<p>${marker}</p><p id="mode"></p>`, `
       document.getElementById('mode').textContent = matchMedia('(display-mode: standalone)').matches ||
         navigator.standalone === true ? 'PWA_STANDALONE' : 'PWA_BROWSER';
       navigator.serviceWorker?.register('/mobile-web-app/worker.js');
-    `).replace('</head>', '<meta name="viewport" content="width=device-width">' +
+    `);
+    // eslint-disable-next-line xss/no-mixed-html -- 本机测试页只插入固定的清单和图标路径。
+    return page.replace('</head>', '<meta name="viewport" content="width=device-width">' +
       '<link rel="manifest" href="/mobile-web-app/lifecycle.webmanifest">' +
       '<link rel="apple-touch-icon" href="/mobile-web-app.png"></head>');
   }

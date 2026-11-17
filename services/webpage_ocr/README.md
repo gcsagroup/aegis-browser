@@ -9,7 +9,7 @@
 
 ## 在测试环境启动
 
-使用 Python 3.10–3.12 的独立环境安装 `requirements.txt`。下载 `PP-OCRv5_server_det` 和 `PP-OCRv5_server_rec` 的推理模型并解包到服务专用目录。由运行环境注入随机的 `AEGIS_OCR_TOKEN`，然后执行下面的命令启动服务。[PaddleOCR 官方模型表](https://www.paddleocr.ai/main/en/version3.x/pipeline_usage/OCR.html)
+使用 Python 3.11–3.12 的独立环境安装 `requirements.txt`。下载 `PP-OCRv5_server_det` 和 `PP-OCRv5_server_rec` 的推理模型并解包到服务专用目录。由运行环境注入随机的 `AEGIS_OCR_TOKEN`，然后执行下面的命令启动服务。[PaddleOCR 官方模型表](https://www.paddleocr.ai/main/en/version3.x/pipeline_usage/OCR.html)
 
 ```sh
 python -m services.webpage_ocr.server \

@@ -1,19 +1,13 @@
-import { createRequire } from 'node:module';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
-const require = createRequire(import.meta.url);
-const metadata = require.resolve('chrome-devtools-mcp/package.json');
-const { bin } = require(metadata);
-const entry = path.resolve(path.dirname(metadata), bin['chrome-devtools-mcp']);
-const entryUrl = pathToFileURL(entry);
+const entry = fileURLToPath(import.meta.resolve('chrome-devtools-mcp/out/Default/gen/src/bin/chrome-devtools-mcp.js'));
 const skipBlankFlag = '--lighthouse-skip-about-blank';
 const args = process.argv.slice(2);
 
 if (args.includes(skipBlankFlag)) {
   // MCP 1.13.0 的工具尚未暴露这个 Lighthouse 选项。保留上游审计和报告流程，
   // 只省去准备阶段的 about:blank 导航。
-  const { McpPage } = await import(new URL('../McpPage.js', entryUrl));
+  const { McpPage } = await import('chrome-devtools-mcp/out/Default/gen/src/McpPage.js');
   const runNavigation = McpPage.prototype.lighthouseNavigation;
   McpPage.prototype.lighthouseNavigation = function (flags) {
     return runNavigation.call(this, { ...flags, skipAboutBlank: true });
@@ -25,4 +19,4 @@ process.env.CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = '1';
 process.argv.splice(1, process.argv.length - 1, entry, '--isolated', '--no-usage-statistics',
   '--no-performance-crux', '--redact-network-headers', '--memory-debugging',
   ...args.filter(arg => arg !== skipBlankFlag));
-await import(entryUrl.href);
+await import('chrome-devtools-mcp/out/Default/gen/src/bin/chrome-devtools-mcp.js');

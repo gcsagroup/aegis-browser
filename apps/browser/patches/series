@@ -494,3 +494,4 @@
 0492-scope-devtools-extension-targets-to-owning-pipe.patch
 0493-prepare-integrated-candidate-339.patch
 0494-align-mobile-settings-overlay.patch
+0495-handle-ocr-lookup-and-errors.patch

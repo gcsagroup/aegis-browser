@@ -1,15 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { pathToFileURL } from 'node:url';
+import { McpServer, StdioServerTransport } from 'chrome-devtools-mcp/out/Default/gen/src/third_party/index.js';
 import { z } from 'zod';
 
 const device = process.env.AEGIS_IOS_SIMULATOR_ID;
 const fixture = new URL(process.env.AEGIS_IOS_DEVTOOLS_ORIGIN ?? 'http://127.0.0.1');
-if (!device || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(device)) {
+if (!device || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(device)) {
   throw new Error('请用 AEGIS_IOS_SIMULATOR_ID 指定已启动的验收模拟器');
 }
 if (fixture.protocol !== 'http:' || fixture.hostname !== '127.0.0.1' || !fixture.port ||
@@ -17,14 +16,11 @@ if (fixture.protocol !== 'http:' || fixture.hostname !== '127.0.0.1' || !fixture
   throw new Error('AEGIS_IOS_DEVTOOLS_ORIGIN 必须是包含端口的本机 HTTP origin');
 }
 
-const require = createRequire(import.meta.url);
-const metadata = require.resolve('chrome-devtools-mcp/package.json');
-const entry = pathToFileURL(path.resolve(path.dirname(metadata), require(metadata).bin['chrome-devtools-mcp']));
-const { McpServer, StdioServerTransport } = await import(new URL('../third_party/index.js', entry));
 const appID = 'com.gcsa.aegis';
 const simctl = (...args) => execFileSync('xcrun', ['simctl', ...args], { encoding: 'utf8', timeout: 8000 }).trim();
 const appData = simctl('get_app_container', device, appID, 'data');
 const temp = path.join(appData, 'tmp');
+// eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
 const lease = await open(path.join(temp, 'mobile-devtools.lock'), 'a+', 0o600);
 try {
   // lockf 在继承的文件描述符上取锁。Node 崩溃时内核自动释放。
@@ -67,11 +63,14 @@ async function request(method, url) {
   }
   const id = randomUUID();
   const file = path.join(directory, 'request.json');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
   await writeFile(file + '.tmp', JSON.stringify({ id, method, url }), { mode: 0o600 });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
   await rename(file + '.tmp', file);
   const reply = path.join(directory, 'reply.json');
   const deadline = Date.now() + 32_000;
   while (!stopped && Date.now() < deadline) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
     const response = await readFile(reply, 'utf8').then(JSON.parse).catch(error => {
       if (error.code === 'ENOENT') return null;
       throw error;
@@ -104,19 +103,24 @@ tool('inspect_web_app', '读取当前 iOS 测试网页声明的同源 Web App Ma
 
 try {
   // 已接管独占锁后，只回收前版协议明确标记为本工具创建的目录。
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
   for (const name of await readdir(temp)) {
-    if (!/^mobile-devtools-[A-F0-9]{8}(?:-[A-F0-9]{4}){3}-[A-F0-9]{12}$/.test(name)) continue;
+    if (!/^mobile-devtools-[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$/.test(name)) continue;
     const previous = path.join(temp, name);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
     if (await stat(path.join(previous, 'owned-session')).catch(() => null)) {
       await rm(previous, { recursive: true, force: true });
     }
   }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
   await mkdir(directory, { mode: 0o700 });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
   await writeFile(path.join(directory, 'owned-session'), String(process.pid), { mode: 0o600 });
   simctl('launch', '--terminate-running-process', device, appID, '--ui-testing', '--mobile-devtools', token, fixture.port);
   launched = true;
   const deadline = Date.now() + 15_000;
   const ready = path.join(directory, 'ready');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于指定验收 App 的模拟器缓存与诊断会话。
   while (!(await stat(ready).catch(() => null))) {
     if (Date.now() >= deadline) throw new Error('iOS 诊断页未就绪，请安装包含此功能的 Debug 构建');
     await delay(100, undefined, { signal: lifecycle.signal });

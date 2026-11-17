@@ -37,8 +37,10 @@ const launcher = fileURLToPath(new URL('./devtools-mcp.mjs', import.meta.url));
 const context = createRunContext({ scenarioId: 'DEVTOOLS', candidate: 'chrome-devtools-mcp' });
 const { runRoot, workingDirectory, journal } = context;
 const tmp = path.join(workingDirectory, 'tmp');
+// eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
 await mkdir(tmp, { mode: 0o700 });
 const config = path.join(workingDirectory, 'devtools-config.json');
+// eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
 await writeFile(config, '{}', { mode: 0o600 });
 
 const requests = new Map();
@@ -182,8 +184,10 @@ try {
 
     const extensionPath = path.join(workingDirectory, 'extension');
     const manifestPath = path.join(extensionPath, 'manifest.json');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     await mkdir(extensionPath, { mode: 0o700 });
     const manifest = { manifest_version: 3, name: 'Aegis 合成调试扩展', version: '1.0.0' };
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     await writeFile(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
     const installed = await call('install_extension', { path: extensionPath });
     const id = installed.match(/Id: ([a-p]{32})/)?.[1];
@@ -191,6 +195,7 @@ try {
     try {
       const listed = await call('list_extensions');
       assert.ok(listed.includes(id) && listed.includes(manifest.version));
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
       await writeFile(manifestPath, JSON.stringify({ ...manifest, version: '1.0.1' }));
       await call('reload_extension', { id });
       const reloaded = await call('list_extensions');
@@ -204,17 +209,20 @@ try {
 
   const screenshot = path.join(workingDirectory, 'fixture.png');
   await call('take_screenshot', { ...target, filePath: screenshot });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
   assert.equal((await readFile(screenshot)).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   const trace = path.join(workingDirectory, 'performance.json.gz');
   await call('performance_start_trace', { ...target, reload: false, autoStop: false });
   await call('navigate_page', { ...target, type: 'reload', ignoreCache: true, timeout: 8_000 });
   await call('wait_for', { ...target, text: ['诊断状态 503'], timeout: 8_000 });
   assert.ok((await call('performance_stop_trace', { ...target, filePath: trace })).includes('Summary of Performance trace findings'));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
   assert.equal((await readFile(trace)).subarray(0, 2).toString('hex'), '1f8b');
   journal.assertion('截图与性能 trace', true);
 
   const heap = path.join(workingDirectory, 'fixture.heapsnapshot');
   await call('take_heapsnapshot', { ...target, filePath: heap });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
   assert.ok((await stat(heap)).size > 1_024);
   try {
     const summary = await call('get_heapsnapshot_summary', { filePath: heap });
@@ -226,12 +234,15 @@ try {
 
   for (const mode of ['snapshot', 'navigation']) {
     const outputDirPath = path.join(workingDirectory, `lighthouse-${mode}`);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     await mkdir(outputDirPath, { mode: 0o700 });
     const beforeAudit = requests.get('/devtools');
     await call('lighthouse_audit', { ...target, mode, outputDirPath });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     const report = JSON.parse(await readFile(path.join(outputDirPath, 'report.json'), 'utf8'));
     assert.equal(report.gatherMode, mode);
     assert.ok(Number.isFinite(report.categories.accessibility.score));
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     assert.ok((await stat(path.join(outputDirPath, 'report.html'))).size > 1_024);
     if (mode === 'navigation') {
       assert.equal(report.configSettings.skipAboutBlank, true);
@@ -267,6 +278,7 @@ try {
   if (networkMock) {
     const route = `${fixture.origin}/devtools/api`;
     const body = path.join(workingDirectory, 'mock-response.json');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 产物路径由本次隔离测试目录与固定文件名生成。
     await writeFile(body, '{"diagnostic":"AEGIS_FIXTURE_MOCK"}', { mode: 0o600 });
     const rule = { ...target, route, resourceType: 'fetch' };
     const requestsBefore = requests.get('/devtools/api');

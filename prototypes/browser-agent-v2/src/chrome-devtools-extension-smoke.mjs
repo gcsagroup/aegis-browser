@@ -17,16 +17,22 @@ const { runRoot, workingDirectory: work, profilePath: profile } = createRunConte
 });
 const fixture = createServer((_, response) => {
   response.setHeader('Content-Type', 'text/html');
+  // eslint-disable-next-line xss/no-mixed-html -- 本机测试服务只返回固定的合成页面。
   response.end('<!doctype html><title>隔离调试</title><h1>PUBLIC</h1>');
 });
 
 async function prepare(name, marker, { version = '1.0.0', key } = {}) {
   const directory = path.join(work, name);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于本次隔离测试目录内的合成扩展和产物。
   await mkdir(directory, { recursive: true });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于本次隔离测试目录内的合成扩展和产物。
   await writeFile(path.join(directory, 'manifest.json'), JSON.stringify({
     manifest_version: 3, name, version, key, background: { service_worker: 'worker.js' },
   }));
+  assert.match(marker, /^[A-Z0-9_]+$/, '测试标记只允许大写字母、数字和下划线');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename, xss/no-mixed-html -- 标记通过字符校验，页面仅写入隔离测试目录。
   await writeFile(path.join(directory, 'marker.html'), '<!doctype html><h1>' + marker + '</h1>');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于本次隔离测试目录内的合成扩展和产物。
   await writeFile(path.join(directory, 'worker.js'), [
     "self.workerMarker = 'PIPE_SCOPE_WORKER';",
     'chrome.runtime.onInstalled.addListener(() => {});',
@@ -122,6 +128,7 @@ try {
   const portFile = await waitFor(async () => {
     if (launchError) throw launchError;
     assert.equal(browser.exitCode, null, 'Aegis 在启动调试连接前退出');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于本次隔离测试目录内的合成扩展和产物。
     return readFile(path.join(profile, 'DevToolsActivePort'), 'utf8').catch(error => {
       if (error.code === 'ENOENT') return '';
       throw error;
@@ -225,6 +232,7 @@ try {
   }
   fixture.closeAllConnections();
   await new Promise(resolve => fixture.close(resolve));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径限于本次隔离测试目录内的合成扩展和产物。
   await writeFile(path.join(runRoot, 'results.json'), JSON.stringify(results, null, 2) + '\n', { mode: 0o600 });
   console.log(`扩展调试验证证据 ${runRoot}`);
 }

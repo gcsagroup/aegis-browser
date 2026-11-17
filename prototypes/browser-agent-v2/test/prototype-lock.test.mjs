@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { PROTOTYPE_ROOT } from '../src/constants.mjs';
+import manifest from '../package.json' with { type: 'json' };
 
 test('第三方候选均固定精确版本和许可证', () => {
   const lock = JSON.parse(fs.readFileSync(`${PROTOTYPE_ROOT}/prototype-lock.json`, 'utf8'));
@@ -21,7 +22,6 @@ test('第三方候选均固定精确版本和许可证', () => {
   assert.equal(lock.localModelProvider.model.remoteCodeAllowed, false);
   assert.equal(lock.localModelProvider.scope, 'isolated-prototype-only');
   assert.equal(Object.keys(lock.candidates).length, 7);
-  const manifest = JSON.parse(fs.readFileSync(`${PROTOTYPE_ROOT}/package.json`, 'utf8'));
   assert.equal(lock.candidates.chromeDevtoolsMcp.version, manifest.devDependencies['chrome-devtools-mcp']);
   for (const candidate of Object.values(lock.candidates)) {
     assert.match(candidate.version, /^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$/);
