@@ -100,7 +100,7 @@ class Runtime:
     def setup_targets(self):
         cert, key = self.root / "cert.pem", self.root / "key.pem"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-                        "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
+                        "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,DNS:paid-wire.invalid",
                         "-keyout", key, "-out", cert], capture_output=True, check=True)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.minimum_version = ssl.TLSVersion.TLSv1_3
@@ -143,8 +143,8 @@ class Runtime:
         socks = {name: port() for name in self.tokens}
         cfg = dump(self.root / "node.json", {"nodeId": NODE, "targets": {self.authority: HOST, self.plain_authority: HOST},
                    "upstreams": {"client-" + name: number for name, number in socks.items()}})
-        self.launch("collector", [*self.cli, "serve", "--database", self.db, "--config", cfg,
-                                  "--socket", self.socket_path], socket_path=self.socket_path)
+        self.config = cfg
+        self.start_collector()
         self.start_xray(socks)
         self.entry, self.api = port(), port()
         common = ["--database", self.db, "--stored-snapshots"]
@@ -154,6 +154,11 @@ class Runtime:
         self.launch("entry", [sys.executable, "-m", "services.access_account.node", *common,
                               "--port", str(self.entry), "--config", cfg, "--cert", self.root / "cert.pem",
                               "--key", self.root / "key.pem"], service_port=self.entry)
+
+    def start_collector(self):
+        self.collector = self.launch("collector", [*self.cli, "serve", "--database", self.db,
+                                     "--config", self.config, "--socket", self.socket_path],
+                                     socket_path=self.socket_path)
 
     def start_xray(self, socks):
         result = subprocess.check_output([self.stock, "x25519"], text=True)
@@ -172,7 +177,7 @@ class Runtime:
                  {"action": "block"}]
         config = {"log": {"loglevel": "warning"}, "inbounds": [inbound],
                   "outbounds": [{"protocol": "freedom", "settings": {"finalRules": rules}}]}
-        self.launch("server-xray", [self.metered, "run", "-c", dump(self.root / "xserver.json", config)],
+        self.xray_process = self.launch("server-xray", [self.metered, "run", "-c", dump(self.root / "xserver.json", config)],
                     service_port=self.reality_port, meter=True)
         for name, number in socks.items():
             server = {"address": HOST, "port": self.reality_port,

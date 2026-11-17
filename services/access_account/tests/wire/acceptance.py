@@ -148,7 +148,7 @@ def exercise(rt, emit):
     cache_control(rt, emit)
 
 
-def run(work=exercise, runtime_class=Runtime):
+def run(test=exercise, runtime_class=Runtime):
     parser = argparse.ArgumentParser(description=__doc__, epilog="Test dependencies: requests==2.32.5 and CacheControl==0.14.3.")
     parser.add_argument("--client", required=True, type=Path, help="stock Xray binary")
     parser.add_argument("--server", required=True, type=Path, help="meter-enabled Xray binary")
@@ -166,7 +166,7 @@ def run(work=exercise, runtime_class=Runtime):
         try:
             with tempfile.TemporaryDirectory(prefix="n1-") as tmp, contextlib.ExitStack() as stack:
                 rt = runtime_class(Path(tmp), stack, args.client.resolve(), args.server.resolve(), Path(tmp) / "m.sock")
-                work(rt, emit)
+                test(rt, emit)
         except Exception as error:
             emit("failed", str(error))
             raise

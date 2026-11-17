@@ -16,6 +16,7 @@ class RestartRuntime(Runtime):
             self.xray_process = proc
             self.xray_args = args
             self.xray_launch = kwargs
+        return proc
 
 
 def exercise(rt, emit):

@@ -92,7 +92,7 @@ class EntitlementHTTPTest(unittest.TestCase):
     def test_two_authenticated_clients_and_switch_on_same_url(self):
         first, second = self.client(), self.client()
         a = self.ok(first, "A")
-        expected = dict(status="active", planId="plan-A", periodId="period-A",
+        expected = dict(status="active", evaluatedAt=NOW, planId="plan-A", periodId="period-A",
                         periodStart=NOW - 888_000, periodEnd=NOW + 900_000, expiresAt=NOW + 420_000,
                         quotaBytes=str(QUOTA), uploadedBytes="65539", downloadedBytes="97",
                         usedBytes="65636", remainingBytes=str(QUOTA - 65_636),
@@ -136,6 +136,7 @@ class EntitlementHTTPTest(unittest.TestCase):
                 self.assertEqual((data["status"], data["freshness"], data["snapshotAgeMs"],
                                   data["measuredAt"], data["receivedAt"], data["usedBytes"]),
                                  ("active", freshness, age, measured, NOW - 100, "65636"))
+                self.assertEqual(data["evaluatedAt"], NOW)
 
     def test_missing_snapshot_and_database_failure_do_not_replay_previous_success(self):
         client = self.client()

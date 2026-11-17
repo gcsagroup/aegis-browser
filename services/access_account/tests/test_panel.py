@@ -120,6 +120,16 @@ class PanelEntitlementTest(unittest.TestCase):
                                           ("client%2Ba", "client%40b", "client%2Ba")
                                           for route in (PREFIX, SETTINGS)])
 
+    def test_verdict_after_panel_receipt_can_cross_expiry_with_unknown_measurement(self):
+        ticks = iter((NOW, NOW + 999, NOW + 1000))
+        self.server.clock_ms = lambda: next(ticks)
+        status, data = self.read()
+        self.assertEqual(status, 200)
+        self.assertEqual((data['status'], data['receivedAt'], data['evaluatedAt']),
+                         ('expired', NOW + 999, NOW + 1000))
+        self.assertEqual((data['measuredAt'], data['snapshotAgeMs'], data['freshness']),
+                         (None, None, 'unavailable'))
+
     def test_failed_read_never_replays_success_or_follows_redirect(self):
         self.assertEqual(self.read()[0], 200)
         for status, body in [(401, b"bad token"), (503, b"private detail"), (302, b""),
