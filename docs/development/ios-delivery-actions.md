@@ -309,3 +309,14 @@ manifest digest on the machine that needs the catalogue.
 macOS，自动尝试复制到该运行账号的 Downloads 或配置的 `GCSA_DELIVERY_ROOT`。
 先核对目标所需文件；缺少副本时，再下载并验证原始 artifact，使用独立保留的 manifest
 摘要，在需要归档的机器上运行上述复制命令。
+
+### Manual signing keychain / 手动签名钥匙串
+
+The temporary signing keychain is added alongside the runner user's existing
+search entries, preserving installed Apple intermediate certificates. Setup
+verifies the configured signer with the local code-signing trust policy before
+packaging. Cleanup deletes the task keychain and retains existing or concurrently
+added entries; it does not restore an old global search-list snapshot.
+
+临时签名钥匙串保留原有搜索项；证书链验证失败会在打包和永久占号之前停止。
+清理仅删除本任务的钥匙串，不覆盖其他作业更新后的搜索列表。
