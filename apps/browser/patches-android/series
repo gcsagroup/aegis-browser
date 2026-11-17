@@ -334,3 +334,5 @@
 0334-preserve-157-runtime-and-practice-safety-309.patch
 0335-prepare-integrated-security-candidate-310.patch
 0336-prepare-quota-security-candidate-314.patch
+0337-align-product-version-267.patch
+0338-build-share-access-core-source-manifest.patch

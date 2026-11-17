@@ -61,6 +61,9 @@ EOF
 cat > "$FAKE_BIN/ditto" <<'EOF'
 #!/usr/bin/env bash
 touch "$FAKE_DITTO_REACHED"
+if [[ "${FAKE_DITTO_MODE:-stop}" == "copy" ]]; then
+  exec /usr/bin/ditto "$@"
+fi
 echo "FAKE_DITTO_STOP" >&2
 exit 23
 EOF
@@ -126,7 +129,7 @@ expect_failure "build:release 接受了 AegisRelease symlink" \
 # DIST 路径校验，不会进入真实身份复验。
 package_root="$TEST_ROOT/package/chromium"
 package_out="$package_root/src/out/AegisRelease"
-package_app="$package_out/GCSA Aegis.app"
+package_app="$package_out/Aegis Browser.app"
 package_manifest="$package_out/.aegis/build-manifest.json"
 mkdir -p "$package_app/Contents" "$package_out/.aegis"
 touch "$package_manifest" "$package_manifest.sha256"
@@ -171,7 +174,7 @@ expect_failure "package 接受了源 App 内 DIST_DIR" \
 package_link_root="$TEST_ROOT/package-id-link/chromium"
 package_link_out="$package_link_root/src/out/AegisRelease"
 package_link_escape="$TEST_ROOT/package-id-link/escape"
-mkdir -p "$package_link_out/GCSA Aegis.app/Contents" "$package_link_escape"
+mkdir -p "$package_link_out/Aegis Browser.app/Contents" "$package_link_escape"
 touch "$package_link_escape/build-manifest.json"
 touch "$package_link_escape/build-manifest.json.sha256"
 touch "$package_link_escape/sentinel"
@@ -298,5 +301,61 @@ expect_failure "正确版本的 package 未到达文件复制" \
     FAKE_NODE_REACHED="$identity_node_marker" FAKE_NODE_LOG="$identity_node_log" \
     FAKE_DITTO_REACHED="$version_ditto_marker" bash "$SCRIPT_DIR/package.sh"
 [[ -f "$version_ditto_marker" ]] || fail "正确版本未调用打包复制"
+
+# Exercise the actual macOS staging path and PlistBuddy, stopping before licenses
+# and signing. The identity verifier is a fixture; this is not a signed package.
+if [[ "$(uname -s)" == Darwin ]]; then
+  real_python="$(command -v python3)"
+  cat > "$FAKE_BIN/python3" <<'PYTHON_WRAPPER'
+#!/usr/bin/env bash
+if [[ "${1:-}" == -B && "${2:-}" == */third_party_notices.py && \
+      "${3:-}" == install-macos ]]; then
+  echo 'FIXTURE_PRE_SIGN_STOP' >&2
+  exit 23
+fi
+exec "$FAKE_REAL_PYTHON" "$@"
+PYTHON_WRAPPER
+  chmod +x "$FAKE_BIN/python3"
+  for display_key in existing missing; do
+    python3 - "$package_app/Contents/Info.plist" "$display_key" <<'PYPLIST'
+import plistlib
+import sys
+values = {
+    "AegisProductVersion": "1.1.0.3",
+    "CFBundleIdentifier": "app.gcsa.aegis",
+    "CFBundleExecutable": "Aegis Browser",
+    "CFBundleName": "Aegis Browser",
+}
+if sys.argv[2] == "existing":
+    values["CFBundleDisplayName"] = "GCSA-aegis"
+with open(sys.argv[1], "wb") as stream:
+    plistlib.dump(values, stream)
+PYPLIST
+    display_dist="$TEST_ROOT/package/display-$display_key"
+    expect_failure "package 未到达签名前的显示名检查点" \
+      "FIXTURE_PRE_SIGN_STOP" \
+      env PATH="$FAKE_BIN:$PATH" CHROMIUM_ROOT="$package_root" \
+        AEGIS_ALLOW_DIRTY_IDENTITY=1 AEGIS_BUILD_MANIFEST_SHA256="$fixed_sha" \
+        DIST_DIR="$display_dist" PACKAGE_FORMATS=app FAKE_NODE_MODE=success \
+        FAKE_NODE_REACHED="$identity_node_marker" FAKE_NODE_LOG="$identity_node_log" \
+        FAKE_DITTO_REACHED="$version_ditto_marker" FAKE_DITTO_MODE=copy \
+        FAKE_REAL_PYTHON="$real_python" bash "$SCRIPT_DIR/package.sh"
+    python3 - "$package_app/Contents/Info.plist" \
+      "$display_dist/GCSA-aegis-1.1.0.3-mac-${cpu}/GCSA-aegis.app/Contents/Info.plist" <<'PYVERIFY'
+import plistlib
+import sys
+with open(sys.argv[1], "rb") as stream:
+    source = plistlib.load(stream)
+with open(sys.argv[2], "rb") as stream:
+    staged = plistlib.load(stream)
+assert staged["CFBundleDisplayName"] == "Aegis Browser", staged
+expected = dict(source, CFBundleDisplayName="Aegis Browser")
+assert staged == expected, (source, staged)
+assert source.get("CFBundleDisplayName") in (None, "GCSA-aegis"), source
+print("PASS: staged display name and unchanged source/install identity")
+PYVERIFY
+    [[ ! -e "$package_out/.aegis/build.lock" ]] || fail "显示名用例残留 build lock"
+  done
+fi
 
 printf 'PASS: build/package path guard fixtures\n'

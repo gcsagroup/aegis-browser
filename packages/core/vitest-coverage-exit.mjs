@@ -72,7 +72,11 @@ if (workerEntry) {
       stopped = message.error == null;
     }
     try {
-      return Reflect.apply(send, this, [message, ...args]);
+      const sent = Reflect.apply(send, this, [message, ...args]);
+      // Vitest removes its message listeners after the stop ACK. Keep the IPC
+      // channel alive until the parent sends SIGTERM so natural exit cannot race it.
+      if (stopped) process.channel?.ref();
+      return sent;
     } catch (error) {
       stopped = false;
       throw error;

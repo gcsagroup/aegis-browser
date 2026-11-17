@@ -1,0 +1,66 @@
+{
+  "core": {
+    "access_route_types": [
+      "access_route_types.h"
+    ],
+    "access_identity_generation_state": [
+      "access_identity_generation_state.cc",
+      "access_identity_generation_state.h"
+    ],
+    "access_proxy_selection_generation_state": [
+      "access_proxy_selection_generation_state.cc",
+      "access_proxy_selection_generation_state.h"
+    ],
+    "access_base_proxy_config_generation_state": [
+      "access_base_proxy_config_generation_state.cc",
+      "access_base_proxy_config_generation_state.h"
+    ],
+    "request_generation_tuple_builder": [
+      "request_generation_tuple_builder.cc",
+      "request_generation_tuple_builder.h"
+    ],
+    "browser_request_metadata_seed": [
+      "browser_request_metadata_seed.cc",
+      "browser_request_metadata_seed.h"
+    ],
+    "request_ownership_registry": [
+      "request_ownership_registry.cc",
+      "request_ownership_registry.h"
+    ],
+    "request_dispatch_gate": [
+      "request_dispatch_gate.cc",
+      "request_dispatch_gate.h"
+    ],
+    "policy_publication_ack_tracker": [
+      "policy_publication_ack_tracker.cc",
+      "policy_publication_ack_tracker.h"
+    ],
+    "published_request_runtime": [
+      "published_request_runtime.cc",
+      "published_request_runtime.h"
+    ],
+    "access_route_planner": [
+      "access_route_planner.cc",
+      "access_route_planner.h"
+    ],
+    "site_proxy_rule_group": [
+      "site_proxy_rule_group.cc",
+      "site_proxy_rule_group.h"
+    ]
+  },
+  "test_main": "access_route_planner_native_test.cc",
+  "test_support": {
+    "source": "request_ownership_registry_test_support.cc",
+    "header": "request_ownership_registry_test_support.h"
+  },
+  "route_planner_vectors": {
+    "script": "generate_route_planner_vectors.py",
+    "input": "testdata/route_planner_vectors.json",
+    "output": "route_planner_golden_vectors.inc"
+  },
+  "policy_matcher_vectors": {
+    "script": "generate_policy_matcher_vectors.py",
+    "input": "testdata/policy_matcher_vectors.json",
+    "output": "policy_matcher_golden_vectors.inc"
+  }
+}

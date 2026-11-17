@@ -496,3 +496,8 @@
 0496-feat-macos-access-quota-ui.patch
 0497-fix-access-settings-refresh-static-checks.patch
 0498-prepare-quota-security-candidate-314.patch
+0499-fix-desktop-persistence-and-windows-tests-267.patch
+0500-align-product-display-name-and-policy-identity.patch
+0501-fix-macos-ignored-ax-button.patch
+0502-build-share-access-core-source-manifest.patch
+0503-increase-markdown-reader-limit.patch

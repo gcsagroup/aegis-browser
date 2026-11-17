@@ -4,6 +4,13 @@ import Foundation
 struct AccessAccountUsagePresentation {
     enum Freshness: Equatable { case current, delayed, unavailable }
 
+    /// Floating point is only used for the meter, never for billing or byte labels.
+    static func usedFraction(used: String?, quota: String?) -> Double? {
+        guard let used, let quota, let usedValue = UInt64(used), let quotaValue = UInt64(quota),
+              String(usedValue) == used, String(quotaValue) == quota, quotaValue > 0 else { return nil }
+        return min(Double(usedValue) / Double(quotaValue), 1)
+    }
+
     static func freshness(
         snapshot: AccessAccountEntitlement,
         // The earliest trustworthy local anchor, including request/transport time.
@@ -36,8 +43,19 @@ struct AccessAccountUsagePresentation {
         return effectiveAge > 5_000 ? .delayed : .current
     }
 
+    /// Speak exact bytes with a unit. Foundation's byte style accepts signed values
+    /// and can round large integers, so keep the full unsigned range lossless.
+    static func accessibleBytes(_ raw: String?, locale: Locale) -> String {
+        guard let raw, let value = UInt64(raw), String(value) == raw else { return "—" }
+        if value < 1 << 53 {
+            return ByteCountFormatStyle(allowedUnits: .bytes, spellsOutZero: false, locale: locale)
+                .format(Int64(value))
+        }
+        return value.formatted(.number.locale(locale)) + " B"
+    }
+
     /// Binary units, truncated to two decimal places without converting bytes to floating point.
-    /// The caller retains and separately displays the exact canonical source string.
+    /// The session retains the exact canonical source string.
     static func formattedBytes(_ raw: String?) -> String {
         guard let raw, let value = UInt64(raw), String(value) == raw else { return "—" }
         guard value >= 1_024 else { return "\(value) B" }

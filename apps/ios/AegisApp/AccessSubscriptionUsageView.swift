@@ -8,18 +8,31 @@ struct AccessSubscriptionUsageView: View {
 
     var body: some View {
         let _ = locale
+        if session.managesConnections {
+            Section {
+                LabeledContent("服务账户") { Text("共享测试账号") }
+                LabeledContent("可用连接") {
+                    if session.isRefreshing { ProgressView() }
+                    else if session.unavailable || session.connectionsUnavailable || session.snapshot == nil { Text("暂不可用") }
+                    else { Text(session.availableConnectionCount, format: .number) }
+                }
+                .accessibilityIdentifier("access-account-connections")
+                Text("连接由账号自动获取，无需手动配置。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 VStack(alignment: .leading, spacing: 8) {
                     if let usage = session.snapshot {
-                        if !usage.enabled { Text("节点已停用") }
+                        if !usage.enabled { Text("服务已停用") }
                         if usage.remainingBytes == 0 { Text("服务端报告：额度已耗尽") }
+                        AccessUsageSummaryView(usedBytes: String(usage.usedBytes), quotaBytes: String(usage.totalByte))
                         amount("总额度", usage.totalByte, id: "quota")
-                        amount("上传", usage.uploadByte, id: "uploaded")
-                        amount("下载", usage.downloadByte, id: "downloaded")
-                        amount("已用", usage.usedBytes, id: "used")
                         amount("剩余", usage.remainingBytes, id: "remaining")
-                        LabeledContent("节点到期") {
+                        Divider()
+                        AccessTransferBreakdown(uploaded: String(usage.uploadByte), downloaded: String(usage.downloadByte))
+                        LabeledContent("到期时间") {
                             if usage.expire == 0 { Text("未设到期") }
                             else { timestamp(Date(timeIntervalSince1970: TimeInterval(usage.expire))) }
                         }
@@ -47,9 +60,9 @@ struct AccessSubscriptionUsageView: View {
             .disabled(session.isRefreshing || scenePhase != .active)
             .accessibilityIdentifier("access-usage-refresh")
         } header: {
-            Text("3X-UI 节点额度")
+            Text("测试服务用量（共享）")
         } footer: {
-            Text("直接查询 3X-UI 测试节点；每日重置按服务器时区执行，查询失败不代表额度耗尽。")
+            Text("共享测试用量，不代表个人套餐；重置以服务端为准。")
         }
         .onAppear { session.usageRefresh.setVisible(scenePhase == .active, owner: visibilityID) }
         .onChange(of: scenePhase) { _, phase in session.usageRefresh.setVisible(phase == .active, owner: visibilityID) }
@@ -62,13 +75,13 @@ struct AccessSubscriptionUsageView: View {
 
     private func amount(_ label: LocalizedStringResource, _ bytes: UInt64, id: String) -> some View {
         LabeledContent {
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(AccessAccountUsagePresentation.formattedBytes(String(bytes)))
-                Text(String(bytes) + " B").font(.caption.monospaced())
-            }
-        } label: { Text(verbatim: AegisLocalization.string(label)) }
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(String(bytes))
+            Text(verbatim: AccessAccountUsagePresentation.formattedBytes(String(bytes)))
+        } label: {
+            Text(verbatim: AegisLocalization.string(label))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: AegisLocalization.string(label)))
+        .accessibilityValue(AccessAccountUsagePresentation.accessibleBytes(String(bytes), locale: locale))
         .accessibilityIdentifier("access-usage-" + id)
     }
 }

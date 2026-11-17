@@ -100,6 +100,33 @@ final class AccessProxyRecoveryViewTests: XCTestCase {
         window.isHidden = true
     }
 
+    func testUnsafeOrTLSFailuresNeverOfferTheLocationRetryAction() async throws {
+        for (method, code) in [("POST", NSURLErrorCannotConnectToHost), ("GET", NSURLErrorSecureConnectionFailed)] {
+            let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+            defer { browser.standardTabs.forEach { $0.stop() } }
+            let tab = try XCTUnwrap(browser.activeTab)
+            var request = URLRequest(url: URL(string: "https://example.invalid/submit")!)
+            request.httpMethod = method
+            tab.load(request)
+            tab.webView(tab.webView, didFailProvisionalNavigation: tab.currentNavigationForTests,
+                        withError: NSError(domain: NSURLErrorDomain, code: code))
+            XCTAssertNotNil(tab.loadingError)
+            XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+            let host = UIHostingController(rootView: PageLoadFailureBanner(tab: tab) { _ in
+                XCTFail("An unsafe navigation must not have a retry action")
+            })
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+            let previous = scene.windows.first { $0.isKeyWindow }
+            let window = UIWindow(windowScene: scene)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(Self.buttons(identifier: "page-load-proxy-retry", in: host.view).isEmpty)
+        }
+    }
+
     private static func find(identifier: String, in object: Any?) -> NSObject? {
         if let view = object as? UIView {
             if view.accessibilityIdentifier == identifier { return view }

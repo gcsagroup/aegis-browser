@@ -103,7 +103,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis', 'com.example.Test', '<array/>'
+      'Aegis_Browser', 'com.example.Test', '<array/>'
     )
     self.assertEquals(output.strip(), expected_output.strip())
 
@@ -127,7 +127,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputsWithVersion(
-      'GCSA_Aegis', 'com.example.Test', '<array/>', 'chromium version: 39.0.0.0'
+      'Aegis_Browser', 'com.example.Test', '<array/>', 'chromium version: 39.0.0.0'
     )
     self.assertEquals(output.strip(), expected_output.strip())
 
@@ -161,7 +161,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -215,7 +215,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -271,7 +271,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -322,7 +322,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -377,7 +377,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -444,7 +444,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -502,7 +502,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -673,7 +673,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>
@@ -724,7 +724,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist',
     )
     expected_output = self._GetExpectedOutputs(
-      'GCSA_Aegis',
+      'Aegis_Browser',
       'com.example.Test',
       '''<array>
       <dict>

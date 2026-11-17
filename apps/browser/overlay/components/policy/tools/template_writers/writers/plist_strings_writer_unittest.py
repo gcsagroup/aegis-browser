@@ -27,7 +27,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'placeholders': [],
         'messages': {
           'mac_chrome_preferences': {
-            'text': 'GCSA Aegis preferen"ces',
+            'text': 'Aegis Browser preferen"ces',
             'desc': 'blah'
           }
         }
@@ -38,8 +38,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'plist_strings',
     )
     expected_output = (
-      'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
-      'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";'
+      'Aegis_Browser.pfm_title = "Aegis Browser";\n'
+      'Aegis_Browser.pfm_description = "Aegis Browser preferen\\"ces";'
     )
     self.assertEquals(output.strip(), expected_output.strip())
 
@@ -52,7 +52,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'placeholders': [],
         'messages': {
           'mac_chrome_preferences': {
-            'text': 'GCSA Aegis preferen"ces',
+            'text': 'Aegis Browser preferen"ces',
             'desc': 'blah'
           }
         }
@@ -68,8 +68,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     )
     expected_output = (
       '/* chromium version: 39.0.0.0 */\n'
-      'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
-      'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";'
+      'Aegis_Browser.pfm_title = "Aegis Browser";\n'
+      'Aegis_Browser.pfm_description = "Aegis Browser preferen\\"ces";'
     )
     self.assertEquals(output.strip(), expected_output.strip())
 
@@ -142,7 +142,7 @@ With a newline.""",
         'placeholders': [],
         'messages': {
           'mac_chrome_preferences': {
-            'text': 'Preferences of GCSA Aegis',
+            'text': 'Preferences of Aegis Browser',
             'desc': 'blah'
           }
         }
@@ -153,8 +153,8 @@ With a newline.""",
       'plist_strings',
     )
     expected_output = (
-      'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
-      'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
+      'Aegis_Browser.pfm_title = "Aegis Browser";\n'
+      'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
       'StringPolicy.pfm_title = "Caption of policy.";\n'
       'StringPolicy.pfm_description = '
       '"Description of policy.\\nWith a newline.";'
@@ -190,7 +190,7 @@ With a newline.""",
         'placeholders': [],
         'messages': {
           'mac_chrome_preferences': {
-            'text': 'Preferences of GCSA Aegis',
+            'text': 'Preferences of Aegis Browser',
             'desc': 'blah'
           }
         }
@@ -201,8 +201,8 @@ With a newline.""",
       'plist_strings',
     )
     expected_output = (
-      'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
-      'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
+      'Aegis_Browser.pfm_title = "Aegis Browser";\n'
+      'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
       'ListPolicy.pfm_title = "Caption of policy.";\n'
       'ListPolicy.pfm_description = '
       '"Description of policy.\\nWith a newline.";'
@@ -250,7 +250,7 @@ With a newline.""",
         'placeholders': [],
         'messages': {
           'mac_chrome_preferences': {
-            'text': 'Preferences of GCSA Aegis',
+            'text': 'Preferences of Aegis Browser',
             'desc': 'blah'
           }
         }
@@ -261,8 +261,8 @@ With a newline.""",
       'plist_strings',
     )
     expected_output = (
-      'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
-      'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
+      'Aegis_Browser.pfm_title = "Aegis Browser";\n'
+      'Aegis_Browser.pfm_description = "Preferences of Aegis Browser";\n'
       'EnumPolicy.pfm_title = "Caption of policy.";\n'
       'EnumPolicy.pfm_description = '
       '"one - Option1\\ntwo - Option2\\n'

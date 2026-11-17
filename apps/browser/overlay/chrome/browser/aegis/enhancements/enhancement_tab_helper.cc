@@ -9,6 +9,7 @@
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
@@ -28,6 +29,8 @@
 #include "url/origin.h"
 namespace aegis {
 namespace {
+constexpr int kMarkdownMaximumBytes = 16 * 1024 * 1024;
+
 std::map<std::string, EnhancementTabHelper*>& Helpers() {
   static base::NoDestructor<std::map<std::string, EnhancementTabHelper*>> h;
   return *h;
@@ -615,7 +618,14 @@ void EnhancementTabHelper::ReadPage(bool markdown, Reply reply) {
   }
   const std::string expression =
       markdown
-          ? R"JS((()=>{if(!/^(text\/(plain|markdown|x-markdown))($|;)/i.test(document.contentType))throw Error('当前响应不是 Markdown 或纯文本');const text=document.body?.innerText||'';if(new TextEncoder().encode(text).length>2097152)throw Error('文档超过 2 MiB');return {text,title:document.title||location.pathname,baseURL:location.href};})())JS"
+          ? base::StringPrintf(R"JS(((maximumBytes) => {
+              if (!/^(text\/(plain|markdown|x-markdown))($|;)/i.test(document.contentType))
+                throw Error('当前响应不是 Markdown 或纯文本');
+              const text = (document.querySelector('body > pre') || document.body)?.textContent || '';
+              if (text.length > maximumBytes || new TextEncoder().encode(text).length > maximumBytes)
+                return {tooLarge: true};
+              return {text, title: document.title || location.pathname, baseURL: location.href};
+            })(%d))JS", kMarkdownMaximumBytes)
           : R"JS((()=>({url:location.href,title:document.title,structure:[...document.querySelectorAll('main,article,aside,nav,h1,h2,h3,button')].slice(0,120).map(e=>({tag:e.tagName,id:e.id,classes:String(e.className).slice(0,100),text:/^(H[123]|BUTTON)$/.test(e.tagName)?e.textContent.slice(0,150):''}))}))())JS";
   Send("Runtime.evaluate",
        base::DictValue()
@@ -670,10 +680,10 @@ void EnhancementTabHelper::ReadMarkdownFile(base::FilePath path,
           [](base::FilePath path, GURL source, bool local) {
             std::string text;
             auto size = base::GetFileSize(path);
-            if (!size || *size > 2097152 ||
-                !base::ReadFileToStringWithMaxSize(path, &text, 2097152) ||
+            if (!size || *size > kMarkdownMaximumBytes ||
+                !base::ReadFileToStringWithMaxSize(path, &text, kMarkdownMaximumBytes) ||
                 !base::IsStringUTF8(text) || text.contains('\0'))
-              return Failure("文档超过 2 MiB、不是 UTF-8，或已无法读取。");
+              return Failure("文档超过 16 MiB、不是 UTF-8，或已无法读取。");
             return base::DictValue()
                 .Set("text", text)
                 .Set("title", path.BaseName().AsUTF8Unsafe())

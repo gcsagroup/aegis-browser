@@ -161,7 +161,7 @@ TEST(AegisInstallUiTest, ExistingVersionWithoutWindowDoesNotShowError) {
   dismissed_error = false;
   const UINT_PTR timer = ::SetTimer(nullptr, 0, 100,
       [](HWND, UINT, UINT_PTR, DWORD) {
-        HWND dialog = ::FindWindow(L"#32770", L"GCSA Aegis 安装程序");
+        HWND dialog = ::FindWindow(L"#32770", L"Aegis Browser 安装程序");
         DWORD pid = 0;
         const DWORD thread = ::GetWindowThreadProcessId(dialog, &pid);
         if (pid == ::GetCurrentProcessId() &&
@@ -257,6 +257,11 @@ TEST(AegisInstallUiTest, OverallProgressDoesNotRestartWhenStageChanges) {
 TEST(AegisInstallUiTest, FramelessWindowKeepsDraggingWithoutWindowButtons) {
   AegisInstallUi ui(true);
   HWND window = OwnWindow();
+  wchar_t title[256] = {};
+  ::GetWindowText(window, title, 256);
+  EXPECT_STREQ(L"Aegis Browser 安装程序", title);
+  EXPECT_NE(nullptr,
+            ::FindWindowEx(window, nullptr, L"Static", L"Aegis Browser"));
   EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_CAPTION);
   EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_THICKFRAME);
   EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_BORDER);
@@ -288,7 +293,8 @@ TEST(AegisInstallUiTest, FramelessWindowKeepsDraggingWithoutWindowButtons) {
 TEST(AegisInstallUiTest, ProgressUpdatesDoNotRepaintUnrelatedContent) {
   AegisInstallUi ui(true);
   HWND window = OwnWindow();
-  HWND brand = ::FindWindowEx(window, nullptr, L"Static", L"GCSA Aegis");
+  HWND brand = ::FindWindowEx(window, nullptr, L"Static", L"Aegis Browser");
+  EXPECT_NE(nullptr, brand);
   observed_parent = window;
   observed_brand = brand;
   HHOOK hook = ::SetWindowsHookEx(WH_CALLWNDPROC, ObservePaint, nullptr,

@@ -1,0 +1,425 @@
+From 7a35d690d3ca86227571444a51b2b22f8d204d08 Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Mon, 16 Nov 2026 12:14:11 +0800
+Subject: [PATCH] build: share Access core source manifest
+
+---
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index d02cf73589ac0f99617841698cbd73cd9abf2615..25c683a4c4021e317876c67a1d30ecc5e7abaef0 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -3,15 +3,20 @@
+ 
+ import("//testing/test.gni")
+ 
++access_sources = read_file("access_sources.json", "json")
++access_core_sources = access_sources.core
++access_test_support = access_sources.test_support
++
+ declare_args() {
+   # Dedicated test entry only. Ordinary targets retain Chromium's existing main.
+   aegis_current151_tracker_bounded = false
+ }
+ 
+ action("generate_route_planner_vectors") {
+-  script = "generate_route_planner_vectors.py"
+-  inputs = [ "testdata/route_planner_vectors.json" ]
+-  outputs = [ "$target_gen_dir/route_planner_golden_vectors.inc" ]
++  vectors = access_sources.route_planner_vectors
++  script = vectors.script
++  inputs = [ vectors.input ]
++  outputs = [ "$target_gen_dir/" + vectors.output ]
+   args = [
+     rebase_path(inputs[0], root_build_dir),
+     rebase_path(outputs[0], root_build_dir),
+@@ -19,9 +24,10 @@ action("generate_route_planner_vectors") {
+ }
+ 
+ action("generate_policy_matcher_vectors") {
+-  script = "generate_policy_matcher_vectors.py"
+-  inputs = [ "testdata/policy_matcher_vectors.json" ]
+-  outputs = [ "$target_gen_dir/policy_matcher_golden_vectors.inc" ]
++  vectors = access_sources.policy_matcher_vectors
++  script = vectors.script
++  inputs = [ vectors.input ]
++  outputs = [ "$target_gen_dir/" + vectors.output ]
+   args = [
+     rebase_path(inputs[0], root_build_dir),
+     rebase_path(outputs[0], root_build_dir),
+@@ -29,75 +35,48 @@ action("generate_policy_matcher_vectors") {
+ }
+ 
+ source_set("access_route_types") {
+-  sources = [ "access_route_types.h" ]
++  sources = access_core_sources.access_route_types
+ }
+ 
+ source_set("access_identity_generation_state") {
+-  sources = [
+-    "access_identity_generation_state.cc",
+-    "access_identity_generation_state.h",
+-  ]
++  sources = access_core_sources.access_identity_generation_state
+ }
+ 
+ source_set("access_proxy_selection_generation_state") {
+-  sources = [
+-    "access_proxy_selection_generation_state.cc",
+-    "access_proxy_selection_generation_state.h",
+-  ]
++  sources = access_core_sources.access_proxy_selection_generation_state
+ }
+ 
+ source_set("access_base_proxy_config_generation_state") {
+-  sources = [
+-    "access_base_proxy_config_generation_state.cc",
+-    "access_base_proxy_config_generation_state.h",
+-  ]
++  sources = access_core_sources.access_base_proxy_config_generation_state
+ }
+ 
+ source_set("request_generation_tuple_builder") {
+-  sources = [
+-    "request_generation_tuple_builder.cc",
+-    "request_generation_tuple_builder.h",
+-  ]
++  sources = access_core_sources.request_generation_tuple_builder
+   public_deps = [ ":access_route_types" ]
+ }
+ 
+ source_set("browser_request_metadata_seed") {
+-  sources = [
+-    "browser_request_metadata_seed.cc",
+-    "browser_request_metadata_seed.h",
+-  ]
++  sources = access_core_sources.browser_request_metadata_seed
+   public_deps = [ ":access_route_types" ]
+ }
+ 
+ source_set("request_ownership_registry") {
+-  sources = [
+-    "request_ownership_registry.cc",
+-    "request_ownership_registry.h",
+-  ]
++  sources = access_core_sources.request_ownership_registry
+   public_deps = [ ":access_route_types" ]
+ }
+ 
+ source_set("request_dispatch_gate") {
+-  sources = [
+-    "request_dispatch_gate.cc",
+-    "request_dispatch_gate.h",
+-  ]
++  sources = access_core_sources.request_dispatch_gate
+   public_deps = [ ":request_ownership_registry" ]
+ }
+ 
+ source_set("policy_publication_ack_tracker") {
+-  sources = [
+-    "policy_publication_ack_tracker.cc",
+-    "policy_publication_ack_tracker.h",
+-  ]
++  sources = access_core_sources.policy_publication_ack_tracker
+   public_deps = [ ":request_ownership_registry" ]
+ }
+ 
+ source_set("published_request_runtime") {
+-  sources = [
+-    "published_request_runtime.cc",
+-    "published_request_runtime.h",
+-  ]
++  sources = access_core_sources.published_request_runtime
+   public_deps = [
+     ":aegis_access",
+     ":request_dispatch_gate",
+@@ -106,17 +85,14 @@ source_set("published_request_runtime") {
+ 
+ source_set("aegis_access") {
+   sources = [
+-    "access_policy_evaluator.cc",
+-    "access_policy_evaluator.h",
+-    "access_proxy_route_adapter.cc",
+-    "access_proxy_route_adapter.h",
+-    "access_route_planner.cc",
+-    "access_route_planner.h",
+-    "request_policy_context.cc",
+-    "request_policy_context.h",
+-    "site_proxy_rule_group.cc",
+-    "site_proxy_rule_group.h",
+-  ]
++              "access_policy_evaluator.cc",
++              "access_policy_evaluator.h",
++              "access_proxy_route_adapter.cc",
++              "access_proxy_route_adapter.h",
++              "request_policy_context.cc",
++              "request_policy_context.h",
++            ] + access_core_sources.access_route_planner +
++            access_core_sources.site_proxy_rule_group
+   public_deps = [
+     ":access_route_types",
+     ":request_ownership_registry",
+@@ -276,8 +252,8 @@ test("aegis_access_unittests") {
+ 
+ source_set("request_ownership_registry_test_support") {
+   testonly = true
+-  sources = [ "request_ownership_registry_test_support.cc" ]
+-  public = [ "request_ownership_registry_test_support.h" ]
++  sources = [ access_test_support.source ]
++  public = [ access_test_support.header ]
+   public_deps = [
+     ":request_ownership_registry",
+     "//base",
+diff --git a/components/aegis_access/access_route_planner.cc b/components/aegis_access/access_route_planner.cc
+index 177577694ba1ddb7885da983d0b87fa6a288eaeb..87b52aef91e0e731c49115d4a5863bcce109869c 100644
+--- a/components/aegis_access/access_route_planner.cc
++++ b/components/aegis_access/access_route_planner.cc
+@@ -75,6 +75,7 @@ bool IsValidPolicyShape(const RouteInput& input) {
+              input.effective_proxy_group_id.empty();
+     case PolicyState::kValid:
+       if (input.policy_scope != PolicyScope::kSite &&
++          input.policy_scope != PolicyScope::kWebsite &&
+           input.policy_scope != PolicyScope::kProfile) {
+         return false;
+       }
+@@ -118,7 +119,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
+                     RouteReason::kOwnershipMismatch);
+   }
+   if (input.policy_state == PolicyState::kValid &&
+-      input.policy_scope == PolicyScope::kSite &&
++      (input.policy_scope == PolicyScope::kSite || input.policy_scope == PolicyScope::kWebsite) &&
+       !input.site_ownership_reliable) {
+     return MakePlan(input, RouteAction::kFail,
+                     RouteReason::kSiteOwnershipUnavailable);
+diff --git a/components/aegis_access/access_route_types.h b/components/aegis_access/access_route_types.h
+index ce0f9addcffaa3596d306e256bfb6709fae32246..0e71819e153e8cdc8671bf6e2a4328173df41865 100644
+--- a/components/aegis_access/access_route_types.h
++++ b/components/aegis_access/access_route_types.h
+@@ -86,6 +86,9 @@ enum class PolicyScope {
+   kSite,
+   kProfile,
+   kInvalid,
++  // Stored ordinals above are stable. This is a Browser-trusted website
++  // context, including destinations used by its page, not a host wildcard.
++  kWebsite = 4,
+ };
+ 
+ enum class SnapshotState {
+diff --git a/components/aegis_access/access_sources.json b/components/aegis_access/access_sources.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce3d880390db19853414eabed36c691dbb471046
+--- /dev/null
++++ b/components/aegis_access/access_sources.json
+@@ -0,0 +1,66 @@
++{
++  "core": {
++    "access_route_types": [
++      "access_route_types.h"
++    ],
++    "access_identity_generation_state": [
++      "access_identity_generation_state.cc",
++      "access_identity_generation_state.h"
++    ],
++    "access_proxy_selection_generation_state": [
++      "access_proxy_selection_generation_state.cc",
++      "access_proxy_selection_generation_state.h"
++    ],
++    "access_base_proxy_config_generation_state": [
++      "access_base_proxy_config_generation_state.cc",
++      "access_base_proxy_config_generation_state.h"
++    ],
++    "request_generation_tuple_builder": [
++      "request_generation_tuple_builder.cc",
++      "request_generation_tuple_builder.h"
++    ],
++    "browser_request_metadata_seed": [
++      "browser_request_metadata_seed.cc",
++      "browser_request_metadata_seed.h"
++    ],
++    "request_ownership_registry": [
++      "request_ownership_registry.cc",
++      "request_ownership_registry.h"
++    ],
++    "request_dispatch_gate": [
++      "request_dispatch_gate.cc",
++      "request_dispatch_gate.h"
++    ],
++    "policy_publication_ack_tracker": [
++      "policy_publication_ack_tracker.cc",
++      "policy_publication_ack_tracker.h"
++    ],
++    "published_request_runtime": [
++      "published_request_runtime.cc",
++      "published_request_runtime.h"
++    ],
++    "access_route_planner": [
++      "access_route_planner.cc",
++      "access_route_planner.h"
++    ],
++    "site_proxy_rule_group": [
++      "site_proxy_rule_group.cc",
++      "site_proxy_rule_group.h"
++    ]
++  },
++  "test_main": "access_route_planner_native_test.cc",
++  "test_support": {
++    "source": "request_ownership_registry_test_support.cc",
++    "header": "request_ownership_registry_test_support.h"
++  },
++  "route_planner_vectors": {
++    "script": "generate_route_planner_vectors.py",
++    "input": "testdata/route_planner_vectors.json",
++    "output": "route_planner_golden_vectors.inc"
++  },
++  "policy_matcher_vectors": {
++    "script": "generate_policy_matcher_vectors.py",
++    "input": "testdata/policy_matcher_vectors.json",
++    "output": "policy_matcher_golden_vectors.inc"
++  }
++}
+diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
+index 80a2ed567e2957a7c2af0490b00549316e993275..9abc3517be8b66ca0801674dd9e639ef1718cb4b 100644
+--- a/components/aegis_access/request_ownership_registry.cc
++++ b/components/aegis_access/request_ownership_registry.cc
+@@ -7,12 +7,18 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsComplete(const GenerationTuple& generations) {
+-  return generations.policy_generation != 0 &&
+-         generations.identity_generation != 0 &&
+-         generations.selection_generation != 0 &&
+-         generations.network_epoch != 0 &&
+-         generations.base_proxy_config_generation != 0;
++bool IsComplete(const RequestOwnershipRecord& record) {
++  const auto& generations = record.generations;
++  if (!generations.policy_generation || !generations.identity_generation ||
++      !generations.network_epoch || !generations.base_proxy_config_generation)
++    return false;
++  switch (record.route) {
++    case RequestOwnershipRoute::kProxy:
++      return generations.selection_generation != 0;
++    case RequestOwnershipRoute::kNative:
++      return generations.selection_generation == 0;
++  }
++  return false;
+ }
+ 
+ bool IsKnown(RequestScheme scheme) {
+@@ -40,7 +46,7 @@ bool HasExactlyOneAttributionToken(const RequestCancellationSelector& selector)
+ 
+ bool HasValidRequestMetadata(const RequestOwnershipRecord& record) {
+   return !record.request_id.empty() && IsCompleteOwner(record.owner) &&
+-         IsComplete(record.generations) && !record.exact_host.empty() &&
++         IsComplete(record) && !record.exact_host.empty() &&
+          IsKnown(record.scheme) && record.port != 0;
+ }
+ 
+@@ -58,6 +64,9 @@ bool IsValidRecord(const RequestOwnershipRecord& record) {
+ }
+ 
+ bool IsValidSelector(const RequestCancellationSelector& selector) {
++  if (selector.website_context &&
++      selector.top_level_site != "http://" + selector.exact_host &&
++      selector.top_level_site != "https://" + selector.exact_host) return false;
+   return IsCompleteOwner(selector.owner) &&
+          HasExactlyOneAttributionToken(selector) &&
+          !selector.top_level_site.empty() && !selector.exact_host.empty() &&
+@@ -66,6 +75,11 @@ bool IsValidSelector(const RequestCancellationSelector& selector) {
+ 
+ bool MatchesSelector(const RequestOwnershipRecord& record,
+                      const RequestCancellationSelector& selector) {
++  if (selector.website_context) {
++    return record.site_ownership_reliable && record.owner == selector.owner &&
++        (record.top_level_site == "http://" + selector.exact_host ||
++         record.top_level_site == "https://" + selector.exact_host);
++  }
+   if (!record.site_ownership_reliable || record.owner != selector.owner ||
+       record.top_level_site != selector.top_level_site ||
+       record.exact_host != selector.exact_host ||
+@@ -87,7 +101,7 @@ bool SameSelector(const RequestCancellationSelector& left,
+          left.pending_navigation_token == right.pending_navigation_token &&
+          left.top_level_site == right.top_level_site &&
+          left.exact_host == right.exact_host && left.scheme == right.scheme &&
+-         left.port == right.port;
++         left.port == right.port && left.website_context == right.website_context;
+ }
+ 
+ bool IsValidBarrier(const RequestDispatchBarrier& barrier) {
+diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
+index 4af26307bd911349198e91ba68a8130bd2c927a3..49f1b106d0f9902ab429d5947248261e65d35e30 100644
+--- a/components/aegis_access/request_ownership_registry.h
++++ b/components/aegis_access/request_ownership_registry.h
+@@ -45,6 +45,11 @@ class RequestTerminationHandle {
+ // Browser-owned, already-normalized identity for one in-flight request. The
+ // registry does not parse URLs or trust renderer-provided Profile/partition
+ // strings. RequestPolicyContext is the intended source for these fields.
++enum class RequestOwnershipRoute {
++  kProxy,
++  kNative,
++};
++
+ struct RequestOwnershipRecord {
+   std::string request_id;
+   OwnershipKey owner;
+@@ -56,6 +61,9 @@ struct RequestOwnershipRecord {
+   std::string exact_host;
+   RequestScheme scheme = RequestScheme::kInvalid;
+   uint16_t port = 0;
++  // Native tracking has no proxy selection. This flag grants no route: the
++  // private NetworkContext independently evaluates the actual target policy.
++  RequestOwnershipRoute route = RequestOwnershipRoute::kProxy;
+ 
+   friend bool operator==(const RequestOwnershipRecord&,
+                          const RequestOwnershipRecord&) = default;
+@@ -92,6 +100,9 @@ struct RequestCancellationSelector {
+   std::string exact_host;
+   RequestScheme scheme = RequestScheme::kInvalid;
+   uint16_t port = 0;
++  // Browser-issued website toggle: match both trusted HTTP(S) top sites and
++  // all their page destinations in this owner, preserving other websites.
++  bool website_context = false;
+ 
+   friend bool operator==(const RequestCancellationSelector&,
+                          const RequestCancellationSelector&) = default;
+diff --git a/components/aegis_access/site_proxy_rule_group.cc b/components/aegis_access/site_proxy_rule_group.cc
+index dfaad9e6f8ae377aaec852676036f0b25dd9da06..dc2c0577c6a062262185686ec5e7a92eedb55e82 100644
+--- a/components/aegis_access/site_proxy_rule_group.cc
++++ b/components/aegis_access/site_proxy_rule_group.cc
+@@ -87,6 +87,8 @@ GroupValidation ValidateSiteProxyRuleGroup(
+   }
+ 
+   for (const SiteProxyRuleMember& member : members) {
++    if (member.scope != (group->website_context ? PolicyScope::kWebsite : PolicyScope::kSite))
++      return Unknown(GroupValidationError::kScopeMismatch);
+     if (!IsCompleteOwner(member.owner) || member.owner != group->owner ||
+         member.site_toggle_id != group->site_toggle_id) {
+       return Unknown(GroupValidationError::kOwnershipMismatch);
+diff --git a/components/aegis_access/site_proxy_rule_group.h b/components/aegis_access/site_proxy_rule_group.h
+index 3a13ec2ed6f65b16bca1f67e6bf0fe6d766d93ce..e7bf2e828f84fafab5d67a33ed92622cdc418d24 100644
+--- a/components/aegis_access/site_proxy_rule_group.h
++++ b/components/aegis_access/site_proxy_rule_group.h
+@@ -35,6 +35,7 @@ struct SiteProxyRuleGroup {
+   std::vector<std::string> member_rule_ids;
+   uint64_t revision = 0;
+   uint64_t last_operation_sequence = 0;
++  bool website_context = false;
+ 
+   friend bool operator==(const SiteProxyRuleGroup&,
+                          const SiteProxyRuleGroup&) = default;
+@@ -54,6 +55,7 @@ struct SiteProxyRuleMember {
+   std::string proxy_group_id;
+   ProtectionOverride protection_override = ProtectionOverride::kInvalid;
+   uint64_t last_operation_sequence = 0;
++  PolicyScope scope = PolicyScope::kSite;
+ 
+   friend bool operator==(const SiteProxyRuleMember&,
+                          const SiteProxyRuleMember&) = default;
+@@ -89,6 +91,7 @@ enum class GroupValidationError {
+   kUnsupportedMode,
+   kModeMismatch,
+   kProxyGroupMismatch,
++  kScopeMismatch,
+ };
+ 
+ struct GroupValidation {

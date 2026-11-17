@@ -1115,7 +1115,7 @@ function probeCanvas(): string {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#e8eef3';
   ctx.font = '16px sans-serif';
-  ctx.fillText('GCSA-aegis ' + window.location.host, 10, 30);
+  ctx.fillText('Aegis Browser ' + window.location.host, 10, 30);
   return hashText(canvas.toDataURL());
 }
 

@@ -297,6 +297,34 @@ class MacosDmgTests(unittest.TestCase):
 
 
 class VerificationContextTests(unittest.TestCase):
+    def test_internal_wrapper_prefers_current_display_name_over_legacy_app(self):
+        # Exercise discovery only; the packaging boundary is stubbed so this
+        # fixture does not build, sign or publish an app.
+        with tempfile.TemporaryDirectory(prefix='aegis-dmg-display-') as directory:
+            root = Path(directory).resolve()
+            release = root / 'scripts/release'
+            release.mkdir(parents=True)
+            wrapper = release / 'macos-internal-dmg.sh'
+            shutil.copy2(ROOT / 'scripts/release/macos-internal-dmg.sh', wrapper)
+            output = root / 'build'
+            for name in ('Aegis Browser.app', 'GCSA Aegis.app'):
+                app = output / name
+                (app / 'Contents/MacOS').mkdir(parents=True)
+                (app / 'Contents/Info.plist').touch()
+            tools = root / 'tools'
+            tools.mkdir()
+            python = tools / 'python3'
+            python.write_text('#!/bin/bash\nprintf "%s\\n" "$MACOS_APP_PATH"\n')
+            python.chmod(0o700)
+            env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                       AEGIS_MACOS_APP_ROOT=str(output), GITHUB_SHA=SHA,
+                       MACOS_OUTPUT_DIR=str(root / 'package'))
+            result = subprocess.run(['bash', str(wrapper), '0.8.0', 'arm64'], env=env,
+                                    text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(result.stdout.splitlines()[0], str(output / 'Aegis Browser.app'))
+
     def check_context(self, separate_product):
         # Execute a real Node verifier boundary from a real, separate Git
         # checkout. The fixture models source-root sensitivity without building

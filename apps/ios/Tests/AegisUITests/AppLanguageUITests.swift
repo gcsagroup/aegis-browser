@@ -201,7 +201,36 @@ final class AppLanguageUITests: XCTestCase {
         }
     }
 
-    private func tapMenuItem(labels: [String], in app: XCUIApplication) {
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        _ = element.waitForExistence(timeout: 3)
+        // Search both directions for virtualized rows; gestures stay in the
+        // presented list (or the external document), including iPad sheets.
+        for down in [false, true] {
+            for _ in 0..<8 {
+                let list = app.collectionViews.firstMatch
+                let surface = list.exists ? list : app.webViews.firstMatch
+                XCTAssertTrue(surface.exists)
+                let bounds = surface.frame.intersection(app.frame)
+                let navigationBottom = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? bounds.minY
+                let top = max(bounds.minY, navigationBottom) + 8
+                let bottom = bounds.maxY - 8
+                if element.exists, element.isHittable,
+                   element.frame.midY >= top, element.frame.midY <= bottom,
+                   element.frame.midX >= bounds.minX, element.frame.midX <= bounds.maxX { return }
+                let startY = top + (bottom - top) * (down ? 0.3 : 0.7)
+                let endY = top + (bottom - top) * (down ? 0.7 : 0.3)
+                let origin = surface.coordinate(withNormalizedOffset: .zero)
+                origin.withOffset(CGVector(dx: bounds.midX - surface.frame.minX, dy: startY - surface.frame.minY))
+                    .press(forDuration: 0.1, thenDragTo: origin.withOffset(CGVector(dx: bounds.midX - surface.frame.minX, dy: endY - surface.frame.minY)))
+            }
+        }
+        XCTFail("Unreachable control within visible content: \(element.identifier)")
+    }
+}
+
+extension XCTestCase {
+    @MainActor
+    func tapMenuItem(labels: [String], in app: XCUIApplication) {
         let item = app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
         _ = item.waitForExistence(timeout: 5)
         for down in [false, true] {
@@ -236,31 +265,5 @@ final class AppLanguageUITests: XCTestCase {
             }
         }
         XCTFail("Unreachable menu item inside visible popup: \(labels)")
-    }
-
-    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
-        _ = element.waitForExistence(timeout: 3)
-        // Search both directions for virtualized rows; gestures stay in the
-        // presented list (or the external document), including iPad sheets.
-        for down in [false, true] {
-            for _ in 0..<8 {
-                let list = app.collectionViews.firstMatch
-                let surface = list.exists ? list : app.webViews.firstMatch
-                XCTAssertTrue(surface.exists)
-                let bounds = surface.frame.intersection(app.frame)
-                let navigationBottom = app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? bounds.minY
-                let top = max(bounds.minY, navigationBottom) + 8
-                let bottom = bounds.maxY - 8
-                if element.exists, element.isHittable,
-                   element.frame.midY >= top, element.frame.midY <= bottom,
-                   element.frame.midX >= bounds.minX, element.frame.midX <= bounds.maxX { return }
-                let startY = top + (bottom - top) * (down ? 0.3 : 0.7)
-                let endY = top + (bottom - top) * (down ? 0.7 : 0.3)
-                let origin = surface.coordinate(withNormalizedOffset: .zero)
-                origin.withOffset(CGVector(dx: bounds.midX - surface.frame.minX, dy: startY - surface.frame.minY))
-                    .press(forDuration: 0.1, thenDragTo: origin.withOffset(CGVector(dx: bounds.midX - surface.frame.minX, dy: endY - surface.frame.minY)))
-            }
-        }
-        XCTFail("Unreachable control within visible content: \(element.identifier)")
     }
 }

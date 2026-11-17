@@ -234,6 +234,7 @@ struct UserScriptEditor: View {
   let tab: BrowserTab?
   @EnvironmentObject private var settings: BrowserSettings
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.scenePhase) private var scenePhase
   @State private var record: UserScriptRecord?
   @State private var source: String
   @State private var world: String
@@ -245,8 +246,8 @@ struct UserScriptEditor: View {
   @State private var confirmsModel = false
   @State private var confirmsTrial = false
   @State private var exporting = false
-  @State private var operation: Task<Void, Never>?
-  @State private var generation = UUID()
+  @StateObject private var lifetime = AssistantOperationLifetime()
+  @State private var consentToken: UUID?
   @State private var pendingModel: ModelConfiguration?
   private var modelConsentMessage: String {
     let endpoint = pendingModel?.endpoint ?? ""
@@ -281,12 +282,14 @@ struct UserScriptEditor: View {
           Button("读取当前页结构供检查") { Task { await readContext() } }.disabled(tab == nil || busy)
           if !context.isEmpty { Text(context).font(.caption).textSelection(.enabled) }
           Button("生成或修复草稿") {
+            guard lifetime.isCurrent(lifetime.generation), tab?.isDisposed != true else { return }
             pendingModel = settings.model
             pendingGoal = goal
             pendingContext = context
             pendingSource = source
             pendingEpoch = tab?.navigationEpoch ?? 0
             pendingURL = tab?.url
+            consentToken = lifetime.generation
             confirmsModel = true
           }.disabled(goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
             .accessibilityIdentifier("user-script-generate")
@@ -311,7 +314,14 @@ struct UserScriptEditor: View {
           Toggle("在匹配的子框架中运行", isOn: $allFrames)
           }
           Button("检查并保存草稿") { save() }.accessibilityIdentifier("user-script-save")
-          Button("在当前页面试运行") { if save() { confirmsTrial = true } }.disabled(tab == nil)
+          Button("在当前页面试运行") {
+            guard lifetime.isCurrent(lifetime.generation), tab?.isDisposed == false else { return }
+            if save() {
+              consentToken = lifetime.generation
+              pendingEpoch = tab?.navigationEpoch ?? 0; pendingURL = tab?.url
+              confirmsTrial = true
+            }
+          }.disabled(tab == nil)
             .accessibilityIdentifier("user-script-trial")
           Button("导出 .user.js") { exporting = true }
           if let record, !record.history.isEmpty {
@@ -341,21 +351,29 @@ struct UserScriptEditor: View {
         }
       }
       .onDisappear { cancel() }
+      .background(AssistantSceneAttachment(lifetime: lifetime))
+      .onReceive(lifetime.sceneDeactivated) { _ in cancel() }
+      .onChange(of: scenePhase) { _, phase in if phase != .active { cancel() } }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in cancel() }
       .alert("确认发送给模型服务？", isPresented: $confirmsModel) {
         Button("发送并生成") { generate() }
-        Button("取消", role: .cancel) {}
+        Button("取消", role: .cancel) { cancel() }
       } message: {
         Text(modelConsentMessage)
       }
       .alert("在真实页面试运行？", isPresented: $confirmsTrial) {
         Button("试运行") {
+          guard lifetime.isCurrent(consentToken), tab?.isDisposed == false,
+                tab?.navigationEpoch == pendingEpoch, tab?.url == pendingURL else { cancel(); return }
+          let token = lifetime.generation
           Task {
             do {
               if let record {
                 try await tab?.userScripts.trial(record)
+                guard lifetime.isCurrent(token), tab?.isDisposed == false else { return }
                 message = .resource("已安排试运行，请检查实际效果及运行状态。试运行存储不会持久保存。")
               }
-            } catch { message = .error(error) }
+            } catch { if lifetime.isCurrent(token) { message = .error(error) } }
           }
         }
         Button("取消", role: .cancel) {}
@@ -387,7 +405,8 @@ struct UserScriptEditor: View {
     }
   }
   private func readContext() async {
-    guard let tab, let url = tab.url, ScriptMatch.origin(url) != nil else {
+    let token = lifetime.generation
+    guard lifetime.isCurrent(token), let tab, !tab.isDisposed, let url = tab.url, ScriptMatch.origin(url) != nil else {
       message = .resource("请先打开普通网页。")
       return
     }
@@ -399,28 +418,30 @@ struct UserScriptEditor: View {
         """
       let result = try await tab.webView.callAsyncJavaScript(
         script, arguments: [:], in: nil, contentWorld: .defaultClient)
-      guard tab.navigationEpoch == epoch, tab.url == url else {
+      guard lifetime.isCurrent(token), !tab.isDisposed, tab.navigationEpoch == epoch, tab.url == url else {
         throw EnhancementError.invalid("页面已变化，请重新读取。")
       }
       context = result as? String ?? ""
       message = .resource("已读取结构，请在发送前检查。")
     } catch {
+      guard lifetime.isCurrent(token), !tab.isDisposed else { return }
       context = ""
       message = .error(error)
     }
   }
   private func generate() {
-    guard let configuration = pendingModel else { return }
-    cancel()
-    busy = true
-    let token = UUID()
-    generation = token
+    guard let configuration = pendingModel, lifetime.isCurrent(consentToken), scenePhase == .active,
+          tab?.isDisposed != true, (tab?.navigationEpoch ?? 0) == pendingEpoch, tab?.url == pendingURL else { cancel(); return }
     let url = pendingURL
     let epoch = pendingEpoch
     let goal = pendingGoal
     let context = pendingContext
     let source = pendingSource
-    operation = Task { @MainActor in
+    cancel()
+    busy = true
+    let token = lifetime.generation
+    lifetime.operation = Task { @MainActor in
+      guard lifetime.isCurrent(token), !Task.isCancelled, tab?.isDisposed != true else { return }
       do {
         let key = ModelCredentialStore.read(for: configuration)
         let prompt =
@@ -433,7 +454,7 @@ struct UserScriptEditor: View {
               "网址：" + (url?.absoluteString ?? "未指定"), "待修改脚本：\n" + source, "不可信的页面结构：\n" + context,
             ], language: AegisLocalization.current.dialect, disableLocalQwenThinking: true)
         try Task.checkCancellation()
-        guard generation == token, (tab?.navigationEpoch ?? 0) == epoch, tab?.url == url else {
+        guard lifetime.isCurrent(token), scenePhase == .active, tab?.isDisposed != true, (tab?.navigationEpoch ?? 0) == epoch, tab?.url == url else {
           throw EnhancementError.invalid("页面已变化，生成结果没有应用。")
         }
         guard output.utf8.count <= 100_000, let data = output.data(using: .utf8),
@@ -443,17 +464,17 @@ struct UserScriptEditor: View {
         try EnhancementAssets.checkSyntax(next)
         self.source = next
         message = .verbatim((object["summary"] ?? "已生成草稿。") + "\n请检查网址、权限和源码后保存并试运行。")
-      } catch { if generation == token { message = .error(error) } }
-      if generation == token {
+      } catch { if lifetime.isCurrent(token), tab?.isDisposed != true { message = .error(error) } }
+      if lifetime.isCurrent(token) {
         busy = false
-        operation = nil
+        lifetime.operation = nil
       }
     }
   }
   private func cancel() {
-    generation = UUID()
-    operation?.cancel()
-    operation = nil
+    lifetime.invalidate()
+    confirmsModel = false; confirmsTrial = false; pendingModel = nil; consentToken = nil
+    pendingGoal = ""; pendingContext = ""; pendingSource = ""; pendingURL = nil; pendingEpoch = 0
     busy = false
   }
 }
@@ -485,6 +506,7 @@ struct CurrentWebsiteView: View {
           tab: tab,
           store: browser.enhancements,
           isPrivate: browser.profile.isPrivate,
+          onDone: { dismiss() },
           accessSiteProxy: accessRegistry.store(
             for: tab.websiteDataStore,
             isPrivate: tab.profile.isPrivate
@@ -492,7 +514,7 @@ struct CurrentWebsiteView: View {
         )
           .id(tab.id)
           .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
-          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.accessibilityIdentifier("website-done") } }
       }
     }
   }
@@ -502,13 +524,13 @@ private struct CurrentWebsitePanel: View {
   @ObservedObject var tab: BrowserTab
   @ObservedObject var store: WebsiteEnhancementStore
   let isPrivate: Bool
+  let onDone: () -> Void
   @ObservedObject var accessSiteProxy: AccessSiteProxySessionStore
-  @EnvironmentObject private var accountSession: AccessAccountSession
-  @EnvironmentObject private var subscriptionUsage: AccessSubscriptionUsageSession
   @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
   @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var markdownDocument: MarkdownDocument?
   @State private var readingPage = false
+  @ObservedObject private var protection = TrackingProtection.shared
   @State private var paused = false
   @State private var reload = false
   @State private var editor: ScriptEditorRequest?
@@ -516,41 +538,54 @@ private struct CurrentWebsitePanel: View {
   var body: some View {
       let _ = localizationLocale
     Form {
+      Section("隐私保护") {
+        Label(!TrackingProtection.enabled ? "广告过滤已关闭" : paused ? "此网站已暂停过滤" : "广告与跟踪过滤已开启", systemImage: "shield.lefthalf.filled")
+          .accessibilityIdentifier("site-privacy-status")
+        if let url = tab.url, ScriptMatch.origin(url) != nil, !isPrivate {
+          Button(paused ? "恢复本站过滤" : "暂停本站过滤") {
+            TrackingProtection.setException(!paused, for: url)
+            paused = TrackingProtection.isExcepted(url)
+            message = .resource("保护设置已保存，重新载入后应用。")
+          }.accessibilityIdentifier("content-filter-site-exception")
+        }
+        Toggle("启用过滤", isOn: Binding(get: { TrackingProtection.enabled }, set: { value in
+          TrackingProtection.enabled = value
+          protection.objectWillChange.send()
+          tab.reload()
+        })).accessibilityIdentifier("content-filter-toggle")
+        Text("过滤设置与网站增强分别管理。风险页面保护不会因此关闭。")
+          .font(.footnote).foregroundStyle(.secondary)
+        LabeledContent("网络规则", value: "\(protection.networkCount)").accessibilityIdentifier("filter-network-count")
+        NavigationLink("广告与跟踪过滤设置") { ContentFilterSettingsView() }
+        if !message.text.isEmpty { Text(message.text).font(.footnote) }
+      }
+      NavigationLink("保护明细") {
+        Form { detailedControls }
+          .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
+          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: onDone).accessibilityIdentifier("website-details-done") } }
+      }.accessibilityIdentifier("site-details")
+    }
+    .onAppear { if let url = tab.url { paused = TrackingProtection.isExcepted(url) } }
+    .onChange(of: tab.navigationEpoch) { _, _ in
+      message = .verbatim("")
+      if let url = tab.url { paused = TrackingProtection.isExcepted(url) }
+    }
+    .sheet(item: $markdownDocument) { document in MarkdownReaderView(initial: document) }
+    .sheet(item: $editor) { item in UserScriptEditor(store: store, tab: tab, record: item.record, imported: item.imported) }
+    .alert("重新载入当前页面？", isPresented: $reload) {
+      Button("重新载入") { tab.recoverAfterDisablingScripts() }
+      Button("取消", role: .cancel) {}
+    } message: { Text("当前页尚未提交的输入可能丢失。") }
+  }
+  @ViewBuilder private var detailedControls: some View {
       AccessSiteProxyToggleView(store: accessSiteProxy, url: tab.url, tab: tab)
         .onAppear { accessSiteProxy.hostRouting = hostStores }
         .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
-      if !isPrivate {
-        if subscriptionUsage.isSelected {
-          AccessSubscriptionUsageView(session: subscriptionUsage)
-        } else {
-          AccessAccountUsageView(session: accountSession)
-        }
-      } else {
-        Section("Access 账户额度") {
-          Text("私密会话不显示普通账户的额度；请在普通窗口查询。")
-            .font(.footnote).foregroundStyle(.secondary)
-        }
-      }
       AccessDevAllowBlockSectionView(store: accessSiteProxy, url: tab.url)
       if let url = tab.url, ScriptMatch.origin(url) != nil {
         Section {
-          Text(url.host ?? url.absoluteString).font(.headline).textSelection(.enabled)
+          Text(verbatim: AccessSiteDisplayName.title(url.host)).font(.headline).textSelection(.enabled)
           if isPrivate { Text("私密会话：网站规则与脚本仅保留在本次会话。").font(.footnote) }
-        }
-        Section("隐私保护") {
-          Label(!TrackingProtection.enabled ? "广告过滤已关闭" : paused ? "此网站已暂停过滤" : "广告与跟踪过滤已开启", systemImage: "shield.lefthalf.filled")
-          DisclosureGroup("保护明细") {
-            NavigationLink("广告与跟踪过滤设置") { ContentFilterSettingsView() }
-            if !isPrivate {
-              Button(paused ? "恢复本站过滤" : "暂停本站过滤") {
-                TrackingProtection.setException(!paused, for: url)
-                paused = TrackingProtection.isExcepted(url)
-                message = .resource("保护设置已保存，重新载入后应用。")
-              }
-            }
-            Text("过滤设置与网站增强分别管理。风险页面保护不会因此关闭。")
-              .font(.footnote).foregroundStyle(.secondary)
-          }
         }
         WebsiteQuickRuleSection(store: store, tab: tab, url: url, message: $message)
         CurrentPageScriptsSection(store: store, runtime: tab.userScripts, tab: tab)
@@ -579,19 +614,8 @@ private struct CurrentWebsitePanel: View {
           NavigationLink("网站增强与脚本设置") { WebsiteEnhancementsView(embedded: true) }
         }
       }
-    }
-    .onAppear { if let url = tab.url { paused = TrackingProtection.isExcepted(url) } }
-    .onChange(of: tab.navigationEpoch) { _, _ in
-      message = .verbatim("")
-      if let url = tab.url { paused = TrackingProtection.isExcepted(url) }
-    }
-    .sheet(item: $markdownDocument) { document in MarkdownReaderView(initial: document) }
-    .sheet(item: $editor) { item in UserScriptEditor(store: store, tab: tab, record: item.record, imported: item.imported) }
-    .alert("重新载入当前页面？", isPresented: $reload) {
-      Button("重新载入") { tab.recoverAfterDisablingScripts() }
-      Button("取消", role: .cancel) {}
-    } message: { Text("当前页尚未提交的输入可能丢失。") }
   }
+
 }
 
 private struct WebsiteQuickRuleSection: View {
