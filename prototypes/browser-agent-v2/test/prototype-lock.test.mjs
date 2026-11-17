@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import { PROTOTYPE_ROOT } from '../src/constants.mjs';
-import manifest from '../package.json' with { type: 'json' };
+
+const require = createRequire(import.meta.url);
+const manifest = require('../package.json');
 
 test('第三方候选均固定精确版本和许可证', () => {
   const lock = JSON.parse(fs.readFileSync(`${PROTOTYPE_ROOT}/prototype-lock.json`, 'utf8'));
