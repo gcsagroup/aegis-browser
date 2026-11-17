@@ -55,6 +55,7 @@ final class PageAssistantModel: ObservableObject {
     private let stream: Stream
     private let credential: @MainActor (ModelConfiguration) -> String
     private var generation = UUID()
+    private var streamingGeneration: UUID?
     private var identities: [SourceIdentity] = []
     private var environmentObservers: Set<AnyCancellable> = []
     private var documentObservers: Set<AnyCancellable> = []
@@ -197,6 +198,10 @@ final class PageAssistantModel: ObservableObject {
     }
     private func digest(_ key: String) -> String { SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() }
 
+    private func sealStream(_ token: UUID) {
+        if streamingGeneration == token { streamingGeneration = nil }
+    }
+
     func send() {
         guard let approved = consent else { return }
         consent = nil
@@ -217,14 +222,20 @@ final class PageAssistantModel: ObservableObject {
                 let recordID = taskID
                 let sourceTexts = approved.sources.enumerated().map { "来源 [\($0.offset + 1)]：\($0.element.title)\n\($0.element.text)" }
                 guard active(token, profile: approved.profile, lifetimeToken: approved.lifetime), valid(approved) else { revokeIfCurrent(token); return }
+                streamingGeneration = token
                 let text = try await stream(approved.configuration, key, approved.goal, sourceTexts, AegisLocalization.current.dialect) { [weak self] partial in
-                    guard let self, self.active(token, profile: approved.profile, lifetimeToken: approved.lifetime), self.valid(approved) else { return }
+                    guard let self, self.streamingGeneration == token,
+                          self.active(token, profile: approved.profile, lifetimeToken: approved.lifetime), self.valid(approved) else { return }
                     self.output = partial; self.status = "正在生成回答"
                 }
+                // Seal before publishing or persisting a terminal state. Generation
+                // validity alone also permits a completed result to remain saveable.
+                sealStream(token)
                 guard active(token, profile: approved.profile, lifetimeToken: approved.lifetime), valid(approved) else { revokeIfCurrent(token); return }
                 if let recordID { try tasks.finish(recordID, state: .completed) }
                 output = text; outputComplete = true; busy = false; status = "已完成"; lifetime.operation = nil
             } catch {
+                sealStream(token)
                 guard active(token, profile: approved.profile, lifetimeToken: approved.lifetime), valid(approved) else { revokeIfCurrent(token); return }
                 if let taskID { try? tasks.finish(taskID, state: .failed) }
                 if let failure = error as? ModelClientError, [.invalidCitation, .invalidResponse, .sensitiveData].contains(failure) { output = "" }
@@ -237,15 +248,18 @@ final class PageAssistantModel: ObservableObject {
     func cancel() { revoke(clearSources: false) }
     func revoke(clearSources: Bool) {
         generation = UUID() // Revoke before cancelling an uncooperative dependency.
+        streamingGeneration = nil
         lifetime.invalidate()
         if busy, let taskID, let tasks { try? tasks.finish(taskID, state: .interrupted) }
         lifetime.operation = nil; consent = nil; taskID = nil
         browser?.protectAssistantTabs([])
+        let wasBusy = busy
         if busy { outputComplete = false; status = "已暂停，可重新运行" }
         busy = false
         if clearSources {
             snapshots = []; identities = []; output = ""; outputComplete = false; error = nil
             documentObservers.removeAll()
+            if !wasBusy { status = "准备中" }
         }
     }
 

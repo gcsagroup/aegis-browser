@@ -1,3 +1,4 @@
+import AccessKit
 import AgentKit
 import Combine
 import CryptoKit
@@ -9,6 +10,41 @@ import XCTest
 
 @MainActor
 final class BrowserPresentationCoordinatorTests: XCTestCase {
+    func testWindowReloadCommandPreservesUnsafePrivateAndProtectedRequests() throws {
+        for profile in [BrowserProfile.standard, .privateMode] {
+            for protected in [false, true] {
+                let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+                browser.switchProfile(to: profile)
+                defer { browser.closeWindow() }
+                let tab = try XCTUnwrap(browser.activeTab)
+                let coordinator = AccessHostStoreCoordinator()
+                if protected {
+                    tab.hostCoordinator = coordinator
+                    let host = try AccessSiteHost("manual-refresh.invalid")
+                    coordinator.registry.setEndpoint(AccessManagedProxyEndpoint(identity: "reload-fixture", generation: 1,
+                        loopbackHost: "127.0.0.1", port: 18081, state: .ready),
+                        scopeID: tab.browsingScopeID, host: host, isPrivate: profile.isPrivate)
+                    coordinator.setProxyEnabled(true, host: host, scopeID: tab.browsingScopeID, isPrivate: profile.isPrivate)
+                }
+                var request = URLRequest(url: URL(string: "https://manual-refresh.invalid/submit")!)
+                request.httpMethod = "POST"; request.httpBody = Data("original=one".utf8)
+                tab.load(request)
+                let identity = tab.currentAttemptIDForTests, store = tab.websiteDataStore
+                let loadError = tab.loadingError
+                XCTAssertNil(tab.safeRouteReloadRequest)
+                let command = try XCTUnwrap(BrowserKeyboardActions.forWindow(browser, presentation: BrowserPresentationCoordinator()))
+                command.reload() // The exact action installed for Cmd-R.
+                XCTAssertNil(tab.safeRouteReloadRequest)
+                XCTAssertEqual(tab.currentAttemptIDForTests, identity)
+                XCTAssertTrue(tab.websiteDataStore === store); XCTAssertEqual(tab.profile, profile)
+                XCTAssertTrue(tab.reloadRequiresResubmission)
+                XCTAssertEqual(tab.loadingError, loadError)
+                XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+                if protected { XCTAssertFalse(store.proxyConfigurations.isEmpty) }
+            }
+        }
+    }
+
     func testFIFOIncludesDistinctSameURLInputsAndRejectsOldDismissal() throws {
         let route = BrowserPresentationCoordinator()
         route.request(.reading)
@@ -387,18 +423,22 @@ final class PageAssistantModelTests: XCTestCase {
         let defaults: UserDefaults
         let suite: String
         let directory: URL
-        init() throws {
+        let encryptionKey: SymmetricKey
+        init(profile: BrowserProfile = .standard) throws {
             browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
             suite = "page-assistant-model-" + UUID().uuidString
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             settings = BrowserSettings(defaults: defaults)
             directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
-            tasks = AssistantTaskStore(url: directory.appendingPathComponent("tasks.aes"), key: SymmetricKey(size: .bits256))
+            encryptionKey = SymmetricKey(size: .bits256)
+            tasks = AssistantTaskStore(url: directory.appendingPathComponent("tasks.aes"), key: encryptionKey)
+            browser.switchProfile(to: profile)
             let tab = try XCTUnwrap(browser.activeTab)
             tab.adoptPolicyMainFrameNavigationForTests(url: URL(string: "https://example.test/article")!)
             tab.commitPendingMainFrameForTests(); tab.stop()
         }
         func close() { browser.closeWindow(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        func reloadedTasks() -> AssistantTaskStore { AssistantTaskStore(url: directory.appendingPathComponent("tasks.aes"), key: encryptionKey) }
         func attach(_ model: PageAssistantModel) { model.attach(browser: browser, settings: settings, tasks: tasks) }
     }
     private func model(stream: @escaping PageAssistantModel.Stream) -> PageAssistantModel {
@@ -480,6 +520,144 @@ final class PageAssistantModelTests: XCTestCase {
             XCTAssertNil(model.error); XCTAssertFalse(model.busy)
             XCTAssertEqual(fixture.tasks.records.first?.state, .completed)
             XCTAssertEqual(fixture.tasks.records.last?.state, .interrupted)
+        }
+    }
+
+    func testCompletedStreamRejectsLateTextBeforeAndAfterExplicitSave() async throws {
+        for profile in [BrowserProfile.standard, .privateMode] {
+            let fixture = try Fixture(profile: profile); defer { fixture.close() }
+            var callback: (@MainActor @Sendable (String) -> Void)?
+            let model = model { _, _, _, _, _, onText in
+                callback = onText
+                onText("Draft [1]")
+                return "Validated result [1]"
+            }
+            fixture.attach(model); try await read(model)
+            model.requestConsent(); model.send()
+            let operation = try XCTUnwrap(model.lifetime.operation); await operation.value
+            let lateText = try XCTUnwrap(callback), report = model.report
+            let completedStatus = Aegis.AegisLocalization.string(model.status)
+            XCTAssertEqual(model.output, "Validated result [1]"); XCTAssertTrue(model.outputComplete)
+            XCTAssertFalse(model.busy); XCTAssertNil(model.lifetime.operation); XCTAssertNil(model.error)
+            XCTAssertEqual(fixture.tasks.records.count, profile.isPrivate ? 0 : 1)
+            XCTAssertNil(fixture.tasks.records.first?.savedReport)
+
+            // No cancellation or newer operation: returning already ended this stream.
+            lateText("Late unvalidated text before save")
+            XCTAssertEqual(model.output, "Validated result [1]"); XCTAssertEqual(model.report, report)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), completedStatus)
+            XCTAssertTrue(model.outputComplete); XCTAssertFalse(model.busy); XCTAssertNil(model.error)
+            model.saveResult()
+            XCTAssertEqual(fixture.tasks.records.first?.state, .completed)
+            XCTAssertEqual(fixture.tasks.records.first?.savedReport, report)
+            XCTAssertEqual(fixture.reloadedTasks().records.first?.savedReport, report)
+
+            let savedStatus = Aegis.AegisLocalization.string(model.status)
+            lateText("Late unvalidated text after save")
+            XCTAssertEqual(model.output, "Validated result [1]"); XCTAssertEqual(model.report, report)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), savedStatus)
+            model.saveResult()
+            XCTAssertEqual(fixture.reloadedTasks().records.first?.savedReport, report)
+            XCTAssertEqual(fixture.tasks.records.count, 1)
+        }
+    }
+
+    func testFailedStreamRejectsLateTextAndRetrySavesOnlyValidatedResult() async throws {
+        for failure in [ModelClientError.sensitiveData, .invalidCitation, .invalidResponse, .incompleteResponse] {
+            let fixture = try Fixture(); defer { fixture.close() }
+            var callbacks: [@MainActor @Sendable (String) -> Void] = []
+            let model = model { _, _, _, _, _, onText in
+                callbacks.append(onText)
+                onText("Current draft [1]")
+                if callbacks.count == 1 { throw failure }
+                return "Validated retry [1]"
+            }
+            fixture.attach(model); try await read(model)
+            model.requestConsent(); model.send()
+            let failedOperation = try XCTUnwrap(model.lifetime.operation); await failedOperation.value
+            let failedText = try XCTUnwrap(callbacks.first)
+            let expectedDraft = failure == .incompleteResponse ? "Current draft [1]" : ""
+            let failedStatus = Aegis.AegisLocalization.string(model.status)
+            XCTAssertEqual(model.output, expectedDraft); XCTAssertFalse(model.outputComplete)
+            XCTAssertEqual(model.error as? ModelClientError, failure); XCTAssertFalse(model.busy)
+            XCTAssertNil(model.lifetime.operation); XCTAssertEqual(fixture.tasks.records.first?.state, .failed)
+
+            failedText("Rejected body revived by a late callback")
+            XCTAssertEqual(model.output, expectedDraft)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), failedStatus)
+            XCTAssertEqual(model.error as? ModelClientError, failure)
+            XCTAssertFalse(model.outputComplete); XCTAssertFalse(model.busy)
+            model.saveResult()
+            XCTAssertNil(fixture.reloadedTasks().records.first?.savedReport)
+
+            // Retry still reuses the preview, with fresh consent and a fresh stream.
+            model.requestConsent(); XCTAssertNotNil(model.consent); model.send()
+            let retry = try XCTUnwrap(model.lifetime.operation); await retry.value
+            let retryReport = model.report, retryStatus = Aegis.AegisLocalization.string(model.status)
+            failedText("Another old failure callback")
+            callbacks.last?("Late text from the completed retry")
+            XCTAssertEqual(model.output, "Validated retry [1]"); XCTAssertEqual(model.report, retryReport)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), retryStatus)
+            XCTAssertTrue(model.outputComplete); XCTAssertFalse(model.busy); XCTAssertNil(model.error)
+            model.saveResult()
+            let stored = fixture.reloadedTasks().records
+            XCTAssertEqual(stored.map(\.state), [.completed, .failed])
+            XCTAssertEqual(stored.first?.savedReport, retryReport); XCTAssertNil(stored.last?.savedReport)
+        }
+    }
+
+    func testCancelledStreamRejectsLateTextWithoutAnotherOperation() async throws {
+        let fixture = try Fixture(); defer { fixture.close() }
+        var callback: (@MainActor @Sendable (String) -> Void)?
+        var reply: CheckedContinuation<String, any Error>?
+        defer { reply?.resume(returning: "Cleanup [1]") }
+        let started = expectation(description: "Streaming draft before cancellation")
+        let model = model { _, _, _, _, _, onText in
+            callback = onText; onText("Unfinished draft [1]")
+            return try await withCheckedThrowingContinuation { reply = $0; started.fulfill() }
+        }
+        fixture.attach(model); try await read(model); model.requestConsent(); model.send()
+        let operation = try XCTUnwrap(model.lifetime.operation)
+        await fulfillment(of: [started], timeout: 2)
+        model.cancel()
+        let pausedStatus = Aegis.AegisLocalization.string(model.status)
+        let lateText = try XCTUnwrap(callback)
+        lateText("Late partial after cancel")
+        reply?.resume(returning: "Late final after cancel [1]"); reply = nil
+        await operation.value
+        XCTAssertEqual(model.output, "Unfinished draft [1]"); XCTAssertFalse(model.outputComplete)
+        XCTAssertEqual(Aegis.AegisLocalization.string(model.status), pausedStatus)
+        XCTAssertFalse(model.busy); XCTAssertNil(model.lifetime.operation); XCTAssertNil(model.taskID)
+        model.saveResult()
+        XCTAssertEqual(fixture.reloadedTasks().records.first?.state, .interrupted)
+        XCTAssertNil(fixture.reloadedTasks().records.first?.savedReport)
+    }
+
+    func testRevokingIdlePreviewCompletedAndSavedResultResetsVisibleStatus() async throws {
+        for state in ["preview", "completed", "saved"] {
+            let fixture = try Fixture(); defer { fixture.close() }
+            let model = model { _, _, _, _, _, _ in "Validated [1]" }
+            fixture.attach(model)
+            let readyStatus = Aegis.AegisLocalization.string(model.status)
+            try await read(model)
+            if state != "preview" {
+                model.requestConsent(); model.send()
+                let operation = try XCTUnwrap(model.lifetime.operation); await operation.value
+                if state == "saved" { model.saveResult() }
+            }
+            XCTAssertNotEqual(Aegis.AegisLocalization.string(model.status), readyStatus)
+            switch state {
+            case "preview": model.select(try XCTUnwrap(fixture.browser.activeTab).id, included: false)
+            case "completed":
+                let tab = try XCTUnwrap(fixture.browser.activeTab)
+                tab.load(try XCTUnwrap(tab.url)); tab.stop()
+            default: fixture.settings.model = ModelConfiguration(endpoint: "https://another-model.test", model: "other")
+            }
+            XCTAssertTrue(model.snapshots.isEmpty); XCTAssertTrue(model.output.isEmpty)
+            XCTAssertNil(model.consent); XCTAssertFalse(model.outputComplete); XCTAssertFalse(model.busy)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), readyStatus)
+            // Source/config invalidation never mutates the earlier record's terminal state.
+            if state != "preview" { XCTAssertEqual(fixture.tasks.records.first?.state, .completed) }
         }
     }
 

@@ -129,13 +129,26 @@ final class AppLanguageTests: XCTestCase {
                                     windowID: try windows.createWindow(), windowStore: windows, preferences: preferences)
         let start = try XCTUnwrap(first.activeTab)
         let external = try XCTUnwrap(second.activeTab)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; previousWindow?.makeKeyAndVisible() }
+        let startView = start.webView, externalView = external.webView
+        // Loopback loads start after their web view joins a window.
+        let frames = host.view.bounds.divided(atDistance: host.view.bounds.height / 2, from: .minYEdge)
+        startView.frame = frames.slice
+        externalView.frame = frames.remainder
+        host.view.addSubview(startView)
+        host.view.addSubview(externalView)
         start.load(URL(string: "aegis://start")!)
         // The existing integration server supplies a real external HTTP document.
         external.load(URL(string: "http://127.0.0.1:8768/article")!)
         defer { start.stop(); external.stop() }
         try await waitUntil { !start.isLoading && start.url?.absoluteString == "aegis://start" &&
             !external.isLoading && external.url?.path == "/article" }
-        let startView = start.webView, externalView = external.webView
         _ = try await externalView.evaluateJavaScript("window.languageSentinel=41;document.querySelector('main').insertAdjacentHTML('beforeend','<input id=language-draft value=KEEP_DRAFT>')")
         let epoch = external.navigationEpoch
         let backCount = externalView.backForwardList.backList.count

@@ -228,7 +228,7 @@ private struct BrowserPane: View {
                 Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal)
             }
             ActiveTabView(tab: tab, address: $address, addressIsEditing: addressFocused,
-                          onFind: { keyboardActions?.find() }, onScroll: updateToolbar)
+                          onEditAddress: editAddress, onFind: { keyboardActions?.find() }, onScroll: updateToolbar)
                 .id(tab.id)
         }
         .safeAreaInset(edge: toolbarAtTop ? .top : .bottom, spacing: 0) { toolbar }
@@ -488,6 +488,7 @@ struct PageLoadFailureBanner: View {
     var setAutoRecovery: ((BrowserTab, Bool) -> Void)? = nil
     var addressProxyPreparing = false
     var openAddressViaProxy: ((BrowserTab, BrowserPendingAddressNavigation) -> Void)? = nil
+    var editAddress: (() -> Void)? = nil
     var proxyRetry: (BrowserTab) -> Void
 
     var body: some View {
@@ -507,7 +508,12 @@ struct PageLoadFailureBanner: View {
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
                 if !locationPrivacyOn || !tab.loadingErrorAllowsProxyRetry {
-                    Button("重试") { tab.reload() }.frame(minHeight: 44)
+                    if tab.safeRouteReloadRequest != nil {
+                        Button("重试") { tab.reload() }.frame(minHeight: 44)
+                            .accessibilityIdentifier("page-load-retry")
+                    } else {
+                        resubmissionActions
+                    }
                 }
                 if let autoRecoveryLine {
                     Text(LocalizedStringKey(autoRecoveryLine))
@@ -539,6 +545,13 @@ struct PageLoadFailureBanner: View {
             .padding(.vertical, 8)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("page-load-error")
+        } else if tab.reloadRequiresResubmission {
+            VStack(alignment: .leading, spacing: 8) {
+                resubmissionActions
+            }
+            .padding(12)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("page-reload-refused")
         } else if (offersLocationService || addressProxyPreparing), let pending = tab.pendingAddressNavigation,
                   tab.matchesPendingAddressNavigation(pending),
                   let openAddressViaProxy {
@@ -560,12 +573,26 @@ struct PageLoadFailureBanner: View {
             .accessibilityIdentifier("page-load-pending-proxy")
         }
     }
+
+    private var resubmissionActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("请返回原页面重新提交。").font(.callout)
+            HStack {
+                if tab.canGoBack { Button("后退") { tab.goBack() }.frame(minHeight: 44) }
+                if let editAddress {
+                    Button("编辑网址", action: editAddress).frame(minHeight: 44)
+                        .accessibilityIdentifier("page-load-edit-address")
+                }
+            }
+        }
+    }
 }
 
 private struct ActiveTabView: View {
     @ObservedObject var tab: BrowserTab
     @Binding var address: String
     let addressIsEditing: Bool
+    let onEditAddress: () -> Void
     let onFind: () -> Void
     let onScroll: (Bool) -> Void
     @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
@@ -587,6 +614,7 @@ private struct ActiveTabView: View {
                 openAddressViaProxy: { pendingTab, pending in
                     _ = hostStores.openPendingAddressViaProxy(tab: pendingTab, pending: pending)
                 },
+                editAddress: onEditAddress,
                 proxyRetry: { failed in
                     _ = hostStores.retryViaProxy(tab: failed)
                 }
