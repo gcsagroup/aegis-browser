@@ -1499,7 +1499,74 @@ async function saveModelSettings(clearKey: boolean) {
   }
 }
 
+type ImageOcrSettings = {mode: string, endpoint?: string, officialDestination: string};
+
+async function initializeImageOcrSettings() {
+  const fields = getRequiredElement<HTMLFieldSetElement>('image-ocr-fields');
+  const mode = getRequiredElement<HTMLSelectElement>('image-ocr-mode');
+  const endpoint = getRequiredElement<HTMLInputElement>('image-ocr-endpoint');
+  const destination = getRequiredElement('image-ocr-official-status');
+  const status = getRequiredElement('image-ocr-status');
+  const labels = {
+    'image-ocr-title': settingsText('识别服务', 'Recognition service', '辨識服務'),
+    'image-ocr-hint': settingsText(
+        '优先在本机识别。使用服务器时，每次发送前都需要确认。',
+        'Recognition runs on this device first. Every server upload requires confirmation.',
+        '優先在本機辨識。使用伺服器時，每次傳送前都需要確認。'),
+    'image-ocr-mode-label': settingsText('服务器兜底', 'Server fallback', '伺服器備援'),
+    'image-ocr-official': settingsText('使用 Aegis 服务', 'Use Aegis service', '使用 Aegis 服務'),
+    'image-ocr-custom': settingsText('自定义服务器', 'Custom server', '自訂伺服器'),
+    'image-ocr-local': settingsText('仅本机识别', 'On-device only', '僅本機辨識'),
+    'image-ocr-endpoint-label': settingsText('HTTPS 接口地址', 'HTTPS endpoint', 'HTTPS 端點位址'),
+    'image-ocr-save': settingsText('保存', 'Save', '儲存'),
+  };
+  for (const [id, label] of Object.entries(labels)) getRequiredElement(id).textContent = label;
+
+  const renderMode = () => {
+    const custom = mode.value === 'custom';
+    getRequiredElement('image-ocr-endpoint-row').hidden = !custom;
+    endpoint.disabled = !custom;
+    endpoint.required = custom;
+    destination.hidden = mode.value !== 'official';
+  };
+  const renderSaved = (saved: ImageOcrSettings) => {
+    mode.value = saved.mode;
+    endpoint.value = saved.endpoint ?? '';
+    destination.textContent = saved.officialDestination || settingsText(
+        '此版本尚未配置 Aegis 服务器。', 'This build has no Aegis server configured.', '此版本尚未設定 Aegis 伺服器。');
+    renderMode();
+  };
+  mode.onchange = renderMode;
+  getRequiredElement<HTMLFormElement>('image-ocr-form').onsubmit = async event => {
+    event.preventDefault();
+    fields.disabled = true;
+    try {
+      renderSaved(await requestSettings<ImageOcrSettings>(
+          'saveImageOcrSettings', mode.value, endpoint.value));
+      status.textContent = settingsText('设置已保存。', 'Settings saved.', '設定已儲存。');
+    } catch (error) {
+      const invalid = error === 'invalidEndpoint' ||
+          (error instanceof Error && error.message === 'invalidEndpoint');
+      status.textContent = invalid ? settingsText(
+          '请输入以 /v1/ocr 结尾的 HTTPS 接口地址。', 'Enter an HTTPS endpoint ending in /v1/ocr.', '請輸入以 /v1/ocr 結尾的 HTTPS 端點位址。') :
+          settingsText('保存失败，请重试。', 'Could not save. Try again.', '儲存失敗，請重試。');
+    } finally {
+      fields.disabled = false;
+    }
+  };
+  try {
+    renderSaved(await requestSettings<ImageOcrSettings>('getImageOcrSettings'));
+    fields.disabled = false;
+  } catch (error) {
+    status.textContent = settingsText('无法读取设置，请重新打开此页。', 'Could not load settings. Reopen this page.', '無法讀取設定，請重新開啟此頁。');
+  }
+}
+
 async function init() {
+  if (embeddedSettings && settingsSection === 'ocr') {
+    await initializeImageOcrSettings();
+    return;
+  }
   const status: AegisStatus =
       withRendererPolicyWorkerStatus(await requestSettings('getStatus'));
   applyStatus(status);
@@ -1508,6 +1575,7 @@ async function init() {
       const result: AegisStatus = await sendWithPromise('openBrowserAgent', section);
       if (result.ok === false) throw new Error(result.error || 'unavailable');
     });
+    void initializeImageOcrSettings().catch((error) => { console.error(error); });
   }
   bindToggle('tracker', 'trackerBlocking');
   bindToggle('phish', 'phishInterstitial');
@@ -1603,7 +1671,7 @@ function listenSettingsStatus(callback: (status: AegisStatus) => void) {
 // 复用完整设置控件；只改变展示分组，不迁移或重写已保存的配置。
 const settingsSection = new URLSearchParams(location.search).get('settings') || '';
 const embeddedSettings = window.parent !== window &&
-    ['privacy', 'ai', 'downloads', 'tools'].includes(settingsSection);
+    ['privacy', 'ai', 'downloads', 'tools', 'ocr'].includes(settingsSection);
 let settingsRequestId = 0;
 const settingsRequests = new Map<string, {resolve: (value: unknown) => void, reject: (reason: Error) => void, timer: number}>();
 let settingsStatusListener: ((status: AegisStatus) => void)|undefined;

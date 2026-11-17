@@ -186,12 +186,34 @@ test('candidate Draft survives its skipped upload-only ancestor while requiring 
   assert(draft.if.includes("outputs.destination == 'github-draft'"));
 });
 
+test('Bot controller keeps App key access behind canonical main and administrator admission', () => {
+  const doc = parse(readFileSync('.github/workflows/ios-delivery-bot.yml', 'utf8'));
+  assert.deepEqual(Object.keys(doc.on), ['workflow_dispatch']);
+  assert.deepEqual(doc.permissions, {contents: 'read', actions: 'read'});
+  const job = doc.jobs.controller;
+  assert.equal(job.environment, 'aegis-ios-bot');
+  for (const condition of ["github.repository == 'gcsagroup/aegis-browser'", "github.ref == 'refs/heads/main'",
+    "github.event_name == 'workflow_dispatch'", 'github.run_attempt == 1']) assert(job.if.includes(condition));
+  const guard = job.steps.findIndex(step => step.run === 'node scripts/ci/ios-operator.mjs --context controller');
+  const keyStep = job.steps.findIndex(step => step.env?.AEGIS_IOS_BOT_PRIVATE_KEY);
+  assert(guard >= 0 && keyStep > guard);
+  assert.equal(job.steps[keyStep].run, 'bash scripts/ci/run-ios-delivery-bot.sh');
+  assert.equal(job.steps[keyStep].env.BOT_INPUTS, '${{ toJSON(inputs) }}');
+  assert(!JSON.stringify(doc).includes('AEGIS_ASC_'));
+  assert.equal(doc.on.workflow_dispatch.inputs.operation.default, 'Status');
+  assert.deepEqual(doc.on.workflow_dispatch.inputs.operation.options, ['Status', 'Wait', 'Package', 'Package and upload', 'Draft']);
+});
+
+test('Bot summary confinement and failure receipts execute through the real shell adapter', () => {
+  execFileSync('python3', ['-B', '-m', 'unittest', 'discover', '-s', 'scripts/release', '-p', 'test_ios_delivery_bot_summary.py'], {stdio: 'pipe'});
+});
+
 test('Simple and Full expose bounded English forms and share the same exact-source engine', () => {
   const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
   const simple = workflow('ios-delivery');
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'private_beta']);
+  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'private_beta', 'approved_source_sha']);
   assert.equal(inputs.signing_mode.default, 'cloud');
   assert.deepEqual(inputs.signing_mode.options, ['cloud', 'manual']);
   assert.equal(simple.name, 'iOS Delivery · Simple');
@@ -211,7 +233,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   assert.equal(inputs.version.required, true);
   assert.equal(inputs.build.required, true);
   assert(!inputs.source && !inputs.advanced);
-  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'private_beta', 'package_entrypoint', 'groups', 'stage_input']);
+  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'private_beta', 'package_entrypoint', 'groups', 'stage_input', 'approved_source_sha']);
   assert.deepEqual(Object.keys(full.jobs), ['delivery']);
   assert.equal(full.jobs.delivery.uses, './.github/workflows/ios-delivery.yml');
   assert.equal(full.jobs.delivery.with.delivery_mode, 'full');

@@ -218,6 +218,65 @@ catalogue.
 
 ## Routine execution without AI / 无 AI 日常执行
 
+### Dedicated delivery App / 专用交付 Bot
+
+The **iOS Delivery · Bot** controller reuses the existing Simple/Full engine. An
+Admin starts it on current `main`, selecting the exact version/build, product and
+operation. **Package and upload** monitors its exact producer run and then starts
+read-only **Wait** for that same coordinate. **Draft** uses the existing Full route
+and requires an administrator-created, source-matching candidate tag. The Bot
+cannot create candidate tags, distribute to external testers, submit App Review
+or publish a public GitHub Release.
+
+Register a dedicated GitHub App with only repository **Actions: write**,
+**Contents: read** and implicit **Metadata: read**. Install it on an explicitly
+approved `gcsagroup` repository inventory after verifying the maintainer's actual
+Admin or Owner grant for each repository. Personal account installations are
+excluded. This iOS controller always limits each token to
+`gcsagroup/aegis-browser`, regardless of the App's broader installation inventory.
+Configure the repository variable
+`AEGIS_IOS_DELIVERY_BOT` as
+`{"appId":123,"slug":"your-delivery-app","actorId":456}` using the actual App ID
+and numeric ID of its `your-delivery-app[bot]` user. The workflow independently
+resolves those identities from GitHub; a matching display name is insufficient.
+Set `AEGIS_IOS_BOT_INSTALLATION_ID` to that App's installation ID.
+
+Create the protected `aegis-ios-bot` Environment with deployment restricted to
+`main`; retain applicable approval requirements. Store the App's PEM private key
+only as its Environment secret `AEGIS_IOS_BOT_PRIVATE_KEY`. Do not put Apple
+credentials in that Environment. The controller requests a short-lived token
+limited to the canonical repository and required permissions; the key is never
+passed to delivery jobs. Signing and store jobs continue using their existing
+environments and credentials.
+
+The Bot's five permitted operations are **Package**, **Package and upload**,
+**Draft**, **Status**, and **Wait**. External App clients must supply
+`approved_source_sha` with the exact current main SHA to Simple/Full. Every
+protected delivery job checks the Bot identity and that source again. Human
+operators retain their existing Admin requirement. Coverage, validation, cleanup,
+local CLI and candidate-tag pushes do not acquire Bot authorization.
+
+The controller is never rerun to repeat mutations. Each successful dispatch is
+immediately recorded in the log and Summary with its run ID, expected attempt,
+approved SHA and URL; completed producer records survive later failures.
+A newly dispatched run may initially return HTTP 404: the controller waits for
+that exact ID with at most four delayed read retries within its existing polling
+budget. Once visible, a missing run or any other read error stops monitoring.
+Dispatch and upload mutations are never retried by this visibility handling.
+The shell adapter streams those records only to an existing, owned, non-symlink
+`step_summary_*` command file beneath the runner's canonical temporary directory.
+Preserve those child run URLs and the package receipt. A failed, timed-out or ambiguous dispatch/upload
+requires read-only **Status**/**Wait** reconciliation with the same coordinate;
+the controller does not retry writes or select a new build automatically. If main
+moves, the pinned request fails closed. Installation, credentials, required
+approvals and an actual App-triggered delivery are live acceptance gates; checked-in
+source alone does not establish that the Bot is enabled.
+
+专用 Bot 只负责受限触发和状态跟踪，继续使用既有签名、上传、验包与防重复机制。
+管理员从当前 main 发起；打包上传成功后，自动等待同一版本/build 的 Apple 处理。
+失败或结果不明时保留原始运行和回执，先查询对账。公开 Release、外测分发与正式送审
+保持管理员显式操作，不能由 Bot 自动推进。
+
 The checked-in Actions, release scripts and Fastlane lanes execute independently
 of an AI assistant. Once the exact current main has passed admission and signing
 materials are configured, an Admin selects **Simple → Package and upload**, fills

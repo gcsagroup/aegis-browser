@@ -126,3 +126,52 @@ test('Full caller keeps current Admin admission; unknown workflows and full tag 
   await assert.rejects(requireIosAdministrator({environment,
     api: fixture({admins: [], runChanges: {path: '.github/workflows/ios-delivery-full.yml'}}).api}), /Admin grant/iu);
 });
+
+const bot = {id: 50, login: 'aegis-delivery[bot]', type: 'Bot'};
+const botPolicy = JSON.stringify({appId: 40, slug: 'aegis-delivery', actorId: 50});
+function botFixture({policy = botPolicy, inputs = {}, actor = bot, trigger = actor, env = {}, changes = {}, app = {id: 40, slug: 'aegis-delivery'}} = {}) {
+  const runtime = {...environment, GITHUB_ACTOR: actor.login, GITHUB_ACTOR_ID: String(actor.id),
+    GITHUB_TRIGGERING_ACTOR: trigger.login, AEGIS_IOS_DELIVERY_BOT: policy,
+    DELIVERY_INPUTS: JSON.stringify({operation: 'Package and upload', product: 'Beta', version: '1.1.0', build: '4', approved_source_sha: sha, ...inputs}), ...env};
+  const f = fixture({admins: [admin(original)], trigger, runChanges: {actor, triggering_actor: trigger, ...changes}});
+  const identityApi = async path => {
+    if (path === '/apps/aegis-delivery') return app;
+    assert.equal(path, '/users/aegis-delivery%5Bbot%5D');
+    return bot;
+  };
+  return {environment: runtime, api: f.api, identityApi};
+}
+test('the configured App can dispatch an exact-source Beta without an Admin user grant', async () => {
+  const {requireIosAdministrator} = await load();
+  const value = await requireIosAdministrator(botFixture());
+  assert.equal(value.authorized, true);
+  assert.deepEqual(value.principals, [{id: 50, login: 'aegis-delivery[bot]'}]);
+});
+test('Bot admission rejects missing configuration, impersonation and replaced App identities', async () => {
+  const {requireIosAdministrator} = await load();
+  for (const options of [{policy: ''}, {policy: '{'}, {policy: JSON.stringify({appId: 40, slug: 'aegis-delivery', actorId: 51})},
+    {actor: {...bot, id: 51}}, {actor: {...bot, login: 'other[bot]'}}, {app: {id: 41, slug: 'aegis-delivery'}}]) {
+    await assert.rejects(requireIosAdministrator(botFixture(options)), /Bot|App|identity|configuration/iu);
+  }
+});
+test('Bot cannot borrow candidate pushes, other contexts, stale sources or broader operations', async () => {
+  const {requireIosAdministrator} = await load();
+  for (const options of [{inputs: {approved_source_sha: ''}}, {inputs: {approved_source_sha: 'b'.repeat(40)}},
+    {inputs: {operation: 'Distribute external'}}, {inputs: {private_beta: 'yes'}},
+    {env: {GITHUB_REF: 'refs/heads/releases/ios/1.0'}, changes: {head_branch: 'releases/ios/1.0'}},
+    {env: {GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/tags/candidate/ios/1.1.0-beta.4'}, changes: {event: 'push', head_branch: 'candidate/ios/1.1.0-beta.4'}},
+    {changes: {path: '.github/workflows/ios-clear-empty-upload.yml'}}]) {
+    await assert.rejects(requireIosAdministrator(botFixture(options)), /Bot|source|dispatch|operation|context|input/iu);
+  }
+});
+test('an Admin may reconcile a Bot run but a lower-role rerunner cannot borrow it', async () => {
+  const {requireIosAdministrator} = await load();
+  assert.equal((await requireIosAdministrator(botFixture({trigger: original}))).principals.length, 2);
+  await assert.rejects(requireIosAdministrator(botFixture({trigger: rerunner})), /Admin|grant/iu);
+});
+test('controller entrypoint retains human Admin admission and cannot be started by the Bot', async () => {
+  const {requireIosAdministrator} = await load();
+  const path = '.github/workflows/ios-delivery-bot.yml';
+  assert.equal((await requireIosAdministrator({environment, context: 'controller', api: fixture({runChanges: {path}}).api})).authorized, true);
+  await assert.rejects(requireIosAdministrator({...botFixture({changes: {path}}), context: 'controller'}), /Bot|Admin|grant/iu);
+});

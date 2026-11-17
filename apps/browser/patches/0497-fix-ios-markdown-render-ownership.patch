@@ -4,14 +4,14 @@ Date: Tue, 17 Nov 2026 17:08:41 +0800
 Subject: [PATCH] fix(ios): own ordered Markdown input and document operations
 
 ---
- .../aegis/enhancements_shared/viewer.js       | 23 +++++++++++++------
+ .../resources/aegis/enhancements_shared/viewer.js  | 23 +++++++++++++++-------
  1 file changed, 16 insertions(+), 7 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.js b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
-index 8186f907d19269b5c0e84bae6f3f88274ebe8875..6ef208a54399f7689e29b7c8bee113b500633be4 100644
+index 81245ce7fdd611c74cf05c52a6d784651b0e9804..24f38cd1e5f6f064997d99d777457ca44b8df3eb 100644
 --- a/chrome/browser/resources/aegis/enhancements_shared/viewer.js
 +++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
-@@ -10,7 +10,8 @@
+@@ -11,7 +11,8 @@
      font = 17,
      found = -1,
      marks = [],
@@ -21,7 +21,7 @@ index 8186f907d19269b5c0e84bae6f3f88274ebe8875..6ef208a54399f7689e29b7c8bee113b5
    const escape = (text) =>
      text.replace(
        /[&<>"']/g,
-@@ -34,10 +35,11 @@
+@@ -35,10 +36,11 @@
        },
      })
      .use(globalThis.markdownitTaskLists, { enabled: false });
@@ -35,7 +35,7 @@ index 8186f907d19269b5c0e84bae6f3f88274ebe8875..6ef208a54399f7689e29b7c8bee113b5
    };
    function imageAddress(raw) {
      if (Object.hasOwn(current.resources || {}, raw)) {
-@@ -65,6 +67,7 @@
+@@ -66,6 +68,7 @@
      }
    }
    function render() {
@@ -76,8 +76,8 @@ index 8186f907d19269b5c0e84bae6f3f88274ebe8875..6ef208a54399f7689e29b7c8bee113b5
      if (
        !payload ||
        typeof payload.text !== "string" ||
-@@ -173,11 +179,13 @@
-       $("notice").textContent = uiText("文档超过 2 MiB 或格式无效，请查看原始文件。");
+@@ -174,11 +180,13 @@
+       $("notice").textContent = uiText("文档超过 16 MiB 或格式无效，请查看原始文件。");
        return false;
      }
 +    if (typeof payload.iosToken === "string") iosRevision = payload.iosRevision;
@@ -90,7 +90,7 @@ index 8186f907d19269b5c0e84bae6f3f88274ebe8875..6ef208a54399f7689e29b7c8bee113b5
      };
      remote = false;
      $("remote-images").textContent = "加载外部图片";
-@@ -315,6 +323,7 @@
+@@ -319,6 +327,7 @@
    });
    globalThis.AegisMarkdown = Object.freeze({
      load, configure, command,
@@ -98,3 +98,6 @@ index 8186f907d19269b5c0e84bae6f3f88274ebe8875..6ef208a54399f7689e29b7c8bee113b5
      setFont: (size) => {
        if (Number.isFinite(size)) {
          font = Math.max(12, Math.min(48, size));
+-- 
+2.50.1
+

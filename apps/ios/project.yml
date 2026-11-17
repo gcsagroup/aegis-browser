@@ -23,10 +23,10 @@ settings:
   base:
     CLANG_ENABLE_MODULES: YES
     AEGIS_EMBEDDED_CORE_PRODUCTS: $(PROJECT_DIR)/../../.artifacts/ios-embedded-core
-    CURRENT_PROJECT_VERSION: 127
+    CURRENT_PROJECT_VERSION: 148
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     IPHONEOS_DEPLOYMENT_TARGET: "18.4"
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: "1.1"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_VERSION: "6.0"
     SWIFT_EMIT_LOC_STRINGS: YES
@@ -54,6 +54,7 @@ targets:
           - Info.plist
       - path: Shared/ShareInbox.swift
       - path: Shared/MarkdownShareInbox.swift
+      - path: Shared/MarkdownDocumentLimits.swift
       - path: Shared/ExternalPageLink.swift
       - path: Shared/SafariReadOnlyGate.swift
       - path: SharedWebExtension
@@ -147,6 +148,7 @@ targets:
     platform: iOS
     sources:
       - path: Shared/AppLocalization.swift
+      - path: Shared/MarkdownDocumentLimits.swift
       - path: BrowserKit
         excludes:
           - Info.plist
@@ -279,6 +281,7 @@ targets:
           - ShareExtension.entitlements
       - path: Shared/ShareInbox.swift
       - path: Shared/MarkdownShareInbox.swift
+      - path: Shared/MarkdownDocumentLimits.swift
     settings:
       base:
         APPLICATION_EXTENSION_API_ONLY: YES

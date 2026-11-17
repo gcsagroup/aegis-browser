@@ -63,7 +63,10 @@ final class ShareViewController: UIViewController {
                     let access = url.startAccessingSecurityScopedResource()
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     let metadata = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-                    guard metadata.isRegularFile == true, metadata.fileSize ?? Int.max <= 2_097_152 else { throw ShareInboxError.invalidEnvelope }
+                    guard metadata.isRegularFile == true else { throw ShareInboxError.invalidEnvelope }
+                    guard (metadata.fileSize ?? Int.max) <= MarkdownShareInbox.maximumTextBytes else {
+                        throw MarkdownDocumentLimits.TooLarge()
+                    }
                     // A provider's temporary URL must be copied while its callback owns it.
                     let handle = try FileHandle(forReadingFrom: url)
                     defer { try? handle.close() }
@@ -71,6 +74,9 @@ final class ShareViewController: UIViewController {
                     while data.count <= MarkdownShareInbox.maximumTextBytes,
                           let chunk = try handle.read(upToCount: min(65_536, MarkdownShareInbox.maximumTextBytes + 1 - data.count)), !chunk.isEmpty {
                         data.append(chunk)
+                    }
+                    guard data.count <= MarkdownShareInbox.maximumTextBytes else {
+                        throw MarkdownDocumentLimits.TooLarge()
                     }
                     result = .success((url.lastPathComponent, data))
                 } catch { result = .failure(error) }

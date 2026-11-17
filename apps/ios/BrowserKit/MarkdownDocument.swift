@@ -38,7 +38,7 @@ public struct MarkdownDocument: Identifiable, Sendable {
     self.sourceURL = sourceURL
     self.resources = resources
   }
-  public static let maximumBytes = 2_097_152
+  public static let maximumBytes = MarkdownDocumentLimits.maximumBytes
   public static func accepts(_ url: URL) -> Bool {
     ["md", "markdown"].contains(url.pathExtension.lowercased())
   }
@@ -47,12 +47,13 @@ public struct MarkdownDocument: Identifiable, Sendable {
     let access = url.startAccessingSecurityScopedResource()
     defer { if access { url.stopAccessingSecurityScopedResource() } }
     let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-    guard values.isRegularFile == true, (values.fileSize ?? Int.max) <= maximumBytes else {
-      throw EnhancementError.invalid("文档超过 2 MiB 或不是普通文件。")
+    guard values.isRegularFile == true else {
+      throw EnhancementError.invalid("请选择本地 Markdown 文件。")
     }
+    guard (values.fileSize ?? Int.max) <= maximumBytes else { throw MarkdownDocumentLimits.TooLarge() }
     let bytes = try boundedMarkdownData(url, maximum: maximumBytes)
-    guard bytes.count <= maximumBytes, let text = String(data: bytes, encoding: .utf8),
-      !text.contains("\0")
+    guard bytes.count <= maximumBytes else { throw MarkdownDocumentLimits.TooLarge() }
+    guard let text = String(data: bytes, encoding: .utf8), !text.contains("\0")
     else { throw EnhancementError.invalid("请使用不含二进制内容的 UTF-8 Markdown 文件。") }
     return MarkdownDocument(title: url.lastPathComponent, text: text, sourceURL: url)
   }
@@ -61,15 +62,21 @@ public struct MarkdownDocument: Identifiable, Sendable {
       throw EnhancementError.invalid("当前页面不是在线 Markdown 原始文件。")
     }
     let epoch = tab.navigationEpoch
-    let text = try await tab.webView.callAsyncJavaScript(
+    let result = try await tab.webView.callAsyncJavaScript(
       """
-      if(!['text/plain','text/markdown','text/x-markdown'].includes(document.contentType))throw Error('当前页面已经由网站排版，请打开 Raw 原始文件');
-      const text=(document.querySelector('body>pre')||document.body)?.textContent||'';
-      if(new TextEncoder().encode(text).length>2097152)throw Error('文档超过 2 MiB，请下载查看原文件');
-      return text;
-      """, arguments: [:], in: nil, contentWorld: .defaultClient)
-    guard tab.navigationEpoch == epoch, tab.url == url, let source = text as? String else {
+      if (!['text/plain', 'text/markdown', 'text/x-markdown'].includes(document.contentType))
+        return {unsupportedType: true};
+      const text = (document.querySelector('body > pre') || document.body)?.textContent || '';
+      if (text.length > maximumBytes || new TextEncoder().encode(text).length > maximumBytes)
+        return {tooLarge: true};
+      return {text};
+      """, arguments: ["maximumBytes": maximumBytes], in: nil, contentWorld: .defaultClient)
+    guard tab.navigationEpoch == epoch, tab.url == url, let payload = result as? [String: Any] else {
       throw EnhancementError.invalid("页面已变化，请重新打开文档。")
+    }
+    if payload["tooLarge"] as? Bool == true { throw MarkdownDocumentLimits.TooLarge() }
+    guard let source = payload["text"] as? String else {
+      throw EnhancementError.invalid("当前页面已经由网站排版，请打开 Raw 原始文件。")
     }
     return MarkdownDocument(
       title: url.lastPathComponent.isEmpty ? "Markdown" : url.lastPathComponent, text: source,

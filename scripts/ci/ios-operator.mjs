@@ -4,7 +4,7 @@ import {isDeepStrictEqual} from 'node:util';
 
 const UPSTREAM = 'gcsagroup/aegis-browser';
 const UPSTREAM_ID = '1348409663';
-const WORKFLOWS = new Map([['delivery', ['.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml', '.github/workflows/ios-clear-empty-upload.yml']], ['validation', '.github/workflows/ios-release-validation.yml'], ['coverage', '.github/workflows/ios-coverage.yml']]);
+const WORKFLOWS = new Map([['delivery', ['.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml', '.github/workflows/ios-clear-empty-upload.yml']], ['controller', '.github/workflows/ios-delivery-bot.yml'], ['validation', '.github/workflows/ios-release-validation.yml'], ['coverage', '.github/workflows/ios-coverage.yml']]);
 const requirePolicy = createRequire(import.meta.url);
 class OperatorError extends Error {}
 function requireValue(value, message) { if (!value) throw new OperatorError(message); }
@@ -28,6 +28,28 @@ async function readGithub(path, token) {
 }
 const repositoryApi = (repository, path, {token}) => readGithub('/repos/'+repositoryName(repository)+path, token);
 const authenticatedUserApi = token => readGithub('/user', token);
+
+async function requireDeliveryBot(user, run, environment, identityApi, token, context) {
+  requireValue(context === 'delivery' && run.event === 'workflow_dispatch' && run.head_branch === 'main' &&
+    ['.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml'].includes(run.path),
+  'Bot requires a canonical main delivery dispatch');
+  let policy, inputs;
+  try {
+    policy = JSON.parse(environment.AEGIS_IOS_DELIVERY_BOT || 'null');
+    inputs = JSON.parse(environment.DELIVERY_INPUTS || '{}');
+  } catch { throw new OperatorError('Invalid Bot configuration or inputs'); }
+  requireValue(policy && Object.keys(policy).sort().join(',') === 'actorId,appId,slug' &&
+    Number.isSafeInteger(policy.appId) && policy.appId > 0 && Number.isSafeInteger(policy.actorId) && policy.actorId > 0 &&
+    typeof policy.slug === 'string' && /^[a-z0-9][a-z0-9-]{0,98}$/u.test(policy.slug), 'Pinned Bot App configuration required');
+  requireValue(user.type === 'Bot' && user.id === policy.actorId && user.login === policy.slug+'[bot]', 'Bot actor identity differs');
+  requireValue(inputs && typeof inputs === 'object' && !Array.isArray(inputs) && inputs.approved_source_sha === environment.GITHUB_SHA &&
+    ['Package', 'Package and upload', 'Draft', 'Status', 'Wait'].includes(inputs.operation) &&
+    (!inputs.private_beta || inputs.private_beta === 'no'), 'Bot operation and approved source inputs required');
+  const app = await identityApi('/apps/'+policy.slug, token);
+  const actor = await identityApi('/users/'+encodeURIComponent(user.login), token);
+  requireValue(app?.id === policy.appId && app.slug === policy.slug && actor?.type === 'Bot' && sameUser(actor, user),
+    'Live Bot App identity differs');
+}
 
 async function administratorInventory(repository, token, api) {
   try {
@@ -81,15 +103,15 @@ export async function verifyCandidateTagPolicy({environment = process.env, api =
   return {verified: true, id: policy.id, adminRoleId: 5};
 }
 
-export async function requireIosAdministrator({environment = process.env, api = repositoryApi, userApi = authenticatedUserApi, context = 'delivery'} = {}) {
+export async function requireIosAdministrator({environment = process.env, api = repositoryApi, userApi = authenticatedUserApi, identityApi = readGithub, context = 'delivery'} = {}) {
   try {
     const repository = repositoryName(environment.GITHUB_REPOSITORY || UPSTREAM);
     const token = environment.GH_TOKEN || environment.GITHUB_TOKEN;
     requireValue(token && WORKFLOWS.has(context), 'Token and known operator context required for Admin verification');
-    if (context === 'delivery') requireValue(repository === UPSTREAM, 'Privileged iOS delivery repository must be canonical upstream');
+    if (['delivery', 'controller'].includes(context)) requireValue(repository === UPSTREAM, 'Privileged iOS delivery repository must be canonical upstream');
     const metadata = await api(repository, '', {token});
     requireValue(metadata?.full_name === repository && Number.isSafeInteger(metadata.id) && metadata.id > 0, 'Repository identity could not be verified');
-    if (context === 'delivery') requireValue(String(metadata.id) === UPSTREAM_ID, 'Canonical repository identity changed');
+    if (['delivery', 'controller'].includes(context)) requireValue(String(metadata.id) === UPSTREAM_ID, 'Canonical repository identity changed');
     if (environment.GITHUB_ACTIONS !== 'true') {
       const user = await userApi(token);
       requireValue(validUser(user), 'Authenticated token user identity is invalid');
@@ -112,10 +134,15 @@ export async function requireIosAdministrator({environment = process.env, api = 
     requireValue(validUser(run.actor) && validUser(run.triggering_actor), 'Actions actor identity is incomplete');
     requireValue(run.actor.login === environment.GITHUB_ACTOR && String(run.actor.id) === environment.GITHUB_ACTOR_ID &&
       run.triggering_actor.login === environment.GITHUB_TRIGGERING_ACTOR, 'Actions original/triggering actor identity changed');
-    const admins = await administratorInventory(repository, token, api);
     const principals = [run.actor];
     if (!sameUser(run.actor, run.triggering_actor)) principals.push(run.triggering_actor);
-    requireValue(principals.every(user => admins.some(a => sameUser(a, user))), 'Repository Admin grant required for original actor and rerunner');
+    const bots = principals.filter(user => user.type === 'Bot');
+    for (const user of bots) await requireDeliveryBot(user, run, environment, identityApi, token, context);
+    const humans = principals.filter(user => user.type !== 'Bot');
+    if (humans.length) {
+      const admins = await administratorInventory(repository, token, api);
+      requireValue(humans.every(user => admins.some(a => sameUser(a, user))), 'Repository Admin grant required for original actor and rerunner');
+    }
     return {authorized: true, repository, mode: 'actions_run', runId: id, attempt, principals: principals.map(({id: userId, login}) => ({id: userId, login}))};
   } catch (error) {
     if (error instanceof OperatorError) throw error;

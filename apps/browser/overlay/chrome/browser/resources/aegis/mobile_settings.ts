@@ -13,19 +13,15 @@ export function initializeMobileSettings(
     {id: 'privacy', title: text('隐私与防护', 'Privacy and protection', '隱私與防護'),
       hint: text('跟踪拦截、广告过滤与网站防护', 'Trackers, filters and website protection', '追蹤攔截、廣告過濾與網站防護'),
       selectors: '.overview, .activity, .modules, .diagnostics, .filters'},
-    {id: 'enhancements', title: text('网站增强与脚本', 'Website enhancements and scripts', '網站增強與腳本'),
-      hint: text('Android 版暂未提供', 'Not yet available on Android', 'Android 版暫未提供'), selectors: ''},
-    {id: 'reading', title: text('阅读与 Markdown', 'Reading and Markdown', '閱讀與 Markdown'),
+    {id: 'reading', title: text('阅读与翻译', 'Reading and translation', '閱讀與翻譯'),
       hint: text('阅读资料库、工作区与本机翻译', 'Reading library, workspaces and local translation', '閱讀資料庫、工作區與本機翻譯'), selectors: ''},
-    {id: 'gestures', title: text('鼠标手势', 'Mouse gestures', '滑鼠手勢'),
-      hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
     {id: 'ai', title: text('AI 与模型', 'AI and models', 'AI 與模型'),
       hint: text('模型服务、网页摘要与助手', 'Model services, page summaries and assistant', '模型服務、網頁摘要與助手'),
       selectors: '.privacy, #browser-agent-section'},
     {id: 'downloads', title: text('下载增强', 'Download enhancements', '下載增強'),
       hint: text('Metalink 下载任务与下载记录', 'Metalink tasks and download history', 'Metalink 下載工作與下載記錄'), selectors: '.downloads'},
-    {id: 'tools', title: text('本机工具连接', 'Local tool connections', '本機工具連線'),
-      hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
+    {id: 'ocr', title: text('图片文字识别', 'Image text recognition', '圖片文字辨識'),
+      hint: text('设置本机识别与服务器兜底', 'Choose a server for OCR fallback', '設定本機辨識與伺服器備援'), selectors: '#image-ocr-settings'},
     {id: 'experiments', title: text('实验功能', 'Experiments', '實驗功能'),
       hint: text('本机实验模型与使用说明', 'Local experimental models and usage notes', '本機實驗模型與使用說明'), selectors: ''},
   ];
@@ -70,9 +66,9 @@ export function initializeMobileSettings(
       card.className = 'mobile-settings-card';
       const description = document.createElement('p');
       description.textContent = group.id === 'reading' ? text(
-          '整理已打开网页、保存阅读资料和批注，或管理本机翻译语言包。Android 版暂未提供 Markdown 阅读器。',
-          'Organize open pages, save reading material and notes, or manage local translation packs. The Markdown reader is not yet available on Android.',
-          '整理已開啟網頁、儲存閱讀資料和批註，或管理本機翻譯語言包。Android 版暫未提供 Markdown 閱讀器。') : group.hint;
+          '整理已打开网页、保存阅读资料和批注，或管理本机翻译语言包。',
+          'Organize open pages, save reading material and notes, or manage local translation packs.',
+          '整理已開啟網頁、儲存閱讀資料和批註，或管理本機翻譯語言包。') : group.hint;
       card.append(description);
       const actions: Array<[string, string]> = group.id === 'reading' ? [
         ['reading', text('本机翻译设置', 'Local translation settings', '本機翻譯設定')],

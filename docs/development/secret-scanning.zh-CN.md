@@ -46,3 +46,5 @@ Codex Security Review 可补充审查秘密处理、凭据边界和 CI 变更；
 ## 覆盖边界
 
 范围是当前 checkout 能取得的 Git 历史，不包含未取得的已删除服务器引用、其他 fork/worktree、Actions 历史日志和 artifact、Release 附件或 runner/钥匙串状态。模式扫描也不能保证排除加密文件及任意混淆或拆分的秘密。
+
+2026-11-17，提交 `f609c1cc` 内的桌面和 Android 离线 OCR 补丁出现 26 个 Sourcegraph 令牌误报。复核了提交及对象摘要、公开资源的编码行，并按供应商清单核对 10 个资源摘要。每条记录绑定该提交、文件、规则和行号，并附行内容摘要。

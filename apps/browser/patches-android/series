@@ -319,3 +319,11 @@
 0319-fix-desktop-test-browser-client-dependency.patch
 0320-align-product-version-267.patch
 0321-build-share-access-core-source-manifest.patch
+0322-webpage-capture-ocr-320.patch
+0323-bundle-offline-ocr.patch
+0324-image-ocr-settings-322.patch
+0325-hide-unsupported-mobile-settings.patch
+0326-fix-remote-devtools-session-teardown.patch
+0327-validate-devtools-targets-at-navigation-commit.patch
+0328-prepare-integrated-candidate-339.patch
+0329-handle-ocr-lookup-and-errors.patch
