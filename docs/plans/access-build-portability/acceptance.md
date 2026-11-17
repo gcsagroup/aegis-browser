@@ -66,3 +66,12 @@ arm64 构建与执行分布在两台主机。执行前校验了构建制品的 S
 Android 编译目标为 `aarch64-none-linux-android26`，生成的 CTest 注册参数为 `arm64-v8a 26`。执行前校验了构建包内的提交标识、ELF 和注册文件摘要。跨主机执行仅映射解释器、该提交的测试脚本及 ELF 路径，保留测试名、ABI、最低 API 和 210 秒超时。[原始 JUnit](evidence/367f98bc-android-arm64-ctest.xml) 记录了设备 ABI、API、推送和断言结果。
 
 本轮两项独立核心复验均已完成，无剩余阻塞。Android 物理真机和三端完整浏览器产品验收仍未完成。本轮未重跑 x86_64 的 API 25 部署前拒绝及 API 26、36 的 CTest；这些模拟器的[上轮结果](https://github.com/quinn521/aegis-browser/actions/runs/43864304043) 归属 #360 的 PR HEAD `0e3d6e46`。
+
+## T3 Android arm64-v8a 物理真机核对（2026-11-17）
+
+基于 [合并提交 `b2c78383`](https://github.com/quinn521/aegis-browser/commit/b2c783834c0e69d291f975151c123474ea9222a6)，于 04:39（UTC+8）在验证主机核对设备。`adb devices -l` 的设备列表为空，无线调试发现已启用，`adb mdns services` 返回 0 个服务。macOS USB 枚举也未发现 ADB 接口。
+
+| 验收项 | 本轮结果 |
+| --- | --- |
+| Android arm64-v8a 物理真机 | **未完成**。没有可用真机，无法读取设备 ABI 和 API 级别。本轮未启动 NDK 编译，部署和真机 CTest 均未执行。 |
+| 三端完整浏览器产品 | **未完成**。本轮未执行产品验收。 |
