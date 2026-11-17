@@ -4,6 +4,7 @@ on:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     branches:
       - main
+      - develop
   push:
     branches:
       - main
@@ -34,7 +35,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ios-validation-${{ github.ref }}
+  group: ios-validation-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr-or-dispatch' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   FASTLANE_SKIP_UPDATE_CHECK: "1"
@@ -45,13 +46,42 @@ jobs:
     if: ${{ inputs.exercise != 'cloud-poc' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      ios: ${{ steps.impact.outputs.ios }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
+      - name: Plan iOS checks using target-branch rules
+        id: impact
+        env:
+          ROUTE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ROUTE_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            parents="$(git show -s --format=%P HEAD)"
+            read -r base head extra <<< "$parents"
+            test -n "$base" && test -n "$head" && test -z "$extra"
+            test "$head" = "$ROUTE_HEAD_SHA"
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            git merge-base --is-ancestor "$ROUTE_BASE_SHA" "$base"
+            ROUTE_BASE_SHA="$base"
+          fi
+          git diff --raw --no-abbrev --no-renames -z "$ROUTE_BASE_SHA" HEAD > "$RUNNER_TEMP/ios-complete-diff"
+          mkdir -p .artifacts/ci
+          if git cat-file -e "$ROUTE_BASE_SHA:scripts/ci/platform-impact.mjs"; then
+            git show "$ROUTE_BASE_SHA:scripts/ci/platform-impact.mjs" > "$RUNNER_TEMP/platform-impact.mjs"
+            node "$RUNNER_TEMP/platform-impact.mjs" > .artifacts/ci/ios-impact.json
+          else
+            echo 'ios=true' >> "$GITHUB_OUTPUT"
+            echo '{"ios":true,"reason":"trusted-baseline-predates-router"}' > .artifacts/ci/ios-impact.json
+          fi
+      - name: Check documentation consumers
+        run: node scripts/check-repo-contracts.mjs
       - name: Require repository Admin for manual operation
         run: node scripts/ci/ios-operator.mjs --context validation
         env:
@@ -75,8 +105,17 @@ jobs:
       - name: Validate workflow syntax
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= .github/workflows/ios-*.yml
+      - name: Upload iOS routing evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci/ios-impact.json
+          if-no-files-found: error
+          retention-days: 14
   ios-archive:
-    if: ${{ inputs.exercise != 'cloud-poc' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
+    needs: contracts
+    if: ${{ inputs.exercise != 'cloud-poc' && needs.contracts.outputs.ios == 'true' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
     runs-on: >-
       ${{ vars.AEGIS_IOS_RUNNER_LABEL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) || 'macos-26' }}
     timeout-minutes: 30
@@ -146,7 +185,7 @@ jobs:
           python3 -B scripts/release/test_ios_linked_bundle.py "$IOS_CI_ROOT/Aegis.xcarchive/Products/Applications/Aegis.app" "$IOS_CI_ROOT/EmbeddedCore" "$IOS_CI_ROOT/DerivedData" device
           python3 -I -B scripts/ci/ios-ci-storage.py seal --root "$IOS_CI_ROOT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: ${{ always() && steps.storage.outcome == 'success' }}
+        if: ${{ success() && steps.storage.outcome == 'success' }}
         with:
           name: ios-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -157,6 +196,16 @@ jobs:
             ${{ steps.storage.outputs.root }}/EmbeddedCore/build-manifest.json
             ${{ steps.storage.outputs.root }}/EmbeddedCore/embedded-core-lock.json
           if-no-files-found: error
+          retention-days: 14
+      - name: Upload archive diagnostics
+        if: ${{ failure() && steps.storage.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-archive-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.storage.outputs.root }}/xcodebuild.log
+            ${{ steps.storage.outputs.root }}/storage-receipt.json
+          if-no-files-found: warn
           retention-days: 14
   cloud-poc:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.exercise == 'cloud-poc' && github.repository == 'gcsagroup/aegis-browser' }}

@@ -67,13 +67,14 @@ try {
       const iosContracts = automatic === iosValidationWorkflow && ['contracts', 'ios-archive'].includes(id);
       const expectedCondition = cloudExercise
         ? "${{ github.event_name == 'workflow_dispatch' && inputs.exercise == 'cloud-poc' && github.repository == 'gcsagroup/aegis-browser' }}"
-        : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') }}'
+        : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && ' + (id === 'ios-archive' ? "needs.contracts.outputs.ios == 'true' && " : '') + '(' + ready + ') }}'
           : automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
       if (job.if !== expectedCondition) {
         fail(`${label}/${id} must require explicit Ready PR metadata, preserve non-PR execution and summary always()`);
       }
     }
   }
+  if (iosValidationWorkflow.jobs['ios-archive'].needs !== 'contracts') fail('iOS archive must wait for Linux contracts');
   const triggers = workflow.on ?? {};
   const triggerNames = Object.keys(triggers).sort();
   if (JSON.stringify(triggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {

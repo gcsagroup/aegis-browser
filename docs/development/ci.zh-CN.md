@@ -215,3 +215,9 @@ mise exec -- node scripts/ci/run-quality.mjs \
 - C 层环境缺失：保留 `BLOCKED`，不能降级成基础门 PASS 或删除必要测试。
 
 CI 故障期间暂停自动合并。修复配置走普通 PR；产品回退走可审查 revert，不强推 develop 或 main、不删除用户文件或本地证据。
+
+## 分阶段 iOS 验证（第一批）
+
+iOS release validation 的 Ready PR 扩展到 develop。Linux 合同先执行，再按目标分支规则决定是否分配 unsigned archive。规则由目标 base 的 Git 对象提取，合并候选必须精确绑定 B/H。首次接入时目标分支尚无路由器，保守执行完整 iOS 路径。首批轻量名单只允许 `docs/plans/access-build-portability/acceptance.md` 两端模式均为 100644 的内容修改，并运行仓库文档合同。删除、重命名、模式变化及未知路径执行完整 iOS 路径。
+
+合同失败时 archive 不分配 runner。归档及链接验收通过后上传可消费的 unsigned 制品，失败时上传独立诊断 artifact。每个 push SHA 有独立 concurrency 组。现有完整 quality、独立秘密扫描、双 Simulator 报告和真机验收继续按各自条件核验。本批交付 iOS 平台阶段依赖，quality-gate 尚未消费跨 workflow 的 iOS 结果，协调者须逐项核验适用 iOS 状态。
