@@ -484,3 +484,4 @@
 0482-fix-macos-ignored-ax-button.patch
 0483-build-share-access-core-source-manifest.patch
 0484-fix-macos-unshown-omnibox-popup.patch
+0485-fix-ios-markdown-render-ownership.patch

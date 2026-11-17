@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import UIKit
 import WebKit
 import XCTest
 
@@ -9,12 +10,15 @@ import XCTest
 final class WebsiteEnhancementTests: XCTestCase {
   private var directory: URL!
   private var tabs: [BrowserTab] = []
+  private var windows: [UIWindow] = []
   override func setUp() async throws {
     directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   }
   override func tearDown() async throws {
     tabs.forEach { $0.stop() }
+    windows.forEach { $0.isHidden = true; $0.rootViewController = nil }
+    windows = []
     tabs = []
     try? FileManager.default.removeItem(at: directory)
   }
@@ -41,6 +45,18 @@ final class WebsiteEnhancementTests: XCTestCase {
     configuration.websiteDataStore = .nonPersistent()
     let tab = BrowserTab(profile: .standard, configuration: configuration, enhancementStore: store)
     tabs.append(tab)
+    // Loopback navigation intentionally waits for a real owning window.
+    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+      let window = UIWindow(windowScene: scene)
+      window.frame = CGRect(x: 0, y: 0, width: 800, height: 1000)
+      let controller = UIViewController()
+      window.rootViewController = controller
+      controller.loadViewIfNeeded()
+      tab.webView.frame = controller.view.bounds
+      controller.view.addSubview(tab.webView)
+      window.isHidden = false
+      windows.append(window)
+    } else { XCTFail("The WebKit fixture requires a connected window scene") }
     return tab
   }
   private func js(_ tab: BrowserTab, _ code: String) async throws -> Any? {
@@ -212,7 +228,7 @@ final class WebsiteEnhancementTests: XCTestCase {
       "# 重复标题\n\n# 重复标题\n\n- [x] 任务\n\n|名称|数值|\n|---|---|\n|甲|42|\n\n```js\nconst count=42;\n```\n\n<script>window.mdUnsafe=1</script>\n\n![图片](https://invalid.local/image.png)\n"
     let rendered =
       try await web.callAsyncJavaScript(
-        "return AegisMarkdown.load({text:source,title:'验收'});", arguments: ["source": text],
+        "AegisMarkdown.configure({locale:'zh-Hans'}); return AegisMarkdown.load({text:source,title:'验收'});", arguments: ["source": text],
         in: nil, contentWorld: .page) as? Bool
     XCTAssertEqual(rendered, true)
     let result =

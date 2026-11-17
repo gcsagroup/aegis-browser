@@ -13,9 +13,10 @@ final class BrowserPresentationCoordinator: ObservableObject {
         case external(URL)
         case privateBookmark(UUID, URL, UInt64)
         case windowError(AegisLocalizedMessage)
+        case inputError(AegisLocalizedMessage)
 
         var isAlert: Bool {
-            switch self { case .external, .privateBookmark, .windowError: true; default: false }
+            switch self { case .external, .privateBookmark, .windowError, .inputError: true; default: false }
         }
         var isExternal: Bool { if case .external = self { true } else { false } }
         var isDocumentBound: Bool {
@@ -26,19 +27,59 @@ final class BrowserPresentationCoordinator: ObservableObject {
         }
     }
     struct Request: Identifiable {
-        let id = UUID()
+        let id: UUID
         let route: Route
+        let scope: UUID?
     }
     @Published private(set) var current: Request?
     @Published private(set) var isDismissing = false
-    private(set) var pending: [Request] = []
+    private enum Resolution { case waiting, resolved(Route?) }
+    private struct Slot {
+        let id: UUID
+        let scope: UUID?
+        var result: Resolution = .waiting
+    }
+    private var queue: [Slot] = []
+    var pending: [Request] {
+        queue.compactMap { slot in
+            guard case let .resolved(route?) = slot.result else { return nil }
+            return Request(id: slot.id, route: route, scope: slot.scope)
+        }
+    }
     private var shownID: UUID?
-    var blocksBrowserCommands: Bool { current != nil || !pending.isEmpty }
+    var blocksBrowserCommands: Bool { current != nil || !queue.isEmpty }
 
     func request(_ route: Route) {
-        let request = Request(route: route)
-        guard current != nil else { self.current = request; return }
-        pending.append(request)
+        resolve(reserve(), to: route)
+    }
+
+    func reserve(scope: UUID? = nil) -> UUID {
+        let id = UUID()
+        objectWillChange.send()
+        queue.append(Slot(id: id, scope: scope))
+        return id
+    }
+
+    func resolve(_ id: UUID, to route: Route?) {
+        guard let index = queue.firstIndex(where: { $0.id == id }), case .waiting = queue[index].result else { return }
+        objectWillChange.send()
+        queue[index].result = .resolved(route)
+        advance()
+    }
+
+    func revoke(scope: UUID) {
+        objectWillChange.send()
+        queue.removeAll { $0.scope == scope }
+        if let current, current.scope == scope { dismiss(current.id) }
+        advance()
+    }
+
+    private func advance() {
+        guard current == nil else { return }
+        while let first = queue.first, case let .resolved(result) = first.result {
+            queue.removeFirst()
+            if let result { current = Request(id: first.id, route: result, scope: first.scope); return }
+        }
     }
 
     func didPresent(_ id: UUID) {
@@ -53,17 +94,23 @@ final class BrowserPresentationCoordinator: ObservableObject {
 
     func didDismiss(_ id: UUID) {
         guard current?.id == id, isDismissing else { return }
-        current = pending.isEmpty ? nil : pending.removeFirst()
+        current = nil
         shownID = nil
         isDismissing = false
+        advance()
     }
 
     func closeWindow() {
-        pending.removeAll(); current = nil; shownID = nil; isDismissing = false
+        queue.removeAll(); current = nil; shownID = nil; isDismissing = false
     }
 
     func invalidate(where predicate: (Route) -> Bool) {
-        pending.removeAll { predicate($0.route) }
+        objectWillChange.send()
+        queue.removeAll { slot in
+            guard case let .resolved(route?) = slot.result else { return false }
+            return predicate(route)
+        }
         if let current, predicate(current.route) { dismiss(current.id) }
+        advance()
     }
 }

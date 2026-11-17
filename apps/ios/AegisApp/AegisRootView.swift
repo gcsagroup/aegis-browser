@@ -1,5 +1,6 @@
 import AgentKit
 import BrowserKit
+import Combine
 import SwiftUI
 import UIKit
 
@@ -10,6 +11,7 @@ struct AegisRootView: View {
     @State private var address = ""
     @StateObject private var presentation = BrowserPresentationCoordinator()
     @StateObject private var closeCommand = BrowserWindowCloseCommand()
+    @StateObject private var inputs = BrowserInputOwner()
 
     @Environment(\.locale) private var localizationLocale
     var body: some View {
@@ -78,20 +80,13 @@ struct AegisRootView: View {
             presentation.invalidate { if case .find = $0 { true } else { false } }
         }
         .onChange(of: browser.isWindowClosed) { _, closed in
-            if closed { presentation.closeWindow() }
+            if closed { inputs.close(); presentation.closeWindow() }
         }
         .onChange(of: browser.profile) { _, _ in
             updateAddress()
-            presentation.invalidate { $0.isProfileBound }
-            browser.pendingDownloadURL = nil
         }
         .onOpenURL { input in
-            if input.isFileURL, MarkdownDocument.accepts(input) {
-                if let document = try? MarkdownDocument.read(input) { presentation.request(.markdown(document)) }
-                return
-            }
-            guard let url = ExternalPageLink.destination(input) else { return }
-            presentation.request(.external(url))
+            inputs.accept(input, browser: browser, presentation: presentation)
         }
         .background(BrowserRouteAlert(request: presented, isDismissing: presentation.isDismissing,
                                       makeAlert: makeAlert, onDismiss: { id in
@@ -135,6 +130,8 @@ struct AegisRootView: View {
             message = AegisLocalization.string("此操作会在普通收藏中添加或移除下面的网址，退出私密浏览后仍然保留。") + "\n\n" + url.absoluteString
         case let .windowError(error):
             title = AegisLocalization.string("无法新建窗口"); message = error.text
+        case let .inputError(error):
+            title = AegisLocalization.string("无法打开内容"); message = error.text
         default: return UIAlertController()
         }
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
@@ -152,13 +149,14 @@ struct AegisRootView: View {
                    tab.id == id, tab.url == url, tab.navigationEpoch == epoch { browser.toggleBookmark(privateSaveConfirmed: true) }
                 presentation.dismiss(request.id); finished()
             })
-        case .windowError:
+        case .windowError, .inputError:
             alert.addAction(UIAlertAction(title: AegisLocalization.string("完成"), style: .default) { _ in
                 presentation.dismiss(request.id); finished()
             })
         default: break
         }
         if case .windowError = request.route { return alert }
+        if case .inputError = request.route { return alert }
         alert.addAction(UIAlertAction(title: AegisLocalization.string("取消"), style: .cancel) { _ in
             presentation.dismiss(request.id); finished()
         })
@@ -178,7 +176,7 @@ struct AegisRootView: View {
         case .reading: ReadingLibraryView()
         case let .markdown(document): MarkdownReaderView(initial: document)
         case .windows: BrowserWindowsView()
-        case .external, .privateBookmark, .windowError: EmptyView()
+        case .external, .privateBookmark, .windowError, .inputError: EmptyView()
         }
     }
 
@@ -187,14 +185,105 @@ struct AegisRootView: View {
     }
 
     private func consumeSharedURLIfPresent() {
-        if let inbox = try? MarkdownShareInbox(), let value = try? inbox.consume() {
-            presentation.request(.markdown(MarkdownDocument(title: value.title, text: value.text)))
-            return
+        inputs.wake(browser: browser, presentation: presentation)
+    }
+}
+
+/// Receipt order belongs to the window, independently of actor scheduling or I/O completion.
+@MainActor
+final class BrowserInputOwner: ObservableObject {
+    typealias Read = @Sendable (URL) async throws -> MarkdownDocument
+    private let read: Read
+    private let markdown: @Sendable () async throws -> MarkdownShareEnvelope?
+    private let link: @Sendable () async throws -> URL?
+    private weak var browser: BrowserSession?
+    private weak var presentation: BrowserPresentationCoordinator?
+    private var observers: Set<AnyCancellable> = []
+    private var generation = UUID()
+    private var tasks: [UUID: Task<Void, Never>] = [:]
+    private var closed = false
+
+    init(read: @escaping Read = { try await MarkdownIO.shared.read($0) },
+         markdown: @escaping @Sendable () async throws -> MarkdownShareEnvelope? = { try await ShareInboxIO.shared.markdown() },
+         link: @escaping @Sendable () async throws -> URL? = { try await ShareInboxIO.shared.link() }) {
+        self.read = read; self.markdown = markdown; self.link = link
+    }
+
+    func bind(browser: BrowserSession, presentation: BrowserPresentationCoordinator) {
+        guard !closed, self.browser !== browser else { return }
+        invalidate()
+        observers.removeAll()
+        self.browser = browser; self.presentation = presentation
+        browser.$profile.dropFirst().sink { [weak self, weak browser] _ in
+            self?.invalidate()
+            self?.presentation?.invalidate { $0.isProfileBound }
+            browser?.pendingDownloadURL = nil
+        }.store(in: &observers)
+        browser.$isWindowClosed.sink { [weak self] value in if value { self?.close() } }.store(in: &observers)
+    }
+
+    func accept(_ url: URL, browser: BrowserSession, presentation: BrowserPresentationCoordinator) {
+        bind(browser: browser, presentation: presentation)
+        guard !closed, !browser.isWindowClosed else { return }
+        if url.isFileURL, MarkdownDocument.accepts(url) {
+            let scope = MarkdownSecurityScope(url)
+            let read = read
+            enqueue {
+                defer { withExtendedLifetime(scope) {} }
+                return .markdown(try await read(url))
+            }
+        } else if let destination = ExternalPageLink.destination(url) {
+            let id = presentation.reserve(scope: generation)
+            presentation.resolve(id, to: .external(destination))
         }
-        guard let inbox = try? ShareInbox(),
-              let envelope = try? inbox.consume()
-        else { return }
-        presentation.request(.external(envelope.url))
+    }
+
+    func wake(browser: BrowserSession, presentation: BrowserPresentationCoordinator) {
+        bind(browser: browser, presentation: presentation)
+        let markdown = markdown, link = link
+        enqueue {
+            do {
+                guard let value = try await markdown() else { return nil }
+                return .markdown(MarkdownDocument(title: value.title, text: value.text))
+            } catch ShareInboxError.unavailableContainer { return nil }
+        }
+        enqueue {
+            do {
+                guard let value = try await link() else { return nil }
+                return .external(value)
+            } catch ShareInboxError.unavailableContainer { return nil }
+        }
+    }
+
+    private func enqueue(_ operation: @escaping @MainActor () async throws -> BrowserPresentationCoordinator.Route?) {
+        guard !closed, let browser, !browser.isWindowClosed, let presentation else { return }
+        let token = generation, profile = browser.profile
+        let id = presentation.reserve(scope: token)
+        tasks[id] = Task { [weak self] in
+            guard self?.accepts(token, profile: profile) == true, !Task.isCancelled else { return }
+            let route: BrowserPresentationCoordinator.Route?
+            do { route = try await operation() }
+            catch { route = .inputError(.error(error)) }
+            guard let self, !self.closed, self.generation == token,
+                  self.browser?.isWindowClosed == false, self.browser?.profile == profile,
+                  !Task.isCancelled else { return }
+            self.tasks[id] = nil
+            self.presentation?.resolve(id, to: route)
+        }
+    }
+
+    private func accepts(_ token: UUID, profile: BrowserProfile) -> Bool {
+        !closed && generation == token && browser?.isWindowClosed == false && browser?.profile == profile
+    }
+
+    private func invalidate() {
+        let previous = generation; generation = UUID()
+        tasks.values.forEach { $0.cancel() }; tasks.removeAll()
+        presentation?.revoke(scope: previous)
+    }
+    func close() {
+        guard !closed else { return }
+        closed = true; presentation?.closeWindow(); invalidate(); observers.removeAll()
     }
 }
 

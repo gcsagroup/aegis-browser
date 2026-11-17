@@ -2234,7 +2234,7 @@ public final class BrowserSession: ObservableObject {
     private var evictionTask: Task<Void, Never>?
     public var residentTabCount: Int { (standardTabs + privateTabs).filter(\.isResident).count }
     public let windowID: UUID
-    public private(set) var isWindowClosed = false
+    @Published public private(set) var isWindowClosed = false
     private let windowStore: BrowserWindowStore?
 
     public let standardProfileID = UUID()

@@ -50,7 +50,7 @@ public struct MarkdownDocument: Identifiable, Sendable {
     guard values.isRegularFile == true, (values.fileSize ?? Int.max) <= maximumBytes else {
       throw EnhancementError.invalid("文档超过 2 MiB 或不是普通文件。")
     }
-    let bytes = try Data(contentsOf: url)
+    let bytes = try boundedMarkdownData(url, maximum: maximumBytes)
     guard bytes.count <= maximumBytes, let text = String(data: bytes, encoding: .utf8),
       !text.contains("\0")
     else { throw EnhancementError.invalid("请使用不含二进制内容的 UTF-8 Markdown 文件。") }
@@ -106,7 +106,7 @@ public struct MarkdownDocument: Identifiable, Sendable {
         let values = try? path.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
         values.isRegularFile == true, (values.fileSize ?? Int.max) <= 4_194_304
       else { continue }
-      let bytes = try Data(contentsOf: path)
+      let bytes = try boundedMarkdownData(path, maximum: 4_194_304)
       total += bytes.count
       guard bytes.count <= 4_194_304, total <= 10_485_760 else {
         throw EnhancementError.invalid("所选图片合计超过 10 MiB。")
@@ -116,4 +116,16 @@ public struct MarkdownDocument: Identifiable, Sendable {
     resources = result
     return result.count
   }
+}
+
+/// Bound the read itself, even if a file grows after its metadata was checked.
+private func boundedMarkdownData(_ url: URL, maximum: Int) throws -> Data {
+  let handle = try FileHandle(forReadingFrom: url)
+  defer { try? handle.close() }
+  var data = Data()
+  while data.count <= maximum,
+    let chunk = try handle.read(upToCount: min(65_536, maximum + 1 - data.count)), !chunk.isEmpty {
+    data.append(chunk)
+  }
+  return data
 }

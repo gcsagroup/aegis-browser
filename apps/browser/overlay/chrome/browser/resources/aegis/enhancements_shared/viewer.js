@@ -10,7 +10,8 @@
     font = 17,
     found = -1,
     marks = [],
-    lastQuery = "";
+    lastQuery = "",
+    iosRevision = -1;
   const escape = (text) =>
     text.replace(
       /[&<>"']/g,
@@ -34,10 +35,11 @@
       },
     })
     .use(globalThis.markdownitTaskLists, { enabled: false });
-  const send = (type, value) => {
+  const send = (type, value, iosToken = current.iosToken) => {
+    const message = typeof iosToken === "string" ? { type, value, iosToken } : { type, value };
     if (parent !== window) parent.postMessage({ type, value }, "chrome://aegis");
     else if (window.webkit?.messageHandlers?.aegisMarkdown)
-      window.webkit.messageHandlers.aegisMarkdown.postMessage({ type, value });
+      window.webkit.messageHandlers.aegisMarkdown.postMessage(message);
   };
   function imageAddress(raw) {
     if (Object.hasOwn(current.resources || {}, raw)) {
@@ -65,6 +67,7 @@
     }
   }
   function render() {
+    const iosToken = current.iosToken;
     const tokens = parser.parse(current.text, {});
     let blockedImages = 0;
     // 在清理器解析 HTML 之前移除未授权图片地址，避免清理期间产生请求。
@@ -119,7 +122,7 @@
       const button = document.createElement("button");
       button.className = "code-copy";
       button.textContent = "复制";
-      button.addEventListener("click", () => send("copy", code.textContent));
+      button.addEventListener("click", () => send("copy", code.textContent, iosToken));
       code.parentElement.prepend(button);
     }
     $("document")
@@ -148,10 +151,10 @@
               !url.username &&
               !url.password
             )
-              send("open", url.href);
-            else send("relativeLink", raw);
+              send("open", url.href, iosToken);
+            else send("relativeLink", raw, iosToken);
           } catch {
-            send("relativeLink", raw);
+            send("relativeLink", raw, iosToken);
           }
         }),
       );
@@ -165,6 +168,9 @@
     lastQuery = "";
   }
   function load(payload) {
+    if (typeof payload?.iosToken === "string") {
+      if (!Number.isSafeInteger(payload.iosRevision) || payload.iosRevision <= iosRevision) return false;
+    } else if (iosRevision >= 0) return false;
     if (
       !payload ||
       typeof payload.text !== "string" ||
@@ -173,11 +179,13 @@
       $("notice").textContent = uiText("文档超过 2 MiB 或格式无效，请查看原始文件。");
       return false;
     }
+    if (typeof payload.iosToken === "string") iosRevision = payload.iosRevision;
     current = {
       text: payload.text,
       title: String(payload.title || "Markdown 阅读").slice(0, 300),
       baseURL: String(payload.baseURL || ""),
       resources: payload.resources || {},
+      iosToken: payload.iosToken,
     };
     remote = false;
     $("remote-images").textContent = "加载外部图片";
@@ -315,6 +323,7 @@
   });
   globalThis.AegisMarkdown = Object.freeze({
     load, configure, command,
+    token: () => current.iosToken,
     setFont: (size) => {
       if (Number.isFinite(size)) {
         font = Math.max(12, Math.min(48, size));
