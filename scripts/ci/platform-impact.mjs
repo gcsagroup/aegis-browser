@@ -36,7 +36,8 @@ for (let index = 0; index < fields.length; index += 2) {
 const docsOnly = event === 'pull_request' && changes.length > 0 && changes.every(change =>
   change.path === 'docs/plans/access-build-portability/acceptance.md' &&
   change.status === 'M' && change.beforeMode === '100644' && change.afterMode === '100644');
+const iosOnly = event === 'pull_request' && changes.length > 0 && changes.every(change => change.path.startsWith('apps/ios/'));
 const plan = {schemaVersion: 1, event, base, head, tested, rulesSha: base, changes,
-  ios: !docsOnly, reason: docsOnly ? 'verified-document-content' : 'full-platform-fallback'};
+  docs: docsOnly && process.env.CI_LIGHTWEIGHT_ADMITTED === 'true', ios: !docsOnly, macos: !docsOnly && !iosOnly, reason: docsOnly ? 'verified-document-content' : 'full-platform-fallback'};
 console.log(JSON.stringify(plan, null, 2));
-if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `ios=${plan.ios}\n`);
+if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `docs=${plan.docs}\nios=${plan.ios}\nmacos=${plan.macos}\n`);

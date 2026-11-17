@@ -2,7 +2,7 @@ name: macOS Delivery
 run-name: macOS Delivery ${{ inputs.operation || 'contracts' }} ${{ inputs.version || github.ref_name }}
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     branches:
       - main
       - develop
@@ -51,11 +51,64 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: macos-delivery-${{ github.repository }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: macos-delivery-${{ github.repository }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || 'pr-or-dispatch' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  impact:
+    if: ${{ github.event_name != 'workflow_dispatch' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      macos: ${{ steps.impact.outputs.macos }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Plan macOS checks using target-branch rules
+        id: impact
+        env:
+          ROUTE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ROUTE_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            parents="$(git show -s --format=%P HEAD)"
+            read -r base head extra <<< "$parents"
+            test -n "$base" && test -n "$head" && test -z "$extra"
+            test "$head" = "$ROUTE_HEAD_SHA"
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            git merge-base --is-ancestor "$ROUTE_BASE_SHA" "$base"
+            ROUTE_BASE_SHA="$base"
+          fi
+          git diff --raw --no-abbrev --no-renames -z "$ROUTE_BASE_SHA" HEAD > "$RUNNER_TEMP/macos-complete-diff"
+          mkdir -p .artifacts/ci
+          if git cat-file -e "$ROUTE_BASE_SHA:scripts/ci/platform-impact.mjs"; then
+            git show "$ROUTE_BASE_SHA:scripts/ci/platform-impact.mjs" > "$RUNNER_TEMP/platform-impact.mjs"
+            node "$RUNNER_TEMP/platform-impact.mjs" > .artifacts/ci/macos-impact.json
+          else
+            echo '{"macos":true,"reason":"trusted-baseline-predates-router"}' > .artifacts/ci/macos-impact.json
+          fi
+          # An older registered router can lack this newly introduced platform.
+          if ! grep -q '^macos=' "$GITHUB_OUTPUT"; then
+            echo 'macos=true' >> "$GITHUB_OUTPUT"
+            node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const file = ".artifacts/ci/macos-impact.json"; const plan = JSON.parse(readFileSync(file)); writeFileSync(file, JSON.stringify({...plan, macos:true, platformReason:"missing-platform-rule-full-fallback"}, null, 2));'
+          fi
+      - name: Check documentation consumers
+        run: node scripts/check-repo-contracts.mjs
+      - name: Upload macOS routing evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci/macos-impact.json
+          if-no-files-found: error
+          retention-days: 14
   contracts:
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    needs: impact
+    if: ${{ github.event_name != 'workflow_dispatch' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') && needs.impact.outputs.macos == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

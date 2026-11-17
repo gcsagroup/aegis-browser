@@ -163,7 +163,7 @@ try {
   for (const [name, permission] of Object.entries(iosWorkflow.permissions ?? {})) {
     if (permission === 'write') fail(`iOS workflow permission ${name} may not be write`);
   }
-  const expectedConcurrency = "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}', github.ref) || format('dispatch-{0}', github.run_id) }}";
+  const expectedConcurrency = "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}-{1}', github.ref, github.sha) || format('dispatch-{0}', github.run_id) }}";
   if (workflow.concurrency?.group !== expectedConcurrency || workflow.concurrency?.['cancel-in-progress'] !== "${{ github.event_name == 'pull_request' }}") {
     fail('Workflow concurrency must isolate branch pushes, PRs and diagnostic runs; cancel only stale PR runs');
   }
@@ -178,7 +178,7 @@ try {
   const shellCoverage = otherWorkflow.jobs?.['shell-coverage'];
   const powershellCoverage = otherWorkflow.jobs?.['powershell-coverage'];
   const gate = jobs['quality-summary'];
-  const expectedJobs = ['quality', 'quality-summary'];
+  const expectedJobs = ['impact', 'quality', 'quality-summary'];
   if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
   if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {})) !== JSON.stringify(['android-java-coverage'])) fail('Android job set must be exactly android-java-coverage');
   if (JSON.stringify(Object.keys(jobs).sort()) !== JSON.stringify(expectedJobs)) {
@@ -190,7 +190,8 @@ try {
   if (quality.name !== 'quality') fail('Quality job check name must be quality');
   const testRunner = "${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"macOS\", \"ARM64\", \"aegis-test\"]') || 'macos-15' }}";
   const qualityRunner = testRunner.replace(" && fromJSON", " && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON");
-  if (quality['runs-on'] !== qualityRunner) fail('Quality job must use the trusted macOS test route with hosted maintenance branches');
+  const routedRunner = qualityRunner.replace('${{ ', "${{ needs.impact.outputs.docs == 'true' && 'ubuntu-24.04' || (").replace("|| 'macos-15' }}", "|| 'macos-15') }}");
+  if (quality['runs-on'] !== routedRunner) fail('Quality job must use the trusted macOS test route with hosted maintenance branches');
   const pnpmSetup = array(quality.steps).find((step) => String(step.uses ?? '').startsWith('pnpm/action-setup@'));
   if (pnpmSetup?.with?.dest !== '${{ runner.temp }}/setup-pnpm') {
     fail('pnpm setup must use the per-job runner temporary directory');
@@ -217,7 +218,8 @@ try {
   }
   if (gate['timeout-minutes'] !== 5) fail('quality-gate timeout must be 5 minutes');
 
-  if (gate['runs-on'] !== qualityRunner) fail('quality-gate must use the trusted macOS test route with hosted maintenance branches');
+  if (gate['runs-on'] !== 'ubuntu-24.04') fail('quality-gate must use ordinary Linux');
+  if (jobs.impact?.['runs-on'] !== 'ubuntu-24.04' || quality.needs !== 'impact') fail('Quality must wait for Linux impact planning');
   if (JSON.stringify(Object.keys(cppWorkflow?.jobs ?? {})) !== JSON.stringify(['cpp-unit-tests'])) {
     fail('C++ workflow job set must be exactly cpp-unit-tests');
   }
@@ -231,10 +233,11 @@ try {
   for (const [id, job] of [['quality', quality], ['cpp-unit-tests', cppWorkflow.jobs['cpp-unit-tests']]]) {
     const pythonSetup = array(job.steps).find((step) => String(step.uses ?? '').startsWith('actions/setup-python@'));
     const pythonCheck = array(job.steps).find((step) => step.name === 'Verify preinstalled Python on self-hosted runner');
-    if (pythonSetup?.if !== "${{ runner.environment != 'self-hosted' }}" || String(pythonSetup?.with?.['python-version']) !== '3.11.9') {
+    const docsGuard = id === 'quality' ? "needs.impact.outputs.docs != 'true' && " : '';
+    if (pythonSetup?.if !== '${{ ' + docsGuard + "runner.environment != 'self-hosted' }}" || String(pythonSetup?.with?.['python-version']) !== '3.11.9') {
       fail(`${id} must install pinned Python only on hosted runners`);
     }
-    if (pythonCheck?.if !== "${{ runner.environment == 'self-hosted' }}" || pythonCheck?.run !== selfHostedPythonCheck || 'continue-on-error' in pythonCheck) {
+    if (pythonCheck?.if !== '${{ ' + docsGuard + "runner.environment == 'self-hosted' }}" || pythonCheck?.run !== selfHostedPythonCheck || 'continue-on-error' in pythonCheck) {
       fail(`${id} must verify pinned preinstalled Python on self-hosted runners`);
     }
   }
@@ -256,7 +259,7 @@ try {
     }
   }
   const checkoutSteps = allSteps.filter((step) => String(step.uses ?? '').startsWith('actions/checkout@'));
-  if (checkoutSteps.length !== 6) fail('Every job must use the approved checkout action exactly once');
+  if (checkoutSteps.length !== 7) fail('Every job must use the approved checkout action exactly once');
   for (const step of checkoutSteps) {
     if (step.with?.['persist-credentials'] !== false) fail('Checkout must disable persisted credentials');
     if (step.with?.['fetch-depth'] !== 0) fail('Checkout must fetch history for identity validation');
@@ -269,6 +272,20 @@ try {
   if (!qualityRun) fail('Quality job must call the shared run-quality entrypoint');
   for (const name of ['CI_BASE_SHA', 'CI_HEAD_SHA', 'CI_TESTED_SHA', 'CI_EVENT', 'CI_REF', 'REPORT_DIR']) {
     if (!qualityRun.env?.[name]) fail(`Quality entrypoint environment is missing ${name}`);
+  }
+  const docsCondition = "${{ needs.impact.outputs.docs == 'true' }}";
+  const fullCondition = "${{ needs.impact.outputs.docs != 'true' }}";
+  const docsRun = array(quality.steps).find(step => step.name === 'Run documentation quality gate');
+  if (docsRun?.if !== docsCondition || !String(docsRun.run).includes('node scripts/check-repo-contracts.mjs')) {
+    fail('Documentation quality must execute its consumers only on an admitted route');
+  }
+  for (const step of array(quality.steps).filter(step => ['Install pnpm', 'Install fixed ripgrep', 'Run full quality gate'].includes(step.name))) {
+    if (step.if !== fullCondition) fail('Heavy quality steps must remain mandatory outside the docs route');
+  }
+  if (qualityRun.if !== fullCondition) fail('Full quality must run on every non-docs route');
+  const summaryCheckout = array(gate.steps).find(step => String(step.uses ?? '').startsWith('actions/checkout@'));
+  if (summaryCheckout?.with?.ref !== "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}") {
+    fail('PR summary must check out trusted target branch code');
   }
   const mergeBase = array(quality.steps).find((step) => step.id === 'merge_base');
   if (
