@@ -682,14 +682,11 @@ async function verifyPendingDocumentGrant(socketUrl, timeoutMs) {
   // HTTP 101 表示浏览器已附加目标会话。待提交导航可能暂停渲染器命令，
   // 因此这里验证一次性握手授权，页面提交后再验证脚本求值。
   const firstClient = await CdpClient.connect(socketUrl, timeoutMs);
-  try {
-    await expectWebSocketRejected(
-      socketUrl, timeoutMs, '待提交文档的第二次连接应被拒绝',
-    );
+  await expectWebSocketRejected(
+    socketUrl, timeoutMs, '待提交文档的第二次连接应被拒绝',
+  ).then(() => {
     assert(firstClient.socket.readyState === WebSocket.OPEN, '首次授权应保持连接');
-  } finally {
-    await firstClient.close();
-  }
+  }).finally(() => firstClient.close());
 }
 
 async function verifyPendingAndPublicTargets(endpoint, fixture, timeoutMs) {
