@@ -8,7 +8,7 @@
     sites: 200,
     value: 4096,
     storage: 65536,
-    markdown: 2097152,
+    markdown: 16 * 1024 * 1024,
   });
   const grants = Object.freeze([
     "GM_addStyle",

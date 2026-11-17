@@ -59,9 +59,19 @@ final class ShareViewController: UIViewController {
                 let result: Result<(String, Data), Error>
                 do {
                     if let failure { throw failure }
-                    guard let url = item as? URL, url.isFileURL, ["md", "markdown"].contains(url.pathExtension.lowercased()),
-                          (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? Int.max <= 2_097_152 else { throw ShareInboxError.invalidEnvelope }
-                    result = .success((url.lastPathComponent, try Data(contentsOf: url)))
+                    guard let url = item as? URL, url.isFileURL,
+                          ["md", "markdown"].contains(url.pathExtension.lowercased()) else {
+                        throw ShareInboxError.invalidEnvelope
+                    }
+                    let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                    guard values.isRegularFile == true else { throw ShareInboxError.invalidEnvelope }
+                    let maximumBytes = MarkdownDocumentLimits.maximumBytes
+                    guard (values.fileSize ?? Int.max) <= maximumBytes else {
+                        throw MarkdownDocumentLimits.TooLarge()
+                    }
+                    let file = try FileHandle(forReadingFrom: url)
+                    defer { try? file.close() }
+                    result = .success((url.lastPathComponent, try file.read(upToCount: maximumBytes + 1) ?? Data()))
                 } catch { result = .failure(error) }
                 Task { @MainActor [weak self] in
                     guard let self else { return }

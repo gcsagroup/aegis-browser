@@ -79478,6 +79478,28 @@
         }
       }
     },
+    "文档超过 16 MiB，请查看原文件。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The document exceeds 16 MiB. View the original file."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文档超过 16 MiB，请查看原文件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件超過 16 MiB，請查看原始檔案。"
+          }
+        }
+      }
+    },
     "文档操作": {
       "extractionState": "manual",
       "localizations": {
