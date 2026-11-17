@@ -25,7 +25,8 @@ def install(channel, source, node_source, output):
             or not isinstance(data['allowedTestClient'], str) or not data['allowedTestClient']
             or len(data['allowedTestClient'].encode()) > 256
             or type(data['expectedQuotaBytes']) is not int
-            or data['expectedQuotaBytes'] != 10_000_000_000 or data['trafficReset'] != 'daily'):
+            or not 0 < data['expectedQuotaBytes'] <= 2**63 - 1
+            or data['trafficReset'] not in ('daily', 'never')):
         raise ValueError
     with open(node_source, 'rb') as stream:
         node = stream.read(8193)

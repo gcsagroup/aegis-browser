@@ -18,7 +18,8 @@ struct AccessSubscriptionConfiguration: Decodable, Sendable {
               parts.queryItems == [URLQueryItem(name: "format", value: "info")],
               !subscriptionInfoURL.lastPathComponent.isEmpty, parts.path != "/",
               !allowedTestClient.isEmpty, allowedTestClient.utf8.count <= 256,
-              expectedQuotaBytes == 10_000_000_000, trafficReset == "daily"
+              expectedQuotaBytes > 0, expectedQuotaBytes <= UInt64(Int64.max),
+              ["daily", "never"].contains(trafficReset)
         else { throw AccessSubscriptionQueryError.invalid }
     }
 
