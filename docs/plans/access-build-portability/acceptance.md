@@ -75,3 +75,15 @@ Android 编译目标为 `aarch64-none-linux-android26`，生成的 CTest 注册�
 | --- | --- |
 | Android arm64-v8a 物理真机 | **未完成**。没有可用真机，无法读取设备 ABI 和 API 级别。本轮未启动 NDK 编译，部署和真机 CTest 均未执行。 |
 | 三端完整浏览器产品 | **未完成**。本轮未执行产品验收。 |
+
+## T3 Android 真机复查（2026-11-17 12:00，UTC+8）
+
+针对 [合并提交 `ef99ae79`](https://github.com/quinn521/aegis-browser/commit/ef99ae7955d9f0115ce81464fceb1830e43ae080)，验证主机使用 ADB `37.0.1-15733141`，设备枚举结果如下。
+
+| 检查 | 实测结果 |
+| --- | --- |
+| `adb devices -l` | 0 个设备条目，无已授权的真机可供核对 ABI 和 API 级别 |
+| `adb mdns services` | mDNS 已启用，发现 0 个 ADB 服务 |
+| macOS USB 接口枚举 | 检查了 14 个 USB 接口，其中 ADB 接口为 0 |
+
+Android arm64-v8a 物理真机验收为**未完成**。本轮未启动 NDK 编译、部署或真机 CTest。三端完整浏览器产品验收为**未完成**。
