@@ -218,12 +218,18 @@ CI 故障期间暂停自动合并。修复配置走普通 PR；产品回退走�
 
 ## 分阶段 iOS 验证（第一批）
 
-iOS release validation 的 Ready PR 扩展到 develop。Linux 合同先执行，再按目标分支规则决定是否分配 unsigned archive。规则由目标 base 的 Git 对象提取，合并候选必须精确绑定 B/H。首次接入时目标分支尚无路由器，保守执行完整 iOS 路径。首批轻量名单只允许 `docs/plans/access-build-portability/acceptance.md` 两端模式均为 100644 的内容修改，并运行仓库文档合同。删除、重命名、模式变化及未知路径执行完整 iOS 路径。
+iOS release validation 的 Ready PR 扩展到 develop。Linux 合同先执行，再按目标分支规则决定是否分配 unsigned archive。规则由目标 base 的 Git 对象提取，合并候选必须精确绑定 B/H。首次接入时目标分支尚无路由器，保守执行完整 iOS 路径。最初的轻量名单只允许 `docs/plans/access-build-portability/acceptance.md` 两端模式均为 100644 的内容修改，并运行仓库文档合同。删除、重命名、模式变化及未知路径执行完整 iOS 路径。
 
 合同失败时 archive 不分配 runner。归档及链接验收通过后上传可消费的 unsigned 制品，失败时上传独立诊断 artifact。每个 push SHA 有独立 concurrency 组。现有完整 quality、独立秘密扫描、双 Simulator 报告和真机验收继续按各自条件核验。本批交付 iOS 平台阶段依赖，quality-gate 尚未消费跨 workflow 的 iOS 结果，协调者须逐项核验适用 iOS 状态。
 
+### 纯说明白名单的受控扩展
+
+轻量路由以可信 base 的 `scripts/ci/platform-impact.mjs` 精确文件名单为准，不按标题、目录或 Markdown 后缀放行。当前包括原验收文档和 `docs/ios-webkit-protection.en.md`、`docs/ios-webkit-protection.zh-CN.md`、`docs/ios-webkit-protection.zh-TW.md`。只允许既有普通文件两端模式均为 100644 的内容修改；多个白名单文件可同时修改。新增、删除、重命名、符号链接、可执行位及混合未知路径均保留完整路径。
+
+本批三语保护说明的机器消费者为 `check-repo-contracts.mjs` 的 Markdown 链接检查，已在 Linux 文档门执行。扩展前须检查文件内容、直接引用及动态消费者；以后新增读取者时，须重审其输入是否仍适用轻量路径。HTML 预览及脚本、fixture、翻译样本、生成的功能页面、冻结规格、证据目录中的 README/correlation、CI 与交付控制规则均不因属于文档而放行。规则变更自身走旧规则完整门，合入后通过真实 Ready PR 核验新名单的零 Mac 路径；push 仍跑完整门。
+
 ## 分阶段 macOS 验证（第二批）
 
-macOS delivery 的自动 Ready PR 先在 Linux 校验 Git 身份和文档消费者，再根据可信 base 规则分配合同测试。初始规则对单份验收文档的普通内容修改、或只涉及 `apps/ios/` 的变更省去 macOS 专用交付合同。共享接口、CI、自修改路由及未知路径保守运行；混合改动取并集。旧版规则未登记 macOS 时保守运行。Draft 不分配自动合同 runner，同 PR 更新取消旧运行，push 按实际 SHA 分组。
+macOS delivery 的自动 Ready PR 先在 Linux 校验 Git 身份和文档消费者，再根据可信 base 规则分配合同测试。规则对白名单说明文档的普通内容修改、或只涉及 `apps/ios/` 的变更省去 macOS 专用交付合同。共享接口、CI、自修改路由及未知路径保守运行；混合改动取并集。旧版规则未登记 macOS 时保守运行。Draft 不分配自动合同 runner，同 PR 更新取消旧运行，push 按实际 SHA 分组。
 
-Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS 路径继续依次通过 admission、Mac 上的 Access tests、package，只有所需前置项成功才打包。Chromium 编译、GN/GTest、桌面运行、签名和公证分别验收。基础 quality 增加 Linux 可信影响范围门。只有已配置开发 Fork 内同仓 develop PR 的单份已验证验收文档内容修改走 Linux 文档合同，其余 PR、未知或旧规则、push 和手动事件继续完整 macOS 质量门。quality-gate 在 Linux 运行可信目标分支的汇总器，保留原检查名与 push 的 quality/quality-gate 作业身份。每个 push SHA 独立分组。全仓零 Mac 和 5 分钟有效反馈须在规则合入后的真实文档 Ready PR 实测。
+Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS 路径继续依次通过 admission、Mac 上的 Access tests、package，只有所需前置项成功才打包。Chromium 编译、GN/GTest、桌面运行、签名和公证分别验收。基础 quality 增加 Linux 可信影响范围门。只有已配置开发 Fork 内同仓 develop PR 的已验证白名单说明文档内容修改走 Linux 文档合同，其余 PR、未知或旧规则、push 和手动事件继续完整 macOS 质量门。quality-gate 在 Linux 运行可信目标分支的汇总器，保留原检查名与 push 的 quality/quality-gate 作业身份。每个 push SHA 独立分组。全仓零 Mac 和 5 分钟有效反馈须在规则合入后的真实文档 Ready PR 实测。

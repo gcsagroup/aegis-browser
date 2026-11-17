@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
@@ -12,13 +12,24 @@ test('platform routing binds real merge parents and rejects hidden product chang
   const root = mkdtempSync(join(tmpdir(), 'platform-impact-'));
   const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
   const doc = 'docs/plans/access-build-portability/acceptance.md';
+  const iosDocs = ['en', 'zh-CN', 'zh-TW'].map(language => `docs/ios-webkit-protection.${language}.md`);
+  const executableDocs = [
+    'docs/plans/access-service-v1.0/spec.zh-CN.md',
+    'docs/platform-features.zh-CN.md',
+    'docs/audit/evidence/macos-access-product-phase1/README.md',
+    'docs/audit/evidence/ios-access-product-phase1/correlation.md',
+    'docs/plans/access-service-v1.0/interaction-example.html',
+    'apps/browser/scripts/testdata/translation-quality/long-v1.json',
+    'docs/unregistered-explanation.md',
+  ];
   const save = (path, text) => { mkdirSync(join(root, path, '..'), {recursive: true}); writeFileSync(join(root, path), text); };
   try {
     git('init', '-b', 'develop'); git('config', 'user.name', 'Routing Test'); git('config', 'user.email', 'routing@example.invalid');
-    save(doc, 'initial'); git('add', '.'); git('commit', '-m', 'base');
+    for (const path of [doc, ...iosDocs, ...executableDocs]) save(path, 'initial');
+    git('add', '.'); git('commit', '-m', 'base');
     const earlierBase = git('rev-parse', 'HEAD');
     save('base-marker.txt', 'advanced base'); git('add', '.'); git('commit', '-m', 'base advanced');
-    const base = git('rev-parse', 'HEAD');
+    let base = git('rev-parse', 'HEAD');
     const run = (mutate, expected) => {
       git('checkout', '-B', 'topic', base); mutate(); git('add', '-A'); git('commit', '-m', 'docs: candidate');
       const head = git('rev-parse', 'HEAD');
@@ -31,6 +42,7 @@ test('platform routing binds real merge parents and rejects hidden product chang
       assert.equal(result.status, 0, result.stderr);
       const plan = JSON.parse(result.stdout);
       assert.equal(plan.ios, expected); assert.equal(plan.docs, !expected); assert.equal(typeof plan.macos, 'boolean'); assert.equal(plan.base, base); assert.equal(plan.head, head); assert.equal(plan.tested, tested);
+      if (!expected) assert.equal(plan.macos, false, 'approved explanations must allocate neither native platform');
       const unadmitted = spawnSync(process.execPath, [script], {cwd: root, env: {...env, CI_LIGHTWEIGHT_ADMITTED: 'false'}, encoding: 'utf8'});
       assert.equal(JSON.parse(unadmitted.stdout).docs, false, 'outside the trusted fork rollout retain full quality');
       writeFileSync(event, JSON.stringify({pull_request: {base: {sha: earlierBase}, head: {sha: head}}}));
@@ -47,6 +59,21 @@ test('platform routing binds real merge parents and rejects hidden product chang
       return plan;
     };
     run(() => save(doc, 'updated'), false);
+    for (const path of iosDocs) {
+      run(() => save(path, 'updated'), false);
+      run(() => rmSync(join(root, path)), true);
+      run(() => chmodSync(join(root, path), 0o755), true);
+      run(() => {rmSync(join(root, path)); symlinkSync('untrusted.md', join(root, path));}, true);
+      run(() => git('mv', path, 'docs/unregistered-renamed.md'), true);
+    }
+    run(() => { for (const path of [doc, ...iosDocs]) save(path, 'updated'); }, false);
+    for (const path of executableDocs) {
+      const plan = run(() => {save(iosDocs[0], 'updated'); save(path, 'changed input');}, true);
+      assert.equal(plan.macos, true, `unregistered or consumed document must retain full route: ${path}`);
+    }
+    run(() => {save(iosDocs[0], 'updated'); save('scripts/ci/platform-impact.mjs', 'console.log("docs=true")');}, true);
+    run(() => {save(iosDocs[0], 'updated'); save('docs/ios-webkit-protection.new.md', 'new explanation');}, true);
+    run(() => git('mv', '-f', iosDocs[0], iosDocs[1]), true);
     run(() => {save(doc, 'updated'); save('apps/ios/Feature.swift', 'invalid');}, true);
     const iosOnly = run(() => save('apps/ios/Feature.swift', 'feature'), true);
     assert.equal(iosOnly.macos, false);
@@ -55,6 +82,9 @@ test('platform routing binds real merge parents and rejects hidden product chang
     run(() => git('mv', doc, 'docs/renamed.md'), true);
     run(() => chmodSync(join(root, doc), 0o755), true);
     run(() => save('scripts/ci/platform-impact.mjs', 'console.log("ios=false")'), true);
+    git('rm', iosDocs[0]); git('commit', '-m', 'remove explanation from base');
+    base = git('rev-parse', 'HEAD');
+    run(() => save(iosDocs[0], 'new registered path'), true);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
