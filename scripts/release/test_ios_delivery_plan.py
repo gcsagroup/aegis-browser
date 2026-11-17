@@ -10,6 +10,15 @@ spec.loader.exec_module(planner)
 
 
 class DeliveryPlanTests(unittest.TestCase):
+    def test_approved_bot_source_is_bound_before_any_package_or_read_route(self):
+        inputs = dict(operation='Package and upload', version='1.1.0', build='4', product='Beta', approved_source_sha='a'*40)
+        for mode in ['simple', 'full']:
+            value = planner.normalize('workflow_dispatch', 'refs/heads/main', inputs, mode, source_sha='a'*40)
+            self.assertEqual((value['profile'], value['destination']), ('beta', 'testflight'))
+            for bad in ['b'*40, '', None]:
+                with self.assertRaises(ValueError):
+                    planner.normalize('workflow_dispatch', 'refs/heads/main', inputs, mode, source_sha=bad)
+
     def test_tags_default_to_cloud_and_explicit_modes_cannot_change_source(self):
         sha = 'a' * 40
         def fixture(message, target=sha):
