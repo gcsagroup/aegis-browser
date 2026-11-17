@@ -164,7 +164,8 @@ final class SettingsLayoutUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
         for identifier in ["aegis-website-link", "aegis-support-link", "aegis-privacy-policy-link", "third-party-notices-link"] {
             let link = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-            XCTAssertTrue(reveal(link, app), "关于中的链接必须可达：\(identifier)")
+            // iPad 的最大字体表单会在中央命中主题菜单，沿列表右边缘滚动。
+            XCTAssertTrue(reveal(link, app, dragOffsetX: 0.96), "关于中的链接必须可达：\(identifier)")
             assertInsideWindow(link, app)
             XCTAssertTrue(link.isHittable)
         }
@@ -543,15 +544,17 @@ final class SettingsLayoutUITests: XCTestCase {
             }
         }
         enterFeatureSettings(app)
-        for (entry, title) in [("aegis-gestures-settings", "鼠标手势"),
-                               ("aegis-tools-settings", "本机工具连接"),
-                               ("aegis-experiments-settings", "实验功能")] {
-            let link = app.buttons[entry]
-            XCTAssertTrue(reveal(link, app)); assertInsideWindow(link, app); link.tap()
-            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
-            capture(title, app)
-            app.navigationBars.buttons.element(boundBy: 0).tap()
-        }
+        XCTAssertFalse(app.buttons["aegis-gestures-settings"].exists)
+        XCTAssertFalse(app.buttons["aegis-tools-settings"].exists)
+        let experiments = app.buttons["aegis-experiments-settings"]
+        XCTAssertTrue(reveal(experiments, app))
+        assertInsideWindow(experiments, app)
+        experiments.tap()
+        XCTAssertTrue(app.navigationBars["实验功能"].waitForExistence(timeout: 5))
+        app.buttons["网站设置与权限"].tap()
+        XCTAssertTrue(app.staticTexts["已保存的网站设置"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         let downloads = app.buttons["aegis-downloads-settings"]
         XCTAssertTrue(reveal(downloads, app)); downloads.tap()
         XCTAssertTrue(app.textFields["download-url"].waitForExistence(timeout: 5))
@@ -565,7 +568,7 @@ final class SettingsLayoutUITests: XCTestCase {
         let entry = app.buttons["aegis-feature-settings"]
         XCTAssertTrue(reveal(entry, app)); assertInsideWindow(entry, app); entry.tap()
         XCTAssertTrue(app.navigationBars["Aegis 设置"].waitForExistence(timeout: 5))
-        capture("Aegis八类设置入口", app)
+        capture("Aegis 设置入口", app)
     }
 
     private func openSettings(_ app: XCUIApplication, title: String = "设置") {
@@ -584,7 +587,8 @@ final class SettingsLayoutUITests: XCTestCase {
         settings.tap()
     }
 
-    private func reveal(_ element: XCUIElement, _ app: XCUIApplication, scrollDown: Bool? = nil) -> Bool {
+    private func reveal(_ element: XCUIElement, _ app: XCUIApplication, scrollDown: Bool? = nil,
+                        dragOffsetX: CGFloat = 0.5) -> Bool {
         _ = element.waitForExistence(timeout: 3)
         for _ in 0..<14 {
             // 导航动画期间集合视图会被替换，滚动坐标固定绑定应用窗口。
@@ -597,8 +601,8 @@ final class SettingsLayoutUITests: XCTestCase {
             // Virtualized rows may have no frame. A caller returning to an earlier row
             // can supply the known direction instead of scrolling farther away.
             let down = scrollDown ?? (element.exists && !element.frame.isEmpty && element.frame.midY < top)
-            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.35 : 0.75))
-                .press(forDuration: 0.1, thenDragTo: surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.75 : 0.35)))
+            surface.coordinate(withNormalizedOffset: CGVector(dx: dragOffsetX, dy: down ? 0.35 : 0.75))
+                .press(forDuration: 0.1, thenDragTo: surface.coordinate(withNormalizedOffset: CGVector(dx: dragOffsetX, dy: down ? 0.75 : 0.35)))
         }
         capture("无法定位设置控件", app)
         let hierarchy = XCTAttachment(string: app.debugDescription)

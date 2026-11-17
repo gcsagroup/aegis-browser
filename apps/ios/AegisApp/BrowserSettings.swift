@@ -3,12 +3,39 @@ import AccessKit
 import BrowserKit
 import SwiftUI
 
+struct ImageOcrConfiguration: Codable {
+    enum Mode: String, CaseIterable, Codable {
+        case official
+        case custom
+        case local
+
+        var label: LocalizedStringKey {
+            switch self {
+            case .official: "使用 Aegis 服务"
+            case .custom: "自定义服务器"
+            case .local: "仅本机识别"
+            }
+        }
+    }
+
+    static let storageKey = "browser.imageOCR"
+    var mode: Mode = .official
+    var endpoint = ""
+}
+
 @MainActor
 final class BrowserSettings: ObservableObject {
     @Published var model: ModelConfiguration {
         didSet { if let data = try? JSONEncoder().encode(model) { defaults.set(data, forKey: "model.configuration.v1") } }
     }
     @Published var appearance: String { didSet { defaults.set(appearance, forKey: "browser.appearance") } }
+    @Published var imageOCR: ImageOcrConfiguration {
+        didSet {
+            if let data = try? JSONEncoder().encode(imageOCR) {
+                defaults.set(data, forKey: ImageOcrConfiguration.storageKey)
+            }
+        }
+    }
     let browserPreferences: BrowserPreferences
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
@@ -16,6 +43,8 @@ final class BrowserSettings: ObservableObject {
         browserPreferences = BrowserPreferences(defaults: defaults)
         model = defaults.data(forKey: "model.configuration.v1").flatMap { try? JSONDecoder().decode(ModelConfiguration.self, from: $0) } ?? ModelConfiguration()
         appearance = defaults.string(forKey: "browser.appearance") ?? "system"
+        imageOCR = defaults.data(forKey: ImageOcrConfiguration.storageKey)
+            .flatMap { try? JSONDecoder().decode(ImageOcrConfiguration.self, from: $0) } ?? ImageOcrConfiguration()
     }
     var colorScheme: ColorScheme? { appearance == "dark" ? .dark : appearance == "light" ? .light : nil }
 }
@@ -78,12 +107,16 @@ struct BrowserSettingsView: View {
                     LabeledContent("网页引擎") { Text("系统 WebKit") }
                     NavigationLink("开源许可与鸣谢") { ThirdPartyNoticesView() }
                         .accessibilityIdentifier("third-party-notices-link")
-                    if let website = URL(string: "https://browser.erjinyi.com/") {
+                    if let website = URL(string: "https://www.gcsa.com/") {
                         Link("官方网站", destination: website)
                             .accessibilityIdentifier("aegis-website-link")
-                        Link("技术支持", destination: website.appendingPathComponent("support"))
+                    }
+                    if let support = URL(string: "https://www.gcsa.com/about#contact") {
+                        Link("技术支持", destination: support)
                             .accessibilityIdentifier("aegis-support-link")
-                        Link("隐私政策", destination: website.appendingPathComponent("privacy"))
+                    }
+                    if let privacyPolicy = URL(string: "https://gist.github.com/GCSA-ToolsTeam/7d8772461740216defce94e5be654cc5") {
+                        Link("隐私政策", destination: privacyPolicy)
                             .accessibilityIdentifier("aegis-privacy-policy-link")
                     }
 #if DEBUG
@@ -131,11 +164,6 @@ private struct AegisFeatureSettingsView: View {
                     }.localizedNavigationTitle("阅读与 Markdown").navigationBarTitleDisplayMode(.inline)
                 } label: { row("阅读与 Markdown", "阅读外观、图片权限与自动预览", "doc.text") }
                     .accessibilityIdentifier("aegis-reading-settings")
-                NavigationLink {
-                    Form { Section { Text("鼠标手势适用于桌面版。iOS 使用系统触控操作，暂无独立手势配置。") } }
-                        .localizedNavigationTitle("鼠标手势").navigationBarTitleDisplayMode(.inline)
-                } label: { row("鼠标手势", "此功能适用于桌面版", "hand.draw") }
-                    .accessibilityIdentifier("aegis-gestures-settings")
                 NavigationLink { ModelSettingsView() } label: {
                     row("AI 与模型", "模型服务与连接设置", "sparkles")
                 }.accessibilityIdentifier("model-service-settings")
@@ -146,20 +174,16 @@ private struct AegisFeatureSettingsView: View {
                             .foregroundStyle(Color.secondary).accessibilityHidden(true)
                     }
                 }.accessibilityIdentifier("aegis-downloads-settings")
-                NavigationLink {
-                    Form { Section { Text("iOS 版暂未提供本机工具连接服务。网页操作通过应用内的 AI 助手发起，并在需要时确认。") } }
-                        .localizedNavigationTitle("本机工具连接").navigationBarTitleDisplayMode(.inline)
-                } label: { row("本机工具连接", "iOS 版暂未提供", "network") }
-                    .accessibilityIdentifier("aegis-tools-settings")
+                NavigationLink { ImageOcrSettingsView() } label: {
+                    row("图片文字识别", "设置本机识别与服务器兜底", "text.viewfinder")
+                }.accessibilityIdentifier("image-ocr-settings")
                 NavigationLink {
                     Form {
                         Section("网站实验选项") {
                             NavigationLink("网站设置与权限") { WebsiteSettingsView(preferences: browser.preferences) }
-                            Text("严格指纹限制可在单个网站的设置中开启，可能影响网站正常显示。iOS 版暂未提供桌面的本机实验模型。")
-                                .font(.footnote).foregroundStyle(.secondary)
                         }
                     }.localizedNavigationTitle("实验功能").navigationBarTitleDisplayMode(.inline)
-                } label: { row("实验功能", "网站实验选项与平台说明", "flask") }
+                } label: { row("实验功能", "严格指纹限制（实验）", "flask") }
                     .accessibilityIdentifier("aegis-experiments-settings")
             }
         }
@@ -178,6 +202,60 @@ private struct AegisFeatureSettingsView: View {
                 Text(subtitle).font(.footnote).foregroundStyle(Color.secondary)
             }.fixedSize(horizontal: false, vertical: true)
         }.padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ImageOcrSettingsView: View {
+    @EnvironmentObject private var settings: BrowserSettings
+    @State private var draft = ImageOcrConfiguration()
+    @State private var message: LocalizedStringKey?
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("服务器兜底", selection: $draft.mode) {
+                    ForEach(ImageOcrConfiguration.Mode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }.accessibilityIdentifier("image-ocr-mode")
+                if draft.mode == .custom {
+                    TextField("HTTPS 接口地址", text: $draft.endpoint,
+                              prompt: Text("https://ocr.example.com/v1/ocr"))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .accessibilityIdentifier("image-ocr-endpoint")
+                }
+                if draft.mode == .official {
+                    if let service = OCRService.configured(for: ImageOcrConfiguration()) {
+                        Text(service.destination).foregroundStyle(.secondary)
+                    } else {
+                        Text("此版本尚未配置 Aegis 服务器。").foregroundStyle(.secondary)
+                    }
+                }
+                Button("保存") { save() }.accessibilityIdentifier("image-ocr-save")
+                if let message { Text(message).accessibilityIdentifier("image-ocr-settings-status") }
+            } footer: {
+                Text("优先在本机识别。使用服务器时，每次发送前都需要确认。")
+            }
+        }
+        .localizedNavigationTitle("图片文字识别")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { draft = settings.imageOCR }
+    }
+
+    private func save() {
+        if draft.mode == .custom {
+            guard let url = OCRService.httpsEndpoint(draft.endpoint) else {
+                message = "请输入以 /v1/ocr 结尾的 HTTPS 接口地址。"
+                return
+            }
+            draft.endpoint = url.absoluteString
+        } else {
+            draft.endpoint = settings.imageOCR.endpoint
+        }
+        settings.imageOCR = draft
+        message = "设置已保存。"
     }
 }
 

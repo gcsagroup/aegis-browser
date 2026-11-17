@@ -40,6 +40,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(prefs::kBounceTrackingEnabled, true);
   registry->RegisterBooleanPref(prefs::kPolicyWorkerEnabled, true);
   registry->RegisterBooleanPref(prefs::kPrivacyAiEnabled, true);
+  registry->RegisterDictionaryPref(prefs::kImageOcrSettings);
   registry->RegisterStringPref(prefs::kModelProvider, "openai");
   registry->RegisterStringPref(prefs::kModelBaseUrl, std::string());
   registry->RegisterStringPref(prefs::kModelName, std::string());

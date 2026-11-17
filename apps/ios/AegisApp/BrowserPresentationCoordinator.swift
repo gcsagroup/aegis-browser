@@ -14,16 +14,22 @@ final class BrowserPresentationCoordinator: ObservableObject {
         case privateBookmark(UUID, URL, UInt64)
         case windowError(AegisLocalizedMessage)
         case inputError(AegisLocalizedMessage)
+        case pageShare(BrowserPageShare)
+        case webpageCapture(WebpageCaptureItem)
+        case captureError(String)
 
         var isAlert: Bool {
-            switch self { case .external, .privateBookmark, .windowError, .inputError: true; default: false }
+            switch self { case .external, .privateBookmark, .windowError, .captureError, .inputError: true; default: false }
         }
         var isExternal: Bool { if case .external = self { true } else { false } }
+        var isPageCaptureOrShare: Bool {
+            switch self { case .pageShare, .webpageCapture, .captureError: true; default: false }
+        }
         var isDocumentBound: Bool {
-            switch self { case .assistant, .find: true; default: false }
+            switch self { case .assistant, .find: true; default: isPageCaptureOrShare }
         }
         var isProfileBound: Bool {
-            switch self { case .assistant, .library, .downloads, .find, .website, .markdown, .reading, .privateBookmark: true; default: false }
+            switch self { case .assistant, .library, .downloads, .find, .website, .markdown, .reading, .privateBookmark: true; default: isPageCaptureOrShare }
         }
     }
     struct Request: Identifiable {

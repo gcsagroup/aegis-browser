@@ -18,6 +18,7 @@ export interface SettingsRoutes {
   AEGIS_AI: Route;
   AEGIS_EXPERIMENTS: Route;
   AEGIS_DOWNLOADS: Route;
+  AEGIS_OCR: Route;
   AEGIS_TOOLS: Route;
   AEGIS_ENHANCEMENTS: Route;
   AEGIS_READING: Route;

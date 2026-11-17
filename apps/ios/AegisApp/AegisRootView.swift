@@ -77,7 +77,10 @@ struct AegisRootView: View {
         }
         .onChange(of: browser.activeTabID) { _, _ in
             updateAddress()
-            presentation.invalidate { if case .find = $0 { true } else { false } }
+            presentation.invalidate { route in
+                if case .find = route { return true }
+                return route.isPageCaptureOrShare
+            }
         }
         .onChange(of: browser.isWindowClosed) { _, closed in
             if closed { inputs.close(); presentation.closeWindow() }
@@ -132,6 +135,8 @@ struct AegisRootView: View {
             title = AegisLocalization.string("无法新建窗口"); message = error.text
         case let .inputError(error):
             title = AegisLocalization.string("无法打开内容"); message = error.text
+        case let .captureError(error):
+            title = AegisLocalization.string("无法截取整页"); message = error
         default: return UIAlertController()
         }
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
@@ -149,14 +154,16 @@ struct AegisRootView: View {
                    tab.id == id, tab.url == url, tab.navigationEpoch == epoch { browser.toggleBookmark(privateSaveConfirmed: true) }
                 presentation.dismiss(request.id); finished()
             })
-        case .windowError, .inputError:
+        case .windowError, .inputError, .captureError:
             alert.addAction(UIAlertAction(title: AegisLocalization.string("完成"), style: .default) { _ in
                 presentation.dismiss(request.id); finished()
             })
         default: break
         }
-        if case .windowError = request.route { return alert }
-        if case .inputError = request.route { return alert }
+        switch request.route {
+        case .windowError, .captureError, .inputError: return alert
+        default: break
+        }
         alert.addAction(UIAlertAction(title: AegisLocalization.string("取消"), style: .cancel) { _ in
             presentation.dismiss(request.id); finished()
         })
@@ -176,7 +183,9 @@ struct AegisRootView: View {
         case .reading: ReadingLibraryView()
         case let .markdown(document): MarkdownReaderView(initial: document)
         case .windows: BrowserWindowsView()
-        case .external, .privateBookmark, .windowError, .inputError: EmptyView()
+        case let .pageShare(share): BrowserPageShareSheet(share: share)
+        case let .webpageCapture(item): WebpageCaptureView(item: item)
+        case .external, .privateBookmark, .windowError, .captureError, .inputError: EmptyView()
         }
     }
 
@@ -300,6 +309,7 @@ private struct BrowserPane: View {
     @ObservedObject var presentation: BrowserPresentationCoordinator
     @State private var addressFocused = false
     @State private var addressSelectionRequest = 0
+    @State private var captureTask: Task<Void, Never>?
 
     private var toolbarAtTop: Bool {
         UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
@@ -317,20 +327,55 @@ private struct BrowserPane: View {
                 Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal)
             }
             ActiveTabView(tab: tab, address: $address, addressIsEditing: addressFocused,
-                          onEditAddress: editAddress, onFind: { keyboardActions?.find() }, onScroll: updateToolbar)
+                          onEditAddress: editAddress, onFind: { keyboardActions?.find() }, onScroll: updateToolbar,
+                          onImage: { image in
+                              guard !tab.isLoading, tab.protectionIncident == nil else { return }
+                              presentation.request(.webpageCapture(WebpageCaptureItem(image: image, recognizesText: true)))
+                          })
                 .id(tab.id)
         }
         .safeAreaInset(edge: toolbarAtTop ? .top : .bottom, spacing: 0) { toolbar }
         .background(Color(uiColor: .systemBackground))
         .focusedSceneValue(\.browserKeyboardActions, keyboardActions)
-        .onChange(of: tab.id) { _, _ in toolbarCollapsed = false; addressFocused = false }
-        .onChange(of: tab.navigationEpoch) { _, _ in toolbarCollapsed = false }
-
+        .onChange(of: tab.id) { _, _ in
+            toolbarCollapsed = false
+            addressFocused = false
+            clearWebpageCapture()
+        }
+        .onChange(of: tab.navigationEpoch) { _, _ in
+            toolbarCollapsed = false
+            clearWebpageCapture()
+        }
+        .onDisappear { clearWebpageCapture() }
     }
 
     private func updateToolbar(_ collapsed: Bool) {
         guard canCollapse, toolbarCollapsed != collapsed else { return }
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { toolbarCollapsed = collapsed }
+    }
+
+    private func clearWebpageCapture() {
+        captureTask?.cancel()
+        captureTask = nil
+        presentation.invalidate(where: \.isPageCaptureOrShare)
+    }
+
+    private func captureFullPage() {
+        guard captureTask == nil else { return }
+        captureTask = Task {
+            defer { if !Task.isCancelled { captureTask = nil } }
+            do {
+                let image = try await tab.captureFullPage()
+                guard !Task.isCancelled else { return }
+                presentation.request(.webpageCapture(WebpageCaptureItem(image: image, recognizesText: false)))
+            } catch {
+                guard !Task.isCancelled else { return }
+                let message = (error as? WebpageCaptureError) == .tooLarge
+                    ? AegisLocalization.string("网页超出整页截图的大小上限")
+                    : AegisLocalization.string("请在网页加载完成后重试")
+                presentation.request(.captureError(message))
+            }
+        }
     }
 
     private func editAddress() {
@@ -383,7 +428,6 @@ private struct BrowserPane: View {
 
     private var toolbar: some View {
         HStack(spacing: 8) {
-            if isCollapsed { Spacer(minLength: 0) }
             if !isCollapsed && !addressFocused {
                 Button { tab.goBack() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                     .disabled(!tab.canGoBack)
@@ -426,6 +470,7 @@ private struct BrowserPane: View {
             .background(.regularMaterial, in: Capsule())
             .overlay { Capsule().strokeBorder(browser.profile.isPrivate ? Color.purple.opacity(0.35) : Color.primary.opacity(0.08), lineWidth: 0.5) }
             .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+            .frame(maxWidth: .infinity)
             if addressFocused {
                 Button("取消") {
                     address = tab.addressBarURL?.absoluteString ?? "aegis://start"
@@ -433,19 +478,12 @@ private struct BrowserPane: View {
                     tab.webView.becomeFirstResponder()
                 }.frame(minWidth: 44, minHeight: 44)
             } else {
-                Button { presentation.request(.tabs) } label: {
-                    ZStack {
-                        Image(systemName: "square.on.square")
-                        Text(browser.displayedTabs.count.formatted())
-                            .font(.caption2.bold()).padding(2)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 3))
-                    }.frame(width: 44, height: 44)
+                HStack(spacing: 0) {
+                    tabsButton
+                    moreMenu
                 }
-                .accessibilityLabel(Text("标签 \(browser.displayedTabs.count)"))
-                .accessibilityIdentifier("tabs-button")
-                moreMenu
+                .background(.regularMaterial, in: Capsule())
             }
-            if isCollapsed { Spacer(minLength: 0) }
         }
         .font(.system(size: 18, weight: .regular))
         .tint(browser.profile.isPrivate ? .purple : .primary)
@@ -458,8 +496,27 @@ private struct BrowserPane: View {
         .accessibilityIdentifier(isCollapsed ? "browser-toolbar-collapsed" : "browser-toolbar-expanded")
     }
 
+    private var tabsButton: some View {
+        Button { presentation.request(.tabs) } label: {
+            ZStack {
+                Image(systemName: "square.on.square")
+                Text(browser.displayedTabs.count.formatted())
+                    .font(.caption2.bold()).padding(2)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 3))
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("标签页")
+        .accessibilityValue(AegisLocalization.string("标签 \(browser.displayedTabs.count)"))
+        .accessibilityIdentifier("tabs-button")
+    }
+
     private var moreMenu: some View {
         Menu {
+            if dynamicTypeSize.isAccessibilitySize {
+                settingsMenuButton
+            }
             Section {
                 Button("新建标签页", systemImage: "plus") { _ = browser.newTab() }
                     .accessibilityIdentifier("new-tab-button")
@@ -500,7 +557,17 @@ private struct BrowserPane: View {
                 Button("在页面中查找", systemImage: "doc.text.magnifyingglass") { presentation.request(.find(tab.id, tab.instanceID)) }
                     .accessibilityIdentifier("find-in-page")
                 if let url = tab.url, ["http", "https"].contains(url.scheme ?? "") {
-                    ShareLink(item: url) { Label("分享页面", systemImage: "square.and.arrow.up") }
+                    Button("分享页面", systemImage: "square.and.arrow.up") {
+                        if !browser.profile.isPrivate, !tab.isLoading, tab.webView.url == url {
+                            presentation.request(.pageShare(BrowserPageShare(items: [tab.webView, url])))
+                        } else {
+                            presentation.request(.pageShare(BrowserPageShare(items: [url])))
+                        }
+                    }
+                    .accessibilityIdentifier("share-webpage")
+                    Button("整页截图", systemImage: "document.viewfinder", action: captureFullPage)
+                        .disabled(tab.isLoading || captureTask != nil || tab.protectionIncident != nil)
+                        .accessibilityIdentifier("capture-full-webpage")
                 }
                 Button("打印或保存 PDF", systemImage: "printer") {
                     let controller = UIPrintInteractionController.shared
@@ -512,16 +579,21 @@ private struct BrowserPane: View {
                 .accessibilityIdentifier("page-actions")
             Section {
                 BrowserWindowActions(managesWindows: Binding(get: { false }, set: { if $0 { presentation.request(.windows) } }), error: Binding(get: { nil }, set: { if let error = $0 { presentation.request(.windowError(error)) } }))
-                Button("设置", systemImage: "gearshape") { presentation.request(.settings) }
-                    .accessibilityIdentifier("open-browser-settings")
+                if !dynamicTypeSize.isAccessibilitySize {
+                    settingsMenuButton
+                }
             }
         } label: {
             Image(systemName: "ellipsis").frame(width: 44, height: 44)
-                .background(.regularMaterial, in: Circle())
+                .contentShape(Rectangle())
         }
         .accessibilityLabel("更多")
-        .accessibilityValue(AegisLocalization.string("标签 \(browser.displayedTabs.count)"))
         .accessibilityIdentifier("browser-more")
+    }
+
+    private var settingsMenuButton: some View {
+        Button("设置", systemImage: "gearshape") { presentation.request(.settings) }
+            .accessibilityIdentifier("open-browser-settings")
     }
 }
 
@@ -677,6 +749,20 @@ struct PageLoadFailureBanner: View {
     }
 }
 
+struct BrowserPageShare {
+    let items: [Any]
+}
+
+private struct BrowserPageShareSheet: UIViewControllerRepresentable {
+    let share: BrowserPageShare
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: share.items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
 private struct ActiveTabView: View {
     @ObservedObject var tab: BrowserTab
     @Binding var address: String
@@ -684,6 +770,7 @@ private struct ActiveTabView: View {
     let onEditAddress: () -> Void
     let onFind: () -> Void
     let onScroll: (Bool) -> Void
+    let onImage: (UIImage) -> Void
     @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
 
     @Environment(\.locale) private var localizationLocale
@@ -735,7 +822,7 @@ private struct ActiveTabView: View {
                     Text("观察到多种指纹读取接口；正常绘图与音频也可能使用这些接口。")
                         .font(.caption).padding(8).accessibilityIdentifier("fingerprint-observation")
                 }
-                BrowserWebView(webView: tab.webView, onFind: onFind, onScroll: onScroll)
+                BrowserWebView(webView: tab.webView, onFind: onFind, onScroll: onScroll, onImage: onImage)
                     .id("\(tab.webViewGeneration)-\(ObjectIdentifier(tab.webView))")
                     .accessibilityIdentifier("browser-webview")
             }

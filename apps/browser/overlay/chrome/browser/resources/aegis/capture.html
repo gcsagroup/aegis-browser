@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aegis</title>
+  <link rel="stylesheet" href="capture.css">
+  <script type="module" src="capture.js"></script>
+</head>
+<body>
+  <header>
+    <h1 id="title"></h1>
+    <div id="actions" hidden>
+      <button id="crop"></button>
+      <button id="reset" hidden></button>
+      <label id="zoom-label"><span id="zoom-text"></span>
+        <input id="zoom" type="range" min="50" max="230" value="100">
+      </label>
+      <button id="copy" hidden></button>
+      <button id="save" hidden></button>
+      <button id="share" hidden></button>
+    </div>
+    <p id="status" role="status"></p>
+  </header>
+  <main id="preview" hidden>
+    <div id="paper"><img id="source" alt="" draggable="false"><div id="outline" hidden></div></div>
+  </main>
+  <section id="ocr" hidden>
+    <textarea id="text" readonly rows="5"></textarea>
+    <button id="copy-text" hidden></button>
+    <button id="server" hidden></button>
+  </section>
+  <dialog id="confirmation">
+    <h2 id="confirmation-title"></h2>
+    <img id="confirmed-image" alt="">
+    <p id="destination"></p>
+    <form method="dialog">
+      <button id="cancel" value="cancel" autofocus></button>
+      <button id="send" value="send"></button>
+    </form>
+  </dialog>
+</body>
+</html>

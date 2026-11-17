@@ -12,8 +12,10 @@
 #endif
 #include "chrome/browser/aegis/aegis_download_prefs.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
+#include "chrome/browser/aegis/webpage_capture.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/aegis/aegis_capture_handler.h"
 #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/aegis_resources.h"
@@ -701,3 +703,71 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
 AegisUI::~AegisUI() = default;
 
 WEB_UI_CONTROLLER_TYPE_IMPL(AegisUI)
+
+namespace {
+
+constexpr char kOfflineOCRHost[] = "aegis-ocr";
+constexpr char kOfflineOCRUrl[] = "chrome-untrusted://aegis-ocr/";
+
+}  // namespace
+
+AegisCaptureUIConfig::AegisCaptureUIConfig()
+    : DefaultWebUIConfig(content::kChromeUIScheme, aegis::kCapturePageHost) {}
+
+bool AegisCaptureUIConfig::IsWebUIEnabled(content::BrowserContext* context) {
+  return aegis::IsAegisProfileSupported(Profile::FromBrowserContext(context));
+}
+
+AegisCaptureUI::AegisCaptureUI(content::WebUI* web_ui)
+    : content::WebUIController(web_ui) {
+  auto* source = content::WebUIDataSource::CreateAndAdd(
+      Profile::FromWebUI(web_ui), aegis::kCapturePageHost);
+  for (const auto& resource : kAegisResources) {
+    const std::string_view path(resource.path);
+    if (path.starts_with("capture.")) {
+      source->AddResourcePath(path, resource.id);
+    }
+  }
+  source->SetDefaultResource(IDR_AEGIS_CAPTURE_CAPTURE_HTML);
+  using network::mojom::CSPDirectiveName;
+  web_ui->AddRequestableScheme(content::kChromeUIUntrustedScheme);
+  source->OverrideContentSecurityPolicy(
+      CSPDirectiveName::FrameSrc, "frame-src chrome-untrusted://aegis-ocr;");
+  source->OverrideContentSecurityPolicy(CSPDirectiveName::ImgSrc,
+      "img-src data: blob:;");
+  web_ui->AddMessageHandler(std::make_unique<aegis::CaptureHandler>());
+}
+
+AegisCaptureUI::~AegisCaptureUI() = default;
+
+WEB_UI_CONTROLLER_TYPE_IMPL(AegisCaptureUI)
+
+AegisOfflineOCRUIConfig::AegisOfflineOCRUIConfig()
+    : DefaultWebUIConfig(content::kChromeUIUntrustedScheme, kOfflineOCRHost) {}
+
+bool AegisOfflineOCRUIConfig::IsWebUIEnabled(content::BrowserContext* context) {
+  return aegis::IsAegisProfileSupported(Profile::FromBrowserContext(context));
+}
+
+AegisOfflineOCRUI::AegisOfflineOCRUI(content::WebUI* web_ui)
+    : ui::UntrustedWebUIController(web_ui) {
+  auto* source = content::WebUIDataSource::CreateAndAdd(
+      Profile::FromWebUI(web_ui), kOfflineOCRUrl);
+  for (const auto& resource : kAegisResources) {
+    const std::string_view path(resource.path);
+    if (path.starts_with("offline_ocr.") || path.starts_with("ocr_assets/")) {
+      source->AddResourcePath(path, resource.id);
+    }
+  }
+  source->SetDefaultResource(IDR_AEGIS_CAPTURE_OFFLINE_OCR_HTML);
+  source->AddFrameAncestor(GURL(aegis::kCapturePageUrl));
+  using network::mojom::CSPDirectiveName;
+  source->OverrideContentSecurityPolicy(
+      CSPDirectiveName::ScriptSrc, "script-src 'self' 'wasm-unsafe-eval';");
+  source->OverrideContentSecurityPolicy(
+      CSPDirectiveName::TrustedTypes, "trusted-types default;");
+  source->OverrideContentSecurityPolicy(
+      CSPDirectiveName::WorkerSrc, "worker-src 'self';");
+  source->OverrideContentSecurityPolicy(
+      CSPDirectiveName::ConnectSrc, "connect-src 'self' data:;");
+}

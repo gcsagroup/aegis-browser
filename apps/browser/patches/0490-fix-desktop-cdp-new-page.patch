@@ -1,0 +1,107 @@
+From da39205a791c27475436953a1d960282db33201d Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@local>
+Date: Mon, 16 Nov 2026 18:58:51 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=E6=A1=8C=E9=9D=A2=20CDP=20?=
+ =?UTF-8?q?=E6=96=B0=E5=BB=BA=E6=A0=87=E7=AD=BE=E7=9A=84=E5=88=9D=E5=A7=8B?=
+ =?UTF-8?q?=E6=96=87=E6=A1=A3=E5=92=8C=20URL=20=E4=BA=8B=E4=BB=B6?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../devtools/protocol/target_handler.cc       |  8 +++++++
+ .../devtools/protocol/target_handler.cc       | 24 ++++++++++++++-----
+ .../core/inspector/inspector_page_agent.cc    | 10 +++++++-
+ 3 files changed, 35 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/devtools/protocol/target_handler.cc b/chrome/browser/devtools/protocol/target_handler.cc
+index a04d30c82123703a1eda2d5390919289d21c322e..36be269c37ca4a97aac37af18bfb684c4be6e0fe 100644
+--- a/chrome/browser/devtools/protocol/target_handler.cc
++++ b/chrome/browser/devtools/protocol/target_handler.cc
+@@ -242,6 +242,14 @@ protocol::Response TargetHandler::CreateTarget(
+       profile, gurl, ui::PAGE_TRANSITION_AUTO_TOPLEVEL, create_new_window,
+       create_in_background, target_browser_interface);
+ 
++  // 远程客户端只能调试本次创建的初始文档。直接插入空白 WebContents，
++  // 避免异步导航到第二个 about:blank 文档后撤销刚授予的权限。
++  if (is_remote_debugging_client_ && gurl.spec() == url::kAboutBlankURL) {
++    content::WebContents::CreateParams create_params(profile);
++    create_params.desired_renderer_state =
++        content::WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
++    params.contents_to_insert = content::WebContents::Create(create_params);
++  }
+   Navigate(&params);
+   if (!params.navigated_or_inserted_contents) {
+     return protocol::Response::ServerError("Failed to open a new tab");
+diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
+index d921b673605d6c7117592584de3850e716cb9827..f4efc5bf063e4537750d2c7a3f01199e3bf28d6f 100644
+--- a/content/browser/devtools/protocol/target_handler.cc
++++ b/content/browser/devtools/protocol/target_handler.cc
+@@ -146,11 +146,19 @@ std::unique_ptr<Target::TargetInfo> BuildTargetInfo(
+     DevToolsAgentHost* agent_host,
+     DevToolsSession* root_session) {
+   auto* host = static_cast<DevToolsAgentHostImpl*>(agent_host);
+-  const GURL target_url = root_session->GetClient()->IsRemoteDebuggingClient()
+-                              ? host->GetURLForRemoteDebugging()
+-                              : host->GetURL();
+-  const bool remote_client =
+-      root_session->GetClient()->IsRemoteDebuggingClient();
++  DevToolsAgentHostClient* client = root_session->GetClient();
++  const bool remote_client = client->IsRemoteDebuggingClient();
++  GURL target_url =
++      remote_client ? host->GetURLForRemoteDebugging() : host->GetURL();
++  // Puppeteer 等客户端用非空 URL 判断新页面是否已初始化。只向拥有
++  // 该初始文档的 CDP 客户端报告 about:blank。
++  if (remote_client && target_url.is_empty() &&
++      (host->GetType() == DevToolsAgentHost::kTypePage ||
++       host->GetType() == DevToolsAgentHost::kTypeTab) &&
++      client->OwnsRemoteDebuggingTarget(host->GetId(),
++                                       host->GetDocumentForRemoteDebugging())) {
++    target_url = GURL(url::kAboutBlankURL);
++  }
+   const bool can_expose_parent =
+       !remote_client ||
+       (!host->GetParentId().empty() &&
+@@ -1160,7 +1168,11 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
+     policy_detaching_hosts_.erase(host);
+   }
+ 
+-  if (!was_reported && should_report) {
++  // 远程客户端可能已通过标签子会话附加了初始空白页面，但直到网页
++  // 提交后才收到发现事件。也发出变化事件，让已有会话更新其 URL。
++  if (!was_reported && should_report &&
++      (!root_session_->GetClient()->IsRemoteDebuggingClient() ||
++       !host->IsAttached())) {
+     return;
+   }
+ 
+diff --git a/third_party/blink/renderer/core/inspector/inspector_page_agent.cc b/third_party/blink/renderer/core/inspector/inspector_page_agent.cc
+index e77fd3d16e91cd85398d012cce9824c5e66e9420..ec289508727022f92f2bb292309085d284c035ff 100644
+--- a/third_party/blink/renderer/core/inspector/inspector_page_agent.cc
++++ b/third_party/blink/renderer/core/inspector/inspector_page_agent.cc
+@@ -1455,13 +1455,21 @@ std::unique_ptr<protocol::Page::Frame> InspectorPageAgent::BuildObjectForFrame(
+   // There are some rare cases where no DocumentLoader is set. We use an empty
+   // Url and MimeType in those cases. See e.g. https://crbug.com/1270184.
+   const KURL url = loader ? loader->Url() : KURL();
++  // 初始主文档的 DocumentLoader 可能还没有 URL。以 about:blank
++  // 报告纯空白文档，使 CDP 客户端能够选中它并发起首次导航。
++  const bool is_initial_blank_main_frame =
++      loader && url.IsEmpty() && frame->IsOutermostMainFrame() &&
++      frame->GetDocument()->IsInitialEmptyDocument();
++  const String frame_url =
++      is_initial_blank_main_frame ? BlankUrl().GetString()
++                                  : UrlWithoutFragment(url).GetString();
+   const String mime_type = loader ? loader->MimeType() : String();
+   auto security_origin = SecurityOrigin::Create(url);
+   std::unique_ptr<protocol::Page::Frame> frame_object =
+       protocol::Page::Frame::create()
+           .setId(IdentifiersFactory::FrameId(frame))
+           .setLoaderId(IdentifiersFactory::LoaderId(loader))
+-          .setUrl(UrlWithoutFragment(url).GetString())
++          .setUrl(frame_url)
+           .setDomainAndRegistry(blink::network_utils::GetDomainAndRegistry(
+               url.Host(), blink::network_utils::PrivateRegistryFilter::
+                               kIncludePrivateRegistries))
+-- 
+2.52.0
+

@@ -7,14 +7,9 @@ struct MarkdownShareEnvelope: Codable, Sendable {
   let expiresAt: Date
 }
 
-enum MarkdownShareInboxError: Error, LocalizedError {
-  case tooLarge
-  var errorDescription: String? { AegisLocalization.string("文档超过 2 MiB 或不是普通文件。") }
-}
-
 /// File moves provide cross-process ownership; the actor below only isolates local I/O.
 struct MarkdownShareInbox: Sendable {
-  static let maximumTextBytes = 2_097_152
+  static let maximumTextBytes = MarkdownDocumentLimits.maximumBytes
   static let maximumTitleBytes = 1_200
   static let maximumEnvelopeBytes = 6 * (maximumTextBytes + maximumTitleBytes) + 1_024
   private let root: URL
@@ -24,7 +19,7 @@ struct MarkdownShareInbox: Sendable {
     self.root = root
   }
   func store(title: String, data: Data, now: Date = Date()) throws {
-    guard data.count <= Self.maximumTextBytes else { throw MarkdownShareInboxError.tooLarge }
+    guard data.count <= Self.maximumTextBytes else { throw MarkdownDocumentLimits.TooLarge() }
     guard let text = String(data: data, encoding: .utf8), !text.contains("\0") else {
       throw ShareInboxError.invalidEnvelope
     }
@@ -35,8 +30,10 @@ struct MarkdownShareInbox: Sendable {
     }
     let envelope = MarkdownShareEnvelope(nonce: UUID(), title: boundedTitle, text: text,
       expiresAt: now.addingTimeInterval(60))
-    let encoded = try JSONEncoder().encode(envelope)
-    guard encoded.count <= Self.maximumEnvelopeBytes else { throw MarkdownShareInboxError.tooLarge }
+    let encoder = PropertyListEncoder()
+    encoder.outputFormat = .binary
+    let encoded = try encoder.encode(envelope)
+    guard encoded.count <= Self.maximumEnvelopeBytes else { throw MarkdownDocumentLimits.TooLarge() }
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     try encoded.write(to: root.appendingPathComponent("markdown-inbox-v1.json"),
       options: [.atomic, .completeFileProtection])
@@ -57,9 +54,13 @@ struct MarkdownShareInbox: Sendable {
     var data = Data()
     while let chunk = try stream.read(upToCount: min(65_536, Self.maximumEnvelopeBytes + 1 - data.count)), !chunk.isEmpty {
       data.append(chunk)
-      guard data.count <= Self.maximumEnvelopeBytes else { throw MarkdownShareInboxError.tooLarge }
+      guard data.count <= Self.maximumEnvelopeBytes else { throw MarkdownDocumentLimits.TooLarge() }
     }
-    let envelope = try JSONDecoder().decode(MarkdownShareEnvelope.self, from: data)
+    let envelope = if data.starts(with: "bplist00".utf8) {
+      try PropertyListDecoder().decode(MarkdownShareEnvelope.self, from: data)
+    } else {
+      try JSONDecoder().decode(MarkdownShareEnvelope.self, from: data)
+    }
     guard envelope.text.utf8.count <= Self.maximumTextBytes,
       !envelope.text.contains("\0"), envelope.title.count <= 300,
       envelope.title.utf8.count <= Self.maximumTitleBytes else { throw ShareInboxError.invalidEnvelope }

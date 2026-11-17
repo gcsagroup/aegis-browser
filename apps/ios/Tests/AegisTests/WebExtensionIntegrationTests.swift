@@ -1,4 +1,5 @@
 import XCTest
+import WebKit
 @testable import BrowserKit
 
 @MainActor
@@ -11,6 +12,44 @@ final class WebExtensionIntegrationTests: XCTestCase {
         }
         XCTAssertEqual(session.extensionStatus, "Shared WebExtension 已加载")
         XCTAssertNotNil(session.activeTab?.webView.configuration.webExtensionController)
+    }
+
+    func testBundledExtensionDisablesAndReloadsWithRevokedSiteIsolated() async throws {
+        let standard = WebExtensionRuntime(isPrivate: false)
+        let privateMode = WebExtensionRuntime(isPrivate: true)
+        try await standard.loadSharedResources(from: Bundle.main.bundleURL)
+        try await privateMode.loadSharedResources(from: Bundle.main.bundleURL)
+        let context = try XCTUnwrap(standard.context)
+        let privateContext = try XCTUnwrap(privateMode.context)
+        XCTAssertFalse(context === privateContext)
+        XCTAssertTrue(standard.controller.configuration.isPersistent)
+        XCTAssertFalse(privateMode.controller.configuration.isPersistent)
+        XCTAssertTrue(context.isLoaded)
+        XCTAssertTrue(privateContext.isLoaded)
+
+        let site = try XCTUnwrap(URL(string: "https://aegis-extension-lifecycle.example/"))
+        let other = try XCTUnwrap(URL(string: "https://aegis-extension-other.example/"))
+        context.setPermissionStatus(.grantedExplicitly, for: site)
+        context.setPermissionStatus(.grantedExplicitly, for: other)
+        XCTAssertEqual(context.permissionStatus(for: site), .grantedExplicitly)
+        XCTAssertNotEqual(privateContext.permissionStatus(for: site), .grantedExplicitly)
+        try standard.revokeSitePermission(site)
+        XCTAssertEqual(context.permissionStatus(for: site), .deniedExplicitly)
+        XCTAssertEqual(context.permissionStatus(for: other), .grantedExplicitly)
+        XCTAssertNotEqual(privateContext.permissionStatus(for: site), .deniedExplicitly)
+
+        try standard.setEnabled(false)
+        XCTAssertFalse(context.isLoaded)
+        XCTAssertTrue(standard.controller.extensionContexts.isEmpty)
+        XCTAssertTrue(privateContext.isLoaded)
+        try standard.setEnabled(false)
+        try standard.setEnabled(true)
+        XCTAssertTrue(context.isLoaded)
+        XCTAssertEqual(context.permissionStatus(for: site), .deniedExplicitly)
+        XCTAssertTrue(privateMode.controller.extensionContexts.contains(privateContext))
+
+        try standard.setEnabled(false)
+        try privateMode.setEnabled(false)
     }
 
     func testFixtureNavigationUpdatesDocumentGeneration() async throws {

@@ -1,6 +1,8 @@
 import "/strings.m.js";
 import { loadTimeData } from "chrome://resources/js/load_time_data.js";
 import "./enhancements_shared/i18n.js";
+import "./enhancements_shared/core.js";
+const maximumBytes = globalThis.AegisEnhancementsCore.limits.markdown;
 const uiText = value => globalThis.AegisI18n.t(value);
 globalThis.AegisI18n.setLocale(loadTimeData.getString("aegisLocale"));
 globalThis.AegisI18n.translate(document);
@@ -26,7 +28,7 @@ const send = (type, value) => {
 };
 async function request(value) {
   const r = await sendWithPromise("aegisEnhancements", value);
-  if (r.error) throw Error(typeof r.error === "string" ? r.error : r.error.message);
+  if (r.error) throw Error(uiText(typeof r.error === "string" ? r.error : r.error.message));
   if (r.result?.exceptionDetails)
     throw Error(
       r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text,
@@ -71,7 +73,7 @@ function load(document, isLocal) {
 async function file(f) {
   if (!f || !/\.(md|markdown)$/i.test(f.name))
     throw Error(uiText("请选择 .md 或 .markdown 文件。"));
-  if (f.size > 2097152) throw Error(uiText("文档超过 2 MiB，请使用原文件查看。"));
+  if (f.size > maximumBytes) throw Error(uiText("文档超过 16 MiB，请查看原文件。"));
   const text = new TextDecoder("utf-8", { fatal: true }).decode(await f.arrayBuffer());
   load({ text, title: f.name, baseURL: "", resources: {} }, true);
 }
@@ -86,7 +88,8 @@ window.addEventListener("message", (event) => {
     ready = true;
     send("configure", {embedded: true, locale: loadTimeData.getString("aegisLocale"), preferences: state.readingPreferences});
     if (current) send("load", current);
-  } else if (type === "copy" && typeof value === "string" && value.length <= 2097152)
+  } else if (type === "copy" && typeof value === "string" && value.length <= maximumBytes &&
+             new TextEncoder().encode(value).length <= maximumBytes)
     navigator.clipboard.writeText(value).then(
       () => notify(uiText("已复制。")),
       () => notify(uiText("复制失败，请重试。")),
@@ -187,6 +190,7 @@ action("read-page", async () => {
   if (!t) throw Error(uiText("请先打开在线 Markdown 原文页。"));
   const r = await request({ op: "read-markdown", tab: t.id, url: t.url, document: t.document });
   const payload = r.result?.result?.value;
+  if (payload?.tooLarge) throw Error(uiText("文档超过 16 MiB，请查看原文件。"));
   if (!payload?.text) throw Error(uiText("页面没有可读取的文本。"));
   load(payload, false);
 });

@@ -146,6 +146,28 @@
         <p><a href="chrome://downloads" target="_top">$i18n{downloadsHistory}</a></p>
         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{downloadsSafety}</p></details>
       </section>
+      <section id="image-ocr-settings" aria-labelledby="image-ocr-title">
+        <h2 id="image-ocr-title"></h2>
+        <p id="image-ocr-hint"></p>
+        <form id="image-ocr-form">
+          <fieldset id="image-ocr-fields" disabled>
+            <label for="image-ocr-mode" id="image-ocr-mode-label"></label>
+            <select id="image-ocr-mode">
+              <option value="official" id="image-ocr-official"></option>
+              <option value="custom" id="image-ocr-custom"></option>
+              <option value="local" id="image-ocr-local"></option>
+            </select>
+            <p id="image-ocr-official-status" hidden></p>
+            <label id="image-ocr-endpoint-row" hidden>
+              <span id="image-ocr-endpoint-label"></span>
+              <input id="image-ocr-endpoint" type="url" maxlength="2048"
+                  placeholder="https://ocr.example.com/v1/ocr" autocomplete="off" spellcheck="false">
+            </label>
+            <button id="image-ocr-save" type="submit"></button>
+          </fieldset>
+        </form>
+        <p id="image-ocr-status" role="status"></p>
+      </section>
       <section class="privacy" aria-label="$i18n{privacyAiTitle}">
         <h2>$i18n{privacyAiTitle}</h2>
         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>

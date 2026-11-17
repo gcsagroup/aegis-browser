@@ -1,0 +1,449 @@
+From bbd87070f3efadc94ee371eb0b5fae47604403a9 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@local>
+Date: Mon, 16 Nov 2026 20:07:01 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=99=90=E5=AE=9A=E8=BF=9C=E7=A8=8B=E8=B0=83?=
+ =?UTF-8?q?=E8=AF=95=E7=AE=A1=E9=81=93=E5=AF=B9=E5=BC=80=E5=8F=91=E6=89=A9?=
+ =?UTF-8?q?=E5=B1=95=E7=9A=84=E8=AE=BF=E9=97=AE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../devtools/protocol/extensions_handler.cc   | 45 ++++++++--
+ .../devtools/protocol/extensions_handler.h    |  4 +
+ .../devtools/devtools_agent_host_impl.cc      | 84 +++++++++++++++++--
+ .../browser/devtools/devtools_pipe_handler.cc | 16 ++++
+ .../browser/devtools/devtools_pipe_handler.h  |  8 ++
+ .../browser/devtools/protocol/page_handler.cc | 10 ++-
+ .../render_frame_devtools_agent_host.cc       | 18 ++--
+ content/public/browser/BUILD.gn               |  1 +
+ .../devtools_remote_extension_access.h        | 41 +++++++++
+ 9 files changed, 204 insertions(+), 23 deletions(-)
+ create mode 100644 content/public/browser/devtools_remote_extension_access.h
+
+diff --git a/chrome/browser/devtools/protocol/extensions_handler.cc b/chrome/browser/devtools/protocol/extensions_handler.cc
+index 07438e137b8a4a58484788e6969ba67ac4ea683b..810f882705d69f199098886c851124fb9da680e6 100644
+--- a/chrome/browser/devtools/protocol/extensions_handler.cc
++++ b/chrome/browser/devtools/protocol/extensions_handler.cc
+@@ -19,11 +19,14 @@
+ #include "chrome/browser/ui/extensions/extension_action_view_model.h"
+ #include "chrome/browser/ui/extensions/extensions_container.h"
+ #include "chrome/browser/ui/toolbar/toolbar_action_view_model.h"
++#include "content/public/browser/browser_context.h"
+ #include "content/public/browser/devtools_agent_host.h"
++#include "content/public/browser/devtools_remote_extension_access.h"
+ #include "content/public/browser/web_contents.h"
+ #include "extensions/browser/api/storage/storage_area_namespace.h"
+ #include "extensions/browser/api/storage/storage_utils.h"
+ #include "extensions/browser/extension_registrar.h"
++#include "extensions/browser/extension_registry.h"
+ #include "extensions/browser/unpacked_installer.h"
+ #include "extensions/common/manifest.h"
+ 
+@@ -233,17 +236,49 @@ void ExtensionsHandler::LoadUnpacked(
+     installer->set_allow_incognito_access(enable_in_incognito.value());
+   }
+   installer->set_installed_via_cdp(true);
++  extensions::ExtensionIdSet existing_unowned_ids;
++  if (auto* registry = extensions::ExtensionRegistry::Get(context)) {
++    for (const auto& installed : registry->GenerateInstalledExtensionsSet()) {
++      if (!content::MayDebugRemoteExtension(client_, context, installed->url())) {
++        existing_unowned_ids.insert(installed->id());
++      }
++    }
++  }
+   installer->set_completion_callback(
+       base::BindOnce(&ExtensionsHandler::OnLoaded, weak_factory_.GetWeakPtr(),
+-                     std::move(callback)));
++                     std::move(callback), context->GetWeakPtr(),
++                     std::move(existing_unowned_ids)));
+   installer->Load(base::FilePath(base::FilePath::FromUTF8Unsafe(path)));
+ }
+ 
+-void ExtensionsHandler::OnLoaded(std::unique_ptr<LoadUnpackedCallback> callback,
+-                                 const extensions::Extension* extension,
+-                                 const base::FilePath& path,
+-                                 const std::u16string& err) {
++void ExtensionsHandler::OnLoaded(
++    std::unique_ptr<LoadUnpackedCallback> callback,
++    base::WeakPtr<content::BrowserContext> install_context,
++    extensions::ExtensionIdSet existing_unowned_ids,
++    const extensions::Extension* extension,
++    const base::FilePath& path,
++    const std::u16string& err) {
+   if (err.empty()) {
++    // 固定密钥可能复用原有身份和存储。只授权管道新装或重新加载的开发扩展。
++    if (install_context && extension->public_key().empty() &&
++        !existing_unowned_ids.contains(extension->id())) {
++      content::RegisterRemoteDebuggingExtension(
++          client_, extension->id(),
++          base::BindRepeating(
++              [](base::WeakPtr<content::BrowserContext> installed_context,
++                 scoped_refptr<const extensions::Extension> installed,
++                 content::BrowserContext* target_context) {
++                if (installed_context.get() != target_context) {
++                  return false;
++                }
++                auto* registry =
++                    extensions::ExtensionRegistry::Get(target_context);
++                return registry &&
++                       registry->enabled_extensions().GetByID(installed->id()) ==
++                           installed.get();
++              },
++              install_context, base::WrapRefCounted(extension)));
++    }
+     std::move(callback)->sendSuccess(extension->id());
+     return;
+   }
+diff --git a/chrome/browser/devtools/protocol/extensions_handler.h b/chrome/browser/devtools/protocol/extensions_handler.h
+index 95300ed8bbfcc4d24c61a88dec9aa85e8f3a126e..fd64106b11078babe6451f3739e13e5274c82e1a 100644
+--- a/chrome/browser/devtools/protocol/extensions_handler.h
++++ b/chrome/browser/devtools/protocol/extensions_handler.h
+@@ -10,8 +10,10 @@
+ #include "chrome/browser/devtools/protocol/protocol.h"
+ #include "extensions/browser/api/storage/storage_frontend.h"
+ #include "extensions/common/extension.h"
++#include "extensions/common/extension_id.h"
+ 
+ namespace content {
++class BrowserContext;
+ class DevToolsAgentHostClient;
+ }
+ 
+@@ -37,6 +39,8 @@ class ExtensionsHandler : public protocol::Extensions::Backend {
+                     std::optional<bool> enable_in_incognito,
+                     std::unique_ptr<LoadUnpackedCallback> callback) override;
+   void OnLoaded(std::unique_ptr<LoadUnpackedCallback> callback,
++                base::WeakPtr<content::BrowserContext> install_context,
++                extensions::ExtensionIdSet existing_unowned_ids,
+                 const extensions::Extension* extension,
+                 const base::FilePath&,
+                 const std::u16string& err);
+diff --git a/content/browser/devtools/devtools_agent_host_impl.cc b/content/browser/devtools/devtools_agent_host_impl.cc
+index 2c6bbd4515c0457d0383f807cd21e8a87970338c..3b6de9180d55519816cbe1de10879bd7e2f37826 100644
+--- a/content/browser/devtools/devtools_agent_host_impl.cc
++++ b/content/browser/devtools/devtools_agent_host_impl.cc
+@@ -36,6 +36,7 @@
+ #include "content/public/browser/content_browser_client.h"
+ #include "content/public/browser/devtools_external_agent_proxy_delegate.h"
+ #include "content/public/browser/devtools_manager_delegate.h"
++#include "content/public/browser/devtools_remote_extension_access.h"
+ #include "content/public/browser/devtools_socket_factory.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/weak_document_ptr.h"
+@@ -87,9 +88,16 @@ void SetDevToolsHttpHandler(std::unique_ptr<DevToolsHttpHandler> handler) {
+   GetDevToolsHttpHandler() = std::move(handler);
+ }
+ 
+-void SetDevToolsPipeHandler(std::unique_ptr<DevToolsPipeHandler> handler) {
++std::unique_ptr<DevToolsPipeHandler>& GetDevToolsPipeHandler() {
+   static base::NoDestructor<std::unique_ptr<DevToolsPipeHandler>> instance;
+-  *instance = std::move(handler);
++  return *instance;
++}
++
++DevToolsPipeHandler* GetOwningPipe(DevToolsAgentHostClient* client) {
++  DevToolsPipeHandler* pipe = GetDevToolsPipeHandler().get();
++  return pipe && client && pipe == client->GetRemoteDebuggingRootClient()
++             ? pipe
++             : nullptr;
+ }
+ 
+ #if BUILDFLAG(IS_WIN)
+@@ -258,8 +266,8 @@ void DevToolsAgentHost::StartRemoteDebuggingPipeHandler(
+     return;
+   }
+ #endif
+-  SetDevToolsPipeHandler(std::make_unique<DevToolsPipeHandler>(
+-      read_fd, write_fd, std::move(on_disconnect)));
++  GetDevToolsPipeHandler() = std::make_unique<DevToolsPipeHandler>(
++      read_fd, write_fd, std::move(on_disconnect));
+ }
+ 
+ // static
+@@ -277,7 +285,68 @@ std::string DevToolsAgentHost::GetRemoteDebuggingServerAddress() {
+ 
+ // static
+ void DevToolsAgentHost::StopRemoteDebuggingPipeHandler() {
+-  SetDevToolsPipeHandler(nullptr);
++  GetDevToolsPipeHandler().reset();
++}
++
++void RegisterRemoteDebuggingExtension(
++    DevToolsAgentHostClient* client,
++    std::string extension_id,
++    base::RepeatingCallback<bool(BrowserContext*)> is_enabled) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  if (auto* pipe = GetOwningPipe(client)) {
++    pipe->RegisterExtension(std::move(extension_id), std::move(is_enabled));
++  }
++}
++
++bool MayDebugRemoteExtension(DevToolsAgentHostClient* client,
++                            BrowserContext* browser_context,
++                            const GURL& url) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  if (!browser_context || !url.is_valid() || !url.SchemeIs("chrome-extension")) {
++    return false;
++  }
++  auto* pipe = GetOwningPipe(client);
++  return pipe && pipe->MayDebugExtension(browser_context, url.host());
++}
++
++bool AllowRemoteDebuggingTargetUrl(
++    DevToolsManagerDelegate* delegate,
++    DevToolsAgentHostClient* client,
++    BrowserContext* browser_context,
++    DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url) {
++  if (!delegate) {
++    return true;
++  }
++  if (!delegate->AllowRemoteDebugging()) {
++    return false;
++  }
++  if (delegate->AllowRemoteDebuggingTargetOperation(operation, target_type,
++                                                    url)) {
++    return true;
++  }
++
++  using Operation = DevToolsManagerDelegate::RemoteDebuggingTargetOperation;
++  switch (operation) {
++    case Operation::kEnumerate:
++    case Operation::kGetInfo:
++    case Operation::kAttach:
++    case Operation::kNavigate:
++    case Operation::kActivate:
++    case Operation::kClose:
++      return (target_type == DevToolsAgentHost::kTypePage ||
++              target_type == DevToolsAgentHost::kTypeTab ||
++              target_type == DevToolsAgentHost::kTypeFrame ||
++              target_type == DevToolsAgentHost::kTypeServiceWorker) &&
++             MayDebugRemoteExtension(client, browser_context, url);
++    case Operation::kWebSocketConnect:
++    case Operation::kCreate:
++    case Operation::kExposeDevToolsProtocol:
++    case Operation::kOpenDevTools:
++      return false;
++  }
++  return false;
+ }
+ 
+ DevToolsAgentHostImpl::DevToolsAgentHostImpl(const std::string& id)
+@@ -436,8 +505,9 @@ bool DevToolsAgentHostImpl::IsRemoteDebuggingTargetOperationAllowed(
+                                 RemoteDebuggingTargetOperation::kOpenDevTools) {
+       return true;
+     }
+-    return !delegate || delegate->AllowRemoteDebuggingTargetOperation(
+-                            target_operation, target->GetType(), target_url);
++    return AllowRemoteDebuggingTargetUrl(
++        delegate, client, target->GetBrowserContext(), target_operation,
++        target->GetType(), target_url);
+   };
+ 
+   if (!allow_target(target, operation, allow_creation_claim)) {
+diff --git a/content/browser/devtools/devtools_pipe_handler.cc b/content/browser/devtools/devtools_pipe_handler.cc
+index baf89d2badd59a2c4e07a9091ba33c04c15d9b04..12571c73da15ba1662abac9e146b8b0bb9422d60 100644
+--- a/content/browser/devtools/devtools_pipe_handler.cc
++++ b/content/browser/devtools/devtools_pipe_handler.cc
+@@ -428,10 +428,26 @@ DevToolsPipeHandler::DevToolsPipeHandler(int read_fd,
+     Shutdown();
+ }
+ 
++void DevToolsPipeHandler::RegisterExtension(
++    std::string extension_id,
++    base::RepeatingCallback<bool(BrowserContext*)> is_enabled) {
++  if (!shutting_down_) {
++    enabled_extensions_.insert_or_assign(std::move(extension_id),
++                                         std::move(is_enabled));
++  }
++}
++
++bool DevToolsPipeHandler::MayDebugExtension(BrowserContext* context,
++                                           std::string_view extension_id) {
++  const auto extension = enabled_extensions_.find(extension_id);
++  return extension != enabled_extensions_.end() && extension->second.Run(context);
++}
++
+ void DevToolsPipeHandler::Shutdown() {
+   if (shutting_down_)
+     return;
+   shutting_down_ = true;
++  enabled_extensions_.clear();
+ 
+   // Disconnect from the target.
+   CHECK(browser_target_, base::NotFatalUntil::M159);
+diff --git a/content/browser/devtools/devtools_pipe_handler.h b/content/browser/devtools/devtools_pipe_handler.h
+index 3c9a5c19257b83ca594b780a930e04774680d49b..86cf913d253f5b625e1d8ee21cdc88265101ab49 100644
+--- a/content/browser/devtools/devtools_pipe_handler.h
++++ b/content/browser/devtools/devtools_pipe_handler.h
+@@ -18,6 +18,7 @@
+ 
+ namespace content {
+ 
++class BrowserContext;
+ class PipeReaderBase;
+ class PipeWriterBase;
+ 
+@@ -56,6 +57,11 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
+   bool AllowUnsafeOperations() override;
+   std::string GetTypeForMetrics() override;
+ 
++  void RegisterExtension(
++      std::string extension_id,
++      base::RepeatingCallback<bool(BrowserContext*)> is_enabled);
++  bool MayDebugExtension(BrowserContext* context, std::string_view extension_id);
++
+   void Shutdown();
+ 
+  private:
+@@ -75,6 +81,8 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
+   int read_fd_;
+   int write_fd_;
+   bool shutting_down_ = false;
++  std::map<std::string, base::RepeatingCallback<bool(BrowserContext*)>,
++           std::less<>> enabled_extensions_;
+   std::map<std::string, WeakDocumentPtr> owned_target_documents_;
+   std::vector<std::map<std::string, WeakDocumentPtr>>
+       provisional_target_document_scopes_;
+diff --git a/content/browser/devtools/protocol/page_handler.cc b/content/browser/devtools/protocol/page_handler.cc
+index 33fe81516f05d5e2945dc42cb0606c1ee646047f..392dc261546f285749370c055b85c64e4b62bd2b 100644
+--- a/content/browser/devtools/protocol/page_handler.cc
++++ b/content/browser/devtools/protocol/page_handler.cc
+@@ -57,6 +57,7 @@
+ #include "content/public/browser/file_select_listener.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/devtools_remote_extension_access.h"
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/web_contents.h"
+@@ -115,10 +116,11 @@ bool IsRemoteDebuggingNavigationAllowed(DevToolsSession* session,
+       DevToolsManager::GetInstance()->delegate();
+   DevToolsAgentHost* agent_host = session->GetAgentHost();
+   return !delegate ||
+-         (agent_host && delegate->AllowRemoteDebuggingTargetOperation(
+-                            DevToolsManagerDelegate::
+-                                RemoteDebuggingTargetOperation::kNavigate,
+-                            agent_host->GetType(), url));
++         (agent_host &&
++          AllowRemoteDebuggingTargetUrl(
++              delegate, client, agent_host->GetBrowserContext(),
++              DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kNavigate,
++              agent_host->GetType(), url));
+ }
+ 
+ using BitmapEncoder =
+diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
+index 7de77a7bae3c2f6e5772442856c6d8c53af7bd7e..4ef32128699b1c0e91e5d0322435520f2396f3cf 100644
+--- a/content/browser/devtools/render_frame_devtools_agent_host.cc
++++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
+@@ -70,6 +70,7 @@
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/content_browser_client.h"
++#include "content/public/browser/devtools_remote_extension_access.h"
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/network_service_instance.h"
+ #include "content/public/browser/render_frame_host.h"
+@@ -410,8 +411,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
+           policy_url = origin.GetURL();
+         }
+       }
+-      if (delegate &&
+-          !delegate->AllowRemoteDebuggingTargetOperation(
++      if (!AllowRemoteDebuggingTargetUrl(
++              delegate, session->GetClient(), descendant->GetBrowserContext(),
+               DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
+               DevToolsAgentHost::kTypeFrame, policy_url)) {
+         descendants_allowed = false;
+@@ -1236,7 +1237,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+           agent_host->GetId(), frame_host->GetWeakDocumentPtr());
+   return owns_initial_blank_target || !manager->delegate() ||
+          (agent_host &&
+-          manager->delegate()->AllowRemoteDebuggingTargetOperation(
++          AllowRemoteDebuggingTargetUrl(
++              manager->delegate(), session->GetClient(),
++              frame_host->GetBrowserContext(),
+               DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
+               agent_host->GetType(), frame_host->GetLastCommittedURL()));
+ }
+@@ -1255,10 +1258,11 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSessionForNavigation(
+       DevToolsManager::GetInstance()->delegate();
+   DevToolsAgentHost* agent_host = session->GetAgentHost();
+   return !delegate ||
+-         (agent_host && delegate->AllowRemoteDebuggingTargetOperation(
+-                            DevToolsManagerDelegate::
+-                                RemoteDebuggingTargetOperation::kNavigate,
+-                            agent_host->GetType(), url));
++         (agent_host &&
++          AllowRemoteDebuggingTargetUrl(
++              delegate, session->GetClient(), agent_host->GetBrowserContext(),
++              DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kNavigate,
++              agent_host->GetType(), url));
+ }
+ 
+ void RenderFrameDevToolsAgentHost::UpdateResourceLoaderFactories() {
+diff --git a/content/public/browser/BUILD.gn b/content/public/browser/BUILD.gn
+index 790d6657077abd23c475e8570668b24c5ca7729b..2a86e74146b3d78babaa547a855739e9b71b9967 100644
+--- a/content/public/browser/BUILD.gn
++++ b/content/public/browser/BUILD.gn
+@@ -151,6 +151,7 @@ source_set("browser_sources") {
+     "devtools_frontend_host.h",
+     "devtools_manager_delegate.cc",
+     "devtools_manager_delegate.h",
++    "devtools_remote_extension_access.h",
+     "devtools_network_transaction_factory.h",
+     "devtools_socket_factory.h",
+     "digital_credentials_cross_device.h",
+diff --git a/content/public/browser/devtools_remote_extension_access.h b/content/public/browser/devtools_remote_extension_access.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3c675e90f02be2c2e7547e4dc583d1b5cb46111c
+--- /dev/null
++++ b/content/public/browser/devtools_remote_extension_access.h
+@@ -0,0 +1,41 @@
++// Copyright 2026 GCSA
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CONTENT_PUBLIC_BROWSER_DEVTOOLS_REMOTE_EXTENSION_ACCESS_H_
++#define CONTENT_PUBLIC_BROWSER_DEVTOOLS_REMOTE_EXTENSION_ACCESS_H_
++
++#include <string>
++
++#include "base/functional/callback_forward.h"
++#include "content/common/content_export.h"
++#include "content/public/browser/devtools_manager_delegate.h"
++
++class GURL;
++
++namespace content {
++
++class BrowserContext;
++class DevToolsAgentHostClient;
++
++// 授权仅由安装扩展的浏览器调试管道持有。回调校验扩展当前仍处于启用状态。
++CONTENT_EXPORT void RegisterRemoteDebuggingExtension(
++    DevToolsAgentHostClient* client,
++    std::string extension_id,
++    base::RepeatingCallback<bool(BrowserContext*)> is_enabled);
++
++CONTENT_EXPORT bool MayDebugRemoteExtension(DevToolsAgentHostClient* client,
++                                           BrowserContext* browser_context,
++                                           const GURL& url);
++
++bool AllowRemoteDebuggingTargetUrl(
++    DevToolsManagerDelegate* delegate,
++    DevToolsAgentHostClient* client,
++    BrowserContext* browser_context,
++    DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url);
++
++}  // namespace content
++
++#endif  // CONTENT_PUBLIC_BROWSER_DEVTOOLS_REMOTE_EXTENSION_ACCESS_H_
+-- 
+2.52.0
+

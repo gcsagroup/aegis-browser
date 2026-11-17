@@ -50,6 +50,7 @@ export class SettingsAegisPageElement extends PolymerElement {
     const titles = new Map([
       ['home', 'aegisSettingsTitle'], ['ai', 'aegisAiTitle'], ['experiments', 'aegisExperimentsTitle'],
       ['downloads', 'aegisDownloadsTitle'], ['tools', 'aegisToolsTitle'], ['enhancements', 'aegisEnhancementsTitle'],
+      ['ocr', 'aegisOcrTitle'],
       ['reading', 'aegisReadingTitle'], ['gestures', 'aegisGesturesTitle'], ['privacy', 'aegisPrivacyTitle'],
     ]);
     return loadTimeData.getString(titles.get(mode) || 'aegisEnhancementsTitle');
@@ -117,6 +118,7 @@ export class SettingsAegisPageElement extends PolymerElement {
     if (typeof id !== 'string' || !/^settings-\d+$/.test(id) || typeof method !== 'string' || !Array.isArray(args)) return;
     const signatures = new Map<string, string[]>(Object.entries({
       getStatus: [], setModuleEnabled: ['string', 'boolean'],
+      getImageOcrSettings: [], saveImageOcrSettings: ['string', 'string'],
       // <if expr="is_macosx">
       getCurrentAccessAccount: [],
       // </if>

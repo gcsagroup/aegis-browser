@@ -4,6 +4,7 @@
   "use strict";
   const uiText = value => globalThis.AegisI18n?.t(value) || value;
   globalThis.AegisI18n?.translate(document);
+  const maximumBytes = globalThis.AegisEnhancementsCore.limits.markdown;
   const $ = (id) => document.getElementById(id);
   let current = { text: "", title: uiText("Markdown 阅读"), baseURL: "", resources: {} },
     remote = false,
@@ -93,7 +94,6 @@
       ALLOW_DATA_ATTR: false,
     });
     $("document").innerHTML = clean;
-    $("source").textContent = current.text;
     $("outline").replaceChildren();
     const used = new Map();
     for (const header of $("document").querySelectorAll("h1,h2,h3,h4,h5,h6")) {
@@ -174,9 +174,10 @@
     if (
       !payload ||
       typeof payload.text !== "string" ||
-      new TextEncoder().encode(payload.text).length > 2097152
+      payload.text.length > maximumBytes ||
+      new TextEncoder().encode(payload.text).length > maximumBytes
     ) {
-      $("notice").textContent = uiText("文档超过 2 MiB 或格式无效，请查看原始文件。");
+      $("notice").textContent = uiText("文档超过 16 MiB 或格式无效，请查看原始文件。");
       return false;
     }
     if (typeof payload.iosToken === "string") iosRevision = payload.iosRevision;
@@ -190,6 +191,7 @@
     remote = false;
     $("remote-images").textContent = "加载外部图片";
     $("source").hidden = true;
+    $("source").textContent = "";
     $("document").hidden = false;
     $("source-toggle").setAttribute("aria-pressed", "false");
     $("findbar").hidden = true;
@@ -255,7 +257,9 @@
     viewState();
   };
   $("source-toggle").onclick = () => {
-    $("source").hidden = !$("source").hidden;
+    const source = $("source");
+    source.hidden = !source.hidden;
+    if (!source.hidden && !source.hasChildNodes()) source.textContent = current.text;
     $("document").hidden = !$("source").hidden;
     $("source-toggle").setAttribute("aria-pressed", String(!$("source").hidden));
     viewState();
