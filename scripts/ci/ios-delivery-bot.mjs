@@ -17,7 +17,7 @@ export async function githubRequest(path, {token, method = 'GET', body} = {}) {
         ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
       body: body === undefined ? undefined : JSON.stringify(body)});
   } catch { throw new Error('GitHub request outcome unavailable; reconcile before repeating a mutation'); }
-  requireValue(response.ok, 'GitHub request failed: HTTP '+response.status);
+  if (!response.ok) throw Object.assign(new Error('GitHub request failed: HTTP '+response.status), {status: response.status});
   try { return response.status === 204 ? null : await response.json(); }
   catch { throw new Error('GitHub response unavailable; reconcile before repeating a mutation'); }
 }
@@ -93,8 +93,18 @@ export async function driveDelivery({environment = process.env, api, quality, re
     const url = 'https://github.com/'+REPOSITORY+'/actions/runs/'+id;
     const retained = {id, attempt: 1, operation, url, approvedSourceSha: environment.GITHUB_SHA, version: inputs.version, build: inputs.build};
     recordRun({...retained, state: 'dispatched'});
+    let observed = false, invisibleReads = 0;
     for (let poll = 0; poll < maxPolls; poll++) {
-      const run = await api(PREFIX+'/actions/runs/'+id);
+      let run;
+      try { run = await api(PREFIX+'/actions/runs/'+id); }
+      catch (error) {
+        // A fresh dispatch receipt can precede visibility of its exact run.
+        if (observed || error.status !== 404 || invisibleReads >= 4 || poll+1 >= maxPolls) throw error;
+        invisibleReads++;
+        await sleep(pollMs);
+        continue;
+      }
+      observed = true;
       const actor = user => user?.type === 'Bot' && user.id === policy.actorId && user.login === policy.slug+'[bot]';
       requireValue(run?.id === id && run.run_attempt === 1 && run.head_sha === environment.GITHUB_SHA && run.head_branch === 'main' &&
         run.repository?.id === REPOSITORY_ID && run.repository.full_name === REPOSITORY &&

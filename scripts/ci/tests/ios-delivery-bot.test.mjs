@@ -157,3 +157,69 @@ test('foreign repository paths, excess token permissions and invalid expiry fail
     await assert.rejects(api('/repos/other/repo'), /canonical repository/iu);
   }
 });
+
+
+test('fresh child visibility retries only GET on the retained run before continuing', async () => {
+  const {driveDelivery} = await load();
+  const f = fixture();
+  const reads = new Map();
+  const receipts = [];
+  let sleeps = 0;
+  const api = (path, options) => {
+    if (path.includes('/actions/runs/')) {
+      const count = (reads.get(path) || 0) + 1;
+      reads.set(path, count);
+      if (count <= 2) throw Object.assign(new Error('not visible'), {status: 404});
+    }
+    return f.api(path, options);
+  };
+  const result = await driveDelivery({...f, api, recordRun: row => receipts.push(row), sleep: async () => { sleeps++; }});
+  assert.deepEqual(result.runs.map(row => row.id), [200, 201]);
+  assert.equal(f.requests.length, 2);
+  assert.deepEqual([...reads.values()], [3, 3]);
+  assert.equal(sleeps, 4);
+  assert.deepEqual(receipts.map(row => [row.id, row.state]), [[200, 'dispatched'], [200, 'completed'], [201, 'dispatched'], [201, 'completed']]);
+});
+test('persistent initial 404 is bounded and never redispatches a mutation', async () => {
+  const {driveDelivery} = await load();
+  const f = fixture();
+  let reads = 0;
+  const receipts = [];
+  const api = (path, options) => {
+    if (path.includes('/actions/runs/')) { reads++; throw Object.assign(new Error('not visible'), {status: 404}); }
+    return f.api(path, options);
+  };
+  await assert.rejects(driveDelivery({...f, api, recordRun: row => receipts.push(row)}), /not visible/);
+  assert.equal(reads, 5);
+  assert.equal(f.requests.length, 1);
+  assert.deepEqual(receipts.map(row => [row.id, row.state]), [[200, 'dispatched']]);
+});
+test('a visible child disappearing and non-404 errors fail without further reads', async () => {
+  const {driveDelivery} = await load();
+  for (const status of [403, 500, 404]) {
+    const f = fixture({mutate: row => ({...row, status: 'queued', conclusion: null})});
+    let reads = 0;
+    const api = (path, options) => {
+      if (path.includes('/actions/runs/')) {
+        reads++;
+        if (status !== 404 || reads > 1) throw Object.assign(new Error('read rejected'), {status});
+      }
+      return f.api(path, options);
+    };
+    await assert.rejects(driveDelivery({...f, api}), /read rejected/);
+    assert.equal(reads, status === 404 ? 2 : 1);
+    assert.equal(f.requests.length, 1);
+  }
+});
+test('GitHub HTTP errors expose status for safe read classification without response secrets', async () => {
+  const {githubRequest} = await load();
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({ok: false, status: 404, json: async () => ({secret: 'do not expose'})});
+  try {
+    await assert.rejects(githubRequest('/repos/'+repository+'/actions/runs/200', {token: 'private-token'}), error => {
+      assert.equal(error.status, 404);
+      assert.equal(error.message, 'GitHub request failed: HTTP 404');
+      return true;
+    });
+  } finally { globalThis.fetch = original; }
+});
