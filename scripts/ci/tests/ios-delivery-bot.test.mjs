@@ -8,13 +8,19 @@ const policy = {appId: 40, slug: 'aegis-delivery', actorId: 50};
 const environment = {GITHUB_REPOSITORY: repository, GITHUB_SHA: sha,
   AEGIS_IOS_DELIVERY_BOT: JSON.stringify(policy), BOT_INPUTS: JSON.stringify({operation: 'Package and upload', version: '1.1.0', build: '4', product: 'Beta', signing_mode: 'manual'})};
 const load = () => import('../ios-delivery-bot.mjs');
-function fixture({failure, mutate = value => value, dispatchError = false} = {}) {
+function fixture({failure, mutate = value => value, mutateJobs = value => value, dispatchError = false} = {}) {
   const requests = [];
   const runs = new Map();
   let next = 200;
   const api = async (path, options = {}) => {
     if (path === '/repos/'+repository) return {id: 1348409663, full_name: repository, default_branch: 'main'};
     if (path.endsWith('/git/ref/heads/main')) return {object: {sha}};
+    const inventory = path.match(/\/actions\/runs\/(\d+)\/attempts\/1\/jobs\?per_page=100$/u);
+    if (inventory) {
+      const jobs = ['ios-package', 'seal-package', 'upload-new'].map((name, index) => ({id: 300+index,
+        name, run_id: Number(inventory[1]), run_attempt: 1, head_sha: sha, status: 'completed', conclusion: 'success'}));
+      return mutateJobs({total_count: jobs.length, jobs});
+    }
     if (options.method === 'POST') {
       requests.push({path, body: options.body});
       if (dispatchError) throw new Error('secret response');
@@ -44,6 +50,23 @@ test('failed producer and ambiguous dispatch stop without a second mutation', as
   for (const options of [{failure: 'failure'}, {dispatchError: true}]) {
     const f = fixture(options);
     await assert.rejects(driveDelivery(f), /failed|unknown|reconcile/iu);
+    assert.equal(f.requests.length, 1);
+  }
+});
+test('a green producer with a skipped, missing or unbound upload never advances to Wait', async () => {
+  const {driveDelivery} = await load();
+  for (const patch of [{conclusion: 'skipped'}, {conclusion: 'failure'}, {status: 'queued'},
+    {run_id: 201}, {run_attempt: 2}, {head_sha: 'b'.repeat(40)}]) {
+    const f = fixture({mutateJobs: value => ({...value, jobs: value.jobs.map(job => job.name === 'upload-new' ? {...job, ...patch} : job)})});
+    const receipts = [];
+    await assert.rejects(driveDelivery({...f, recordRun: row => receipts.push(row)}), /upload|jobs/iu);
+    assert.equal(f.requests.length, 1);
+    assert.deepEqual(receipts.map(row => row.state), ['dispatched']);
+  }
+  for (const mutateJobs of [() => ({total_count: 0, jobs: []}), value => ({...value, total_count: 101}),
+    value => ({...value, jobs: [...value.jobs, value.jobs[2]], total_count: 4})]) {
+    const f = fixture({mutateJobs});
+    await assert.rejects(driveDelivery(f), /upload|jobs/iu);
     assert.equal(f.requests.length, 1);
   }
 });
@@ -166,7 +189,7 @@ test('fresh child visibility retries only GET on the retained run before continu
   const receipts = [];
   let sleeps = 0;
   const api = (path, options) => {
-    if (path.includes('/actions/runs/')) {
+    if (/\/actions\/runs\/\d+$/u.test(path)) {
       const count = (reads.get(path) || 0) + 1;
       reads.set(path, count);
       if (count <= 2) throw Object.assign(new Error('not visible'), {status: 404});
