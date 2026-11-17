@@ -36,7 +36,7 @@
 
 ### Task 2: Scoped App controller
 
-**Files:** `scripts/ci/ios-delivery-bot.mjs`, `scripts/ci/tests/ios-delivery-bot.test.mjs`, `.github/workflows/ios-delivery-bot.yml`.
+**Files:** `scripts/ci/ios-delivery-bot.mjs`, `scripts/ci/run-ios-delivery-bot.sh`, `scripts/ci/tests/ios-delivery-bot.test.mjs`, `scripts/release/test_ios_delivery_bot_summary.py`, `.github/workflows/ios-delivery-bot.yml`.
 
 - [x] Write tests for request scope, exact run identity, failure and ambiguous writes.
 - [x] Implement token exchange, dispatch, bounded polling and automatic Wait after upload.

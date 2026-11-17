@@ -68,6 +68,18 @@ test('invalid coordinates, production operations and non-green sources never dis
   await assert.rejects(driveDelivery({...f, quality: async () => false}), /quality/iu);
   assert.equal(f.requests.length, 0);
 });
+test('version parsing accepts bounded decimal components and rejects malformed or excessive components', async () => {
+  const {driveDelivery} = await load();
+  for (const [version, accepted] of [['1.1', true], ['1.1.0', true], ['0000000000.1.0', true],
+    ['10000000000.1.0', false], ['1..0', false], ['1.1.0.4', false], ['１.1.0', false], ['1.1.0\n', false],
+    ['1.'+'1'.repeat(5000)+'.0', false]]) {
+    const f = fixture();
+    const inputs = {...JSON.parse(environment.BOT_INPUTS), operation: 'Status', version};
+    const task = driveDelivery({...f, environment: {...environment, BOT_INPUTS: JSON.stringify(inputs)}});
+    if (accepted) assert.equal((await task).version, version);
+    else { await assert.rejects(task); assert.equal(f.requests.length, 0); }
+  }
+});
 test('Draft uses the existing Full workflow without granting tag or release writes', async () => {
   const {driveDelivery} = await load();
   const f = fixture();

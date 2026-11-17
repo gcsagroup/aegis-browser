@@ -49,6 +49,11 @@ identity and requires status reconciliation. Refresh installation tokens only as
 needed while polling. The Bot key stays in its own protected controller
 environment and is never passed to signing/store jobs or printed.
 
+The workflow shell adapter validates an existing, owned, non-symlink summary
+command file under the canonical runner temporary directory before starting the
+App client, and streams receipts there while preserving controller failure codes.
+Version components are checked individually as bounded ASCII decimals.
+
 ## Acceptance
 
 Behavior tests cover configured Bot acceptance, impersonation, lower human roles,

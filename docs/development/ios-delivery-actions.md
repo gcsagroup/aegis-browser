@@ -259,6 +259,8 @@ local CLI and candidate-tag pushes do not acquire Bot authorization.
 The controller is never rerun to repeat mutations. Each successful dispatch is
 immediately recorded in the log and Summary with its run ID, expected attempt,
 approved SHA and URL; completed producer records survive later failures.
+The shell adapter streams those records only to an existing, owned, non-symlink
+`step_summary_*` command file beneath the runner's canonical temporary directory.
 Preserve those child run URLs and the package receipt. A failed, timed-out or ambiguous dispatch/upload
 requires read-only **Status**/**Wait** reconciliation with the same coordinate;
 the controller does not retry writes or select a new build automatically. If main

@@ -1,5 +1,4 @@
 import {sign} from 'node:crypto';
-import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {requireGreenQuality} from './promotion-quality.mjs';
 
@@ -57,8 +56,10 @@ function requestInputs(environment) {
     Object.keys(value).every(key => ['operation', 'version', 'build', 'product', 'signing_mode'].includes(key)) &&
     Object.values(value).every(item => typeof item === 'string'), 'Unknown Bot inputs');
   const {operation = 'Status', version, build, product = 'Beta', signing_mode = 'cloud'} = value;
+  const parts = (version || '').split('.');
+  const validVersion = [2, 3].includes(parts.length) && parts.every(part => part.length > 0 && part.length <= 10 && !/[^0-9]/u.test(part));
   requireValue(OPERATIONS.includes(operation) && ['Alpha', 'Beta', 'Release'].includes(product) &&
-    ['cloud', 'manual'].includes(signing_mode) && /^[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?$/u.test(version || '') &&
+    ['cloud', 'manual'].includes(signing_mode) && validVersion &&
     /^[1-9][0-9]{0,9}$/u.test(build || ''), 'Invalid Bot operation or package coordinate');
   return {operation, version, build, product, signing_mode, private_beta: 'no', approved_source_sha: environment.GITHUB_SHA};
 }
@@ -120,9 +121,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const policy = JSON.parse(process.env.AEGIS_IOS_DELIVERY_BOT || 'null');
     const api = installationClient({appId: policy?.appId, installationId: Number(process.env.AEGIS_IOS_BOT_INSTALLATION_ID), privateKey: process.env.AEGIS_IOS_BOT_PRIVATE_KEY});
     const recordRun = receipt => {
+      console.log('- '+receipt.operation+' · '+receipt.state+' · '+receipt.version+'('+receipt.build+') · attempt '+receipt.attempt+
+        ' · approved `'+receipt.approvedSourceSha+'`: [run '+receipt.id+']('+receipt.url+')');
       console.log(JSON.stringify({type: 'ios-delivery-bot-receipt', ...receipt}));
-      if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-        '- '+receipt.operation+' · '+receipt.state+' · attempt '+receipt.attempt+': '+receipt.url+'\n');
     };
     const result = await driveDelivery({api, recordRun});
     console.log(JSON.stringify(result));

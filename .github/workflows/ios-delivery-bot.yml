@@ -55,4 +55,4 @@ jobs:
           AEGIS_IOS_DELIVERY_BOT: ${{ vars.AEGIS_IOS_DELIVERY_BOT }}
           AEGIS_IOS_BOT_INSTALLATION_ID: ${{ vars.AEGIS_IOS_BOT_INSTALLATION_ID }}
           AEGIS_IOS_BOT_PRIVATE_KEY: ${{ secrets.AEGIS_IOS_BOT_PRIVATE_KEY }}
-        run: node scripts/ci/ios-delivery-bot.mjs
+        run: bash scripts/ci/run-ios-delivery-bot.sh
