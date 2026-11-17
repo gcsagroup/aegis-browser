@@ -55,7 +55,7 @@ class HostedSigningTest(unittest.TestCase):
         self.assertFalse(hosted.has_identity(output.replace('Apple Distribution:', 'Apple Development:'), fingerprint))
 
     def test_temporary_assets_are_removed_after_success_and_failure(self):
-        for fail in (False, True):
+        for fail in (None, 'import', 'verify-cert'):
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 certificate = b'certificate'
@@ -75,14 +75,30 @@ class HostedSigningTest(unittest.TestCase):
                 environment.update({secret: base64.b64encode(profile_bytes[identifier]).decode()
                                     for identifier, secret in hosted.TARGETS.items()})
 
+                original_keychains = ['/fixture/Login Keychain.keychain-db', '/fixture/other.keychain-db']
+                active_keychains = original_keychains.copy()
+                concurrent_keychain = '/fixture/concurrent-owner.keychain-db'
+
                 def security(*args):
                     self.assertNotIn('AEGIS_IOS_DISTRIBUTION_P12_PASSWORD', os.environ)
                     if args[1:3] == ('cms', '-D'):
                         return Path(args[-1]).read_bytes()
                     if args[1] == 'create-keychain':
                         Path(args[-1]).touch()
-                    if args[1] == 'import' and fail:
+                    if args[1] == 'import' and fail == 'import':
                         raise ValueError('fixture failure')
+                    if args[1] == 'list-keychains':
+                        if '-s' in args:
+                            active_keychains[:] = args[5:]
+                        return '\n'.join(json.dumps(v) for v in active_keychains).encode()
+                    if args[1] == 'delete-keychain':
+                        active_keychains[:] = [v for v in active_keychains if v != args[-1]]
+                    if args[1] == 'verify-cert':
+                        self.assertEqual(Path(args[args.index('-c') + 1]).read_bytes(), certificate)
+                        self.assertTrue(set(original_keychains) <= set(active_keychains))
+                        if fail == 'verify-cert':
+                            active_keychains.append(concurrent_keychain)
+                            raise ValueError('fixture chain failure')
                     if args[1] == 'find-identity':
                         return f'1) {fingerprint} "Apple Distribution: Fixture"'.encode()
                     return b''
@@ -94,6 +110,9 @@ class HostedSigningTest(unittest.TestCase):
                     else:
                         hosted.setup()
                         self.assertEqual(len(list(root.rglob('*.mobileprovision'))), 6)
+                        self.assertEqual(active_keychains[1:], original_keychains)
+                        active_keychains.append(concurrent_keychain)
                         hosted.cleanup()
+                    self.assertEqual(active_keychains, original_keychains + ([] if fail == 'import' else [concurrent_keychain]))
                     self.assertFalse((root / 'aegis-ios-signing').exists())
                     self.assertEqual(list(root.rglob('*.mobileprovision')), [])
