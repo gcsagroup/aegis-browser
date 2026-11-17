@@ -543,15 +543,17 @@ final class SettingsLayoutUITests: XCTestCase {
             }
         }
         enterFeatureSettings(app)
-        for (entry, title) in [("aegis-gestures-settings", "鼠标手势"),
-                               ("aegis-tools-settings", "本机工具连接"),
-                               ("aegis-experiments-settings", "实验功能")] {
-            let link = app.buttons[entry]
-            XCTAssertTrue(reveal(link, app)); assertInsideWindow(link, app); link.tap()
-            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
-            capture(title, app)
-            app.navigationBars.buttons.element(boundBy: 0).tap()
-        }
+        XCTAssertFalse(app.buttons["aegis-gestures-settings"].exists)
+        XCTAssertFalse(app.buttons["aegis-tools-settings"].exists)
+        let experiments = app.buttons["aegis-experiments-settings"]
+        XCTAssertTrue(reveal(experiments, app))
+        assertInsideWindow(experiments, app)
+        experiments.tap()
+        XCTAssertTrue(app.navigationBars["实验功能"].waitForExistence(timeout: 5))
+        app.buttons["网站设置与权限"].tap()
+        XCTAssertTrue(app.staticTexts["已保存的网站设置"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         let downloads = app.buttons["aegis-downloads-settings"]
         XCTAssertTrue(reveal(downloads, app)); downloads.tap()
         XCTAssertTrue(app.textFields["download-url"].waitForExistence(timeout: 5))
@@ -565,7 +567,7 @@ final class SettingsLayoutUITests: XCTestCase {
         let entry = app.buttons["aegis-feature-settings"]
         XCTAssertTrue(reveal(entry, app)); assertInsideWindow(entry, app); entry.tap()
         XCTAssertTrue(app.navigationBars["Aegis 设置"].waitForExistence(timeout: 5))
-        capture("Aegis八类设置入口", app)
+        capture("Aegis 设置入口", app)
     }
 
     private func openSettings(_ app: XCUIApplication, title: String = "设置") {

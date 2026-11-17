@@ -888,7 +888,7 @@
    "includes": [5160],
   },
   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis/resources.grd": {
-    "META": {"sizes": {"includes": [40]}},
+    "META": {"sizes": {"includes": [64]}},
     "includes": [5170],
   },
   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis_agent/resources.grd": {

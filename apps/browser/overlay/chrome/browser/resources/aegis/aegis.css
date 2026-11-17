@@ -648,8 +648,28 @@ body[data-settings='privacy'] .page > .filters,
 body[data-settings='ai'] .page > .privacy,
 body[data-settings='ai'] .page > .browser-agent:not([hidden]),
 body[data-settings='downloads'] .page > .downloads,
+body[data-settings='ocr'] .page > #image-ocr-settings,
 body[data-settings='tools'] .page > .ai-control:not([hidden]) {
   display: block !important;
+}
+
+#image-ocr-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+#image-ocr-mode,
+#image-ocr-endpoint {
+  box-sizing: border-box;
+  display: block;
+  width: min(100%, 32rem);
+  margin: 6px 0 12px;
+}
+
+#image-ocr-official-status {
+  overflow-wrap: anywhere;
 }
 
 body[data-settings] .page > section {

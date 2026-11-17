@@ -20,7 +20,9 @@ test('第三方候选均固定精确版本和许可证', () => {
   assert.ok(lock.localModelProvider.model.weightsBytes > 0);
   assert.equal(lock.localModelProvider.model.remoteCodeAllowed, false);
   assert.equal(lock.localModelProvider.scope, 'isolated-prototype-only');
-  assert.equal(Object.keys(lock.candidates).length, 6);
+  assert.equal(Object.keys(lock.candidates).length, 7);
+  const manifest = JSON.parse(fs.readFileSync(`${PROTOTYPE_ROOT}/package.json`, 'utf8'));
+  assert.equal(lock.candidates.chromeDevtoolsMcp.version, manifest.devDependencies['chrome-devtools-mcp']);
   for (const candidate of Object.values(lock.candidates)) {
     assert.match(candidate.version, /^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$/);
     assert.ok(candidate.license.length > 0);

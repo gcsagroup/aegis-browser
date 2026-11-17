@@ -258,6 +258,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   html_source->AddString("aegisExperimentsDescription", chinese ? (traditional ? "MINIM、PhishLang 段落分析實驗，預設關閉" : "MINIM、PhishLang 段落分析实验，默认关闭") : "MINIM and PhishLang paragraph analysis experiments, off by default");
   html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
   html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
+  html_source->AddString("aegisOcrTitle",
+                         chinese ? (traditional ? "圖片文字辨識" : "图片文字识别")
+                                 : "Image text recognition");
+  html_source->AddString(
+      "aegisOcrDescription",
+      chinese ? (traditional ? "設定本機辨識與伺服器備援" : "设置本机识别与服务器兜底")
+              : "Choose a server for OCR fallback");
   html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");
   html_source->AddString("aegisAgentSettingsTitle", chinese ? (traditional ? "助手模型設定" : "助手模型设置") : "Assistant model settings");
   html_source->AddString("aegisSharedModelDescription", chinese ? (traditional ? "摘要與助手共用基礎模型連線；儲存任一模型表單會更新這個連線。助手的模型池與路由、TypeSafe 金鑰另行管理。" : "摘要与助手共用基础模型连接；保存任一模型表单会更新这个连接。助手的模型池与路由、TypeSafe 密钥另行管理。") : "Summaries and the assistant share the base model connection. Saving either model form updates that connection. The assistant model pool, routing and TypeSafe key are managed separately.");

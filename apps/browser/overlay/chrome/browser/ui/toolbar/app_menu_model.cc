@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/toolbar/app_menu_model.h"
+#include "chrome/browser/aegis/webpage_capture.h"
 
 #include <algorithm>
 #include <cmath>
@@ -904,6 +905,14 @@ SaveAndShareSubMenuModel::SaveAndShareSubMenuModel(
       features::IsRoundedIconsEnabled() ? kDriveShortcutIcon
                                         : kDriveShortcutChromeRefreshOldIcon);
   SetElementIdentifierAt(GetItemCount() - 1, AppMenuModel::kCreateShortcutItem);
+  if (aegis::CanCaptureWebpage(
+          browser->tab_strip_model()->GetActiveWebContents())) {
+    const std::string locale = g_browser_process->GetApplicationLocale();
+    AddItem(IDC_AEGIS_CAPTURE_FULL_PAGE,
+            locale == "zh-TW" ? u"整頁截圖"
+                              : locale.starts_with("zh") ? u"整页截图"
+                                                         : u"Full page screenshot");
+  }
   if (!sharing_hub::SharingIsDisabledByPolicy(browser->GetProfile()) ||
       sharing_hub::DesktopScreenshotsFeatureEnabled(browser->GetProfile())) {
     AddSeparator(ui::NORMAL_SEPARATOR);

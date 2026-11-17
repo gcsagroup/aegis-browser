@@ -19,6 +19,7 @@ for (const endpoint of ['http://127.0.0.1:57212/v1', 'https://model.example.test
   };
   let requests = 0;
   const context = vm.createContext({
+    embeddedSettings: false,
     requestSettings: async () => ({privacyAi: true, isAndroid: false}),
     withRendererPolicyWorkerStatus: value => value,
     applyStatus() {}, bindToggle() {}, listenSettingsStatus() {},

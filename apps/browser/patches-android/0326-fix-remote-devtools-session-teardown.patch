@@ -1,0 +1,119 @@
+From 2957f02d10f62ab258e23329aa7cc7aa3bf3f732 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@local>
+Date: Mon, 16 Nov 2026 17:54:54 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E8=BF=9C=E7=A8=8B=20DevTools?=
+ =?UTF-8?q?=20=E4=BC=9A=E8=AF=9D=E9=87=8D=E5=A4=8D=E9=87=8A=E6=94=BE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../protocol/devtools_protocol_browsertest.cc | 39 +++++++++++++++++++
+ .../devtools/devtools_agent_host_impl.h       |  5 +++
+ .../devtools/protocol/target_handler.cc       | 22 +++++++----
+ 3 files changed, 59 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index 813087a6bae36a4723ed479d376b78f68594fa0d..bf5ba149453007352b22e517f13dbb34e7dbd446 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -925,6 +925,45 @@ IN_PROC_BROWSER_TEST_F(
+   }
+ }
+ 
++IN_PROC_BROWSER_TEST_F(
++    AegisRemoteDevToolsProtocolTest,
++    AegisRemoteFlattenedTabDetachesOnceOnInternalNavigation) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/empty.html")));
++  content::WebContents* contents = web_contents();
++  const auto tab = content::DevToolsAgentHost::GetOrCreateForTab(contents);
++  ASSERT_TRUE(tab);
++  AttachToBrowserTarget();
++  const base::DictValue* attached = SendCommandSync(
++      "Target.attachToTarget",
++      base::DictValue().Set("targetId", tab->GetId()).Set("flatten", true));
++  ASSERT_TRUE(attached);
++  const std::string* session_id = attached->FindString("sessionId");
++  ASSERT_TRUE(session_id);
++  const std::string expected_id = *session_id;
++  ClearNotifications();
++
++  ASSERT_TRUE(
++      content::NavigateToURL(contents, GURL(chrome::kChromeUIAegisURL)));
++  const base::DictValue detached = WaitForMatchingNotification(
++      "Target.detachedFromTarget",
++      base::BindRepeating(
++          [](const std::string& id, const base::DictValue& params) {
++            const std::string* session = params.FindString("sessionId");
++            return session && *session == id;
++          },
++          expected_id));
++  EXPECT_EQ(expected_id, *detached.FindString("sessionId"));
++
++  // 根连接仍然可用，旧标签目标仍拒绝连接。
++  ASSERT_TRUE(SendCommandSync("Browser.getVersion"));
++  EXPECT_FALSE(SendCommandSync(
++      "Target.attachToTarget",
++      base::DictValue().Set("targetId", tab->GetId()).Set("flatten", true)));
++  EXPECT_FALSE(HasExistingNotification("Target.detachedFromTarget"));
++}
++
+ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
+                        InputDispatchEventsToCorrectTarget) {
+   Attach();
+diff --git a/content/browser/devtools/devtools_agent_host_impl.h b/content/browser/devtools/devtools_agent_host_impl.h
+index edda3a66f4bd71c135740c546e43de55436464b5..3dee4eef57aed401efebd87c1189cb132c78a17b 100644
+--- a/content/browser/devtools/devtools_agent_host_impl.h
++++ b/content/browser/devtools/devtools_agent_host_impl.h
+@@ -144,6 +144,11 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
+       DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
+       bool allow_creation_claim);
+ 
++  bool HasAttachedSession(DevToolsAgentHostClient* client) const {
++    const auto session = session_by_client_.find(client);
++    return session != session_by_client_.end() && session->second;
++  }
++
+   void ForceDetachRemoteDebuggingSessions(DevToolsAgentHostClient* root_client);
+   bool IsForceDetachingRemoteDebuggingSessions(
+       DevToolsAgentHostClient* root_client) const;
+diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
+index cc8de1b65af8ab14b271e7befef65f6f8f9d0192..6a511d3d4c3ea4ab1699fdb613ed884de0e6d16d 100644
+--- a/content/browser/devtools/protocol/target_handler.cc
++++ b/content/browser/devtools/protocol/target_handler.cc
+@@ -1139,15 +1139,23 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
+           host) &&
+       !policy_detaching_hosts_.contains(host)) {
+     policy_detaching_hosts_.insert(host);
+-    std::vector<Session*> sessions_to_detach;
+-    for (const auto& entry : attached_sessions_) {
+-      if (entry.second->IsAttachedTo(host->GetId())) {
+-        sessions_to_detach.push_back(entry.second.get());
++    std::vector<std::string> session_ids;
++    for (const auto& [id, session] : attached_sessions_) {
++      if (session->IsAttachedTo(host->GetId())) {
++        session_ids.push_back(id);
+       }
+     }
+-    for (Session* session : sessions_to_detach) {
+-      session->ResumeIfThrottled();
+-      session->Detach(false);
++    const auto* host_impl = static_cast<DevToolsAgentHostImpl*>(host);
++    for (const std::string& id : session_ids) {
++      const auto entry = attached_sessions_.find(id);
++      // DetachInternal 可能在移除主机会话后通知观察者。
++      // 此时由 AgentHostClosed 完成客户端销毁。
++      if (entry == attached_sessions_.end() ||
++          !host_impl->HasAttachedSession(entry->second.get())) {
++        continue;
++      }
++      entry->second->ResumeIfThrottled();
++      entry->second->Detach(false);
+     }
+     policy_detaching_hosts_.erase(host);
+   }
+-- 
+2.52.0
+

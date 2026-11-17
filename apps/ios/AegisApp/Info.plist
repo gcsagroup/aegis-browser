@@ -45,6 +45,8 @@
 	</dict>
 	<key>CFBundleDisplayName</key>
 	<string>Aegis Browser</string>
+	<key>AegisOCRServiceURL</key>
+	<string>$(AEGIS_OCR_SERVICE_URL)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

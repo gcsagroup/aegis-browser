@@ -131,27 +131,15 @@ struct AegisApp: App {
 
     var body: some Scene {
         WindowGroup(id: "browser", for: UUID.self) { $windowID in
-            AegisWindowView(id: windowID, dataStore: dataStore, workspaces: workspaceStore, windows: windows,
-                            preferences: settings.browserPreferences)
-                .environmentObject(language)
-                .environment(\.locale, language.snapshot.locale)
-                .environment(\.calendar, Calendar.autoupdatingCurrent)
-                .environment(\.timeZone, TimeZone.autoupdatingCurrent)
-                .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in language.refresh() }
-                .environmentObject(windows)
-                .environmentObject(settings)
-                .environmentObject(downloads)
-                .environmentObject(assistantTasks)
-                .environmentObject(readingLibrary)
-                .environmentObject(accountSession)
-                .environmentObject(subscriptionUsage)
-                .environmentObject(accessSiteProxyRegistry)
-                .environmentObject(hostStores)
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-                    hostStores.releaseIdleResources()
-                }
-                .preferredColorScheme(settings.colorScheme)
-                .tint(Color(red: 0.09, green: 0.47, blue: 0.37))
+#if DEBUG && targetEnvironment(simulator)
+            if let configuration = MobileDevToolsView.Configuration.current {
+                MobileDevToolsView(configuration: configuration)
+            } else {
+                browserWindow(id: windowID)
+            }
+#else
+            browserWindow(id: windowID)
+#endif
         } defaultValue: {
             windows.defaultWindowID()
         }
@@ -168,6 +156,30 @@ struct AegisApp: App {
             accountSession.usageRefresh.setActive(phase == .active)
             if phase != .active { accountSession.suspend() }
         }
+    }
+
+    private func browserWindow(id: UUID) -> some View {
+        AegisWindowView(id: id, dataStore: dataStore, workspaces: workspaceStore, windows: windows,
+                        preferences: settings.browserPreferences)
+            .environmentObject(language)
+            .environment(\.locale, language.snapshot.locale)
+            .environment(\.calendar, Calendar.autoupdatingCurrent)
+            .environment(\.timeZone, TimeZone.autoupdatingCurrent)
+            .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in language.refresh() }
+            .environmentObject(windows)
+            .environmentObject(settings)
+            .environmentObject(downloads)
+            .environmentObject(assistantTasks)
+            .environmentObject(readingLibrary)
+            .environmentObject(accountSession)
+            .environmentObject(subscriptionUsage)
+            .environmentObject(accessSiteProxyRegistry)
+            .environmentObject(hostStores)
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                hostStores.releaseIdleResources()
+            }
+            .preferredColorScheme(settings.colorScheme)
+            .tint(Color(red: 0.09, green: 0.47, blue: 0.37))
     }
 
 #if DEBUG
