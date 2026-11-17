@@ -1,0 +1,289 @@
+diff --git a/app/dispatcher/default.go b/app/dispatcher/default.go
+index cae9735..6fd3718 100644
+--- a/app/dispatcher/default.go
++++ b/app/dispatcher/default.go
+@@ -7,6 +7,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/aegismeter"
+ 	"github.com/xtls/xray-core/common/buf"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/log"
+@@ -488,6 +489,11 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
+ 		return
+ 	}
+ 
++	if aegismeter.From(ctx) != nil && handler.ProxySettings().GetType() != "xray.proxy.freedom.Config" {
++		common.Interrupt(link.Writer)
++		common.Interrupt(link.Reader)
++		return
++	}
+ 	ob.Tag = handler.Tag()
+ 	if accessMessage := log.AccessMessageFromContext(ctx); accessMessage != nil {
+ 		if tag := handler.Tag(); tag != "" {
+diff --git a/app/proxyman/outbound/handler.go b/app/proxyman/outbound/handler.go
+index 4c3b16a..e1b924f 100644
+--- a/app/proxyman/outbound/handler.go
++++ b/app/proxyman/outbound/handler.go
+@@ -11,6 +11,7 @@ import (
+ 
+ 	"github.com/xtls/xray-core/app/proxyman"
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/aegismeter"
+ 	"github.com/xtls/xray-core/common/buf"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/mux"
+@@ -176,6 +177,11 @@ func (h *Handler) Tag() string {
+ 
+ // Dispatch implements proxy.Outbound.Dispatch.
+ func (h *Handler) Dispatch(ctx context.Context, link *transport.Link) {
++	if aegismeter.From(ctx) != nil && (serial.GetMessageType(h.proxyConfig) != "xray.proxy.freedom.Config" || (h.mux != nil && h.mux.Enabled)) {
++		common.Interrupt(link.Writer)
++		common.Interrupt(link.Reader)
++		return
++	}
+ 	outbounds := session.OutboundsFromContext(ctx)
+ 	ob := outbounds[len(outbounds)-1]
+ 	content := session.ContentFromContext(ctx)
+diff --git a/proxy/freedom/freedom.go b/proxy/freedom/freedom.go
+index 6215647..6021ada 100644
+--- a/proxy/freedom/freedom.go
++++ b/proxy/freedom/freedom.go
+@@ -10,6 +10,7 @@ import (
+ 
+ 	"github.com/pires/go-proxyproto"
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/aegismeter"
+ 	"github.com/xtls/xray-core/common/buf"
+ 	"github.com/xtls/xray-core/common/crypto"
+ 	"github.com/xtls/xray-core/common/dice"
+@@ -291,6 +292,10 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+ 		defaultRule = getDefaultFinalRule(inbound)
+ 	}
+ 
++	meter := aegismeter.From(ctx)
++	if meter != nil && (ob.Target.Network != net.Network_TCP || h.config.Fragment != nil || h.usesDialerProxy || h.config.ProxyProtocol != 0 || h.config.DestinationOverride != nil) {
++		return errors.New("unsupported metered freedom configuration")
++	}
+ 	destination := ob.Target
+ 	origTargetAddr := ob.OriginalTarget.Address
+ 	if origTargetAddr == nil {
+@@ -397,6 +402,11 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+ 		}
+ 	}
+ 	defer conn.Close()
++	if meter != nil {
++		if _, ok := stat.TryUnwrapStatsConn(conn).(*net.TCPConn); !ok {
++			return errors.New("meter requires direct target TCP socket")
++		}
++	}
+ 	errors.LogInfo(ctx, "connection opened to ", destination, ", local endpoint ", conn.LocalAddr(), ", remote endpoint ", conn.RemoteAddr())
+ 
+ 	var newCtx context.Context
+@@ -418,7 +428,9 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+ 		defer timer.SetTimeout(plcy.Timeouts.DownlinkOnly)
+ 
+ 		var writer buf.Writer
+-		if destination.Network == net.Network_TCP {
++		if meter != nil {
++			writer = buf.NewWriter(aegismeter.TargetWriter{Flow: meter, Socket: conn})
++		} else if destination.Network == net.Network_TCP {
+ 			if h.config.Fragment != nil {
+ 				errors.LogDebug(ctx, "FRAGMENT", h.config.Fragment.PacketsFrom, h.config.Fragment.PacketsTo, h.config.Fragment.LengthMin, h.config.Fragment.LengthMax,
+ 					h.config.Fragment.IntervalMin, h.config.Fragment.IntervalMax, h.config.Fragment.MaxSplitMin, h.config.Fragment.MaxSplitMax)
+@@ -452,7 +464,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+ 
+ 	responseDone := func() error {
+ 		defer timer.SetTimeout(plcy.Timeouts.UplinkOnly)
+-		if destination.Network == net.Network_TCP && useSplice.Load() && proxy.IsRAWTransportWithoutSecurity(conn) { // it would be tls conn in special use case of MITM, we need to let link handle traffic
++		if destination.Network == net.Network_TCP && meter == nil && useSplice.Load() && proxy.IsRAWTransportWithoutSecurity(conn) { // it would be tls conn in special use case of MITM, we need to let link handle traffic
+ 			var writeConn net.Conn
+ 			var inTimer *signal.ActivityTimer
+ 			if inbound := session.InboundFromContext(ctx); inbound != nil && inbound.Conn != nil {
+diff --git a/proxy/proxy.go b/proxy/proxy.go
+index 6008437..7702769 100644
+--- a/proxy/proxy.go
++++ b/proxy/proxy.go
+@@ -17,6 +17,7 @@ import (
+ 
+ 	"github.com/pires/go-proxyproto"
+ 	"github.com/xtls/xray-core/app/dispatcher"
++	"github.com/xtls/xray-core/common/aegismeter"
+ 	"github.com/xtls/xray-core/common/buf"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/net"
+@@ -301,6 +302,8 @@ type VisionWriter struct {
+ 	// internal
+ 	writeOnceUserUUID  []byte
+ 	directWriteCounter stats.Counter
++	meter              *aegismeter.Flow
++	meterRaw           bool
+ 
+ 	testseed []uint32
+ }
+@@ -313,6 +316,7 @@ func NewVisionWriter(writer buf.Writer, trafficState *TrafficState, isUplink boo
+ 	}
+ 	return &VisionWriter{
+ 		Writer:            writer,
++		meter:             aegismeter.From(ctx),
+ 		trafficState:      trafficState,
+ 		ctx:               ctx,
+ 		writeOnceUserUUID: w,
+@@ -347,6 +351,7 @@ func (w *VisionWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
+ 		SuppressOuterCloseNotify(w.conn)
+ 		rawConn, _, writerCounter := UnwrapRawConn(w.conn)
+ 		w.Writer = buf.NewWriter(rawConn)
++		w.meterRaw = true
+ 		w.directWriteCounter = writerCounter
+ 		*switchToDirectCopy = false
+ 	}
+@@ -358,9 +363,28 @@ func (w *VisionWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
+ 		XtlsFilterTls(mb, w.trafficState, w.ctx)
+ 	}
+ 
++	// XtlsPadding consumes its input. Remember the exact target byte interval
++	// on its replacement buffer, including after ReshapeMultiBuffer splits.
++	type span struct{ start, end int }
++	var padded map[*buf.Buffer]span
++	if w.meter != nil {
++		padded = make(map[*buf.Buffer]span)
++	}
++	pad := func(b *buf.Buffer, command byte, long bool) *buf.Buffer {
++		start := len(w.writeOnceUserUUID) + 5
++		size := 0
++		if b != nil {
++			size = int(b.Len())
++		}
++		frame := XtlsPadding(b, command, &w.writeOnceUserUUID, long, w.ctx, w.testseed)
++		if w.meter != nil {
++			padded[frame] = span{start, start + size}
++		}
++		return frame
++	}
+ 	if *isPadding {
+ 		if len(mb) == 1 && mb[0] == nil {
+-			mb[0] = XtlsPadding(nil, CommandPaddingContinue, &w.writeOnceUserUUID, true, w.ctx, w.testseed) // we do a long padding to hide vless header
++			mb[0] = pad(nil, CommandPaddingContinue, true) // we do a long padding to hide vless header
+ 		} else {
+ 			isComplete := IsCompleteRecord(mb)
+ 			mb = ReshapeMultiBuffer(w.ctx, mb)
+@@ -377,13 +401,13 @@ func (w *VisionWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
+ 							command = CommandPaddingDirect
+ 						}
+ 					}
+-					mb[i] = XtlsPadding(b, command, &w.writeOnceUserUUID, true, w.ctx, w.testseed)
++					mb[i] = pad(b, command, true)
+ 					*isPadding = false // padding going to end
+ 					longPadding = false
+ 					continue
+ 				} else if !w.trafficState.IsTLS12orAbove && w.trafficState.NumberOfPacketToFilter <= 1 { // For compatibility with earlier vision receiver, we finish padding 1 packet early
+ 					*isPadding = false
+-					mb[i] = XtlsPadding(b, CommandPaddingEnd, &w.writeOnceUserUUID, longPadding, w.ctx, w.testseed)
++					mb[i] = pad(b, CommandPaddingEnd, longPadding)
+ 					break
+ 				}
+ 				var command byte = CommandPaddingContinue
+@@ -393,11 +417,31 @@ func (w *VisionWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
+ 						command = CommandPaddingDirect
+ 					}
+ 				}
+-				mb[i] = XtlsPadding(b, command, &w.writeOnceUserUUID, longPadding, w.ctx, w.testseed)
++				mb[i] = pad(b, command, longPadding)
+ 			}
+ 		}
+ 	}
+-	if err := w.Writer.WriteMultiBuffer(mb); err != nil {
++	if w.meter != nil {
++		defer buf.ReleaseMulti(mb)
++		var sink io.Writer = w.conn
++		path := "vision_plain"
++		if w.meterRaw {
++			sink, _, _ = UnwrapRawConn(w.conn)
++			path = "vision_raw"
++		}
++		for _, b := range mb {
++			if b == nil {
++				continue
++			}
++			start, end, framePath := 0, int(b.Len()), path
++			if interval, ok := padded[b]; ok {
++				start, end, framePath = interval.start, interval.end, "vision_padded"
++			}
++			if _, err := w.meter.Write(sink, b.Bytes(), start, end, framePath); err != nil {
++				return err
++			}
++		}
++	} else if err := w.Writer.WriteMultiBuffer(mb); err != nil {
+ 		return err
+ 	}
+ 	if spliceReadyInbound != nil && spliceReadyInbound.CanSpliceCopy == 2 {
+diff --git a/proxy/vless/inbound/inbound.go b/proxy/vless/inbound/inbound.go
+index 5692874..3eb4d4b 100644
+--- a/proxy/vless/inbound/inbound.go
++++ b/proxy/vless/inbound/inbound.go
+@@ -13,6 +13,7 @@ import (
+ 	"github.com/xtls/xray-core/app/dispatcher"
+ 	"github.com/xtls/xray-core/app/reverse"
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/aegismeter"
+ 	"github.com/xtls/xray-core/common/buf"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/log"
+@@ -268,6 +269,15 @@ func (*Handler) Network() []net.Network {
+ // Process implements proxy.Inbound.Process().
+ func (h *Handler) Process(ctx context.Context, network net.Network, connection stat.Connection, dispatch routing.Dispatcher) error {
+ 	iConn := stat.TryUnwrapStatsConn(connection)
++	if aegismeter.Enabled() {
++		r, ok := iConn.(*reality.Conn)
++		if !ok || h.decryption != nil || h.fallbacks != nil {
++			return errors.New("meter requires bare VLESS REALITY")
++		}
++		if _, ok := r.NetConn().(*net.TCPConn); !ok {
++			return errors.New("meter requires REALITY on TCP")
++		}
++	}
+ 
+ 	if h.decryption != nil {
+ 		var err error
+@@ -600,6 +610,24 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
+ 		ctx = session.ContextWithAllowedNetwork(ctx, net.Network_UDP)
+ 	}
+ 
++	if aegismeter.Enabled() {
++		if request.Command != protocol.RequestCommandTCP || requestAddons.Flow != vless.XRV || request.User.Email == "" {
++			return errors.New("meter requires authenticated Vision TCP")
++		}
++		var meter *aegismeter.Flow
++		ctx, meter, err = aegismeter.Open(ctx, request.User.Email)
++		if err != nil {
++			return errors.New("meter unavailable").Base(err)
++		}
++		defer func() {
++			// Dispatch can return while the opposite writer is blocked on a socket.
++			connection.SetWriteDeadline(time.Now())
++			if finishErr := meter.Finish(); finishErr != nil {
++				errors.LogWarning(ctx, "meter flow incomplete")
++			}
++		}()
++		inbound.CanSpliceCopy = 3
++	}
+ 	trafficState := proxy.NewTrafficState(userSentID)
+ 	clientReader := encoding.DecodeBodyAddons(reader, request, requestAddons)
+ 	if requestAddons.Flow == vless.XRV {
+@@ -611,7 +639,14 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
+ 		return errors.New("failed to encode response header").Base(err)
+ 	}
+ 	clientWriter := encoding.EncodeBodyAddons(bufferWriter, request, requestAddons, trafficState, false, ctx, connection, nil)
+-	bufferWriter.SetFlushNext()
++	if aegismeter.From(ctx) != nil {
++		// Isolate the VLESS response header from the first measured Vision frame.
++		if err := bufferWriter.SetBuffered(false); err != nil {
++			return err
++		}
++	} else {
++		bufferWriter.SetFlushNext()
++	}
+ 
+ 	if request.Command == protocol.RequestCommandRvs {
+ 		r, err := h.GetReverse(account)
