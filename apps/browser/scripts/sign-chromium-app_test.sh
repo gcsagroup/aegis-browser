@@ -10,7 +10,9 @@ cat > "$FAKE_CODESIGN" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_CODESIGN_LOG"
-if [[ " $* " == *" --force "* && " $* " == *" --sign 7C33B517942161311A087CE893D2F1CE9B204B44 "* && \
+expected_identity="${FAKE_SIGNING_IDENTITY:-7C33B517942161311A087CE893D2F1CE9B204B44}"
+expected_team="${FAKE_SIGNING_TEAM:-R3JK7R29AC}"
+if [[ " $* " == *" --force "* && " $* " == *" --sign $expected_identity "* && \
       "$*" == *"Helper Sibling.app"* ]]; then
   touch "$FAKE_SIBLING_SIGNED"
 fi
@@ -18,7 +20,7 @@ if [[ " $* " == *" --force "* && "$FAKE_CODESIGN_MODE" == sign_failed ]]; then
   exit 41
 fi
 if [[ " $* " == *" --verify "* ]]; then
-  [[ " $* " == *" --test-requirement "* && "$*" == *'certificate leaf = H"7C33B517942161311A087CE893D2F1CE9B204B44"'* && "$*" == *R3JK7R29AC* ]] || exit 42
+  [[ " $* " == *" --test-requirement "* && "$*" == *"certificate leaf = H\"$expected_identity\""* && "$*" == *"$expected_team"* ]] || exit 42
   count=0
   [[ ! -f "$FAKE_CODESIGN_COUNT" ]] || count="$(<"$FAKE_CODESIGN_COUNT")"
   count=$((count + 1))
@@ -127,6 +129,34 @@ status=$?
 set -e
 [[ "$status" -eq 41 ]]
 [[ "$(rg -c -- '--force' "$TEST_ROOT/sign_failed/calls.log")" -eq 1 ]]
+
+# 本地验收必须同时使用指定开发身份和非 official 参数；正式参数禁止签名。
+local_root="$TEST_ROOT/local_acceptance"
+local_app="$(make_app "$local_root")"
+export FAKE_CODESIGN_MODE=sign_then_valid
+export FAKE_CODESIGN_LOG="$local_root/calls.log"
+export FAKE_CODESIGN_COUNT="$local_root/count"
+export FAKE_SIBLING_SIGNED="$local_root/sibling-signed"
+export FAKE_SIGNING_IDENTITY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+export FAKE_SIGNING_TEAM=LOCALDEV01
+export AEGIS_MACOS_LOCAL_SIGNING_IDENTITY="$FAKE_SIGNING_IDENTITY"
+export AEGIS_MACOS_LOCAL_SIGNING_TEAM="$FAKE_SIGNING_TEAM"
+printf '%s\n' 'is_official_build = true' > "$local_root/args.gn"
+if AEGIS_MACOS_LOCAL_ACCEPTANCE=1 CODESIGN="$FAKE_CODESIGN" \
+    bash "$SCRIPT_DIR/sign-chromium-app.sh" "$local_app" "$local_root"; then
+  echo "正式构建误用了本地开发身份" >&2
+  exit 1
+fi
+[[ ! -e "$FAKE_CODESIGN_LOG" ]]
+printf '%s\n' 'is_official_build = false' > "$local_root/args.gn"
+AEGIS_MACOS_LOCAL_ACCEPTANCE=1 CODESIGN="$FAKE_CODESIGN" \
+  bash "$SCRIPT_DIR/sign-chromium-app.sh" "$local_app" "$local_root"
+rg -q -- '--force --sign AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' "$FAKE_CODESIGN_LOG"
+if rg -q -- '7C33B517942161311A087CE893D2F1CE9B204B44|R3JK7R29AC' "$FAKE_CODESIGN_LOG"; then
+  echo "本地验收仍使用了旧签名身份" >&2
+  exit 1
+fi
+unset FAKE_SIGNING_IDENTITY FAKE_SIGNING_TEAM AEGIS_MACOS_LOCAL_SIGNING_IDENTITY AEGIS_MACOS_LOCAL_SIGNING_TEAM
 
 for log in "$TEST_ROOT"/*/calls.log; do
   while IFS= read -r call; do

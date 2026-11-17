@@ -32,6 +32,20 @@ extension BrowserTab {
         try await prepareForReading()
         guard url == expectedURL else { throw PageSnapshotError.changed }
         let epoch = navigationEpoch
+        let content = try await PageSnapshot.visibleDOM(in: webView, at: expectedURL)
+        guard epoch == navigationEpoch, url == expectedURL, !isLoading else { throw PageSnapshotError.changed }
+        return PageSnapshot(id: id, navigationEpoch: epoch, url: expectedURL,
+                            title: content.title ?? title, text: content.text, capturedAt: Date(), truncated: content.truncated)
+    }
+}
+
+extension PageSnapshot {
+    /// 从固定文档读取可见文本，拒绝登录、支付及验证码页面。
+    @MainActor
+    public static func visibleDOM(in webView: WKWebView, at expectedURL: URL) async throws
+        -> (title: String?, text: String, truncated: Bool) {
+        guard webView.url == expectedURL, !webView.isLoading,
+              ["http", "https"].contains(expectedURL.scheme ?? "") else { throw PageSnapshotError.unavailable }
         let script = """
         const expected = expectedURL;
         if (location.href !== expected) return {changed: true};
@@ -60,12 +74,11 @@ extension BrowserTab {
         let result = try await webView.callAsyncJavaScript(script, arguments: ["expectedURL": expectedURL.absoluteString],
                                                           in: nil, contentWorld: .defaultClient)
         try Task.checkCancellation()
-        guard epoch == navigationEpoch, url == expectedURL, !isLoading,
+        guard webView.url == expectedURL, !webView.isLoading,
               let value = result as? [String: Any], value["changed"] == nil else { throw PageSnapshotError.changed }
         guard value["sensitive"] == nil else { throw PageSnapshotError.sensitive }
         guard value["url"] as? String == expectedURL.absoluteString,
               let text = value["text"] as? String, !text.isEmpty else { throw PageSnapshotError.unavailable }
-        return PageSnapshot(id: id, navigationEpoch: epoch, url: expectedURL,
-                            title: value["title"] as? String ?? title, text: text, capturedAt: Date(), truncated: value["truncated"] as? Bool ?? false)
+        return (value["title"] as? String, text, value["truncated"] as? Bool ?? false)
     }
 }

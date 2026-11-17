@@ -1,0 +1,671 @@
+From 6e99d20d473bd9e75d4aba8ebded21eff9bcae91 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@local>
+Date: Mon, 16 Nov 2026 16:40:58 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=9C=A8=E6=B5=8F=E8=A7=88=E5=99=A8=E8=AE=BE?=
+ =?UTF-8?q?=E7=BD=AE=E4=B8=AD=E9=85=8D=E7=BD=AE=E5=9B=BE=E7=89=87=E6=96=87?=
+ =?UTF-8?q?=E5=AD=97=E8=AF=86=E5=88=AB=E6=9C=8D=E5=8A=A1?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/aegis_prefs.cc           |   1 +
+ chrome/browser/resources/aegis/aegis.css      |  19 +++
+ chrome/browser/resources/aegis/aegis.html     |  22 ++++
+ chrome/browser/resources/aegis/aegis.ts       |  67 ++++++++++
+ chrome/browser/resources/aegis/capture.js     |  63 +++++++---
+ .../resources/aegis/mobile_settings.ts        |   2 +
+ chrome/browser/ui/webui/aegis/BUILD.gn        |   8 +-
+ .../ui/webui/aegis/aegis_capture_handler.cc   | 118 +++++++++++++++---
+ .../ui/webui/aegis/aegis_capture_handler.h    |  11 ++
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  43 +++++++
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |   2 +
+ chrome/common/aegis/pref_names.h              |   1 +
+ 12 files changed, 326 insertions(+), 31 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 72f2ca7aa9acab0ac2f3a08c90e0a46dca564b16..86abc0b846da4533784b40f6225f420121bd4180 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -36,6 +36,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kBounceTrackingEnabled, true);
+   registry->RegisterBooleanPref(prefs::kPolicyWorkerEnabled, true);
+   registry->RegisterBooleanPref(prefs::kPrivacyAiEnabled, true);
++  registry->RegisterDictionaryPref(prefs::kImageOcrSettings);
+   registry->RegisterStringPref(prefs::kModelProvider, "openai");
+   registry->RegisterStringPref(prefs::kModelBaseUrl, std::string());
+   registry->RegisterStringPref(prefs::kModelName, std::string());
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index 73d69bfb850d5dd59660f78fbfe8db67f6dc3652..27056122e5bc484c8359f1f39836b9c7adc42118 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -739,3 +739,22 @@ body.mobile-settings-shell {
+  --accent: #8ab4f8;
+   }
+ }
++
++#image-ocr-fields {
++  border: 0;
++  padding: 0;
++  margin: 0;
++  min-width: 0;
++}
++
++#image-ocr-mode,
++#image-ocr-endpoint {
++  box-sizing: border-box;
++  display: block;
++  width: min(100%, 32rem);
++  margin: 6px 0 12px;
++}
++
++#image-ocr-official-status {
++  overflow-wrap: anywhere;
++}
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 024a24d9345d7b4f7f1207d5198dc1afc9302ede..cf0ddcd81e741263447e3c4cb27148d650bc2408 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -145,6 +145,28 @@
+         <p><a href="chrome://downloads">$i18n{downloadsHistory}</a></p>
+         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{downloadsSafety}</p></details>
+       </section>
++      <section id="image-ocr-settings" aria-labelledby="image-ocr-title">
++        <h2 id="image-ocr-title"></h2>
++        <p id="image-ocr-hint"></p>
++        <form id="image-ocr-form">
++          <fieldset id="image-ocr-fields" disabled>
++            <label for="image-ocr-mode" id="image-ocr-mode-label"></label>
++            <select id="image-ocr-mode">
++              <option value="official" id="image-ocr-official"></option>
++              <option value="custom" id="image-ocr-custom"></option>
++              <option value="local" id="image-ocr-local"></option>
++            </select>
++            <p id="image-ocr-official-status" hidden></p>
++            <label id="image-ocr-endpoint-row" hidden>
++              <span id="image-ocr-endpoint-label"></span>
++              <input id="image-ocr-endpoint" type="url" maxlength="2048"
++                  placeholder="https://ocr.example.com/v1/ocr" autocomplete="off" spellcheck="false">
++            </label>
++            <button id="image-ocr-save" type="submit"></button>
++          </fieldset>
++        </form>
++        <p id="image-ocr-status" role="status"></p>
++      </section>
+       <section class="privacy" aria-label="$i18n{privacyAiTitle}">
+         <h2>$i18n{privacyAiTitle}</h2>
+         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 01d06d7b2a975b701d302c8b10441eb2de23377f..52581d36c495b05ff11f78ecefd4da73c361cf9a 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -1465,6 +1465,72 @@ async function saveModelSettings(clearKey: boolean) {
+   }
+ }
+ 
++type ImageOcrSettings = {mode: string, endpoint?: string, officialDestination: string};
++
++async function initializeImageOcrSettings() {
++  const locale = localeCode();
++  const settingsText = (zh: string, en: string, tw: string) =>
++      locale === 'zh-TW' ? tw : locale === 'zh-CN' ? zh : en;
++  const fields = getRequiredElement<HTMLFieldSetElement>('image-ocr-fields');
++  const mode = getRequiredElement<HTMLSelectElement>('image-ocr-mode');
++  const endpoint = getRequiredElement<HTMLInputElement>('image-ocr-endpoint');
++  const destination = getRequiredElement('image-ocr-official-status');
++  const status = getRequiredElement('image-ocr-status');
++  const labels = {
++    'image-ocr-title': settingsText('识别服务', 'Recognition service', '辨識服務'),
++    'image-ocr-hint': settingsText(
++        '优先在本机识别。使用服务器时，每次发送前都需要确认。',
++        'Recognition runs on this device first. Every server upload requires confirmation.',
++        '優先在本機辨識。使用伺服器時，每次傳送前都需要確認。'),
++    'image-ocr-mode-label': settingsText('服务器兜底', 'Server fallback', '伺服器備援'),
++    'image-ocr-official': settingsText('使用 Aegis 服务', 'Use Aegis service', '使用 Aegis 服務'),
++    'image-ocr-custom': settingsText('自定义服务器', 'Custom server', '自訂伺服器'),
++    'image-ocr-local': settingsText('仅本机识别', 'On-device only', '僅本機辨識'),
++    'image-ocr-endpoint-label': settingsText('HTTPS 接口地址', 'HTTPS endpoint', 'HTTPS 端點位址'),
++    'image-ocr-save': settingsText('保存', 'Save', '儲存'),
++  };
++  for (const [id, label] of Object.entries(labels)) getRequiredElement(id).textContent = label;
++
++  const renderMode = () => {
++    const custom = mode.value === 'custom';
++    getRequiredElement('image-ocr-endpoint-row').hidden = !custom;
++    endpoint.disabled = !custom;
++    endpoint.required = custom;
++    destination.hidden = mode.value !== 'official';
++  };
++  const renderSaved = (saved: ImageOcrSettings) => {
++    mode.value = saved.mode;
++    endpoint.value = saved.endpoint ?? '';
++    destination.textContent = saved.officialDestination || settingsText(
++        '此版本尚未配置 Aegis 服务器。', 'This build has no Aegis server configured.', '此版本尚未設定 Aegis 伺服器。');
++    renderMode();
++  };
++  mode.onchange = renderMode;
++  getRequiredElement<HTMLFormElement>('image-ocr-form').onsubmit = async event => {
++    event.preventDefault();
++    fields.disabled = true;
++    try {
++      renderSaved(await sendWithPromise<ImageOcrSettings>(
++          'saveImageOcrSettings', mode.value, endpoint.value));
++      status.textContent = settingsText('设置已保存。', 'Settings saved.', '設定已儲存。');
++    } catch (error) {
++      const invalid = error === 'invalidEndpoint' ||
++          (error instanceof Error && error.message === 'invalidEndpoint');
++      status.textContent = invalid ? settingsText(
++          '请输入以 /v1/ocr 结尾的 HTTPS 接口地址。', 'Enter an HTTPS endpoint ending in /v1/ocr.', '請輸入以 /v1/ocr 結尾的 HTTPS 端點位址。') :
++          settingsText('保存失败，请重试。', 'Could not save. Try again.', '儲存失敗，請重試。');
++    } finally {
++      fields.disabled = false;
++    }
++  };
++  try {
++    renderSaved(await sendWithPromise<ImageOcrSettings>('getImageOcrSettings'));
++    fields.disabled = false;
++  } catch (_) {
++    status.textContent = settingsText('无法读取设置，请重新打开此页。', 'Could not load settings. Reopen this page.', '無法讀取設定，請重新開啟此頁。');
++  }
++}
++
+ async function init() {
+   const status: AegisStatus =
+       withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
+@@ -1474,6 +1540,7 @@ async function init() {
+       const result: AegisStatus = await sendWithPromise('openBrowserAgent', section);
+       if (result.ok === false) throw new Error(result.error || 'unavailable');
+     });
++    void initializeImageOcrSettings();
+   }
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+diff --git a/chrome/browser/resources/aegis/capture.js b/chrome/browser/resources/aegis/capture.js
+index d082c0033229969f8f6c926373df0ef0291e1bef..2a897cf7b0db2c5b4c4f3d7bbe0982e470038b51 100644
+--- a/chrome/browser/resources/aegis/capture.js
++++ b/chrome/browser/resources/aegis/capture.js
+@@ -20,17 +20,18 @@ const copy = {
+   copyFailed: ['Could not copy. Try saving the image.', '复制失败，可以保存图片。', '複製失敗，可以儲存圖片。'],
+   output: ['Recognized text', '识别出的文字', '辨識出的文字'],
+   copyText: ['Copy all text', '复制全部文字', '複製全部文字'],
+-  server: ['Recognize on Aegis server', '用 Aegis 服务器识别', '用 Aegis 伺服器辨識'],
++  server: ['Recognize on server', '用服务器识别', '用伺服器辨識'],
+   confirm: ['Send this image?', '确认发送图片', '確認傳送圖片'],
+   send: ['Send and recognize', '发送并识别', '傳送並辨識'],
+   cancel: ['Cancel', '取消', '取消'],
+   local: ['Recognizing on this device…', '正在本机识别…', '正在本機辨識…'],
+   empty: ['No text found on this device.', '本机未识别到文字。', '本機未辨識到文字。'],
+   noLocal: ['Text recognition is unavailable on this device.', '本机识别不可用。', '本機辨識無法使用。'],
+-  sending: ['Recognizing on Aegis server…', '服务器正在识别…', '伺服器正在辨識…'],
++  sending: ['Recognizing on server…', '服务器正在识别…', '伺服器正在辨識…'],
+   retry: ['Server recognition failed. You can retry.', '服务器识别失败，可以重试。', '伺服器辨識失敗，可以重試。'],
+   noText: ['The server found no text in the image.', '服务器未识别到文字。', '伺服器未辨識到文字。'],
+-  remoteDone: ['Recognized on Aegis server.', '已用 Aegis 服务器识别。', '已用 Aegis 伺服器辨識。'],
++  remoteDone: ['Recognized on server.', '已用服务器识别。', '已用伺服器辨識。'],
++  settingsChanged: ['Server settings changed. Open the upload preview again.', '服务器设置已变更，请重新打开上传预览。', '伺服器設定已變更，請重新開啟上傳預覽。'],
+   limited: ['Crop to a smaller area to send it.', '请裁成更小的区域后发送。', '請裁成更小的區域後傳送。'],
+ };
+ 
+@@ -140,7 +141,15 @@ function base64Image(blob) {
+   });
+ }
+ 
+-function addEvents(endpoint) {
++async function refreshRemoteAvailability() {
++  try {
++    $('server').hidden = !await sendWithPromise('aegisCaptureGetRemoteDestination');
++  } catch (_) {
++    $('server').hidden = true;
++  }
++}
++
++function addEvents() {
+   $('crop').onclick = () => {
+     cropped = !cropped;
+     paper.classList.toggle('cropping', cropped);
+@@ -203,14 +212,28 @@ function addEvents(endpoint) {
+     catch (_) { $('text').select(); status('copyFailed'); }
+   };
+   $('server').onclick = async () => {
+-    if (remoteBusy || dialog.open) return;
+-    const blob = await capturePNG(true);
+-    if (!blob || blob.size > 8 * 1024 * 1024) { status('limited'); return; }
+-    requestImage = await base64Image(blob);
+-    $('confirmed-image').src = 'data:image/png;base64,' + requestImage;
+-    $('destination').textContent = endpoint;
+-    dialog.returnValue = '';
+-    dialog.showModal();
++    if (dialog.open || $('server').disabled) return;
++    $('server').disabled = true;
++    try {
++      const blob = await capturePNG(true);
++      if (!blob || blob.size > 8 * 1024 * 1024) { status('limited'); return; }
++      requestImage = await base64Image(blob);
++      const destination = await sendWithPromise('aegisCapturePrepareRemoteRequest');
++      if (!destination) {
++        requestImage = undefined;
++        $('server').hidden = true;
++        status('settingsChanged');
++        return;
++      }
++      $('confirmed-image').src = 'data:image/png;base64,' + requestImage;
++      $('destination').textContent = destination;
++      dialog.returnValue = '';
++      dialog.showModal();
++    } catch (_) {
++      status('retry');
++    } finally {
++      $('server').disabled = false;
++    }
+   };
+   dialog.onclose = () => {
+     $('confirmed-image').removeAttribute('src');
+@@ -228,7 +251,9 @@ function addEvents(endpoint) {
+     try {
+       const result = await sendWithPromise('aegisCaptureRemoteOCRRequiringGesture', captured);
+       if (result.text) setText(result.text);
+-      status(result.ok ? result.text ? 'remoteDone' : 'noText' : 'retry');
++      status(result.settingsChanged ? 'settingsChanged' :
++          result.ok ? result.text ? 'remoteDone' : 'noText' : 'retry');
++      if (result.settingsChanged) void refreshRemoteAvailability();
+     } catch (_) {
+       status('retry');
+     } finally {
+@@ -258,10 +283,16 @@ async function startPreview() {
+   $('save').hidden = isOCR;
+   $('share').hidden = isOCR || !navigator.share;
+   $('ocr').hidden = !isOCR;
+-  $('server').hidden = !isOCR || !result.endpoint;
+-  addEvents(result.endpoint);
++  addEvents();
+   resize();
+-  if (isOCR) void localRecognition();
++  if (isOCR) {
++    void localRecognition();
++    void refreshRemoteAvailability();
++    window.addEventListener('focus', refreshRemoteAvailability);
++    document.addEventListener('visibilitychange', () => {
++      if (!document.hidden) void refreshRemoteAvailability();
++    });
++  }
+ }
+ 
+ startPreview().catch(() => status('unavailable'));
+diff --git a/chrome/browser/resources/aegis/mobile_settings.ts b/chrome/browser/resources/aegis/mobile_settings.ts
+index 8286efe851725f1074620ca871f4d411d956c7cc..899df8b1b51ff75e65bda94fae9a217571ecd15b 100644
+--- a/chrome/browser/resources/aegis/mobile_settings.ts
++++ b/chrome/browser/resources/aegis/mobile_settings.ts
+@@ -23,6 +23,8 @@ export function initializeMobileSettings(
+       selectors: '.privacy, #browser-agent-section'},
+     {id: 'downloads', title: text('下载增强', 'Download enhancements', '下載增強'),
+       hint: text('Metalink 下载任务与下载记录', 'Metalink tasks and download history', 'Metalink 下載工作與下載記錄'), selectors: '.downloads'},
++    {id: 'ocr', title: text('图片文字识别', 'Image text recognition', '圖片文字辨識'),
++      hint: text('设置本机识别与服务器兜底', 'Choose a server for OCR fallback', '設定本機辨識與伺服器備援'), selectors: '#image-ocr-settings'},
+     {id: 'tools', title: text('本机工具连接', 'Local tool connections', '本機工具連線'),
+       hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
+     {id: 'experiments', title: text('实验功能', 'Experiments', '實驗功能'),
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index 2d2d38b9863642e855182485305a8d61414f5e8e..1cf207d9bd0f102a9bf098b49fa80415b1855140 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -1,7 +1,13 @@
+ # Copyright 2026 GCSA
+ # Intended path: chrome/browser/ui/webui/aegis/BUILD.gn
+ 
++declare_args() {
++  # 发行构建可预置正式的 HTTPS OCR 接口地址。
++  aegis_ocr_service_url = ""
++}
++
+ source_set("aegis") {
++  defines = [ "AEGIS_OCR_SERVICE_URL=\"$aegis_ocr_service_url\"" ]
+   sources = [
+     "aegis_capture_handler.cc",
+     "aegis_capture_handler.h",
+@@ -22,6 +28,7 @@ source_set("aegis") {
+     "//chrome/browser/ui/side_panel",
+     "//chrome/common",
+     "//chrome/common/aegis",
++    "//components/prefs",
+     "//chrome/services/aegis_torrent/public/mojom",
+     "//content/public/browser",
+     "//net",
+@@ -45,7 +52,6 @@ source_set("aegis") {
+     ]
+     deps += [
+       "//chrome/browser/aegis:gesture_core",
+-      "//components/prefs",
+     ]
+     deps += [
+       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_capture_handler.cc b/chrome/browser/ui/webui/aegis/aegis_capture_handler.cc
+index 3f511005ea549ff5247acb8ba069503ae138ed99..bec271903f98be5b9fad95e9b61a1060cb4a59f3 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_capture_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_capture_handler.cc
+@@ -8,10 +8,14 @@
+ #include "base/environment.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_reader.h"
++#include "base/strings/string_util.h"
+ #include "base/task/thread_pool.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/webpage_capture.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/pref_names.h"
++#include "components/prefs/pref_service.h"
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/storage_partition.h"
+@@ -23,6 +27,7 @@
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/mojom/fetch_api.mojom-shared.h"
+ #include "url/gurl.h"
++#include "url/origin.h"
+ 
+ namespace aegis {
+ 
+@@ -34,21 +39,49 @@ namespace {
+ 
+ constexpr size_t kMaxUpload = 8 * 1024 * 1024;
+ 
+-GURL OCREndpoint() {
+-  const auto* command = base::CommandLine::ForCurrentProcess();
+-  const GURL url(command->GetSwitchValueASCII("aegis-image-ocr-endpoint"));
+-  if (!url.is_valid() || url.path() != "/v1/ocr" || url.has_query() ||
+-      url.has_ref() || url.has_username() || url.has_password()) {
++GURL ValidateEndpoint(std::string_view input, bool allow_loopback = false) {
++  if (input.size() > 2048) {
+     return GURL();
+   }
+-  if (url.SchemeIs("https")) {
+-    return url;
++  const GURL url(base::TrimWhitespaceASCII(input, base::TRIM_ALL));
++  if (!url.is_valid() || !url.has_host() || url.path() != "/v1/ocr" ||
++      url.has_query() || url.has_ref() || url.has_username() ||
++      url.has_password()) {
++    return GURL();
+   }
+-  if (url.SchemeIs("http") && url.host() == "127.0.0.1" &&
+-      command->HasSwitch("aegis-image-ocr-loopback-test")) {
+-    return url;
++  return url.SchemeIs("https") ||
++                 (allow_loopback && url.SchemeIs("http") &&
++                  url.host() == "127.0.0.1")
++             ? url
++             : GURL();
++}
++
++GURL OfficialEndpoint() {
++  const auto* command = base::CommandLine::ForCurrentProcess();
++  if (command->HasSwitch("aegis-image-ocr-endpoint")) {
++    return ValidateEndpoint(
++        command->GetSwitchValueASCII("aegis-image-ocr-endpoint"),
++        command->HasSwitch("aegis-image-ocr-loopback-test"));
+   }
+-  return GURL();
++  return ValidateEndpoint(AEGIS_OCR_SERVICE_URL);
++}
++
++std::string Destination(const GURL& endpoint) {
++  return endpoint.is_valid() ? url::Origin::Create(endpoint).Serialize() : "";
++}
++
++GURL CurrentEndpoint(content::WebUI* web_ui) {
++  const auto* profile = Profile::FromWebUI(web_ui);
++  if (!profile) {
++    return GURL();
++  }
++  const auto& settings = profile->GetPrefs()->GetDict(prefs::kImageOcrSettings);
++  const std::string* mode = settings.FindString("mode");
++  if (!mode || *mode == "official") {
++    return OfficialEndpoint();
++  }
++  const std::string* endpoint = settings.FindString("endpoint");
++  return *mode == "custom" && endpoint ? ValidateEndpoint(*endpoint) : GURL();
+ }
+ 
+ bool IsBoundedPNG(std::string_view data) {
+@@ -72,6 +105,32 @@ bool IsBoundedPNG(std::string_view data) {
+ 
+ }  // namespace
+ 
++base::DictValue ReadImageOcrSettings(const PrefService& profile_prefs) {
++  auto settings = profile_prefs.GetDict(prefs::kImageOcrSettings).Clone();
++  if (!settings.FindString("mode")) {
++    settings.Set("mode", "official");
++  }
++  settings.Set("officialDestination", Destination(OfficialEndpoint()));
++  return settings;
++}
++
++bool SaveImageOcrSettings(PrefService& profile_prefs,
++                          const std::string& mode,
++                          const std::string& endpoint) {
++  const GURL url = ValidateEndpoint(endpoint);
++  if ((mode != "official" && mode != "custom" && mode != "local") ||
++      (mode == "custom" && !url.is_valid())) {
++    return false;
++  }
++  auto settings = profile_prefs.GetDict(prefs::kImageOcrSettings).Clone();
++  settings.Set("mode", mode);
++  if (mode == "custom") {
++    settings.Set("endpoint", url.spec());
++  }
++  profile_prefs.SetDict(prefs::kImageOcrSettings, std::move(settings));
++  return true;
++}
++
+ CaptureHandler::CaptureHandler() = default;
+ CaptureHandler::~CaptureHandler() = default;
+ 
+@@ -82,6 +141,14 @@ void CaptureHandler::RegisterMessages() {
+   web_ui()->RegisterMessageCallback(
+       "aegisCaptureLocalOCR",
+       base::BindRepeating(&CaptureHandler::RecognizeLocally, base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "aegisCaptureGetRemoteDestination",
++      base::BindRepeating(&CaptureHandler::GetRemoteDestination,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "aegisCapturePrepareRemoteRequest",
++      base::BindRepeating(&CaptureHandler::PrepareRemoteRequest,
++                          base::Unretained(this)));
+   web_ui()->RegisterMessageCallback(
+       "aegisCaptureRemoteOCRRequiringGesture",
+       base::BindRepeating(&CaptureHandler::RecognizeRemotely, base::Unretained(this)));
+@@ -90,6 +157,7 @@ void CaptureHandler::RegisterMessages() {
+ void CaptureHandler::OnJavascriptDisallowed() {
+   weak_.InvalidateWeakPtrs();
+   request_.reset();
++  prepared_endpoint_.clear();
+   ocr_ = false;
+   local_started_ = false;
+ }
+@@ -110,10 +178,26 @@ void CaptureHandler::TakeImage(const base::ListValue& args) {
+   result.Set("image", std::move(capture.png));
+   result.Set("ocr", capture.ocr);
+   result.Set("large", capture.too_large);
+-  result.Set("endpoint", OCREndpoint().host());
+   ResolveJavascriptCallback(args.front(), result);
+ }
+ 
++void CaptureHandler::GetRemoteDestination(const base::ListValue& args) {
++  if (IsJavascriptAllowed() && IsCapturePage() && ocr_ && args.size() == 1 &&
++      args.front().is_string()) {
++    ResolveJavascriptCallback(
++        args.front(), base::Value(Destination(CurrentEndpoint(web_ui()))));
++  }
++}
++
++void CaptureHandler::PrepareRemoteRequest(const base::ListValue& args) {
++  if (IsJavascriptAllowed() && IsCapturePage() && ocr_ && args.size() == 1 &&
++      args.front().is_string()) {
++    const GURL endpoint = CurrentEndpoint(web_ui());
++    prepared_endpoint_ = endpoint.is_valid() ? endpoint.spec() : "";
++    ResolveJavascriptCallback(args.front(), base::Value(Destination(endpoint)));
++  }
++}
++
+ void CaptureHandler::RecognizeLocally(const base::ListValue& args) {
+   if (!IsJavascriptAllowed() || !IsCapturePage() || !ocr_ ||
+       args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
+@@ -152,10 +236,16 @@ void CaptureHandler::RecognizeRemotely(const base::ListValue& args) {
+   }
+   const auto& callback = args[0];
+   const auto& encoded = args[1].GetString();
+-  const GURL endpoint = OCREndpoint();
++  const GURL endpoint = CurrentEndpoint(web_ui());
++  const std::string prepared = std::exchange(prepared_endpoint_, {});
++  if (!endpoint.is_valid() || endpoint.spec() != prepared) {
++    ResolveJavascriptCallback(
++        callback, base::DictValue().Set("ok", false).Set("settingsChanged", true));
++    return;
++  }
+   auto* contents = web_ui()->GetWebContents();
+   std::string png;
+-  if (request_ || !endpoint.is_valid() ||
++  if (request_ ||
+       !contents->GetPrimaryMainFrame()->HasTransientUserActivation() ||
+       encoded.size() > ((kMaxUpload + 2) / 3) * 4 ||
+       !base::Base64Decode(encoded, &png) || png.size() > kMaxUpload ||
+diff --git a/chrome/browser/ui/webui/aegis/aegis_capture_handler.h b/chrome/browser/ui/webui/aegis/aegis_capture_handler.h
+index 33e30a5cacec3d471001d71b5cd324520f71b5b0..4bd899c7ae4852c01e56c39fcbcceb688656ce65 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_capture_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_capture_handler.h
+@@ -7,14 +7,22 @@
+ #include <string>
+ 
+ #include "base/memory/weak_ptr.h"
++#include "base/values.h"
+ #include "content/public/browser/web_ui_message_handler.h"
+ 
++class PrefService;
++
+ namespace network {
+ class SimpleURLLoader;
+ }
+ 
+ namespace aegis {
+ 
++base::DictValue ReadImageOcrSettings(const PrefService& prefs);
++bool SaveImageOcrSettings(PrefService& prefs,
++                          const std::string& mode,
++                          const std::string& endpoint);
++
+ class CaptureHandler : public content::WebUIMessageHandler {
+  public:
+   CaptureHandler();
+@@ -24,6 +32,8 @@ class CaptureHandler : public content::WebUIMessageHandler {
+ 
+  private:
+   void TakeImage(const base::ListValue& args);
++  void GetRemoteDestination(const base::ListValue& args);
++  void PrepareRemoteRequest(const base::ListValue& args);
+   void RecognizeLocally(const base::ListValue& args);
+   void RecognizeRemotely(const base::ListValue& args);
+   void LocalReply(std::string callback, std::string text);
+@@ -32,6 +42,7 @@ class CaptureHandler : public content::WebUIMessageHandler {
+ 
+   bool ocr_ = false;
+   bool local_started_ = false;
++  std::string prepared_endpoint_;
+   std::unique_ptr<network::SimpleURLLoader> request_;
+   base::WeakPtrFactory<CaptureHandler> weak_{this};
+ };
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index ad5360e076ce98af6c10c7b186464897aba2b983..197efe1cf699f83a08891cc723f3c27f2fbfc294 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -30,6 +30,7 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/download/download_prefs.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/webui/aegis/aegis_capture_handler.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+@@ -355,6 +356,14 @@ void AegisUIHandler::RegisterMessages() {
+   web_ui()->RegisterMessageCallback(
+       "getStatus", base::BindRepeating(&AegisUIHandler::HandleGetStatus,
+                                        base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "getImageOcrSettings",
++      base::BindRepeating(&AegisUIHandler::HandleGetImageOcrSettings,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "saveImageOcrSettings",
++      base::BindRepeating(&AegisUIHandler::HandleSaveImageOcrSettings,
++                          base::Unretained(this)));
+   web_ui()->RegisterMessageCallback(
+       "setModuleEnabled",
+       base::BindRepeating(&AegisUIHandler::HandleSetModuleEnabled,
+@@ -563,6 +572,40 @@ void AegisUIHandler::HandleGetStatus(const base::ListValue& args) {
+   ResolveJavascriptCallback(callback_id, BuildStatus());
+ }
+ 
++void AegisUIHandler::HandleGetImageOcrSettings(const base::ListValue& args) {
++  if (args.size() != 1 || !args[0].is_string()) {
++    return;
++  }
++  AllowJavascript();
++  const auto* profile = Profile::FromWebUI(web_ui());
++  if (!IsAegisWebUIProfileSupported(profile)) {
++    RejectJavascriptCallback(args[0], base::Value("unavailable"));
++    return;
++  }
++  ResolveJavascriptCallback(args[0],
++                            aegis::ReadImageOcrSettings(*profile->GetPrefs()));
++}
++
++void AegisUIHandler::HandleSaveImageOcrSettings(const base::ListValue& args) {
++  if (args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
++      !args[2].is_string()) {
++    return;
++  }
++  AllowJavascript();
++  auto* profile = Profile::FromWebUI(web_ui());
++  if (!IsAegisWebUIProfileSupported(profile)) {
++    RejectJavascriptCallback(args[0], base::Value("unavailable"));
++    return;
++  }
++  if (!aegis::SaveImageOcrSettings(*profile->GetPrefs(), args[1].GetString(),
++                                  args[2].GetString())) {
++    RejectJavascriptCallback(args[0], base::Value("invalidEndpoint"));
++    return;
++  }
++  ResolveJavascriptCallback(args[0],
++                            aegis::ReadImageOcrSettings(*profile->GetPrefs()));
++}
++
+ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+   AllowJavascript();
+   if (args.size() < 3 || !args[1].is_string() || !args[2].is_bool()) {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 7d53f3d9f245a70bfe3eb3f0ceffa4a7724e646a..c5d03f1938e65d85fb68e8094464a01a00122751 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -56,6 +56,8 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+   bool RequireSupportedProfile(const base::Value& callback_id);
+   base::DictValue BuildStatus();
+   void HandleGetStatus(const base::ListValue& args);
++  void HandleGetImageOcrSettings(const base::ListValue& args);
++  void HandleSaveImageOcrSettings(const base::ListValue& args);
+   void HandleSetModuleEnabled(const base::ListValue& args);
+   void HandleOpenBrowserAgent(const base::ListValue& args);
+   void HandleUpdateFilterLists(const base::ListValue& args);
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index b99bae409f3c5d425b4c627f59475c8047fe585d..019cef9cb2e18360392591636744fa2870b4d979 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -34,6 +34,7 @@ inline constexpr char kBounceTrackingEnabled[] =
+     "aegis.bounce_tracking_enabled";
+ inline constexpr char kPolicyWorkerEnabled[] = "aegis.policy_worker_enabled";
+ inline constexpr char kPrivacyAiEnabled[] = "aegis.privacy_ai_enabled";
++inline constexpr char kImageOcrSettings[] = "aegis.image_ocr_settings";
+ inline constexpr char kModelProvider[] = "aegis.model_provider";
+ inline constexpr char kModelBaseUrl[] = "aegis.model_base_url";
+ inline constexpr char kModelName[] = "aegis.model_name";
+-- 
+2.52.0
+

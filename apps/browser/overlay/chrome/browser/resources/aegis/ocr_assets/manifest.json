@@ -1,0 +1,62 @@
+{
+  "tesseract.min.js": {
+    "package": "tesseract.js-6.0.1",
+    "path": "dist/tesseract.min.js",
+    "upstreamSha256": "10fff78484067759c43028a02a72d76d0b90eb17302bb23b58a9ec5410bc928b",
+    "bundledSha256": "10fff78484067759c43028a02a72d76d0b90eb17302bb23b58a9ec5410bc928b"
+  },
+  "worker.min.js": {
+    "package": "tesseract.js-6.0.1",
+    "path": "dist/worker.min.js",
+    "upstreamSha256": "38645599043239c0eb6db08a6504a92dcdc292200535f3e9339cd77c4443b842",
+    "bundledSha256": "d37dbffec5d90ca88539d8bc675e80931e603a362663cf4e4ea72f62cea49de1"
+  },
+  "tesseract-js-LICENSE.txt": {
+    "package": "tesseract.js-6.0.1",
+    "path": "LICENSE.md",
+    "upstreamSha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+    "bundledSha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+  },
+  "tesseract.min.js.LICENSE.txt": {
+    "package": "tesseract.js-6.0.1",
+    "path": "dist/tesseract.min.js.LICENSE.txt",
+    "upstreamSha256": "cdf963ced7d25a0f98901a547647b4d6e2dbe0197fd78c87a059a87b0e542fe2",
+    "bundledSha256": "cdf963ced7d25a0f98901a547647b4d6e2dbe0197fd78c87a059a87b0e542fe2"
+  },
+  "worker.min.js.LICENSE.txt": {
+    "package": "tesseract.js-6.0.1",
+    "path": "dist/worker.min.js.LICENSE.txt",
+    "upstreamSha256": "45f54171aeaa1d10c0c1a66f374b7bba1f02472b1487fbe892eec04f840002ac",
+    "bundledSha256": "45f54171aeaa1d10c0c1a66f374b7bba1f02472b1487fbe892eec04f840002ac"
+  },
+  "tesseract-core-lstm.wasm.js": {
+    "package": "tesseract.js-core-6.0.0",
+    "path": "tesseract-core-lstm.wasm.js",
+    "upstreamSha256": "775a35df6f2ae100e02609443e6bd5cafcd07983dd6175454ca4a432a7730687",
+    "bundledSha256": "775a35df6f2ae100e02609443e6bd5cafcd07983dd6175454ca4a432a7730687"
+  },
+  "tesseract-core-LICENSE.txt": {
+    "package": "tesseract.js-core-6.0.0",
+    "path": "LICENSE",
+    "upstreamSha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+    "bundledSha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+  },
+  "eng.traineddata.gz": {
+    "package": "tesseract.js-data-eng-1.0.0",
+    "path": "4.0.0_best_int/eng.traineddata.gz",
+    "upstreamSha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91",
+    "bundledSha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91"
+  },
+  "chi_sim.traineddata.gz": {
+    "package": "tesseract.js-data-chi_sim-1.0.0",
+    "path": "4.0.0_best_int/chi_sim.traineddata.gz",
+    "upstreamSha256": "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c",
+    "bundledSha256": "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c"
+  },
+  "chi_tra.traineddata.gz": {
+    "package": "tesseract.js-data-chi_tra-1.0.0",
+    "path": "4.0.0_best_int/chi_tra.traineddata.gz",
+    "upstreamSha256": "11fe2610dab05d8a880d02f193ce70203f4c4bbe061b987d5529a2c038a22743",
+    "bundledSha256": "11fe2610dab05d8a880d02f193ce70203f4c4bbe061b987d5529a2c038a22743"
+  }
+}

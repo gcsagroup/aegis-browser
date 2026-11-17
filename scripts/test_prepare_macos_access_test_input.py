@@ -71,6 +71,11 @@ class PrivateTestInput(unittest.TestCase):
         manifest = json.loads((self.output / "core-manifest.json").read_bytes())
         self.assertEqual(manifest["channel"], "alpha")
 
+    def test_missing_short_id_is_still_rejected(self):
+        result = self.invoke(uri=URI.replace("&sid=abcd", ""))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.output.exists())
+
     def test_node_file_selects_tcp_from_mixed_outbounds(self):
         tcp = {"type": "vless", "server": "test.invalid", "server_port": 443,
                "uuid": "00000000-0000-4000-8000-000000000001",

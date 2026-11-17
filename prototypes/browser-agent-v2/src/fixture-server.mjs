@@ -49,7 +49,35 @@ DNS.1 = localhost
   };
 }
 
+// 单色合成图标，专用于网页应用的安装条件检查。
+const webAppIcon = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAIAAADdvvtQAAAB60lEQVR4nO3SQQkAIADAQGvYxxL2L2IH9xDh4ALssTH3gmvjeQFfMxCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiMRAJAYiMRCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiMRAJAYiMRCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiMRAJAYiMRCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiMRAJAYiMRCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiMRAJAYiMRCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiMRAJAYiMRCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiMRAJAYiMRCJgUgMRGIgEgORGIjEQCQGIjEQiYFIDERiIBIDkRiIxEAkBiIxEImBSAxEYiASA5EYiOQAulFl+93pOSgAAAAASUVORK5CYII=', 'base64');
+
 function route(url) {
+  if (url.pathname === '/mobile-web-app') {
+    // eslint-disable-next-line xss/no-mixed-html -- 本机测试页的标题、正文和清单路径均为常量。
+    return html('Aegis 移动网页应用', '<p>移动网页应用测试标记</p>')
+      .replace('</head>', '<link rel="manifest" href="/mobile-web-app.webmanifest"></head>');
+  }
+  if (url.pathname === '/mobile-web-app/install' || url.pathname === '/mobile-web-app/start') {
+    const marker = url.pathname.endsWith('/start') ? 'PWA_START_READBACK' : 'PWA_INSTALL_LANDING';
+    const page = html('Aegis PWA QA', `<p>${marker}</p><p id="mode"></p>`, `
+      document.getElementById('mode').textContent = matchMedia('(display-mode: standalone)').matches ||
+        navigator.standalone === true ? 'PWA_STANDALONE' : 'PWA_BROWSER';
+      navigator.serviceWorker?.register('/mobile-web-app/worker.js');
+    `);
+    // eslint-disable-next-line xss/no-mixed-html -- 本机测试页只插入固定的清单和图标路径。
+    return page.replace('</head>', '<meta name="viewport" content="width=device-width">' +
+      '<link rel="manifest" href="/mobile-web-app/lifecycle.webmanifest">' +
+      '<link rel="apple-touch-icon" href="/mobile-web-app.png"></head>');
+  }
+  if (url.pathname === '/devtools') {
+    return html('Aegis 诊断测试页',
+      `<link rel="stylesheet" href="/devtools.css"><p id="devtools-result">正在请求</p>
+       <label>诊断备注 <input id="diagnostic-note"></label>
+       <button id="confirm-note">显示备注</button><p id="confirmed-note"></p>
+       <p id="dark-marker">深色模式已生效</p>
+       <script src="/devtools.js"></script>`);
+  }
   if (url.pathname === '/') {
     return html('Aegis Agent Fixture', '<p id="fixture-ready">E0 fixture ready</p><a href="/research">开始只读研究</a>');
   }
@@ -102,6 +130,69 @@ export async function startFixtureServer({ runRoot, onRequest = () => {}, secure
   const handler = (request, response) => {
     const url = new URL(request.url, `${secure ? 'https' : 'http'}://127.0.0.1`);
     onRequest({ method: request.method, path: url.pathname });
+    if (url.pathname === '/mobile-web-app.webmanifest') {
+      response.writeHead(200, { 'content-type': 'application/manifest+json', 'cache-control': 'no-store' });
+      response.end(JSON.stringify({
+        id: '/mobile-web-app', name: 'Aegis 移动网页应用', short_name: 'Aegis 网页应用',
+        display: 'standalone', start_url: '/mobile-web-app',
+        icons: [{ src: '/mobile-web-app.png', sizes: '192x192', type: 'image/png' }],
+      }));
+      return;
+    }
+    if (url.pathname === '/mobile-web-app/lifecycle.webmanifest') {
+      response.writeHead(200, { 'content-type': 'application/manifest+json', 'cache-control': 'no-store' });
+      response.end(JSON.stringify({
+        id: '/mobile-web-app/install', name: 'Aegis PWA QA', short_name: 'Aegis PWA QA',
+        display: 'standalone', scope: '/mobile-web-app/', start_url: '/mobile-web-app/start?source=launcher',
+        icons: [{ src: '/mobile-web-app.png', sizes: '192x192', type: 'image/png' }],
+      }));
+      return;
+    }
+    if (url.pathname === '/mobile-web-app/worker.js') {
+      response.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-store' });
+      response.end('self.addEventListener("fetch", () => {});');
+      return;
+    }
+    if (url.pathname === '/mobile-web-app.png') {
+      response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+      response.end(webAppIcon);
+      return;
+    }
+    if (url.pathname === '/devtools/api') {
+      response.writeHead(503, {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+      });
+      response.end('{"diagnostic":"AEGIS_FIXTURE_BODY"}');
+      return;
+    }
+    if (url.pathname === '/devtools.css') {
+      response.writeHead(200, {
+        'content-type': 'text/css; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      response.end(`main h1 { color: rgb(12, 34, 56); }
+        #dark-marker { display: none; }
+        @media (prefers-color-scheme: dark) { #dark-marker { display: block; } }`);
+      return;
+    }
+    if (url.pathname === '/devtools.js') {
+      response.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      response.end(`console.error('AEGIS_FIXTURE_CONSOLE_ERROR');
+document.querySelector('#confirm-note').addEventListener('click', () => {
+  const note = document.querySelector('#diagnostic-note').value;
+  document.querySelector('#confirmed-note').textContent = '备注已显示 ' + note;
+});
+fetch('/devtools/api').then(async response => {
+  await response.text();
+  document.querySelector('#devtools-result').textContent = '诊断状态 ' + response.status;
+});
+`);
+      return;
+    }
     if (url.pathname === '/download/sample.txt') {
       response.writeHead(200, {
         'content-type': 'text/plain; charset=utf-8',
@@ -125,7 +216,9 @@ export async function startFixtureServer({ runRoot, onRequest = () => {}, secure
     response.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
-      'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'",
+      'content-security-policy': url.pathname === '/devtools'
+        ? "default-src 'self'; object-src 'none'; base-uri 'none'"
+        : "default-src 'self'; script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'",
       'x-content-type-options': 'nosniff',
     });
     response.end(body);

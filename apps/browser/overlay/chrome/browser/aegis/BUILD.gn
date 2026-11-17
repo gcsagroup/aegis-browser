@@ -184,6 +184,8 @@ source_set("aegis") {
     "summary_policy.h",
     "threat_feed_updater.cc",
     "threat_feed_updater.h",
+    "webpage_capture.cc",
+    "webpage_capture.h",
   ]
   public_deps = [
     ":download_prefs",
@@ -205,6 +207,7 @@ source_set("aegis") {
     "//chrome/common/aegis",
     "//chrome/common/aegis:security_text",
     "//components/download/public/common:public",
+    "//components/lens:lens_mojo",
     "//components/os_crypt/async/browser",
     "//components/pref_registry",
     "//components/prefs",
@@ -222,6 +225,7 @@ source_set("aegis") {
     "//services/network/public/mojom",
     "//third_party/re2",
     "//ui/base",
+    "//ui/gfx/geometry",
     "//url",
   ]
   sources += [

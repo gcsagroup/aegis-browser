@@ -22,3 +22,6 @@ apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/vendor/onnxru
 apps/browser/overlay/third_party/aegis_libtorrent/*LICENSE*.txt whitespace=-blank-at-eol,-blank-at-eof
 apps/browser/overlay/third_party/aegis_libtorrent/APSL-2.0.txt whitespace=-blank-at-eol,-blank-at-eof
 apps/browser/overlay/third_party/aegis_libtorrent/UPSTREAM_ROUTE_H.txt whitespace=-blank-at-eol,-blank-at-eof
+
+# 保留随 OCR 分发的上游许可证原始字节及清单摘要。
+apps/browser/overlay/chrome/browser/resources/aegis/ocr_assets/tesseract-core-LICENSE.txt whitespace=-blank-at-eof

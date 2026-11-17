@@ -8,12 +8,41 @@
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/webui_config.h"
 #include "content/public/common/url_constants.h"
+#include "ui/webui/untrusted_web_ui_controller.h"
 
 namespace content {
 class WebUI;
 }
 
 class AegisUI;
+class AegisCaptureUI;
+
+class AegisCaptureUIConfig : public content::DefaultWebUIConfig<AegisCaptureUI> {
+ public:
+  AegisCaptureUIConfig();
+  bool IsWebUIEnabled(content::BrowserContext* browser_context) override;
+};
+
+class AegisCaptureUI : public content::WebUIController {
+ public:
+  explicit AegisCaptureUI(content::WebUI* web_ui);
+  ~AegisCaptureUI() override;
+
+ private:
+  WEB_UI_CONTROLLER_TYPE_DECL();
+};
+
+class AegisOfflineOCRUI : public ui::UntrustedWebUIController {
+ public:
+  explicit AegisOfflineOCRUI(content::WebUI* web_ui);
+};
+
+class AegisOfflineOCRUIConfig
+    : public content::DefaultWebUIConfig<AegisOfflineOCRUI> {
+ public:
+  AegisOfflineOCRUIConfig();
+  bool IsWebUIEnabled(content::BrowserContext* browser_context) override;
+};
 
 class AegisUIConfig : public content::DefaultWebUIConfig<AegisUI> {
  public:
