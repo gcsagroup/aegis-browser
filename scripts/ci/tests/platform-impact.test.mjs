@@ -13,6 +13,7 @@ test('platform routing binds real merge parents and rejects hidden product chang
   const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
   const doc = 'docs/plans/access-build-portability/acceptance.md';
   const iosDocs = ['en', 'zh-CN', 'zh-TW'].map(language => `docs/ios-webkit-protection.${language}.md`);
+  const macDocs = ['toolbar-bubble', 'bubble-session'].map(topic => `docs/plans/macos-access-${topic}-NOTES.md`);
   const executableDocs = [
     'docs/plans/access-service-v1.0/spec.zh-CN.md',
     'docs/platform-features.zh-CN.md',
@@ -25,7 +26,7 @@ test('platform routing binds real merge parents and rejects hidden product chang
   const save = (path, text) => { mkdirSync(join(root, path, '..'), {recursive: true}); writeFileSync(join(root, path), text); };
   try {
     git('init', '-b', 'develop'); git('config', 'user.name', 'Routing Test'); git('config', 'user.email', 'routing@example.invalid');
-    for (const path of [doc, ...iosDocs, ...executableDocs]) save(path, 'initial');
+    for (const path of [doc, ...iosDocs, ...macDocs, ...executableDocs]) save(path, 'initial');
     git('add', '.'); git('commit', '-m', 'base');
     const earlierBase = git('rev-parse', 'HEAD');
     save('base-marker.txt', 'advanced base'); git('add', '.'); git('commit', '-m', 'base advanced');
@@ -59,20 +60,21 @@ test('platform routing binds real merge parents and rejects hidden product chang
       return plan;
     };
     run(() => save(doc, 'updated'), false);
-    for (const path of iosDocs) {
+    for (const path of [...iosDocs, ...macDocs]) {
       run(() => save(path, 'updated'), false);
       run(() => rmSync(join(root, path)), true);
       run(() => chmodSync(join(root, path), 0o755), true);
       run(() => {rmSync(join(root, path)); symlinkSync('untrusted.md', join(root, path));}, true);
       run(() => git('mv', path, 'docs/unregistered-renamed.md'), true);
     }
-    run(() => { for (const path of [doc, ...iosDocs]) save(path, 'updated'); }, false);
+    run(() => { for (const path of [doc, ...iosDocs, ...macDocs]) save(path, 'updated'); }, false);
     for (const path of executableDocs) {
       const plan = run(() => {save(iosDocs[0], 'updated'); save(path, 'changed input');}, true);
       assert.equal(plan.macos, true, `unregistered or consumed document must retain full route: ${path}`);
     }
     run(() => {save(iosDocs[0], 'updated'); save('scripts/ci/platform-impact.mjs', 'console.log("docs=true")');}, true);
     run(() => {save(iosDocs[0], 'updated'); save('docs/ios-webkit-protection.new.md', 'new explanation');}, true);
+    run(() => {save(macDocs[0], 'updated'); save('docs/plans/macos-access-phase1-evidence-NOTES.md', 'unreviewed neighbor');}, true);
     run(() => git('mv', '-f', iosDocs[0], iosDocs[1]), true);
     run(() => {save(doc, 'updated'); save('apps/ios/Feature.swift', 'invalid');}, true);
     const iosOnly = run(() => save('apps/ios/Feature.swift', 'feature'), true);

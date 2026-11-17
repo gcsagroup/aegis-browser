@@ -228,6 +228,8 @@ iOS release validation 的 Ready PR 扩展到 develop。Linux 合同先执行，
 
 本批三语保护说明的机器消费者为 `check-repo-contracts.mjs` 的 Markdown 链接检查，已在 Linux 文档门执行。扩展前须检查文件内容、直接引用及动态消费者；以后新增读取者时，须重审其输入是否仍适用轻量路径。HTML 预览及脚本、fixture、翻译样本、生成的功能页面、冻结规格、证据目录中的 README/correlation、CI 与交付控制规则均不因属于文档而放行。规则变更自身走旧规则完整门，合入后通过真实 Ready PR 核验新名单的零 Mac 路径；push 仍跑完整门。
 
+macOS 批次另加入 `docs/plans/macos-access-toolbar-bubble-NOTES.md` 和 `docs/plans/macos-access-bubble-session-NOTES.md`。两者仅说明既有工具栏交互与状态流；核对后未发现链接检查以外的机器消费者。相邻 NOTES、验收证据与交付指南不随之放行。iOS 与 macOS 白名单说明可混合修改，仍须全部满足相同文件身份条件；增加代码、消费者或未登记文档时取完整路径。
+
 ## 分阶段 macOS 验证（第二批）
 
 macOS delivery 的自动 Ready PR 先在 Linux 校验 Git 身份和文档消费者，再根据可信 base 规则分配合同测试。规则对白名单说明文档的普通内容修改、或只涉及 `apps/ios/` 的变更省去 macOS 专用交付合同。共享接口、CI、自修改路由及未知路径保守运行；混合改动取并集。旧版规则未登记 macOS 时保守运行。Draft 不分配自动合同 runner，同 PR 更新取消旧运行，push 按实际 SHA 分组。

@@ -31,6 +31,8 @@ const explanationPaths = new Set([
   'docs/ios-webkit-protection.en.md',
   'docs/ios-webkit-protection.zh-CN.md',
   'docs/ios-webkit-protection.zh-TW.md',
+  'docs/plans/macos-access-toolbar-bubble-NOTES.md',
+  'docs/plans/macos-access-bubble-session-NOTES.md',
 ]);
 const raw = git('diff', '--raw', '--no-abbrev', '--no-renames', '-z', base, tested);
 const fields = raw ? raw.split('\0') : [];
