@@ -90,6 +90,8 @@ Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser) and
 
 GCSA-authored source uses [Apache-2.0](LICENSE). Third-party components retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
+We thank the SwitchyOmega authors for the proxy profiles and switching rules that informed the Access design, and the ZeroOmega authors for the Options interface reference. Both projects use GPL-3.0-or-later. [SwitchyOmega](https://github.com/FelisCatus/SwitchyOmega) · [ZeroOmega](https://github.com/zero-peak/ZeroOmega)
+
 <details>
 <summary>What the badges show</summary>
 

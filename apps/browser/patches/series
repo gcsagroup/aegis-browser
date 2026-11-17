@@ -485,3 +485,4 @@
 0483-build-share-access-core-source-manifest.patch
 0484-fix-macos-unshown-omnibox-popup.patch
 0485-fix-ios-markdown-render-ownership.patch
+0486-test-macos-aim-presentation-lifecycle.patch
