@@ -190,13 +190,63 @@ func replay(socket, dir string) {
 // An opening has no target bytes until this returns. Its recovery record only
 // closes a possible zero-byte row and is harmless if open never reached SQLite.
 func (f *Flow) open(frame map[string]any) error {
+	_, err := f.openWithReply(frame)
+	return err
+}
+
+// Quota admission also consumes the expiry bound in the successful reply.
+func (f *Flow) openWithReply(frame map[string]any) (response, error) {
 	recoveryMu.Lock()
 	defer recoveryMu.Unlock()
 	if err := f.retainLocked(map[string]any{"op": "abort"}); err != nil {
-		return err
+		return response{}, err
 	}
-	if err := f.send(frame); err != nil {
-		return err
+	ack, err := f.exchange(frame)
+	if err != nil {
+		return ack, err
 	}
-	return save(filepath.Join(f.recoveryDir, f.id+".json"), nil)
+	if !ack.OK {
+		return ack, errors.New("meter open rejected")
+	}
+	return ack, save(filepath.Join(f.recoveryDir, f.id+".json"), nil)
+}
+
+// reserveWithRecovery persists a promise of no target write before asking for
+// bytes. Lost ACKs replay that promise before Finish. Replay holds the same
+// lock, so it cannot cancel a reservation while its caller accepts the grant.
+func (f *Flow) reserveWithRecovery(frame map[string]any, clear func(string, []map[string]any) error) (response, error) {
+	if f.recoveryDir == "" {
+		return f.exchange(frame)
+	}
+	recoveryMu.Lock()
+	defer recoveryMu.Unlock()
+	path := filepath.Join(f.recoveryDir, f.id+".json")
+	previous, err := pending(path)
+	if err != nil {
+		return response{}, err
+	}
+	if len(previous) != 0 {
+		return response{}, errors.New("meter recovery pending")
+	}
+	cancel := map[string]any{"op": "cancel", "ticket": frame["ticket"],
+		"direction": frame["direction"], "path": frame["path"], "bytes": frame["bytes"]}
+	if err := f.retainLocked(cancel); err != nil {
+		return response{}, err
+	}
+	ack, err := f.exchange(frame)
+	if err != nil {
+		return ack, err
+	}
+	requested, ok := frame["bytes"].(int)
+	if ack.OK && (!ok || ack.Granted <= 0 || ack.Granted > requested) {
+		return ack, errors.New("invalid quota grant")
+	}
+	// A valid grant or definite rejection resolves the cancellation before the
+	// caller is permitted to write.
+	if err := clear(path, nil); err != nil {
+		// Removal can succeed before the following directory sync fails.
+		// Requeue the no-write promise before the caller abandons its grant.
+		return ack, errors.Join(err, f.retainLocked(cancel))
+	}
+	return ack, nil
 }

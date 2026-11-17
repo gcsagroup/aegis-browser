@@ -489,3 +489,50 @@ python3 -m services.access_account.tests.wire.settlement \
 Use the dependencies and private controlled runtime described above. Each
 receipt records its checkout SHA and source/binary hashes; a passing receipt
 applies to those inputs, not a later candidate or production deployment.
+
+## Enforcing the shared account budget
+
+Bind the account and period to node settlement before enabling quota execution,
+using the settlement setup above. Run the collector with `--enforce-quota` and
+set `AEGIS_XRAY_QUOTA=enforce` on the metered Xray server process as well as
+`AEGIS_XRAY_METER_SOCKET`. Keep all of the account's paid Xray clients on admitted
+nodes sharing this authority database. Each admitted node needs its own node ID,
+collector socket, private recovery directory and permanent client bindings.
+
+The collector serializes reservations for both directions, every stream and
+every admitted node in one SQLite write transaction. A reservation is persisted
+before granting a target write. Its directional ticket is confirmed after the
+write, advancing node counters and the account settlement in the same
+transaction. Confirmed short writes release only the known unused part.
+Uncertain writes and missing confirmations retain their outstanding allocation.
+Preserve both the database and recovery directory across node restarts.
+
+The node closes active and idle streams when the account is exhausted or
+expired and refuses fresh streams. A flow's cutoff remains recorded after a
+top-up, so recovery requires a fresh authorized connection. The writer also
+applies the authority's absolute expiry as its local socket deadline. A
+reservation granted before cutoff may finish within its bounded write deadline.
+Operator receipts expose those outstanding bytes separately from confirmed
+traffic.
+
+Inspect one account's allocation history with the local operator command.
+
+```sh
+python3 -m services.access_account.quota --database /private/access/accounts.sqlite \
+  --account account-a --period billing-period
+```
+
+`confirmedBytes` is confirmed traffic under quota execution. `heldBytes`
+includes allocations whose final progress is still unknown. `releasedBytes`
+is the known unused allocation. `grantedBytes` is the historical sum of all
+three. The existing entitlement response publishes confirmed used and remaining
+bytes. Use the existing confirmed controlled-order redemption to add quota.
+
+Run the real two-direction TLS cutoff, idle-stream, restart, top-up and expiry
+regression with the normal wire arguments.
+
+```sh
+python3 -m services.access_account.tests.wire.cutoff \
+  --client /path/to/xray-stock --server /path/to/xray-quota \
+  --receipt /path/to/new-cutoff-receipt.jsonl
+```

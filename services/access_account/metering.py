@@ -209,12 +209,12 @@ async def _handle(reader, writer, meter):
                 if len(line) > FRAME_LIMIT or not line.endswith(b'\n'):
                     raise ValueError('invalid frame')
                 data = json.loads(line.decode('utf-8'), object_pairs_hook=_unique)
-                await asyncio.to_thread(meter.accept, data)
+                reply = await asyncio.to_thread(meter.accept, data)
             except (ValueError, RecursionError, sqlite3.Error):
                 writer.write(b'{"ok":false}\n')
                 await writer.drain()
                 return
-            writer.write(b'{"ok":true}\n')
+            writer.write(json.dumps(reply or {"ok": True}, separators=(",", ":")).encode() + b"\n")
             await writer.drain()
     except OSError:
         pass
@@ -249,13 +249,19 @@ def main():
         command = commands.add_parser(name)
         for flag in ('database', *flags):
             command.add_argument('--' + flag, required=flag != 'period')
+        if name == 'serve':
+            command.add_argument('--enforce-quota', action='store_true')
     args = parser.parse_args()
     try:
         if args.command == 'usage':
             print(json.dumps(usage(args.database, args.node, args.period), separators=(',', ':')))
         else:
             config = json.loads(Path(args.config).read_text(), object_pairs_hook=_unique)
-            asyncio.run(serve(Meter(args.database, config), args.socket))
+            factory = Meter
+            if args.enforce_quota:
+                from .quota import EnforcedMeter
+                factory = EnforcedMeter
+            asyncio.run(serve(factory(args.database, config), args.socket))
     except (ValueError, OSError, sqlite3.Error, RecursionError):
         sys.exit('metering operation unavailable')
 

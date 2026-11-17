@@ -21,7 +21,7 @@ const timeout = 3 * time.Second
 
 func Enabled() bool {
 	_, ok := os.LookupEnv(socketEnv)
-	return ok
+	return ok || quotaRequested()
 }
 
 type key struct{}
@@ -44,9 +44,11 @@ type Flow struct {
 	recoveryDir string
 	conn        net.Conn
 	reader      *bufio.Reader
+	quota       *quotaGuard
+	tickets     [2]int64
 }
 
-func Open(ctx context.Context, client string) (context.Context, *Flow, error) {
+func Open(ctx context.Context, client string, inbound net.Conn) (context.Context, *Flow, error) {
 	socket := os.Getenv(socketEnv)
 	dir, err := recoveryDirectory(socket)
 	if err != nil {
@@ -54,6 +56,9 @@ func Open(ctx context.Context, client string) (context.Context, *Flow, error) {
 	}
 	startReplay(socket, dir)
 	var id [16]byte
+	if quotaRequested() && os.Getenv("AEGIS_XRAY_QUOTA") != "enforce" {
+		return ctx, nil, errors.New("unknown quota mode")
+	}
 	if _, err := rand.Read(id[:]); err != nil {
 		return ctx, nil, err
 	}
@@ -62,42 +67,72 @@ func Open(ctx context.Context, client string) (context.Context, *Flow, error) {
 		return ctx, nil, err
 	}
 	f := &Flow{id: hex.EncodeToString(id[:]), conn: conn, reader: bufio.NewReaderSize(conn, 4096), paths: make(map[string]int64), recoveryDir: dir}
-	if err := f.open(map[string]any{"op": "open", "client": client}); err != nil {
+	msg := map[string]any{"op": "open", "client": client}
+	if quotaRequested() {
+		msg["mode"] = "enforce"
+	}
+	ack, err := f.openWithReply(msg)
+	if err != nil {
 		conn.Close()
 		return ctx, nil, err
+	}
+	if quotaRequested() {
+		f.quota, err = startGuard(ctx, os.Getenv(socketEnv), f.id, inbound, ack.ExpiresAt)
+		if err != nil {
+			return ctx, nil, errors.Join(err, f.Finish())
+		}
 	}
 	return context.WithValue(ctx, key{}, f), f, nil
 }
 
 func (f *Flow) send(msg map[string]any) error {
-	msg["v"], msg["flow"] = 1, f.id
-	data, err := json.Marshal(msg)
+	ack, err := f.exchange(msg)
 	if err != nil {
 		return err
 	}
-	if len(data)+1 > 4096 {
-		return errors.New("meter request exceeds limit")
-	}
-	if err = f.conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-		return err
-	}
-	if _, err = f.conn.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	line, err := f.reader.ReadSlice('\n')
-	if err != nil {
-		return err
-	}
-	var ack struct {
-		OK bool `json:"ok"`
-	}
-	if json.Unmarshal(line, &ack) != nil || !ack.OK {
-		return errors.New("meter rejected sample")
+	if !ack.OK {
+		return errors.New("meter rejected request")
 	}
 	return nil
 }
 
+type response struct {
+	OK        bool   `json:"ok"`
+	Granted   int    `json:"granted"`
+	ExpiresAt int64  `json:"expiresAt"`
+	Reason    string `json:"reason"`
+}
+
+func (f *Flow) exchange(msg map[string]any) (response, error) {
+	return exchange(f.conn, f.reader, f.id, msg, time.Now().Add(timeout))
+}
+func exchange(c net.Conn, reader *bufio.Reader, id string, msg map[string]any, deadline time.Time) (ack response, err error) {
+	msg["v"], msg["flow"] = 1, id
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	if len(data)+1 > 4096 {
+		return ack, errors.New("meter request exceeds limit")
+	}
+	if err = c.SetDeadline(deadline); err != nil {
+		return
+	}
+	if _, err = c.Write(append(data, '\n')); err != nil {
+		return
+	}
+	line, err := reader.ReadSlice('\n')
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(line, &ack)
+	return
+}
+
 func (f *Flow) Finish() error {
+	if f.quota != nil {
+		f.quota.stop()
+	}
 	f.lifetime.Lock()
 	defer f.lifetime.Unlock()
 	f.finished = true
@@ -118,7 +153,11 @@ func (f *Flow) Write(w io.Writer, p []byte, start, end int, path string) (int, e
 	if stopped {
 		return 0, errors.New("meter flow stopped")
 	}
+	if f.quota != nil {
+		return f.quotaWrite(w, p, start, end, path)
+	}
 	n, err := w.Write(p)
+	measuredAt := time.Now().UnixMilli()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if n < 0 || n > len(p) {
@@ -143,7 +182,8 @@ func (f *Flow) Write(w io.Writer, p []byte, start, end int, path string) (int, e
 		}
 		*total += delta
 		f.paths[path] += delta
-		if reportErr := f.reliableSend(map[string]any{"op": "sample", "direction": direction, "bytes": *total, "path": path, "pathBytes": f.paths[path], "measuredAt": time.Now().UnixMilli()}); reportErr != nil {
+		frame := map[string]any{"op": "sample", "direction": direction, "bytes": *total, "path": path, "pathBytes": f.paths[path], "measuredAt": measuredAt}
+		if reportErr := f.reliableSend(frame); reportErr != nil {
 			f.broken = true
 			return n, reportErr
 		}

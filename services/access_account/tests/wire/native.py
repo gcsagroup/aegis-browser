@@ -7,6 +7,7 @@ import os
 import shlex
 import signal
 import socketserver
+import sqlite3
 import ssl
 import subprocess
 import tempfile
@@ -64,6 +65,26 @@ class Handler(socketserver.BaseRequestHandler):
 
 
 class NativeRuntime(Runtime):
+    enforce_quota = False
+    quota_bytes = 10**9
+    period_ms = 600000
+
+    def seed(self):
+        super().seed()
+        expires = time.time_ns() // 1000000 + self.period_ms
+        with contextlib.closing(sqlite3.connect(self.db)) as db:
+            db.execute("UPDATE snapshots SET quota_bytes=?,expires_at=?", (self.quota_bytes, expires))
+            db.execute("UPDATE plans SET period_end=?", (expires,))
+            db.commit()
+
+    def launch(self, name, args, **kwargs):
+        if self.enforce_quota:
+            if name == "collector":
+                args = [*args, "--enforce-quota"]
+            if kwargs.get("meter"):
+                args = ["env", "AEGIS_XRAY_QUOTA=enforce", *args]
+        return super().launch(name, args, **kwargs)
+
     def setup_targets(self):
         super().setup_targets()
         native = socketserver.ThreadingTCPServer((HOST, 0), Handler)
@@ -104,11 +125,22 @@ def private_env(rt):
 
 
 def main():
+    def positive(value):
+        number = int(value)
+        if not 0 < number <= 2**63 - 1:
+            raise argparse.ArgumentTypeError("expected a positive SQLite integer")
+        return number
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", required=True, type=Path)
     parser.add_argument("--server", required=True, type=Path)
     parser.add_argument("--receipt", required=True, type=Path)
+    parser.add_argument("--enforce-quota", action="store_true", help="enforce shared account quota in collector and Xray")
+    parser.add_argument("--quota-bytes", type=positive, default=10**9, help="initial quota for each fixture account")
+    parser.add_argument("--period-ms", type=positive, default=600000, help="initial plan lifetime; sessions retain their normal lifetime")
     args = parser.parse_args()
+    if args.period_ms > 2**63 - 1 - time.time_ns() // 1000000:
+        parser.error("period expires beyond the SQLite integer range")
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
@@ -116,12 +148,16 @@ def main():
     with args.receipt.open("x") as evidence, tempfile.TemporaryDirectory(prefix="native-") as tmp, contextlib.ExitStack() as stack:
         root = Path(tmp)
         rt = NativeRuntime(root, stack, args.client.resolve(), args.server.resolve(), root / "meter.sock")
+        rt.enforce_quota, rt.quota_bytes, rt.period_ms = args.enforce_quota, args.quota_bytes, args.period_ms
         rt.setup()
         for name in ("a", "b"):
             account_command(rt, "bind", name, PERIOD)
-        print(json.dumps({"env": str(private_env(rt)), "ca": str(rt.root / "cert.pem"), "pid": os.getpid()}), flush=True)
+        print(json.dumps({"env": str(private_env(rt)), "ca": str(rt.root / "cert.pem"), "pid": os.getpid(),
+                          "database": str(rt.db), "config": str(rt.config)}), flush=True)
         stop.wait(540)  # Stop before temporary provisioning expires.
         result = {"head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                  "enforceQuota": rt.enforce_quota, "initialQuotaBytes": rt.quota_bytes,
+                  "initialPeriodMs": rt.period_ms,
                   "node": NODE, "period": PERIOD, "targetEvents": rt.native.events,
                   "meter": rt.usage(), "entitlements": {n: entitlement(rt, n) for n in ("a", "b")}}
         print(json.dumps(result), file=evidence)
