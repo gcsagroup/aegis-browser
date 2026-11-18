@@ -189,7 +189,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 3. main 一致后验证上游 S 的 quality push run；develop 未包含 S 时创建回流 PR并等待。
 4. develop 已包含 S 且存在实际 tree 差异时，验证 develop 精确 D 的 quality push run，再创建独立上游晋升 PR。无差异不创建空 PR。
 
-`promotion-quality.mjs` 核对精确仓库/分支/SHA、quality.yml、push 事件、最新 run/attempt 以及唯一 quality、quality-gate jobs；缺失/运行中等待，失败停止。发布候选前后重新核对远端 SHA，create-ref 冲突不改写已有分支；合法后续修复按祖先关系复用。已关闭未合并批次不自动重建。
+`promotion-quality.mjs` 核对精确仓库/分支/SHA、quality.yml、push 事件、最新 run/attempt 以及唯一 quality、quality-gate jobs。另核对同一仓库、分支和 SHA 的 `secret-scanning.yml` 实际 push，要求其最新 run/attempt 的唯一 `gitleaks` 作业成功。两项检查均读取该 attempt 的全部作业页，数量与 GitHub 报告值不一致时阻断。任一来源缺失或运行中则等待，失败或身份不匹配则停止。发布候选前后重新核对远端 SHA，create-ref 冲突不改写已有分支；合法后续修复按祖先关系复用。已关闭未合并批次不自动重建。
 
 `GITHUB_TOKEN` 仅 actions/contents read；`AEGIS_FORK_AUTOMATION_TOKEN` 负责个人 PR、候选 ref 与受保护的 upstream sync；`AEGIS_UPSTREAM_TOKEN` 负责上游 Actions/Contents 读和 PR 写。控制器只创建 Draft 候选，不请求 reviewer、不切换 Ready、不发布讨论消息或审批；这些转换由串行协调者在证据齐备后执行。任何 secret 不进入日志、PR 或源码。
 
