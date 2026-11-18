@@ -54,6 +54,8 @@ module AegisRelease
     end
 
     def status
+      # A conservative timestamp for the build read, before subsequent upload and group requests.
+      build_read_at = Time.now.utc.iso8601
       item = exact_build
       uploads = upload_records
       attrs = item ? item.fetch('attributes') : {}
@@ -75,7 +77,7 @@ module AegisRelease
         'uploads' => uploads, 'groups' => group_rows, 'internalState' => detail['internalBuildState'], 'externalState' => detail['externalBuildState'],
         'appStoreState' => version['appStoreState'], 'appVersionState' => version['appVersionState'], 'releaseType' => version['releaseType'],
         'betaGroupIds' => item&.dig('relationships', 'betaGroups', 'data')&.map { |r| r['id'] } || [],
-        'observedAt' => Time.now.utc.iso8601, 'deviceAcceptance' => 'not_verified' }
+        'observedAt' => build_read_at, 'deviceAcceptance' => 'not_verified' }
     end
 
     def wait_for_processing(timeout: 1800, interval: 15)

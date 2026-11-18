@@ -104,7 +104,8 @@ jobs:
           corepack pnpm run lint
       - name: Validate workflow syntax
         run: |
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= .github/workflows/ios-*.yml
+          # GitHub supports concurrency.queue; v1.7.12 predates it.
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -ignore '^unexpected key "queue" for "concurrency" section' .github/workflows/ios-*.yml
       - name: Upload iOS routing evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -175,3 +175,74 @@ test('controller entrypoint retains human Admin admission and cannot be started 
   assert.equal((await requireIosAdministrator({environment, context: 'controller', api: fixture({runChanges: {path}}).api})).authorized, true);
   await assert.rejects(requireIosAdministrator({...botFixture({changes: {path}}), context: 'controller'}), /Bot|Admin|grant/iu);
 });
+
+function releaseControllerFixture({runChanges = {}, admins = [admin(original)], inputChanges = {}, controllerJobChanges = {}, receiptChanges = {}} = {}) {
+  const inputs = {operation: 'Publish Beta', release_type: 'beta', version: '1.2.0', build: '9',
+    status_run_id: '210', controller_run_id: '300', controller_actor_id: String(original.id),
+    controller_actor_login: original.login, approved_source_sha: sha, ...inputChanges};
+  const environment = {...environmentBase(), GITHUB_RUN_ID: '301', GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_SHA: sha, CONTROLLER_ACTOR_LOGIN: original.login, RELEASE_INPUTS: JSON.stringify(inputs)};
+  const run = {id: 300, run_attempt: 1, status: 'completed', conclusion: 'success', head_sha: sha,
+    head_branch: 'main', event: 'workflow_dispatch', path: '.github/workflows/ios-delivery-bot.yml',
+    display_title: 'iOS Bot Publish Beta release 1.2.0(9)', repository: {id: 1348409663, full_name: repository},
+    head_repository: {id: 1348409663, full_name: repository}, actor: original, triggering_actor: original, ...runChanges};
+  const api = async (repo, path) => {
+    assert.equal(repo, repository);
+    if (path === '') return {id: 1348409663, full_name: repository};
+    if (path === '/actions/runs/300') return run;
+    if (path.startsWith('/collaborators?')) return admins;
+    if (path === '/actions/runs/300/attempts/1/jobs?per_page=100') {
+      const active = run.status === 'in_progress';
+      return {total_count: 1, jobs: [{id: 3001, name: 'controller', run_id: 300, run_attempt: 1, head_sha: sha,
+        status: active ? 'in_progress' : 'completed', conclusion: active ? null : 'success',
+        steps: [
+          {name: 'Require current administrator for this controller request', status: 'completed', conclusion: 'success'},
+          {name: 'Dispatch and monitor exact App-owned delivery runs', status: active ? 'in_progress' : 'completed', conclusion: active ? null : 'success'},
+        ], ...controllerJobChanges}]};
+    }
+    if (path === '/actions/runs/300/artifacts?per_page=100') return {total_count: 1, artifacts: [
+      {name: 'ios-github-release-dispatch-300-1', id: 444, expired: false, digest: 'sha256:'+'a'.repeat(64)}]};
+    throw new Error('Unexpected controller API path '+path);
+  };
+  return {environment, api, readReceipt: async () => ({childRunId: 301, inputs, ...receiptChanges})};
+}
+function environmentBase() { return {...environment, GITHUB_RUN_ID: '301', GITHUB_RUN_ATTEMPT: '1'}; }
+test('release workflow binds the Admin controller, operation coordinates and successful controller job', async () => {
+  const {requireReleaseControllerAuthorization} = await load();
+  const fixture = releaseControllerFixture();
+  const result = await requireReleaseControllerAuthorization({...fixture, sleep: async () => {}});
+  assert.deepEqual(result, {authorized: true, controllerRunId: 300, principals: [{id: original.id, login: original.login}]});
+});
+test('release child waits for the sealed controller handoff and rejects another child receipt', async () => {
+  const {requireReleaseControllerAuthorization} = await load();
+  await assert.rejects(requireReleaseControllerAuthorization({
+    ...releaseControllerFixture({runChanges: {status: 'in_progress', conclusion: null}}),
+    sleep: async () => {}, maxPolls: 1,
+  }), /has not completed/u);
+  await assert.rejects(requireReleaseControllerAuthorization({
+    ...releaseControllerFixture({receiptChanges: {childRunId: 302}}),
+  }), /does not identify this child/u);
+});
+test('direct human dispatch cannot enter the public release workflow', async () => {
+  const {requireIosAdministrator} = await load();
+  await assert.rejects(requireIosAdministrator({environment, context: 'github-release',
+    api: fixture({runChanges: {path: '.github/workflows/ios-github-release.yml'}}).api}), /pinned App/u);
+});
+test('release workflow rejects a lower-role rerunner, altered controller title and failed parent', async () => {
+  const {requireReleaseControllerAuthorization} = await load();
+  const lowerRerunner = {...rerunner, permissions: {admin: false}};
+  for (const fixture of [
+    releaseControllerFixture({admins: [admin(original), lowerRerunner], runChanges: {triggering_actor: rerunner}}),
+    releaseControllerFixture({runChanges: {display_title: 'iOS Bot Preview GitHub release 1.2.0(9)'}}),
+    releaseControllerFixture({runChanges: {conclusion: 'failure'}}),
+    releaseControllerFixture({runChanges: {status: 'in_progress', conclusion: null},
+      controllerJobChanges: {steps: [
+        {name: 'Require current administrator for this controller request', status: 'completed', conclusion: 'failure'},
+        {name: 'Dispatch and monitor exact App-owned delivery runs', status: 'in_progress', conclusion: null},
+      ]}}),
+    releaseControllerFixture({inputChanges: {release_type: 'stable'}}),
+    releaseControllerFixture({inputChanges: {controller_actor_id: '8'}}),
+  ]) {
+    await assert.rejects(requireReleaseControllerAuthorization({...fixture, sleep: async () => {}}), /Admin|controller|succeed|initiator/iu);
+  }
+});
