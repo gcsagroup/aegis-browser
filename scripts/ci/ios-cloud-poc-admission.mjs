@@ -1,15 +1,9 @@
 import {pathToFileURL} from 'node:url';
-import {requireIosAdministrator} from './ios-operator.mjs';
+import {requireIosAdministrator, validIosVersion} from './ios-operator.mjs';
 import {githubApi} from './promotion-github.mjs';
 
 const REPOSITORY = 'gcsagroup/aegis-browser';
 const BRANCH = 'codex/ios-cloud-signing-poc';
-
-function validVersion(value) {
-  if (typeof value !== 'string' || value.length > 32) return false;
-  const parts = value.split('.');
-  return [2, 3].includes(parts.length) && parts.every(part => /^[0-9]{1,10}$/u.test(part));
-}
 
 export async function admitCloudPoc({environment = process.env, api = githubApi, authorize = requireIosAdministrator} = {}) {
   const sha = environment.GITHUB_SHA;
@@ -17,7 +11,7 @@ export async function admitCloudPoc({environment = process.env, api = githubApi,
       environment.GITHUB_REPOSITORY_ID !== '1348409663' || environment.GITHUB_EVENT_NAME !== 'workflow_dispatch' ||
       environment.GITHUB_REF !== 'refs/heads/'+BRANCH || !/^[0-9a-f]{40}$/u.test(sha || '') ||
       sha !== environment.AEGIS_IOS_CLOUD_POC_SOURCE_SHA || sha !== environment.POC_SOURCE_SHA ||
-      !validVersion(environment.POC_VERSION) ||
+      !validIosVersion(environment.POC_VERSION) ||
       !/^[1-9][0-9]{0,9}$/u.test(environment.POC_BUILD || '')) {
     throw new Error('Cloud PoC requires canonical manual dispatch at the explicitly frozen branch/SHA and native identity');
   }

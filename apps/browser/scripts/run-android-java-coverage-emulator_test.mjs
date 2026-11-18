@@ -15,7 +15,7 @@ function runCoverage(t, mode) {
   const emulatorPid = path.join(root, 'emulator.pid');
   const bashEnv = path.join(root, 'bash-env');
   // Simulate GNU timeout's ambiguous 137 on either side of the shared deadline.
-  fs.writeFileSync(bashEnv, String.raw`
+  const timeoutOverride = String.raw`
 timeout() {
   if [[ $3 == */avdmanager ]]; then
     case "$EMULATOR_MODE" in
@@ -25,19 +25,17 @@ timeout() {
   fi
   command timeout "$@"
 }
-`);
-
-  t.after(() => {
-    if (fs.existsSync(emulatorPid)) {
-      const pid = Number(fs.readFileSync(emulatorPid, 'utf8'));
-      try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-    }
-    fs.rmSync(root, {recursive: true, force: true});
-  });
-  fs.writeFileSync(record, '');
+`;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Fixed bootstrap file in this test's private mkdtemp directory.
+  fs.writeFileSync(bashEnv, timeoutOverride); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The operation log belongs to the current fixture directory.
+  fs.writeFileSync(record, ''); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   const script = (file, content) => {
-    fs.mkdirSync(path.dirname(file), {recursive: true});
-    fs.writeFileSync(file, '#!/usr/bin/env bash\nset -eu\n' + content, {mode: 0o700});
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- All callers supply fixed mock SDK or bin paths under this private directory.
+    fs.mkdirSync(path.dirname(file), {recursive: true}); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Only the static scripts below are written to the fixture SDK and bin directories.
+    fs.writeFileSync(file, '#!/usr/bin/env bash\nset -eu\n' + content, {mode: 0o700}); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   };
   script(path.join(sdk, 'platform-tools/adb'), String.raw`
 printf 'adb %s\n' "$*" >> "$RECORD"
@@ -79,7 +77,8 @@ done
 if [[ $EMULATOR_MODE == stubborn ]]; then trap '' TERM; fi
 printf '%s\n' "$$" > "$EMULATOR_PID"
 printf 'emulator %s\n' "$*" >> "$RECORD"
-exec /bin/sleep 120
+# Stop when the fixture directory disappears, even if the script under test failed to reap us.
+while [[ -d "$RUNNER_TEMP" ]] && (( SECONDS < 120 )); do /bin/sleep 0.1; done
 `);
   script(path.join(bin, 'node'), String.raw`
 if [[ "$*" == *'android-agent-ui.mjs self-test'* ]]; then
@@ -118,12 +117,13 @@ exec "$@"
     timeout: 45000,
   });
   assert.ifError(result.error);
-  const pid = fs.existsSync(emulatorPid) ? Number(fs.readFileSync(emulatorPid, 'utf8')) : null;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The mock writes this PID to a fixed file under the private fixture directory.
+  const pid = fs.existsSync(emulatorPid) ? Number(fs.readFileSync(emulatorPid, 'utf8')) : null; // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   if (pid !== null) {
     assert.throws(() => process.kill(pid, 0), {code: 'ESRCH'}, 'the fixture emulator must be reaped');
-    fs.unlinkSync(emulatorPid);
   }
-  return {status: result.status, stderr: result.stderr, operations: fs.readFileSync(record, 'utf8')};
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read the fixed log that this fixture created.
+  return {status: result.status, stderr: result.stderr, operations: fs.readFileSync(record, 'utf8')}; // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 }
 
 test('cold-boot coverage runs on the owned API 36 transport without injecting key events', t => {

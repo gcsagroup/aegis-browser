@@ -4,7 +4,7 @@ import contextlib
 import http.client
 import json
 import sqlite3
-import subprocess
+import subprocess  # nosec B404 - exercise the settlement CLI from the fixture.
 import sys
 import time
 
@@ -16,7 +16,9 @@ NEXT_PERIOD = "next"
 
 
 def account_command(rt, op, account, period, *extra):
-    subprocess.run([sys.executable, "-m", "services.access_account.settlement", op,
+    # All call sites select bind or replay. Paths and values are separate CLI arguments.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    subprocess.run([sys.executable, "-m", "services.access_account.settlement", op,  # nosec B603
                     "--database", rt.db, "--config", rt.config, "--account", account,
                     "--period", period, *map(str, extra)], check=True, capture_output=True)
 

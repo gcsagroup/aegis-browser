@@ -274,7 +274,7 @@ def exercise_bundles(work, contract, catalog):
     expected_locales = set(contract["resourceLocales"])
     for output in (resources, share):
         subprocess.run(["/usr/bin/xcrun", "xcstringstool", "compile", str(catalog_path),
-                        "--output-directory", str(output)], check=True, shell=False)
+                        "--output-directory", str(output)], check=True, shell=False)  # nosec B603 - fixed xcrun tool, fixture-owned paths.
         directories = {p.stem for p in output.glob("*.lproj")}
         require(directories == expected_locales, f"Unexpected localization directories in {output}")
         tables = {p.parent.stem for p in output.glob("*.lproj/Localizable.strings")}

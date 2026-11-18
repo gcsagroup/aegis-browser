@@ -144,17 +144,17 @@ test('coverage helper install and instrumentation never follow a reused device s
         assert.match(operation, /-e jacoco_coverage true /);
         throw new Error('verified transport disconnected during instrument');
       }
-      const replies = {
-        'get-serialno': 'emulator-5554',
-        'shell getprop ro.kernel.qemu': '1',
-        'shell dumpsys window policy': 'KeyguardServiceDelegate\n showing=false\n screenState=2',
-        'shell am get-current-user': '0',
-        ['shell pm list packages ' + HELPER]: '',
-        ['shell pm path ' + HELPER]: 'package:' + installed,
-        ['shell sha256sum ' + installed]: hash + '  ' + installed,
-      };
-      assert.ok(Object.hasOwn(replies, operation), operation);
-      return replies[operation];
+      const replies = new Map([
+        ['get-serialno', 'emulator-5554'],
+        ['shell getprop ro.kernel.qemu', '1'],
+        ['shell dumpsys window policy', 'KeyguardServiceDelegate\n showing=false\n screenState=2'],
+        ['shell am get-current-user', '0'],
+        ['shell pm list packages ' + HELPER, ''],
+        ['shell pm path ' + HELPER, 'package:' + installed],
+        ['shell sha256sum ' + installed, hash + '  ' + installed],
+      ]);
+      assert.ok(replies.has(operation), operation);
+      return replies.get(operation);
     };
     assert.throws(() => runDeviceInteraction('self-test', device, {apk, record}, run),
       {message: 'verified transport disconnected during ' + disconnectedAt});

@@ -56,7 +56,12 @@ async function readAttemptJobs(repo, run, token, apiFn) {
   const jobs = [];
   let total;
   for (let page = 1; ; page++) {
-    const batch = await apiFn(repo, page === 1 ? path : `${path}&page=${page}`, {token});
+    let batch;
+    try {
+      batch = await apiFn(repo, page === 1 ? path : `${path}&page=${page}`, {token});
+    } catch (cause) {
+      throw new Error(`${repo} run ${run.id} attempt ${run.run_attempt}: cannot read jobs page ${page}`, {cause});
+    }
     if (page === 1) total = batch?.total_count;
     if (!Number.isSafeInteger(total) || total < 0 || batch?.total_count !== total ||
         !Array.isArray(batch.jobs) || batch.jobs.length !== Math.min(pageSize, total - jobs.length)) {

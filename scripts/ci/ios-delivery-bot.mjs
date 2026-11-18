@@ -192,6 +192,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const result = await driveDelivery({api, recordRun, recordReleaseDispatch: receipt => {
       const path = process.env.RELEASE_DISPATCH_RECEIPT;
       requireValue(path, 'Controller dispatch receipt path is required');
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- The protected controller sets the receipt path in runner.temp and creates it exclusively.
       writeFileSync(path, JSON.stringify(receipt), {flag: 'wx', mode: 0o600});
     }});
     console.log(JSON.stringify(result));

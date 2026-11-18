@@ -6,7 +6,7 @@ import socket
 import socketserver
 import sqlite3
 import ssl
-import subprocess
+import subprocess  # nosec B404 - exercise the quota CLI through the current Python interpreter.
 import sys
 import threading
 import time
@@ -156,13 +156,17 @@ class GuardRuntime(Runtime):
         super().start_xray(socks)
 
     def restart_xray(self):
+        if self.xray_process is None:
+            raise RuntimeError("Cannot restart Xray before the fixture starts it")
         self.xray_process.terminate()
         self.xray_process.wait(timeout=5)
         self.xray_process = self.launch("server-xray-restarted", [self.metered, "run", "-c",
                                       self.root / "xserver.json"], service_port=self.reality_port, meter=True)
 
     def inspect(self):
-        return json.loads(subprocess.check_output([sys.executable, "-m", "services.access_account.quota",
+        # Exercise the installed CLI with the fixture database, fixed account and period.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python_exec_rule-subprocess-call-array
+        return json.loads(subprocess.check_output([sys.executable, "-m", "services.access_account.quota",  # nosec B603
                           "--database", self.db, "--account", "a", "--period", PERIOD]))
 
     def socks_connect(self, account):

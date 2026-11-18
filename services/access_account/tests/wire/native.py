@@ -9,13 +9,13 @@ import signal
 import socketserver
 import sqlite3
 import ssl
-import subprocess
+import subprocess  # nosec B404 - fixed system lsof verifies the fixture process.
 import tempfile
 import threading
 import time
 from pathlib import Path
 
-from .runtime import HOST, NODE, PERIOD, Runtime
+from .runtime import HOST, NODE, PERIOD, Runtime, source_head
 from .settlement import account_command, entitlement
 from .tls_target import WireTLS
 
@@ -34,9 +34,10 @@ class Handler(socketserver.BaseRequestHandler):
                 req.extend(channel.read(1))
             line, *headers = req.lower().split(b"\r\n")
             peer = f"n127.0.0.1:{self.client_address[1]}->127.0.0.1:{self.server.server_address[1]}"
+            # The process ID comes from this fixture’s child. The lsof binary and options are fixed.
             owned = subprocess.run(["/usr/sbin/lsof", "-nP", "-a", "-p", str(self.server.runtime.xray_process.pid),
                                     "-iTCP", "-sTCP:ESTABLISHED", "-Fn"], capture_output=True, timeout=4,
-                                   text=True).stdout.splitlines()
+                                   text=True).stdout.splitlines()  # nosec B603
             clean = not any(h.startswith((b"proxy-authorization:", b"authorization:")) for h in headers)
             route = line.split(b" ")[1].split(b"?", 1)[0]
             ok = route in (b"/page", b"/download", b"/download/slow") and clean and peer in owned
@@ -146,7 +147,7 @@ def main():
         print(json.dumps({"env": str(private_env(rt)), "ca": str(rt.root / "cert.pem"), "pid": os.getpid(),
                           "database": str(rt.db), "config": str(rt.config)}), flush=True)
         stop.wait(540)  # Stop before temporary provisioning expires.
-        result = {"head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        result = {"head": source_head(),
                   "enforceQuota": rt.enforce_quota, "initialQuotaBytes": rt.quota_bytes,
                   "initialPeriodMs": rt.period_ms,
                   "node": NODE, "period": PERIOD, "targetEvents": rt.native.events,

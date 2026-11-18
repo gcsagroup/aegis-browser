@@ -54,7 +54,7 @@ async function requireDeliveryBot(user, run, environment, identityApi, token, co
     ['Preview', 'Publish Beta', 'Publish stable'].includes(inputs.operation) &&
     (inputs.operation === 'Publish Beta' ? inputs.release_type === 'beta' :
       inputs.operation === 'Publish stable' ? inputs.release_type === 'stable' : ['beta', 'stable'].includes(inputs.release_type)) &&
-    /^[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?$/u.test(inputs.version || '') &&
+    validIosVersion(inputs.version) &&
     /^[1-9][0-9]{0,9}$/u.test(inputs.build || '') && /^[1-9][0-9]{0,15}$/u.test(inputs.status_run_id || '') &&
     /^[1-9][0-9]{0,15}$/u.test(inputs.controller_run_id || '') && /^[1-9][0-9]{0,15}$/u.test(inputs.controller_actor_id || '') &&
     /^[A-Za-z0-9-]{1,39}$/u.test(inputs.controller_actor_login || '');
@@ -68,6 +68,12 @@ async function requireDeliveryBot(user, run, environment, identityApi, token, co
   const actor = await identityApi('/users/'+encodeURIComponent(user.login), token);
   requireValue(app?.id === policy.appId && app.slug === policy.slug && actor?.type === 'Bot' && sameUser(actor, user),
     'Live Bot App identity differs');
+}
+
+export function validIosVersion(value) {
+  if (typeof value !== 'string' || value.length > 32) return false;
+  const parts = value.split('.');
+  return [2, 3].includes(parts.length) && parts.every(part => /^[0-9]{1,10}$/u.test(part));
 }
 
 async function administratorInventory(repository, token, api) {
@@ -98,6 +104,7 @@ function readDispatchReceipt(repository, token, artifact) {
   const directory = mkdtempSync(join(tmpdir(), 'aegis-ios-dispatch-'));
   try {
     const zip = join(directory, 'receipt.zip');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- This fixed filename belongs to a freshly created private receipt directory.
     writeFileSync(zip, bytes, {mode: 0o600});
     const name = 'aegis-ios-release-dispatch.json';
     requireValue(execFileSync('unzip', ['-Z1', zip], {encoding: 'utf8', timeout: 5000, maxBuffer: 8192}).trim() === name,
@@ -273,6 +280,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (context === 'github-release') {
         const controller = await requireReleaseControllerAuthorization();
         const ids = controller.principals.map(user => user.id).join(',');
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- GitHub Actions provides its job output file, and only validated numeric IDs are written.
         if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `controller_admin_ids=${ids}\n`);
         console.log(JSON.stringify({...result, controller}));
       } else console.log(JSON.stringify(result));

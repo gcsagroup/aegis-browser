@@ -147,6 +147,20 @@ test('the configured App can dispatch an exact-source Beta without an Admin user
   assert.equal(value.authorized, true);
   assert.deepEqual(value.principals, [{id: 50, login: 'aegis-delivery[bot]'}]);
 });
+test('release versions must be text with two or three decimal components', async () => {
+  const {requireIosAdministrator} = await load();
+  const releaseInputs = {operation: 'Preview', release_type: 'beta', version: '1.2', build: '9',
+    status_run_id: '210', controller_run_id: '300', controller_actor_id: '7',
+    controller_actor_login: 'original', approved_source_sha: sha};
+  const check = version => requireIosAdministrator({...botFixture({
+    changes: {path: '.github/workflows/ios-github-release.yml'},
+    env: {RELEASE_INPUTS: JSON.stringify({...releaseInputs, version})},
+  }), context: 'github-release'});
+  for (const version of ['1.2', '1.2.0']) assert.equal((await check(version)).authorized, true);
+  for (const version of [['1.2'], '1..2', '1.12345678901']) {
+    await assert.rejects(check(version), /operation and approved source inputs required/u);
+  }
+});
 test('Bot admission rejects missing configuration, impersonation and replaced App identities', async () => {
   const {requireIosAdministrator} = await load();
   for (const options of [{policy: ''}, {policy: '{'}, {policy: JSON.stringify({appId: 40, slug: 'aegis-delivery', actorId: 51})},
