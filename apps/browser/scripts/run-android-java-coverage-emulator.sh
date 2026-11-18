@@ -27,6 +27,7 @@ during_startup() {
   timeout --kill-after=2s "${remaining}s" "$@" || status=$?
   if (( status == 124 || status == 137 )); then
     printf 'coverage emulator startup deadline exceeded during %s\n' "${1##*/}" >&2
+    return 124
   fi
   return "$status"
 }
@@ -84,11 +85,11 @@ while (( SECONDS < boot_deadline )); do
     emulator_booted=1
     break
   fi
-  sleep 2
+  during_startup sleep 2
 done
 if (( emulator_booted != 1 )); then
   echo 'coverage emulator did not complete boot before its startup deadline' >&2
-  exit 1
+  exit 124
 fi
 
 # Verify the AVD name through the same ADB transport used by the fixture.
@@ -124,19 +125,25 @@ done
 # sys.boot_completed can precede the final keyguard/screen transition. Wait for the
 # same fail-closed API 36 state that android-agent-ui.mjs checks again before install.
 emulator_ready=0
-for _ in {1..15}; do
-  if startup_adb shell dumpsys window policy | node --input-type=module -e '
-    import {parseKeyguard} from "./apps/browser/scripts/verify-android-agent-target.mjs";
-    let dump = "";
-    process.stdin.setEncoding("utf8");
-    for await (const chunk of process.stdin) dump += chunk;
-    const state = parseKeyguard(dump);
-    process.exit(state.known && state.unlocked && state.screenOn ? 0 : 1);
-  '; then
+for attempt in {1..15}; do
+  probe_rc=0
+  policy=$(startup_adb shell dumpsys window policy) || probe_rc=$?
+  if (( probe_rc == 0 )); then
+    during_startup node --input-type=module -e '
+      import {parseKeyguard} from "./apps/browser/scripts/verify-android-agent-target.mjs";
+      let dump = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) dump += chunk;
+      const state = parseKeyguard(dump);
+      process.exit(state.known && state.unlocked && state.screenOn ? 0 : 1);
+    ' <<< "$policy" || probe_rc=$?
+  fi
+  if (( probe_rc == 0 )); then
     emulator_ready=1
     break
   fi
-  sleep 1
+  if (( probe_rc == 124 )); then exit 124; fi
+  if (( attempt < 15 )); then during_startup sleep 1; fi
 done
 if (( emulator_ready != 1 )); then
   echo 'dedicated emulator did not reach the verified unlocked screen state' >&2

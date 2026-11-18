@@ -371,10 +371,7 @@ function generateCoverageEvidence(directory, executionData, driverBuild, record,
   return summary;
 }
 
-function interact(action, options) {
-  if (!options.adb || !/^[A-Za-z0-9_-]{4,80}$/.test(options.serial ?? '') || !options['driver-build']) fail('缺少指定真机或验收工具');
-  if (options.output && fs.existsSync(options.output)) fail('不覆盖已有验收报告');
-  const {apk, record} = driverArtifact(options['driver-build']);
+export function runDeviceInteraction(action, options, {apk, record}, run = command) {
   const coverageEnabled = record.coverage?.enabled === true;
   if (coverageEnabled && action !== 'self-test') fail('coverage 工具只允许自身 fixture 验收');
   if (action === 'self-test' && coverageEnabled) requireNewAbsolute(options['coverage-output'], 'coverage 输出目录');
@@ -385,12 +382,12 @@ function interact(action, options) {
     fail('只允许 coverage 自测绑定指定模拟器的 ADB transport');
   }
   const selector = transportId === undefined ? ['-s', options.serial] : ['-t', transportId];
-  const adb = (...args) => command(options.adb, [...selector, ...args]);
+  const adb = (...args) => run(options.adb, [...selector, ...args]);
   if (transportId !== undefined) {
     if (adb('get-serialno').trim() !== options.serial || adb('shell', 'getprop', 'ro.kernel.qemu').trim() !== '1') {
       fail('指定 ADB transport 未绑定预期的模拟器');
     }
-  } else if (!command(options.adb, ['devices']).split(/\r?\n/).some(line => line.trim() === options.serial + '\tdevice')) {
+  } else if (!run(options.adb, ['devices']).split(/\r?\n/).some(line => line.trim() === options.serial + '\tdevice')) {
     fail('指定真机不在线或未授权');
   }
   const keyguard = parseKeyguard(adb('shell', 'dumpsys', 'window', 'policy'));
@@ -416,7 +413,15 @@ function interact(action, options) {
   const instrumentArgs = ['shell', 'am', 'instrument', '-w', '-r', '-e', 'request_base64', encoded];
   if (coverageEnabled) instrumentArgs.push('-e', 'jacoco_coverage', 'true');
   instrumentArgs.push(HELPER + '/.Driver');
-  const instrumentationOutput = command(options.adb, [...selector, ...instrumentArgs], {maxBuffer: 4 * 1024 * 1024});
+  const instrumentationOutput = run(options.adb, [...selector, ...instrumentArgs], {maxBuffer: 4 * 1024 * 1024});
+  return {request, instrumentationOutput, coverageEnabled};
+}
+
+function interact(action, options) {
+  if (!options.adb || !/^[A-Za-z0-9_-]{4,80}$/.test(options.serial ?? '') || !options['driver-build']) fail('缺少指定真机或验收工具');
+  if (options.output && fs.existsSync(options.output)) fail('不覆盖已有验收报告');
+  const {apk, record} = driverArtifact(options['driver-build']);
+  const {request, instrumentationOutput, coverageEnabled} = runDeviceInteraction(action, options, {apk, record});
   const result = parseResult(instrumentationOutput);
   const executionData = parseCoverageExec(instrumentationOutput, coverageEnabled);
   if (action === 'self-test') validateSelfTestResult(result);

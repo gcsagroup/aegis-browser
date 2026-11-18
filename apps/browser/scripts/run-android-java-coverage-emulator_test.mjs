@@ -45,7 +45,9 @@ case "$*" in
   'shell am get-current-user')
     if [[ $EMULATOR_MODE == replaced ]]; then touch "$REPLACED"; fi
     printf '0\n' ;;
-  'shell dumpsys window policy') printf 'KeyguardServiceDelegate\n showing=false\n screenState=2\n' ;;
+  'shell dumpsys window policy')
+    if [[ $EMULATOR_MODE == screen-stalled ]]; then exec /bin/sleep 120; fi
+    printf 'KeyguardServiceDelegate\n showing=false\n screenState=2\n' ;;
   'shell svc power stayon true'|'shell wm dismiss-keyguard'|'shell settings put global '*) ;;
   'shell input '*) echo 'boot-time synthetic input would target the launcher' >&2; exit 23 ;;
   *) echo "unexpected adb command: $*" >&2; exit 24 ;;
@@ -68,6 +70,7 @@ exec /bin/sleep 120
   script(path.join(bin, 'node'), String.raw`
 if [[ "$*" == *'android-agent-ui.mjs self-test'* ]]; then
   printf 'self-test %s\n' "$*" >> "$RECORD"
+  if [[ $EMULATOR_MODE == fixture-fails ]]; then touch "$REPLACED"; exit 1; fi
   exit 0
 fi
 exec "$REAL_NODE" "$@"
@@ -79,7 +82,8 @@ printf 'timeout %s\n' "$*" >> "$RECORD"
 if [[ $1 == --kill-after=2s ]]; then
   [[ $2 =~ ^[1-9][0-9]*s$ ]]
   shift 2
-  if [[ $EMULATOR_MODE == stalled && $1 == */avdmanager ]]; then
+  if [[ ( $EMULATOR_MODE == stalled && $1 == */avdmanager ) ||
+        ( $EMULATOR_MODE == screen-stalled && "$*" == *'shell dumpsys window policy' ) ]]; then
     exec "$REAL_NODE" -e 'const [, tool, ...args] = process.argv;
       const result = require("node:child_process").spawnSync(tool, args, {timeout: 250, killSignal: "SIGKILL"});
       process.exit(result.error?.code === "ETIMEDOUT" ? 124 : 1);' "$@"
@@ -148,4 +152,24 @@ test('cleanup reaps a child that ignores SIGTERM and preserves the fixture resul
   const result = runCoverage(t, 'stubborn');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.operations, /self-test /);
+});
+
+
+test('a stalled screen probe preserves the startup timeout without another attempt', t => {
+  const result = runCoverage(t, 'screen-stalled');
+  assert.equal(result.status, 124, result.stderr);
+  assert.match(result.stderr, /startup deadline/);
+  assert.equal((result.operations.match(/^adb -t 17 shell dumpsys window policy$/gm) ?? []).length, 1);
+  assert.doesNotMatch(result.operations, /self-test /);
+});
+
+test('helper failure diagnostics stay on the admitted transport after disconnect', t => {
+  const result = runCoverage(t, 'fixture-fails');
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.operations, /self-test .* --transport-id 17/);
+  assert.match(result.operations, /adb -t 17 shell dumpsys window displays/);
+  assert.match(result.operations, /adb -t 17 shell dumpsys activity lastanr/);
+  assert.match(result.operations, /adb -t 17 logcat .*am_anr am_crash/);
+  assert.match(result.operations, /adb -t 17 logcat .*AndroidRuntime:E/);
+  assert.doesNotMatch(result.operations, /adb -s /);
 });
