@@ -124,6 +124,29 @@ final class AccessSubscriptionUsageTests: XCTestCase {
         }
     }
 
+    func testDedicatedFiniteQuotaBindingAndRevocation() throws {
+        let reference = subscriptionConfiguration()
+        let configuration = AccessSubscriptionConfiguration(subscriptionInfoURL: reference.subscriptionInfoURL,
+            allowedTestClient: "fixture", expectedQuotaBytes: 10_000_000, trafficReset: "never",
+            nodeSHA256: reference.nodeSHA256)
+        try configuration.validate(node: subscriptionFixtureNode)
+        for (upload, enabled, expiry, permitted) in [(UInt64(0), true, UInt64(0), true),
+                (10_000_000, true, 0, false), (0, false, 0, false), (0, true, 1, false)] {
+            let usage = AccessSubscriptionUsage(sId: "fixture", emails: ["fixture"], uploadByte: upload,
+                downloadByte: 0, totalByte: 10_000_000, expire: expiry, enabled: enabled)
+            try usage.validate(for: configuration)
+            XCTAssertEqual(usage.permitsConnection, permitted)
+        }
+        XCTAssertThrowsError(try subscriptionUsage().validate(for: configuration),
+                             "A shared-account quota must not be accepted for the dedicated account")
+        for (quota, reset) in [(UInt64(0), "never"), (UInt64.max, "never"), (10_000_000, "unknown")] {
+            let invalid = AccessSubscriptionConfiguration(subscriptionInfoURL: reference.subscriptionInfoURL,
+                allowedTestClient: "fixture", expectedQuotaBytes: quota, trafficReset: reset,
+                nodeSHA256: reference.nodeSHA256)
+            XCTAssertThrowsError(try invalid.validateEndpoint())
+        }
+    }
+
     func testEndpointAndEmbeddedNodeBinding() throws {
         XCTAssertThrowsError(try subscriptionConfiguration().validate(node: Data("different node".utf8)))
         for url in ["http://example.invalid/sub/fixture?format=info", "https://user:pass@example.invalid/sub/fixture?format=info",
@@ -330,6 +353,26 @@ final class AccessSubscriptionUsageTests: XCTestCase {
         XCTAssertTrue(session.managesConnections)
         session.setActive(true)
         defer { session.setActive(false) }
+        let expectedState = ProcessInfo.processInfo.environment["AEGIS_TEST_ACCOUNT_STATUS"] ?? "allowed"
+        XCTAssertTrue(["allowed", "disabled", "expired", "exhausted"].contains(expectedState))
+        if expectedState != "allowed" {
+            await session.refresh()?.value
+            let usage = try XCTUnwrap(session.snapshot)
+            switch expectedState {
+            case "disabled": XCTAssertFalse(usage.enabled)
+            case "expired":
+                XCTAssertGreaterThan(usage.expire, 0)
+                XCTAssertLessThanOrEqual(TimeInterval(usage.expire), Date.now.timeIntervalSince1970)
+            case "exhausted": XCTAssertEqual(usage.remainingBytes, 0)
+            default: XCTFail("Unknown live acceptance state")
+            }
+            XCTAssertFalse(session.permitsExistingConnection)
+            do {
+                _ = try await session.connectionParameters()
+                XCTFail("The current server status must prevent a new connection")
+            } catch { /* The actual subscription must deny this connection. */ }
+            return
+        }
         let core = try AccessGoEmbeddedCore()
         let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(verifiedCore: core, parameters: {
             try await session.connectionParameters()
@@ -340,7 +383,10 @@ final class AccessSubscriptionUsageTests: XCTestCase {
             XCTAssertTrue(publisher.validateReady(result))
             XCTAssertGreaterThan(session.availableConnectionCount, 0)
             let usage = try XCTUnwrap(session.snapshot)
-            XCTAssertEqual(usage.totalByte, 10_000_000_000)
+            let descriptorURL = try XCTUnwrap(Bundle.main.url(forResource: "AegisPrivateTestSubscription", withExtension: "json"))
+            let descriptor = try JSONDecoder().decode(AccessSubscriptionConfiguration.self, from: Data(contentsOf: descriptorURL))
+            XCTAssertEqual(usage.totalByte, descriptor.expectedQuotaBytes)
+            XCTAssertEqual(usage.emails, [descriptor.allowedTestClient])
             XCTAssertEqual(usage.usedBytes, usage.uploadByte + usage.downloadByte)
             let watchdog = Task {
                 try await Task.sleep(for: .seconds(25))

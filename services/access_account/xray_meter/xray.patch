@@ -47,7 +47,7 @@ index 4c3b16a..e1b924f 100644
  	ob := outbounds[len(outbounds)-1]
  	content := session.ContentFromContext(ctx)
 diff --git a/proxy/freedom/freedom.go b/proxy/freedom/freedom.go
-index 6215647..6021ada 100644
+index 6215647..62a31e9 100644
 --- a/proxy/freedom/freedom.go
 +++ b/proxy/freedom/freedom.go
 @@ -10,6 +10,7 @@ import (
@@ -69,7 +69,7 @@ index 6215647..6021ada 100644
  	destination := ob.Target
  	origTargetAddr := ob.OriginalTarget.Address
  	if origTargetAddr == nil {
-@@ -397,6 +402,11 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+@@ -397,6 +402,14 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
  		}
  	}
  	defer conn.Close()
@@ -77,11 +77,14 @@ index 6215647..6021ada 100644
 +		if _, ok := stat.TryUnwrapStatsConn(conn).(*net.TCPConn); !ok {
 +			return errors.New("meter requires direct target TCP socket")
 +		}
++		if err := meter.BindTarget(conn); err != nil {
++			return err
++		}
 +	}
  	errors.LogInfo(ctx, "connection opened to ", destination, ", local endpoint ", conn.LocalAddr(), ", remote endpoint ", conn.RemoteAddr())
  
  	var newCtx context.Context
-@@ -418,7 +428,9 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+@@ -418,7 +431,9 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
  		defer timer.SetTimeout(plcy.Timeouts.DownlinkOnly)
  
  		var writer buf.Writer
@@ -92,7 +95,7 @@ index 6215647..6021ada 100644
  			if h.config.Fragment != nil {
  				errors.LogDebug(ctx, "FRAGMENT", h.config.Fragment.PacketsFrom, h.config.Fragment.PacketsTo, h.config.Fragment.LengthMin, h.config.Fragment.LengthMax,
  					h.config.Fragment.IntervalMin, h.config.Fragment.IntervalMax, h.config.Fragment.MaxSplitMin, h.config.Fragment.MaxSplitMax)
-@@ -452,7 +464,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+@@ -452,7 +467,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
  
  	responseDone := func() error {
  		defer timer.SetTimeout(plcy.Timeouts.UplinkOnly)
@@ -219,7 +222,7 @@ index 6008437..7702769 100644
  	}
  	if spliceReadyInbound != nil && spliceReadyInbound.CanSpliceCopy == 2 {
 diff --git a/proxy/vless/inbound/inbound.go b/proxy/vless/inbound/inbound.go
-index 5692874..3eb4d4b 100644
+index 5692874..ff7b903 100644
 --- a/proxy/vless/inbound/inbound.go
 +++ b/proxy/vless/inbound/inbound.go
 @@ -13,6 +13,7 @@ import (
@@ -255,7 +258,7 @@ index 5692874..3eb4d4b 100644
 +			return errors.New("meter requires authenticated Vision TCP")
 +		}
 +		var meter *aegismeter.Flow
-+		ctx, meter, err = aegismeter.Open(ctx, request.User.Email)
++		ctx, meter, err = aegismeter.Open(ctx, request.User.Email, iConn.(*reality.Conn).NetConn())
 +		if err != nil {
 +			return errors.New("meter unavailable").Base(err)
 +		}

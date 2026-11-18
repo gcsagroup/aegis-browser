@@ -59,7 +59,17 @@ def dump(path, obj):
     return path
 
 
+def source_head():
+    git = shutil.which("git", path=os.defpath)
+    require(git, "System Git is required for the source receipt")
+    # System Git receives fixed arguments in the fixture's own checkout.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    return subprocess.check_output([git, "rev-parse", "HEAD"], cwd=SERVICE, text=True).strip()  # nosec B603
+
+
 class Runtime:
+    enforce_quota = False
+
     def __init__(self, root, stack, stock, metered, socket_path):
         self.root, self.stack = root, stack
         self.stock, self.metered = stock, metered
@@ -69,6 +79,7 @@ class Runtime:
         self.tokens = {}
         self.logs = []
         self.origin = None
+        self.xray_process = None
 
     def launch(self, name, args, *, service_port=None, socket_path=None, meter=False):
         if args[:3] not in (
@@ -83,8 +94,11 @@ class Runtime:
         self.logs.append((name, log))
         env = os.environ.copy()
         env.pop("AEGIS_XRAY_METER_SOCKET", None)
+        env.pop("AEGIS_XRAY_QUOTA", None)
         if meter:
             env["AEGIS_XRAY_METER_SOCKET"] = str(self.socket_path)
+            if self.enforce_quota:
+                env["AEGIS_XRAY_QUOTA"] = "enforce"
         # Only the fixture modules and the two operator-selected Xray binaries can start here.
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT,  # nosec B603
@@ -117,7 +131,7 @@ class Runtime:
         # System OpenSSL receives fixed certificate options and paths in the private fixture directory.
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",  # nosec B603
-                        "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
+                        "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,DNS:paid-wire.invalid",
                         "-keyout", key, "-out", cert], capture_output=True, check=True)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.minimum_version = ssl.TLSVersion.TLSv1_3
@@ -160,8 +174,8 @@ class Runtime:
         socks = {name: port() for name in self.tokens}
         cfg = dump(self.root / "node.json", {"nodeId": NODE, "targets": {self.authority: HOST, self.plain_authority: HOST},
                    "upstreams": {"client-" + name: number for name, number in socks.items()}})
-        self.launch("collector", [*self.cli, "serve", "--database", self.db, "--config", cfg,
-                                  "--socket", self.socket_path], socket_path=self.socket_path)
+        self.config = cfg
+        self.start_collector()
         self.start_xray(socks)
         self.entry, self.api = port(), port()
         common = ["--database", self.db, "--stored-snapshots"]
@@ -171,6 +185,13 @@ class Runtime:
         self.launch("entry", [sys.executable, "-m", "services.access_account.node", *common,
                               "--port", str(self.entry), "--config", cfg, "--cert", self.root / "cert.pem",
                               "--key", self.root / "key.pem"], service_port=self.entry)
+
+    def start_collector(self):
+        args = [*self.cli, "serve", "--database", self.db, "--config", self.config,
+                "--socket", self.socket_path]
+        if self.enforce_quota:
+            args.append("--enforce-quota")
+        self.collector = self.launch("collector", args, socket_path=self.socket_path)
 
     def start_xray(self, socks):
         # The recorded stock binary receives one fixed key-generation subcommand.
@@ -191,7 +212,7 @@ class Runtime:
                  {"action": "block"}]
         config = {"log": {"loglevel": "warning"}, "inbounds": [inbound],
                   "outbounds": [{"protocol": "freedom", "settings": {"finalRules": rules}}]}
-        self.launch("server-xray", [self.metered, "run", "-c", dump(self.root / "xserver.json", config)],
+        self.xray_process = self.launch("server-xray", [self.metered, "run", "-c", dump(self.root / "xserver.json", config)],
                     service_port=self.reality_port, meter=True)
         for name, number in socks.items():
             server = {"address": HOST, "port": self.reality_port,
@@ -205,6 +226,14 @@ class Runtime:
                                      "streamSettings": stream(reality)}]}
             self.launch("client-" + name, [self.stock, "run", "-c", dump(self.root / (name + ".json"), config)],
                         service_port=number)
+
+    def restart_xray(self):
+        if self.xray_process is None:
+            raise RuntimeError("Cannot restart Xray before the fixture starts it")
+        self.xray_process.terminate()
+        self.xray_process.wait(timeout=5)
+        self.xray_process = self.launch("server-xray-restarted", [self.metered, "run", "-c",
+                                      self.root / "xserver.json"], service_port=self.reality_port, meter=True)
 
     def usage(self):
         # Exercise the operator CLI with this interpreter and the private fixture database.

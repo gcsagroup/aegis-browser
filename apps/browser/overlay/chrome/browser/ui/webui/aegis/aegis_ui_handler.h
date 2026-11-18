@@ -17,6 +17,10 @@
 #include "chrome/browser/aegis/metalink_parser.h"
 #if BUILDFLAG(IS_MAC)
 #include "chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom.h"
+namespace aegis::access {
+struct AccessOptionsSnapshot;
+template <typename T> struct StoreResult;
+}
 #endif
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -98,11 +102,18 @@ class AegisUIHandler : public content::WebUIMessageHandler,
   void OnMetalinkParsed(std::string callback_id,
                         aegis::MetalinkParseResult result);
 #if BUILDFLAG(IS_MAC)
+  void HandleGetAccessOptionsCapabilities(const base::ListValue& args);
+  void HandleReadAccessOptions(const base::ListValue& args);
+  void OnAccessOptionsRead(std::string callback_id, aegis::access::StoreResult<aegis::access::AccessOptionsSnapshot> result);
+#endif
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   void HandleGetCurrentAccessAccount(const base::ListValue& args);
   void HandleGetAccessAccountSnapshot(const base::ListValue& args);
   void HandleSetAccessAccountUsageVisible(const base::ListValue& args);
   void OnAccessAccountStatus(std::string callback_id, base::DictValue account);
   void OnJavascriptDisallowed() override;
+#endif
+#if BUILDFLAG(IS_MAC)
   void OnTorrentValidated(std::string callback_id,
                           std::vector<uint8_t> torrent_data,
                           std::string magnet_uri,
@@ -154,7 +165,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
   base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
       service_observation_{this};
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   base::ScopedClosureRunner access_usage_visibility_;
   base::WeakPtrFactory<AegisUIHandler> account_weak_factory_{this};
 #endif

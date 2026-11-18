@@ -6,27 +6,36 @@ const repository = 'gcsagroup/aegis-browser';
 const sha = 'a'.repeat(40);
 const policy = {appId: 40, slug: 'aegis-delivery', actorId: 50};
 const environment = {GITHUB_REPOSITORY: repository, GITHUB_SHA: sha,
+  GITHUB_RUN_ID: '100', GITHUB_ACTOR_ID: '99', GITHUB_ACTOR: 'admin',
+  AEGIS_IOS_GITHUB_RELEASE_ENABLED: 'true', AEGIS_IOS_RELEASE_ENABLED: 'true',
   AEGIS_IOS_DELIVERY_BOT: JSON.stringify(policy), BOT_INPUTS: JSON.stringify({operation: 'Package and upload', version: '1.1.0', build: '4', product: 'Beta', signing_mode: 'manual'})};
 const load = () => import('../ios-delivery-bot.mjs');
 function fixture({failure, mutate = value => value, mutateJobs = value => value, dispatchError = false} = {}) {
   const requests = [];
   const runs = new Map();
+  const operations = new Map();
   let next = 200;
   const api = async (path, options = {}) => {
     if (path === '/repos/'+repository) return {id: 1348409663, full_name: repository, default_branch: 'main'};
     if (path.endsWith('/git/ref/heads/main')) return {object: {sha}};
     const inventory = path.match(/\/actions\/runs\/(\d+)\/attempts\/1\/jobs\?per_page=100$/u);
     if (inventory) {
-      const jobs = ['ios-package', 'seal-package', 'upload-new'].map((name, index) => ({id: 300+index,
+      const names = ['Wait', 'Release Wait'].includes(operations.get(Number(inventory[1]))) ? ['status-query'] : ['ios-package', 'seal-package', 'upload-new'];
+      const jobs = names.map((name, index) => ({id: 300+index,
         name, run_id: Number(inventory[1]), run_attempt: 1, head_sha: sha, status: 'completed', conclusion: 'success'}));
       return mutateJobs({total_count: jobs.length, jobs});
     }
+    if (path.endsWith('/pending_deployments')) return [{environment: {name: 'aegis-ios-github-production'}}];
     if (options.method === 'POST') {
       requests.push({path, body: options.body});
       if (dispatchError) throw new Error('secret response');
       const id = next++;
-      const workflow = path.includes('ios-delivery-full') ? 'ios-delivery-full' : 'ios-delivery';
-      runs.set(id, mutate({id, run_attempt: 1, status: 'completed', conclusion: failure || 'success',
+      const release = path.includes('ios-github-release.yml');
+      const operation = options.body.inputs.operation;
+      operations.set(id, operation);
+      const workflow = release ? 'ios-github-release' : path.includes('ios-delivery-full') ? 'ios-delivery-full' : 'ios-delivery';
+      const waiting = release && operation === 'Publish stable';
+      runs.set(id, mutate({id, run_attempt: 1, status: waiting ? 'waiting' : 'completed', conclusion: waiting ? null : failure || 'success',
         head_sha: sha, head_branch: 'main', path: '.github/workflows/'+workflow+'.yml', event: 'workflow_dispatch',
         repository: {id: 1348409663, full_name: repository}, head_repository: {id: 1348409663, full_name: repository},
         actor: {id: 50, login: 'aegis-delivery[bot]', type: 'Bot'}, triggering_actor: {id: 50, login: 'aegis-delivery[bot]', type: 'Bot'}}));
@@ -145,6 +154,42 @@ test('a later Wait failure retains the successful producer and both exact run re
   assert.deepEqual(retained.map(value => [value.id, value.state]), [[200, 'dispatched'], [200, 'completed'], [201, 'dispatched']]);
   assert.equal(retained[1].conclusion, 'success');
   assert.equal(retained[1].approvedSourceSha, sha);
+});
+test('GitHub release preview waits for Apple VALID and dispatches only the exact release evidence', async () => {
+  const {driveDelivery} = await load();
+  const f = fixture();
+  const inputs = {...JSON.parse(environment.BOT_INPUTS), operation: 'Preview GitHub release',
+    version: '1.2.0', build: '9', product: 'Beta'};
+  const value = await driveDelivery({...f, environment: {...environment, BOT_INPUTS: JSON.stringify(inputs)}});
+  assert.deepEqual(value.runs.map(row => row.id), [200, 201]);
+  assert.equal(f.requests[0].body.inputs.operation, 'Release Wait');
+  assert.equal(f.requests[1].path, '/repos/'+repository+'/actions/workflows/ios-github-release.yml/dispatches');
+  assert.deepEqual(f.requests[1].body.inputs, {operation: 'Preview', release_type: 'beta', version: '1.2.0', build: '9',
+    status_run_id: '200', controller_run_id: '100', controller_actor_id: '99', controller_actor_login: 'admin',
+    approved_source_sha: sha});
+});
+test('stable controller seals its exact child dispatch and lets the child own approval', async () => {
+  const {driveDelivery} = await load();
+  const f = fixture();
+  const receipts = [];
+  const inputs = {...JSON.parse(environment.BOT_INPUTS), operation: 'Publish stable release',
+    version: '1.2.0', build: '9', product: 'Release'};
+  const value = await driveDelivery({...f, recordReleaseDispatch: receipt => receipts.push(receipt),
+    environment: {...environment, BOT_INPUTS: JSON.stringify(inputs)}});
+  assert.equal(f.requests.length, 2);
+  assert.equal(value.runs[1].state, 'dispatched');
+  assert.deepEqual(receipts, [{childRunId: 201, inputs: f.requests[1].body.inputs}]);
+});
+test('the current TestFlight build can only be previewed and release settings are required before dispatch', async () => {
+  const {driveDelivery} = await load();
+  const f = fixture();
+  const publish = {...JSON.parse(environment.BOT_INPUTS), operation: 'Publish Beta release', version: '1.1.0', build: '8'};
+  await assert.rejects(driveDelivery({...f, environment: {...environment, BOT_INPUTS: JSON.stringify(publish)}}), /preview-only/iu);
+  assert.equal(f.requests.length, 0);
+  const preview = {...publish, operation: 'Preview GitHub release'};
+  await assert.rejects(driveDelivery({...f, environment: {...environment, AEGIS_IOS_GITHUB_RELEASE_ENABLED: 'false',
+    BOT_INPUTS: JSON.stringify(preview)}}), /disabled|configured/iu);
+  assert.equal(f.requests.length, 0);
 });
 test('App authentication signs a short JWT and limits the installation token to this repository', async () => {
   const {installationClient} = await load();

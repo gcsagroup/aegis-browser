@@ -13,12 +13,18 @@ final class LocalizationTests: XCTestCase {
         let paidAccessAddedKeys: [String]
         let addressProxyAddedKeys: [String]
         let subscriptionQuotaAddedKeys: [String]
+        let locationPrivacyAddedKeys: [String]
+        let browserReloadAddedKeys: [String]
+        let markdownInputAddedKeys: [String]
+        let ocrMarkdownAddedKeys: [String]
         let identicalEnglishAllowlist: [String: [String: Exception]]
 
         var expectedKeyCount: Int {
-            catalogKeyCount + Set(
-                languageSelectorAddedKeys + paidAccessAddedKeys + addressProxyAddedKeys + subscriptionQuotaAddedKeys
-            ).count
+            let addedKeyGroups = [
+                languageSelectorAddedKeys, paidAccessAddedKeys, addressProxyAddedKeys, subscriptionQuotaAddedKeys,
+                locationPrivacyAddedKeys, browserReloadAddedKeys, markdownInputAddedKeys, ocrMarkdownAddedKeys,
+            ]
+            return catalogKeyCount + Set(addedKeyGroups.joined()).count
         }
     }
 

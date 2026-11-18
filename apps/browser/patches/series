@@ -495,3 +495,9 @@
 0493-prepare-integrated-candidate-339.patch
 0494-align-mobile-settings-overlay.patch
 0495-handle-ocr-lookup-and-errors.patch
+0496-fix-macos-unshown-omnibox-popup.patch
+0497-fix-ios-markdown-render-ownership.patch
+0498-test-macos-aim-presentation-lifecycle.patch
+0499-feat-access-windows-desktop-parity.patch
+0500-feat-macos-access-options-admission-store.patch
+0501-fix-access-private-staging-tool-and-review-findings.patch

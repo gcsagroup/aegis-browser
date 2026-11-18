@@ -412,19 +412,19 @@ ensure_depot_tools_on_path() { :; }
 detect_and_export_proxy() { :; }
 desktop_app_path() { printf '%s/GCSA Aegis.app\\n' "$1"; }
 ''')
-            check = '''#!/bin/bash
-set -euo pipefail
+            (depot / 'check-lock').write_text('''set -euo pipefail
 lock="$FAKE_OUT/.aegis/build.lock"
 [[ -d "$lock" ]] || exit 91
 if mkdir "$lock" 2>/dev/null; then exit 92; fi
 printf '%s\\n' "$1" >> "$FAKE_PHASE_LOG"
-'''
+''')
+            # Reuse the check in each mock's Bash process. The mkdir still
+            # attempts to acquire the production script's real directory lock.
             scripts = {
-                depot / 'check-lock': check,
-                depot / 'gn': '#!/bin/bash\n"$FAKE_DEPOT/check-lock" gn\n',
+                depot / 'gn': '#!/bin/bash\nsource "$FAKE_DEPOT/check-lock" gn\n',
                 depot / 'autoninja': '''#!/bin/bash
 set -euo pipefail
-"$FAKE_DEPOT/check-lock" compile
+source "$FAKE_DEPOT/check-lock" compile
 mkdir -p "$FAKE_OUT/GCSA Aegis.app/Contents"
 touch "$FAKE_OUT/GCSA Aegis.app/Contents/Info.plist"
 ''',
@@ -432,15 +432,15 @@ touch "$FAKE_OUT/GCSA Aegis.app/Contents/Info.plist"
 set -euo pipefail
 for ((i=1; i<=$#; ++i)); do
   if [[ "${!i}" == --phase ]]; then
-    ((++i)); "$FAKE_DEPOT/check-lock" "${!i}"; break
+    ((++i)); source "$FAKE_DEPOT/check-lock" "${!i}"; break
   fi
 done
 ''',
                 depot / 'df': "#!/bin/bash\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 99999999 0 99999999 0%% /\\n'\n",
-                browser / 'scripts/sign-chromium-app.sh': '#!/bin/bash\n"$FAKE_DEPOT/check-lock" sign\n',
+                browser / 'scripts/sign-chromium-app.sh': '#!/bin/bash\nsource "$FAKE_DEPOT/check-lock" sign\n',
                 release / 'macos-internal-dmg.sh': '''#!/bin/bash
 set -euo pipefail
-"$FAKE_DEPOT/check-lock" package
+source "$FAKE_DEPOT/check-lock" package
 [[ "$(cat "$FAKE_OUT/.aegis/build.lock/package-owner")" == "$AEGIS_MACOS_BUILD_LOCK_PID" ]]
 kill -0 "$AEGIS_MACOS_BUILD_LOCK_PID"
 exit "$FAKE_PACKAGE_STATUS"
@@ -451,15 +451,29 @@ exit "$FAKE_PACKAGE_STATUS"
                 path.chmod(0o700)
             out = src / 'out/AegisRelease'
             log = root / 'phases'
-            env = dict(os.environ, CHROMIUM_ROOT=str(src.parent), DEPOT_TOOLS_DIR=str(depot),
-                       PATH=str(depot) + os.pathsep + os.environ['PATH'], FAKE_OUT=str(out),
-                       FAKE_DEPOT=str(depot), FAKE_PHASE_LOG=str(log),
-                       FAKE_PACKAGE_STATUS=str(package_status))
-            for key in ('OUT_DIR', 'AEGIS_ALLOW_DIRTY_IDENTITY', 'MACOS_OUTPUT_DIR'):
-                env.pop(key, None)
-            result = subprocess.run(['bash', str(release / 'macos-rebuild-dmg.sh'), '0.8.0', 'arm64'],
-                                    env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    timeout=20)
+            # Run the copied scripts with fixture tools and system utilities,
+            # independent of the runner's Bash startup and package-manager PATH.
+            env = {
+                'HOME': str(root),
+                'PATH': os.pathsep.join((str(depot), '/usr/bin', '/bin')),
+                'CHROMIUM_ROOT': str(src.parent),
+                'DEPOT_TOOLS_DIR': str(depot),
+                'FAKE_OUT': str(out),
+                'FAKE_DEPOT': str(depot),
+                'FAKE_PHASE_LOG': str(log),
+                'FAKE_PACKAGE_STATUS': str(package_status),
+            }
+            try:
+                result = subprocess.run(
+                    ['/bin/bash', str(release / 'macos-rebuild-dmg.sh'), '0.8.0', 'arm64'],
+                    env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    timeout=20,
+                )
+            except subprocess.TimeoutExpired as error:
+                completed = log.read_text().splitlines() if log.exists() else []
+                output = (error.stdout or b'').decode('utf-8', errors='replace')
+                self.fail(f'Build lock fixture exceeded {error.timeout}s for package status '
+                          f'{package_status}; completed lock checks: {completed}\n{output}')
             self.assertEqual(result.returncode, package_status, result.stdout)
             phases = ['gn', 'begin', 'compile']
             if platform.system() == 'Darwin':
@@ -468,10 +482,21 @@ exit "$FAKE_PACKAGE_STATUS"
             self.assertFalse((out / '.aegis/build.lock').exists())
 
     def test_rebuild_keeps_one_exclusive_lock_from_gn_through_package(self):
-        self.exercise_rebuild(0)
+        with tempfile.TemporaryDirectory(prefix='aegis-dmg-ambient-') as directory:
+            ambient = Path(directory)
+            uname = ambient / 'uname'
+            uname.write_text('#!/bin/bash\n: > "${0%/*}/uname-invoked"\nexit 87\n')
+            uname.chmod(0o700)
+            with patch.dict(os.environ, {'PATH': str(ambient) + os.pathsep + os.environ['PATH']}):
+                self.exercise_rebuild(0)
+            self.assertFalse((ambient / 'uname-invoked').exists())
 
     def test_failed_package_releases_the_original_build_lock(self):
-        self.exercise_rebuild(23)
+        with tempfile.TemporaryDirectory(prefix='aegis-dmg-ambient-') as directory:
+            startup = Path(directory) / 'bash-env'
+            startup.write_text('printf "Unexpected ambient Bash startup\\n" >&2\nexit 86\n')
+            with patch.dict(os.environ, {'BASH_ENV': str(startup)}):
+                self.exercise_rebuild(23)
 
 
 class WorkflowContractTests(unittest.TestCase):

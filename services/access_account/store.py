@@ -5,9 +5,18 @@ from contextlib import closing
 from pathlib import Path
 import sqlite3
 
+from . import settlement
+
 
 class Unavailable(Exception):
     """No trustworthy current entitlement can be read."""
+
+
+def _check_alpha_panel_scope(panel, client):
+    """Apply the operator's client scope independently of the usage source."""
+    alpha_client = getattr(panel, "alpha_panel_client", None)
+    if alpha_client is not None and client != alpha_client:
+        raise Unavailable("panel client outside Alpha scope")
 
 
 CURRENT_ACCOUNT_SQL = """
@@ -71,13 +80,21 @@ def read_current(database_path, token, clock_ms, *, panel=None):
     try:
         with closing(sqlite3.connect(uri, uri=True)) as db:
             db.row_factory = sqlite3.Row
+            db.execute('BEGIN')
             now = clock_ms()
             account = db.execute(CURRENT_ACCOUNT_SQL, (digest, now)).fetchone()
             if account is None:
                 return None
+            if account["plan_id"] is not None:
+                _check_alpha_panel_scope(panel, account["panel_client"])
+            binding = settlement.period(db, account['id'], account['period_id'])
+            if binding is not None:
+                return _response(account, settlement.reading(db, account, binding), now)
             if panel is None or account["plan_id"] is None:
                 return _response(account, account, now)
+            db.commit()
             observed = panel.read(account["panel_client"], clock_ms)
+            db.execute('BEGIN')
             now = clock_ms()
             current = db.execute(CURRENT_ACCOUNT_SQL, (digest, now)).fetchone()
             if current is None:
@@ -85,6 +102,9 @@ def read_current(database_path, token, clock_ms, *, panel=None):
             if any(current[k] != account[k] for k in
                    ("id", "plan_id", "period_id", "period_start", "period_end", "panel_client")):
                 raise Unavailable("account or plan changed during panel read")
+            binding = settlement.period(db, current['id'], current['period_id'])
+            if binding is not None:
+                return _response(current, settlement.reading(db, current, binding), now)
             return _response(current, observed, now)
     except sqlite3.Error as error:
         raise Unavailable("account store unavailable") from error

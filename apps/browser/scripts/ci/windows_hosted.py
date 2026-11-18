@@ -18,7 +18,36 @@ BROWSER = candidate.BROWSER
 DEPOT_COMMIT = '2fd34a8813b6f34336aad40976cc4223768177f8'
 SDK_VERSION = json.loads(Path(__file__).with_name('windows_sdk.json').read_text())['version']
 CHROMIUM_URL = 'https://chromium.googlesource.com/chromium/src.git'
-TARGETS = ['chrome', 'mini_installer', 'aegis_browser_unittests', 'browser_tests']
+ACCESS_CORE_TESTS = 'access_local_core_manager_unittests'
+ACCESS_CORE_CASES = frozenset([
+    'AccessCoreLogWindowsTest.KeepsPrivateAndRegularHistorySeparate',
+    'AccessCoreLogWindowsTest.ClearFencesAlreadyQueuedPipeBytes',
+    'AccessCoreLogWindowsTest.FirstExportFromCleanProfileCreatesArchive',
+    'AccessLogExportDialogWindowsTest.KeepsDefaultsAndRegistersOverwriteEvents',
+    'AccessLogExportDialogWindowsTest.RefusesExistingDestinationAndPreservesFile',
+    'AccessLogExportDialogWindowsTest.FreshSelectionCanFinishAfterRefusedOverwrite',
+    'AccessLocalCoreWinInputTest.BuildControlsLocalBinding',
+    'AccessLocalCoreWinTest.WrongPinCannotLaunchOrPublish',
+    'AccessLocalCoreWinTest.StopCleansProcessTreeAndPrivateConfig',
+    'AccessLocalCoreWinTest.SessionEndingCleansWithoutUiReplies',
+])
+ENHANCEMENT_CASES = frozenset('EnhancementBrowserTest.' + name for name in [
+    'EarlyRulesIsolationStorageAndRevocation',
+    'TrialDoesNotPersistAndPrivateProfileStartsEmpty',
+    'CrossProcessFramesAreMatchedIndividually',
+    'MarkdownFirstBrowserOpenRendersWithoutReload',
+    'MarkdownFirstLocalLinkRendersWithoutReload',
+    'MarkdownFirstFileDropRendersWithoutReload',
+    'MarkdownUntrustedFrameRendersAndBlocksExecutableHTML',
+])
+ROUTING_CASES = {
+    'access_service_coordinator_unittests':
+        'AccessSiteProxyProductTest.DualSelectionReleasesPaidOnlyAfterCommittedLocalOff',
+    'access_network_context_transport_unittests':
+        'AccessPrivatePublicationTest.AccountSitesCoexistWithPrivateLocalSelection',
+}
+TARGETS = ['chrome', 'mini_installer', 'aegis_browser_unittests',
+           ACCESS_CORE_TESTS, *ROUTING_CASES, 'browser_tests']
 
 
 class Runner:
@@ -103,8 +132,8 @@ def check_test_summary(path, expected=None):
     if not tests or any(not iteration for iteration in tests):
         raise ValueError('测试摘要为空，不能标记通过')
     for iteration in tests:
-        if expected is not None and len(iteration) != expected:
-            raise ValueError('实际测试数量不匹配')
+        if expected is not None and iteration.keys() != expected:
+            raise ValueError('实际测试清单不匹配')
         if any(not runs or any(run.get('status') != 'SUCCESS' for run in runs)
                for runs in iteration.values()):
             raise ValueError('测试包含失败或跳过项')
@@ -384,14 +413,20 @@ def build(work, evidence):
         runner.run('gn', [source / 'buildtools/win/gn.exe', 'gen', out, '--check'], source, env)
         runner.run('build', [source / 'third_party/ninja/ninja.exe', '-C', out, '-j', '28', *TARGETS], source, env)
         result['build'] = 'passed'
-        for target, count, extra in [
+        suites = [
             ('aegis_browser_unittests', None, []),
-            ('browser_tests', 4, ['--gtest_filter=EnhancementBrowserTest.*'])]:
+            (ACCESS_CORE_TESTS, ACCESS_CORE_CASES, []),
+            ('browser_tests', ENHANCEMENT_CASES,
+             ['--gtest_filter=EnhancementBrowserTest.*']),
+        ]
+        for target, case in ROUTING_CASES.items():
+            suites.append((target, {case}, ['--gtest_filter=' + case]))
+        for target, expected_cases, extra in suites:
             summary = evidence / (target + '.json')
             runner.run(target, [out / (target + '.exe'), '--test-launcher-jobs=4',
                        '--test-launcher-retry-limit=0', '--test-launcher-print-test-stdio=always',
                        '--test-launcher-summary-output=' + str(summary), *extra], source, env)
-            result[target] = {'passed': check_test_summary(summary, count)}
+            result[target] = {'passed': check_test_summary(summary, expected_cases)}
         installer = evidence / 'mini_installer.exe'
         shutil.copy2(out / installer.name, installer)
         result.update(status='build_and_native_tests_passed', installerSha256=candidate.sha256(installer))

@@ -453,7 +453,7 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
   assert.notEqual(validate(paths).status, 0, 'the iOS workflow path cannot be overridden');
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'];
-  const automaticJobs = [[0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive']];
+  const automaticJobs = [[0, 'impact'], [0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive']];
   const mutations = [
     ...[0, 5, 6].flatMap((index) => [
       [index, (w) => { delete w.on.pull_request.types; }, 'missing PR event selection'],
@@ -506,13 +506,13 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
     [0, (w) => { w.jobs['quality-summary'].needs = []; }],
     [0, (w) => { w.jobs['quality-summary'].needs.push('shell-coverage'); }],
     [0, (w) => { w.jobs.quality['runs-on'] = 'ubuntu-24.04'; }],
-    ...[[0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
+    ...[[0, 'quality'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
       [index, (w) => { w.jobs[job]['runs-on'] = ['self-hosted', 'macOS', 'ARM64', 'aegis-test']; }],
       [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace("github.event.pull_request.head.repo.full_name == github.repository", 'true'); }],
       [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace("github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY", 'true'); }],
       [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace('aegis-test', 'aegis-upstream'); }],
     ]),
-    ...['quality', 'quality-summary'].map(job => [0, (w) => {
+    ...['quality'].map(job => [0, (w) => {
       w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace(" && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')", '');
     }, 'maintenance branch may not enter the private test runner']),
     ...[[0, 'quality'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
@@ -540,6 +540,11 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [index, (w) => { Object.values(w.jobs)[0].steps[0].with['persist-credentials'] = true; }],
       [index, (w) => { Object.values(w.jobs)[0].steps[0].uses = 'actions/checkout@v7'; }],
     ]),
+    [3, (w) => {
+      const step = w.jobs['android-java-coverage'].steps.find((entry) => entry.name === 'Run six fixtures and collect real Java coverage');
+      delete step.run;
+      step.uses = 'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d';
+    }, 'old emulator action injects a key before AVD admission'],
     [1, (w) => { w.jobs['ios-coverage'].steps[1].with['node-version'] = '22.23.0'; }],
     [4, (w) => { w.on.pull_request_target.branches = ['main']; }],
     [4, (w) => { w.on.pull_request = {}; }],

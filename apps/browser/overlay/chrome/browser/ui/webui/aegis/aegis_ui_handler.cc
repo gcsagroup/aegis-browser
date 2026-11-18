@@ -22,6 +22,8 @@
 #include "chrome/browser/aegis/aegis_service.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #if BUILDFLAG(IS_MAC)
+#include "chrome/browser/aegis/access/access_build_channel.h"
+#include "chrome/browser/aegis/access/access_options_service.h"
 #include "chrome/browser/aegis/aegis_torrent_client.h"
 #endif
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
@@ -343,7 +345,7 @@ base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
 
 AegisUIHandler::AegisUIHandler() = default;
 AegisUIHandler::~AegisUIHandler() {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   OnJavascriptDisallowed();
 #endif
   if (active_model_request_id_) {
@@ -360,6 +362,13 @@ void AegisUIHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getStatus", base::BindRepeating(&AegisUIHandler::HandleGetStatus,
                                        base::Unretained(this)));
+#if BUILDFLAG(IS_MAC)
+  web_ui()->RegisterMessageCallback("getAccessOptionsCapabilities",
+      base::BindRepeating(&AegisUIHandler::HandleGetAccessOptionsCapabilities, base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("readAccessOptions",
+      base::BindRepeating(&AegisUIHandler::HandleReadAccessOptions, base::Unretained(this)));
+#endif
+
   web_ui()->RegisterMessageCallback(
       "getImageOcrSettings",
       base::BindRepeating(&AegisUIHandler::HandleGetImageOcrSettings,
@@ -368,7 +377,7 @@ void AegisUIHandler::RegisterMessages() {
       "saveImageOcrSettings",
       base::BindRepeating(&AegisUIHandler::HandleSaveImageOcrSettings,
                           base::Unretained(this)));
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   web_ui()->RegisterMessageCallback(
       "getAccessAccountSnapshot",
       base::BindRepeating(&AegisUIHandler::HandleGetAccessAccountSnapshot,
@@ -592,6 +601,44 @@ void AegisUIHandler::HandleGetStatus(const base::ListValue& args) {
   ResolveJavascriptCallback(callback_id, BuildStatus());
 }
 
+#if BUILDFLAG(IS_MAC)
+void AegisUIHandler::HandleGetAccessOptionsCapabilities(const base::ListValue& args) {
+  if (args.size() != 1 || !args[0].is_string()) return;
+  AllowJavascript();
+  const auto identity = aegis::access::AccessBuildIdentityForCurrentBuild();
+  base::DictValue result;
+  result.Set("enabled", aegis_access::CanUseAccessOptions(identity, aegis_access::AccessOptionsOperation::kPage));
+  result.Set("identityConflict", identity.conflict);
+  result.Set("private", Profile::FromWebUI(web_ui())->IsOffTheRecord());
+  ResolveJavascriptCallback(args[0], result);
+}
+
+void AegisUIHandler::HandleReadAccessOptions(const base::ListValue& args) {
+  if (args.size() != 1 || !args[0].is_string()) return;
+  AllowJavascript();
+  auto* service = aegis::access::AccessOptionsService::GetOrCreate(Profile::FromWebUI(web_ui()));
+  if (!service) {
+    ResolveJavascriptCallback(args[0], base::DictValue().Set("state", "channelNotAdmitted"));
+    return;
+  }
+  service->Read(base::BindOnce(&AegisUIHandler::OnAccessOptionsRead,
+      account_weak_factory_.GetWeakPtr(), args[0].GetString()));
+}
+void AegisUIHandler::OnAccessOptionsRead(std::string callback_id,
+    aegis::access::StoreResult<aegis::access::AccessOptionsSnapshot> result) {
+  if (!IsJavascriptAllowed()) return;
+  base::DictValue response;
+  response.Set("state", result.status == aegis::access::StoreStatus::kValid ? "ready" : "unavailable");
+  response.Set("storeStatus", static_cast<int>(result.status));
+  if (result.value) {
+    response.Set("formatVersion", result.value->schema_version);
+    response.Set("revision", std::to_string(result.value->revision));
+    response.Set("configuration", result.value->configuration);
+  }
+  ResolveJavascriptCallback(base::Value(callback_id), response);
+}
+#endif
+
 void AegisUIHandler::HandleGetImageOcrSettings(const base::ListValue& args) {
   if (args.size() != 1 || !args[0].is_string()) {
     return;
@@ -626,7 +673,7 @@ void AegisUIHandler::HandleSaveImageOcrSettings(const base::ListValue& args) {
                             aegis::ReadImageOcrSettings(*profile->GetPrefs()));
 }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 void AegisUIHandler::HandleGetCurrentAccessAccount(const base::ListValue& args) {
   if (args.size() != 1 || !args[0].is_string()) return;
   AllowJavascript();

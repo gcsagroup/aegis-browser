@@ -26,13 +26,13 @@ async function lineTip(api, repository, name, token) {
   if (!/^[0-9a-f]{40}$/u.test(tip ?? '')) throw new Error('Admitted release line tip is missing');
   return tip;
 }
-export async function iosReleasePreflight(sha, {environment = process.env, api = githubApi, quality = requireGreenQuality, authorize = requireIosAdministrator, lines = releaseLines()} = {}) {
+export async function iosReleasePreflight(sha, {environment = process.env, api = githubApi, quality = requireGreenQuality, authorize = requireIosAdministrator, authorizationContext = 'delivery', lines = releaseLines()} = {}) {
   if (!/^[0-9a-f]{40}$/u.test(sha ?? '')) throw new Error('Full source SHA required');
   const token = environment.GH_TOKEN || environment.GITHUB_TOKEN;
   if (!token || environment.AEGIS_IOS_RELEASE_ENABLED !== 'true') throw new Error('iOS release must be explicitly enabled with an admission token');
   const repository = environment.GITHUB_REPOSITORY || IOS_REPOSITORY;
   if (repository !== IOS_REPOSITORY) throw new Error('Privileged iOS delivery requires canonical upstream');
-  await authorize({environment});
+  await authorize({environment, context: authorizationContext});
   const candidate = environment.GITHUB_EVENT_NAME === 'push' && environment.GITHUB_REF === `refs/tags/${environment.RELEASE_TAG}` && environment.RELEASE_DESTINATION === 'github-draft';
   const dispatchLine = lines.find(line => line.ref === environment.GITHUB_REF);
   if (environment.GITHUB_ACTIONS === 'true' && (environment.GITHUB_SHA !== sha || (!candidate && environment.GITHUB_EVENT_NAME !== 'workflow_dispatch'))) {
@@ -71,8 +71,11 @@ export async function iosReleasePreflight(sha, {environment = process.env, api =
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    if (process.argv.length !== 4 || process.argv[2] !== '--sha') throw new Error('Usage: ios-release-preflight.mjs --sha SHA');
-    console.log(JSON.stringify(await iosReleasePreflight(process.argv[3])));
+    if (![4, 6].includes(process.argv.length) || process.argv[2] !== '--sha' ||
+        (process.argv.length === 6 && process.argv[4] !== '--context')) throw new Error('Usage: ios-release-preflight.mjs --sha SHA [--context delivery|github-release]');
+    const context = process.argv[5] || 'delivery';
+    if (!['delivery', 'github-release'].includes(context)) throw new Error('Unknown iOS release authorization context');
+    console.log(JSON.stringify(await iosReleasePreflight(process.argv[3], {authorizationContext: context})));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

@@ -1,6 +1,10 @@
 [run]
 branch = True
 parallel = True
+omit =
+    # Candidate discovery still runs Windows host tests. The full gate's
+    # declared production coverage scope excludes the Windows host tool.
+    */apps/browser/scripts/ci/windows_hosted.py
 [report]
 omit =
     */*_test.py

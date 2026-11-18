@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// A single entry point preserves the distinction between account and shared test data.
+/// Current product usage comes from the same 3X-UI subscription as webpage routing.
 struct AccessUsagePage: View {
     let isPrivate: Bool
-    @EnvironmentObject private var account: AccessAccountSession
     @EnvironmentObject private var subscription: AccessSubscriptionUsageSession
 
     var body: some View {
@@ -13,10 +12,8 @@ struct AccessUsagePage: View {
                     Label("私密会话不显示普通账户的额度；请在普通窗口查询。", systemImage: "lock")
                         .accessibilityIdentifier("access-usage-private")
                 }
-            } else if subscription.isSelected {
-                AccessSubscriptionUsageView(session: subscription)
             } else {
-                AccessAccountUsageView(session: account)
+                AccessSubscriptionUsageView(session: subscription)
             }
         }
         .localizedNavigationTitle("隐藏地理位置服务")

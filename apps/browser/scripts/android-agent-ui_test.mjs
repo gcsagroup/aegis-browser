@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   actionRequest,
   helperApkPath,
   JACOCO_ARTIFACTS,
   parseCoverageExec,
   parseResult,
+  runDeviceInteraction,
   SELF_TEST_CASES,
   summarizeJacocoXml,
   validateSelfTestResult,
@@ -115,4 +118,47 @@ test('JaCoCo XML 只用完整 Driver class 集和真实源码行计数生成百�
   assert.throws(() => summarizeJacocoXml(xml, classes.slice(1)));
   assert.throws(() => summarizeJacocoXml(xml.replace('covered="5"', 'covered="0"'), classes));
   assert.throws(() => summarizeJacocoXml(xml.replace('<sourcefile name="Driver.java">', '<sourcefile name="Other.java">'), classes));
+});
+
+
+test('coverage helper install and instrumentation never follow a reused device serial', t => {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'aegis-android-transport-test-'));
+  t.after(() => fs.rmSync(work, {recursive: true, force: true}));
+  const adb = '/sdk/platform-tools/adb';
+  const apk = path.join(work, 'driver.apk');
+  const installed = '/data/app/' + HELPER + '-fixture/base.apk';
+  const device = {adb, serial: 'emulator-5554', 'transport-id': '17', 'coverage-output': path.join(work, 'coverage')};
+  const record = {apkSha256: hash, coverage: {enabled: true}};
+  for (const disconnectedAt of ['install', 'instrument']) {
+    const calls = [];
+    const run = (program, args) => {
+      assert.equal(program, adb);
+      assert.deepEqual(args.slice(0, 2), ['-t', '17']);
+      const operation = args.slice(2).join(' ');
+      calls.push(operation);
+      if (operation === 'install -t ' + apk) {
+        if (disconnectedAt === 'install') throw new Error('verified transport disconnected during install');
+        return '';
+      }
+      if (operation.startsWith('shell am instrument ')) {
+        assert.match(operation, /-e jacoco_coverage true /);
+        throw new Error('verified transport disconnected during instrument');
+      }
+      const replies = new Map([
+        ['get-serialno', 'emulator-5554'],
+        ['shell getprop ro.kernel.qemu', '1'],
+        ['shell dumpsys window policy', 'KeyguardServiceDelegate\n showing=false\n screenState=2'],
+        ['shell am get-current-user', '0'],
+        ['shell pm list packages ' + HELPER, ''],
+        ['shell pm path ' + HELPER, 'package:' + installed],
+        ['shell sha256sum ' + installed, hash + '  ' + installed],
+      ]);
+      assert.ok(replies.has(operation), operation);
+      return replies.get(operation);
+    };
+    assert.throws(() => runDeviceInteraction('self-test', device, {apk, record}, run),
+      {message: 'verified transport disconnected during ' + disconnectedAt});
+    assert.ok(calls.includes('install -t ' + apk));
+    assert.equal(calls.some(operation => operation.startsWith('shell am instrument ')), disconnectedAt === 'instrument');
+  }
 });

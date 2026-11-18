@@ -3,7 +3,7 @@
 #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_STORE_H_
 
 #include "build/build_config.h"
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 #include <map>
 #include <optional>
 
@@ -23,7 +23,7 @@ class AccessCoreLogStore
     : public base::RefCountedThreadSafe<AccessCoreLogStore> {
  public:
   AccessCoreLogStore();
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   enum class DiskStatus { kLoading, kReady, kClearing, kError };
   static scoped_refptr<AccessCoreLogStore> Open(const base::FilePath& profile,
                                                 CoreLogProfile scope,
@@ -38,8 +38,8 @@ class AccessCoreLogStore
     uint64_t clear_epoch;
     std::optional<size_t> clear_prefix;
   };
-  uint64_t RegisterPipe(int fd);
-  void UnregisterPipe(int fd);
+  uint64_t RegisterPipe(base::PlatformFile fd);
+  void UnregisterPipe(base::PlatformFile fd);
   PipeRead ReadPipe(base::File& file, base::span<char> buffer);
 #endif
   void SetLevel(std::string_view level);
@@ -82,7 +82,7 @@ class AccessCoreLogStore
   friend class base::RefCountedThreadSafe<AccessCoreLogStore>;
   ~AccessCoreLogStore();
   base::Lock lock_;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   void Restore(uint64_t epoch);
   void ScheduleSaveLocked();
   void ScheduleClearLocked();
@@ -93,7 +93,7 @@ class AccessCoreLogStore
   uint64_t disk_epoch_ GUARDED_BY(lock_) = 0;
   bool save_pending_ GUARDED_BY(lock_) = false;
   DiskStatus disk_status_ GUARDED_BY(lock_) = DiskStatus::kReady;
-  std::map<int, std::optional<size_t>> pipes_ GUARDED_BY(lock_);
+  std::map<base::PlatformFile, std::optional<size_t>> pipes_ GUARDED_BY(lock_);
 #endif
   uint64_t view_version_ GUARDED_BY(lock_) = 0;
   uint64_t generation_ GUARDED_BY(lock_) = 0;

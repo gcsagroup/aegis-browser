@@ -1,0 +1,200 @@
+From 5521744501706783b743fa3bc3d8c292c88c198d Mon Sep 17 00:00:00 2001
+From: Aegis Development <development@example.invalid>
+Date: Wed, 18 Nov 2026 00:17:07 +0800
+Subject: [PATCH] feat(mac): isolate internal Access Options capabilities and
+ storage
+
+---
+ .../aegis_access/access_options_capability.h  | 87 +++++++++++++++++++
+ .../access_options_capability_test.cc         | 70 +++++++++++++++
+ components/aegis_access/access_sources.json   |  3 +
+ 3 files changed, 160 insertions(+)
+ create mode 100644 components/aegis_access/access_options_capability.h
+ create mode 100644 components/aegis_access/access_options_capability_test.cc
+
+diff --git a/components/aegis_access/access_options_capability.h b/components/aegis_access/access_options_capability.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..63feca45cbfec960d4cb2fbc342bd31f174a7e08
+--- /dev/null
++++ b/components/aegis_access/access_options_capability.h
+@@ -0,0 +1,87 @@
++// Copyright 2026 GCSA
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_OPTIONS_CAPABILITY_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_OPTIONS_CAPABILITY_H_
++
++#include <string_view>
++#include "components/aegis_access/browser_request_metadata_seed.h"
++
++namespace aegis_access {
++
++enum class AccessProductChannel { kUnknown, kDebug, kAlpha, kBeta, kStable };
++constexpr AccessProductChannel ParseAccessProductChannel(std::string_view value) {
++  if (value == "debug") return AccessProductChannel::kDebug;
++  if (value == "alpha") return AccessProductChannel::kAlpha;
++  if (value == "beta") return AccessProductChannel::kBeta;
++  if (value == "stable") return AccessProductChannel::kStable;
++  return AccessProductChannel::kUnknown;
++}
++enum class AccessOptionsOperation { kPage, kRead, kWrite, kImport, kActivate };
++
++struct AccessBuildIdentity {
++  ChannelNamespace channel = ChannelNamespace::kInvalid;
++  AccessProductChannel product = AccessProductChannel::kUnknown;
++  bool internal_options = false;
++  bool conflict = false;
++};
++
++// Inputs originate in native build flags and Chromium's own channel authority.
++// A node resource can supply legacy ownership only for an unspecified product.
++inline AccessBuildIdentity ResolveAccessBuildIdentity(
++    AccessProductChannel product,
++    BrowserReleaseChannel browser,
++    ChannelNamespace bundled_channel,
++    bool internal_options) {
++  AccessBuildIdentity result;
++  result.product = product;
++  result.channel = MapBrowserReleaseChannel(browser);
++  if (product == AccessProductChannel::kUnknown) {
++    if (browser == BrowserReleaseChannel::kUnknown &&
++        (bundled_channel == ChannelNamespace::kAlpha ||
++         bundled_channel == ChannelNamespace::kBeta)) {
++      result.channel = bundled_channel;
++    }
++    return result;
++  }
++  ChannelNamespace declared = ChannelNamespace::kInvalid;
++  switch (product) {
++    case AccessProductChannel::kDebug: declared = ChannelNamespace::kDev; break;
++    case AccessProductChannel::kAlpha: declared = ChannelNamespace::kAlpha; break;
++    case AccessProductChannel::kBeta: declared = ChannelNamespace::kBeta; break;
++    case AccessProductChannel::kStable: declared = ChannelNamespace::kRelease; break;
++    case AccessProductChannel::kUnknown: break;
++  }
++  result.conflict = declared == ChannelNamespace::kInvalid ||
++      browser == BrowserReleaseChannel::kInvalid ||
++      (browser == BrowserReleaseChannel::kBeta && declared != ChannelNamespace::kBeta) ||
++      (browser == BrowserReleaseChannel::kStable && declared != ChannelNamespace::kRelease);
++  if (result.conflict)
++    return result;
++  result.channel = declared;
++  result.internal_options = internal_options &&
++      (product == AccessProductChannel::kDebug || product == AccessProductChannel::kAlpha);
++  return result;
++}
++
++inline bool CanUseAccessOptions(const AccessBuildIdentity& identity,
++                               AccessOptionsOperation operation) {
++  if (identity.conflict || !identity.internal_options ||
++      (identity.product != AccessProductChannel::kDebug &&
++       identity.product != AccessProductChannel::kAlpha)) {
++    return false;
++  }
++  if ((identity.product == AccessProductChannel::kDebug && identity.channel != ChannelNamespace::kDev) ||
++      (identity.product == AccessProductChannel::kAlpha && identity.channel != ChannelNamespace::kAlpha)) {
++    return false;
++  }
++  switch (operation) {
++    case AccessOptionsOperation::kPage:
++    case AccessOptionsOperation::kRead:
++    case AccessOptionsOperation::kWrite:
++    case AccessOptionsOperation::kImport:
++    case AccessOptionsOperation::kActivate:
++      return true;
++  }
++  return false;
++}
++}  // namespace aegis_access
++#endif
+diff --git a/components/aegis_access/access_options_capability_test.cc b/components/aegis_access/access_options_capability_test.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..dd047c58ddc33170c392ca4e994c1081e428a9e4
+--- /dev/null
++++ b/components/aegis_access/access_options_capability_test.cc
+@@ -0,0 +1,70 @@
++// Copyright 2026 GCSA
++#include "components/aegis_access/access_options_capability.h"
++#include <cassert>
++#include <iostream>
++
++int main() {
++  using namespace aegis_access;
++  unsigned checks = 0;
++  assert(ParseAccessProductChannel("debug") == AccessProductChannel::kDebug);
++  assert(ParseAccessProductChannel("alpha") == AccessProductChannel::kAlpha);
++  assert(ParseAccessProductChannel("beta") == AccessProductChannel::kBeta);
++  assert(ParseAccessProductChannel("stable") == AccessProductChannel::kStable);
++  assert(ParseAccessProductChannel("future") == AccessProductChannel::kUnknown);
++  checks += 5;
++  for (auto product : {AccessProductChannel::kUnknown, AccessProductChannel::kDebug,
++                       AccessProductChannel::kAlpha, AccessProductChannel::kBeta,
++                       AccessProductChannel::kStable}) {
++    for (auto browser : {BrowserReleaseChannel::kUnknown, BrowserReleaseChannel::kDev,
++                         BrowserReleaseChannel::kCanary, BrowserReleaseChannel::kBeta,
++                         BrowserReleaseChannel::kStable, BrowserReleaseChannel::kInvalid}) {
++      for (bool enabled : {false, true}) {
++        for (auto bundled : {ChannelNamespace::kInvalid, ChannelNamespace::kAlpha,
++                             ChannelNamespace::kBeta}) {
++          const auto identity = ResolveAccessBuildIdentity(product, browser, bundled, enabled);
++          const bool internal = product == AccessProductChannel::kDebug ||
++                                product == AccessProductChannel::kAlpha;
++          const bool known_release = browser == BrowserReleaseChannel::kBeta ||
++                                     browser == BrowserReleaseChannel::kStable;
++          const bool compatible = !known_release ||
++              (browser == BrowserReleaseChannel::kBeta && product == AccessProductChannel::kBeta) ||
++              (browser == BrowserReleaseChannel::kStable && product == AccessProductChannel::kStable) ||
++              product == AccessProductChannel::kUnknown;
++          const bool admitted = enabled && internal && compatible &&
++                                browser != BrowserReleaseChannel::kInvalid;
++          for (auto operation : {AccessOptionsOperation::kPage, AccessOptionsOperation::kRead,
++                                 AccessOptionsOperation::kWrite, AccessOptionsOperation::kImport,
++                                 AccessOptionsOperation::kActivate}) {
++            assert(CanUseAccessOptions(identity, operation) == admitted);
++            ++checks;
++          }
++          if (product == AccessProductChannel::kUnknown) {
++            const auto expected = browser == BrowserReleaseChannel::kUnknown &&
++                bundled != ChannelNamespace::kInvalid ? bundled : MapBrowserReleaseChannel(browser);
++            assert(identity.channel == expected);
++            ++checks;
++          }
++          if (known_release) {
++            assert(identity.channel == MapBrowserReleaseChannel(browser));
++            ++checks;
++          }
++        }
++      }
++    }
++  }
++  const auto alpha = ResolveAccessBuildIdentity(AccessProductChannel::kAlpha,
++      BrowserReleaseChannel::kUnknown, ChannelNamespace::kInvalid, true);
++  assert(alpha.channel == ChannelNamespace::kAlpha && alpha.internal_options);
++  const auto beta = ResolveAccessBuildIdentity(AccessProductChannel::kBeta,
++      BrowserReleaseChannel::kUnknown, ChannelNamespace::kAlpha, true);
++  assert(beta.channel == ChannelNamespace::kBeta && !beta.internal_options);
++  const auto conflict = ResolveAccessBuildIdentity(AccessProductChannel::kDebug,
++      BrowserReleaseChannel::kStable, ChannelNamespace::kAlpha, true);
++  assert(conflict.conflict && conflict.channel == ChannelNamespace::kRelease);
++  auto inconsistent = alpha;
++  inconsistent.channel = ChannelNamespace::kBeta;
++  assert(!CanUseAccessOptions(inconsistent, AccessOptionsOperation::kActivate));
++  assert(!CanUseAccessOptions(alpha, static_cast<AccessOptionsOperation>(999)));
++  checks += 2;
++  std::cout << "PASS: Access Options capability " << checks + 3 << " checks\n";
++}
+diff --git a/components/aegis_access/access_sources.json b/components/aegis_access/access_sources.json
+index ce3d880390db19853414eabed36c691dbb471046..35bde368d9fde9f0828c7464e04eafa4c4674bac 100644
+--- a/components/aegis_access/access_sources.json
++++ b/components/aegis_access/access_sources.json
+@@ -46,6 +46,9 @@
+     "site_proxy_rule_group": [
+       "site_proxy_rule_group.cc",
+       "site_proxy_rule_group.h"
++    ],
++    "access_options_capability": [
++      "access_options_capability.h"
+     ]
+   },
+   "test_main": "access_route_planner_native_test.cc",
+-- 
+2.54.0 (Apple Git-157)
+

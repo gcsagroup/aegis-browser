@@ -59,24 +59,32 @@ final class ShareViewController: UIViewController {
                 let result: Result<(String, Data), Error>
                 do {
                     if let failure { throw failure }
-                    guard let url = item as? URL, url.isFileURL,
-                          ["md", "markdown"].contains(url.pathExtension.lowercased()) else {
-                        throw ShareInboxError.invalidEnvelope
-                    }
-                    let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-                    guard values.isRegularFile == true else { throw ShareInboxError.invalidEnvelope }
-                    let maximumBytes = MarkdownDocumentLimits.maximumBytes
-                    guard (values.fileSize ?? Int.max) <= maximumBytes else {
+                    guard let url = item as? URL, url.isFileURL, ["md", "markdown"].contains(url.pathExtension.lowercased()) else { throw ShareInboxError.invalidEnvelope }
+                    let access = url.startAccessingSecurityScopedResource()
+                    defer { if access { url.stopAccessingSecurityScopedResource() } }
+                    let metadata = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                    guard metadata.isRegularFile == true else { throw ShareInboxError.invalidEnvelope }
+                    guard (metadata.fileSize ?? Int.max) <= MarkdownShareInbox.maximumTextBytes else {
                         throw MarkdownDocumentLimits.TooLarge()
                     }
-                    let file = try FileHandle(forReadingFrom: url)
-                    defer { try? file.close() }
-                    result = .success((url.lastPathComponent, try file.read(upToCount: maximumBytes + 1) ?? Data()))
+                    // A provider's temporary URL must be copied while its callback owns it.
+                    let handle = try FileHandle(forReadingFrom: url)
+                    defer { try? handle.close() }
+                    var data = Data()
+                    while data.count <= MarkdownShareInbox.maximumTextBytes,
+                          let chunk = try handle.read(upToCount: min(65_536, MarkdownShareInbox.maximumTextBytes + 1 - data.count)), !chunk.isEmpty {
+                        data.append(chunk)
+                    }
+                    guard data.count <= MarkdownShareInbox.maximumTextBytes else {
+                        throw MarkdownDocumentLimits.TooLarge()
+                    }
+                    result = .success((url.lastPathComponent, data))
                 } catch { result = .failure(error) }
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     do {
-                        let (title, data) = try result.get(); try MarkdownShareInbox().store(title: title, data: data)
+                        let (title, data) = try result.get()
+                        try await ShareInboxIO.shared.storeMarkdown(title: title, data: data)
                         self.status = .resource("文档已交给 Aegis，请在 60 秒内打开 App。")
                         self.refreshLanguage()
                         self.activity.stopAnimating()
@@ -109,12 +117,12 @@ final class ShareViewController: UIViewController {
             }
             let errorMessage = error?.localizedDescription
             Task { @MainActor [weak self, value, errorMessage] in
-                self?.handleLoadedValue(value, errorMessage: errorMessage)
+                await self?.handleLoadedValue(value, errorMessage: errorMessage)
             }
         }
     }
 
-    private func handleLoadedValue(_ value: String?, errorMessage: String?) {
+    private func handleLoadedValue(_ value: String?, errorMessage: String?) async {
         if let errorMessage {
             finish(error: NSError(domain: "AegisShare", code: 1, userInfo: [NSLocalizedDescriptionKey: errorMessage]))
             return
@@ -124,15 +132,12 @@ final class ShareViewController: UIViewController {
             return
         }
         do {
-            let inbox = try ShareInbox()
-            let envelope = try inbox.makeEnvelope(from: value)
-            try inbox.store(envelope)
+            try await ShareInboxIO.shared.storeLink(value)
             status = .resource("已安全交给 Aegis\n60 秒内打开 App 即可接收")
             refreshLanguage()
             activity.stopAnimating()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                self?.extensionContext?.completeRequest(returningItems: nil)
-            }
+            try await Task.sleep(for: .milliseconds(450))
+            extensionContext?.completeRequest(returningItems: nil)
         } catch {
             finish(error: error)
         }

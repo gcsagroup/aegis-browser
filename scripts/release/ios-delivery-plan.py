@@ -61,7 +61,10 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None):
         require(mode == 'simple', 'Only the canonical entrypoint accepts candidate tags')
         return _normalize_stage(event, ref, inputs)
     require_admitted_dispatch(event, ref)
-    operation = receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
+    release_wait = inputs.get('operation') == 'Release Wait'
+    require(not release_wait or (mode == 'simple' and ref == 'refs/heads/main'),
+            'Release Wait is limited to Simple on canonical main')
+    operation = 'wait' if release_wait else receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
     new_package = operation in {'package', 'package-upload', 'draft'}
     signing_mode = inputs.get('signing_mode') or 'cloud'
     private_beta = inputs.get('private_beta') or 'no'
@@ -92,6 +95,8 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None):
                 'Status only needs version and build')
         values = {key: '' for key in FIELDS}
         values.update(operation='status-wait' if operation == 'wait' else 'status-query', version=version, build=build, destination='testflight', stage_input='{}', signing_mode='', package_entrypoint='actions')
+        if release_wait:
+            values['operation'] = 'status-release-wait'
         return values  # Read-only Apple lookup: no inferred package identity or mutation receipt.
     require(operation != 'status', 'Status only needs version and build')
     package_upload = operation == 'package-upload'

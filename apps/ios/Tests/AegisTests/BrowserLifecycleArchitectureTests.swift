@@ -1,6 +1,8 @@
+import AccessKit
 import AgentKit
 import Combine
 import CryptoKit
+import Synchronization
 import UIKit
 import WebKit
 import XCTest
@@ -9,6 +11,41 @@ import XCTest
 
 @MainActor
 final class BrowserPresentationCoordinatorTests: XCTestCase {
+    func testWindowReloadCommandPreservesUnsafePrivateAndProtectedRequests() throws {
+        for profile in [BrowserProfile.standard, .privateMode] {
+            for protected in [false, true] {
+                let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+                browser.switchProfile(to: profile)
+                defer { browser.closeWindow() }
+                let tab = try XCTUnwrap(browser.activeTab)
+                let coordinator = AccessHostStoreCoordinator()
+                if protected {
+                    tab.hostCoordinator = coordinator
+                    let host = try AccessSiteHost("manual-refresh.invalid")
+                    coordinator.registry.setEndpoint(AccessManagedProxyEndpoint(identity: "reload-fixture", generation: 1,
+                        loopbackHost: "127.0.0.1", port: 18081, state: .ready),
+                        scopeID: tab.browsingScopeID, host: host, isPrivate: profile.isPrivate)
+                    coordinator.setProxyEnabled(true, host: host, scopeID: tab.browsingScopeID, isPrivate: profile.isPrivate)
+                }
+                var request = URLRequest(url: URL(string: "https://manual-refresh.invalid/submit")!)
+                request.httpMethod = "POST"; request.httpBody = Data("original=one".utf8)
+                tab.load(request)
+                let identity = tab.currentAttemptIDForTests, store = tab.websiteDataStore
+                let loadError = tab.loadingError
+                XCTAssertNil(tab.safeRouteReloadRequest)
+                let command = try XCTUnwrap(BrowserKeyboardActions.forWindow(browser, presentation: BrowserPresentationCoordinator()))
+                command.reload() // The exact action installed for Cmd-R.
+                XCTAssertNil(tab.safeRouteReloadRequest)
+                XCTAssertEqual(tab.currentAttemptIDForTests, identity)
+                XCTAssertTrue(tab.websiteDataStore === store); XCTAssertEqual(tab.profile, profile)
+                XCTAssertTrue(tab.reloadRequiresResubmission)
+                XCTAssertEqual(tab.loadingError, loadError)
+                XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+                if protected { XCTAssertFalse(store.proxyConfigurations.isEmpty) }
+            }
+        }
+    }
+
     func testFIFOIncludesDistinctSameURLInputsAndRejectsOldDismissal() throws {
         let route = BrowserPresentationCoordinator()
         route.request(.reading)
@@ -387,18 +424,22 @@ final class PageAssistantModelTests: XCTestCase {
         let defaults: UserDefaults
         let suite: String
         let directory: URL
-        init() throws {
+        let encryptionKey: SymmetricKey
+        init(profile: BrowserProfile = .standard) throws {
             browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
             suite = "page-assistant-model-" + UUID().uuidString
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             settings = BrowserSettings(defaults: defaults)
             directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
-            tasks = AssistantTaskStore(url: directory.appendingPathComponent("tasks.aes"), key: SymmetricKey(size: .bits256))
+            encryptionKey = SymmetricKey(size: .bits256)
+            tasks = AssistantTaskStore(url: directory.appendingPathComponent("tasks.aes"), key: encryptionKey)
+            browser.switchProfile(to: profile)
             let tab = try XCTUnwrap(browser.activeTab)
             tab.adoptPolicyMainFrameNavigationForTests(url: URL(string: "https://example.test/article")!)
             tab.commitPendingMainFrameForTests(); tab.stop()
         }
         func close() { browser.closeWindow(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        func reloadedTasks() -> AssistantTaskStore { AssistantTaskStore(url: directory.appendingPathComponent("tasks.aes"), key: encryptionKey) }
         func attach(_ model: PageAssistantModel) { model.attach(browser: browser, settings: settings, tasks: tasks) }
     }
     private func model(stream: @escaping PageAssistantModel.Stream) -> PageAssistantModel {
@@ -480,6 +521,144 @@ final class PageAssistantModelTests: XCTestCase {
             XCTAssertNil(model.error); XCTAssertFalse(model.busy)
             XCTAssertEqual(fixture.tasks.records.first?.state, .completed)
             XCTAssertEqual(fixture.tasks.records.last?.state, .interrupted)
+        }
+    }
+
+    func testCompletedStreamRejectsLateTextBeforeAndAfterExplicitSave() async throws {
+        for profile in [BrowserProfile.standard, .privateMode] {
+            let fixture = try Fixture(profile: profile); defer { fixture.close() }
+            var callback: (@MainActor @Sendable (String) -> Void)?
+            let model = model { _, _, _, _, _, onText in
+                callback = onText
+                onText("Draft [1]")
+                return "Validated result [1]"
+            }
+            fixture.attach(model); try await read(model)
+            model.requestConsent(); model.send()
+            let operation = try XCTUnwrap(model.lifetime.operation); await operation.value
+            let lateText = try XCTUnwrap(callback), report = model.report
+            let completedStatus = Aegis.AegisLocalization.string(model.status)
+            XCTAssertEqual(model.output, "Validated result [1]"); XCTAssertTrue(model.outputComplete)
+            XCTAssertFalse(model.busy); XCTAssertNil(model.lifetime.operation); XCTAssertNil(model.error)
+            XCTAssertEqual(fixture.tasks.records.count, profile.isPrivate ? 0 : 1)
+            XCTAssertNil(fixture.tasks.records.first?.savedReport)
+
+            // No cancellation or newer operation: returning already ended this stream.
+            lateText("Late unvalidated text before save")
+            XCTAssertEqual(model.output, "Validated result [1]"); XCTAssertEqual(model.report, report)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), completedStatus)
+            XCTAssertTrue(model.outputComplete); XCTAssertFalse(model.busy); XCTAssertNil(model.error)
+            model.saveResult()
+            XCTAssertEqual(fixture.tasks.records.first?.state, .completed)
+            XCTAssertEqual(fixture.tasks.records.first?.savedReport, report)
+            XCTAssertEqual(fixture.reloadedTasks().records.first?.savedReport, report)
+
+            let savedStatus = Aegis.AegisLocalization.string(model.status)
+            lateText("Late unvalidated text after save")
+            XCTAssertEqual(model.output, "Validated result [1]"); XCTAssertEqual(model.report, report)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), savedStatus)
+            model.saveResult()
+            XCTAssertEqual(fixture.reloadedTasks().records.first?.savedReport, report)
+            XCTAssertEqual(fixture.tasks.records.count, 1)
+        }
+    }
+
+    func testFailedStreamRejectsLateTextAndRetrySavesOnlyValidatedResult() async throws {
+        for failure in [ModelClientError.sensitiveData, .invalidCitation, .invalidResponse, .incompleteResponse] {
+            let fixture = try Fixture(); defer { fixture.close() }
+            var callbacks: [@MainActor @Sendable (String) -> Void] = []
+            let model = model { _, _, _, _, _, onText in
+                callbacks.append(onText)
+                onText("Current draft [1]")
+                if callbacks.count == 1 { throw failure }
+                return "Validated retry [1]"
+            }
+            fixture.attach(model); try await read(model)
+            model.requestConsent(); model.send()
+            let failedOperation = try XCTUnwrap(model.lifetime.operation); await failedOperation.value
+            let failedText = try XCTUnwrap(callbacks.first)
+            let expectedDraft = failure == .incompleteResponse ? "Current draft [1]" : ""
+            let failedStatus = Aegis.AegisLocalization.string(model.status)
+            XCTAssertEqual(model.output, expectedDraft); XCTAssertFalse(model.outputComplete)
+            XCTAssertEqual(model.error as? ModelClientError, failure); XCTAssertFalse(model.busy)
+            XCTAssertNil(model.lifetime.operation); XCTAssertEqual(fixture.tasks.records.first?.state, .failed)
+
+            failedText("Rejected body revived by a late callback")
+            XCTAssertEqual(model.output, expectedDraft)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), failedStatus)
+            XCTAssertEqual(model.error as? ModelClientError, failure)
+            XCTAssertFalse(model.outputComplete); XCTAssertFalse(model.busy)
+            model.saveResult()
+            XCTAssertNil(fixture.reloadedTasks().records.first?.savedReport)
+
+            // Retry still reuses the preview, with fresh consent and a fresh stream.
+            model.requestConsent(); XCTAssertNotNil(model.consent); model.send()
+            let retry = try XCTUnwrap(model.lifetime.operation); await retry.value
+            let retryReport = model.report, retryStatus = Aegis.AegisLocalization.string(model.status)
+            failedText("Another old failure callback")
+            callbacks.last?("Late text from the completed retry")
+            XCTAssertEqual(model.output, "Validated retry [1]"); XCTAssertEqual(model.report, retryReport)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), retryStatus)
+            XCTAssertTrue(model.outputComplete); XCTAssertFalse(model.busy); XCTAssertNil(model.error)
+            model.saveResult()
+            let stored = fixture.reloadedTasks().records
+            XCTAssertEqual(stored.map(\.state), [.completed, .failed])
+            XCTAssertEqual(stored.first?.savedReport, retryReport); XCTAssertNil(stored.last?.savedReport)
+        }
+    }
+
+    func testCancelledStreamRejectsLateTextWithoutAnotherOperation() async throws {
+        let fixture = try Fixture(); defer { fixture.close() }
+        var callback: (@MainActor @Sendable (String) -> Void)?
+        var reply: CheckedContinuation<String, any Error>?
+        defer { reply?.resume(returning: "Cleanup [1]") }
+        let started = expectation(description: "Streaming draft before cancellation")
+        let model = model { _, _, _, _, _, onText in
+            callback = onText; onText("Unfinished draft [1]")
+            return try await withCheckedThrowingContinuation { reply = $0; started.fulfill() }
+        }
+        fixture.attach(model); try await read(model); model.requestConsent(); model.send()
+        let operation = try XCTUnwrap(model.lifetime.operation)
+        await fulfillment(of: [started], timeout: 2)
+        model.cancel()
+        let pausedStatus = Aegis.AegisLocalization.string(model.status)
+        let lateText = try XCTUnwrap(callback)
+        lateText("Late partial after cancel")
+        reply?.resume(returning: "Late final after cancel [1]"); reply = nil
+        await operation.value
+        XCTAssertEqual(model.output, "Unfinished draft [1]"); XCTAssertFalse(model.outputComplete)
+        XCTAssertEqual(Aegis.AegisLocalization.string(model.status), pausedStatus)
+        XCTAssertFalse(model.busy); XCTAssertNil(model.lifetime.operation); XCTAssertNil(model.taskID)
+        model.saveResult()
+        XCTAssertEqual(fixture.reloadedTasks().records.first?.state, .interrupted)
+        XCTAssertNil(fixture.reloadedTasks().records.first?.savedReport)
+    }
+
+    func testRevokingIdlePreviewCompletedAndSavedResultResetsVisibleStatus() async throws {
+        for state in ["preview", "completed", "saved"] {
+            let fixture = try Fixture(); defer { fixture.close() }
+            let model = model { _, _, _, _, _, _ in "Validated [1]" }
+            fixture.attach(model)
+            let readyStatus = Aegis.AegisLocalization.string(model.status)
+            try await read(model)
+            if state != "preview" {
+                model.requestConsent(); model.send()
+                let operation = try XCTUnwrap(model.lifetime.operation); await operation.value
+                if state == "saved" { model.saveResult() }
+            }
+            XCTAssertNotEqual(Aegis.AegisLocalization.string(model.status), readyStatus)
+            switch state {
+            case "preview": model.select(try XCTUnwrap(fixture.browser.activeTab).id, included: false)
+            case "completed":
+                let tab = try XCTUnwrap(fixture.browser.activeTab)
+                tab.load(try XCTUnwrap(tab.url)); tab.stop()
+            default: fixture.settings.model = ModelConfiguration(endpoint: "https://another-model.test", model: "other")
+            }
+            XCTAssertTrue(model.snapshots.isEmpty); XCTAssertTrue(model.output.isEmpty)
+            XCTAssertNil(model.consent); XCTAssertFalse(model.outputComplete); XCTAssertFalse(model.busy)
+            XCTAssertEqual(Aegis.AegisLocalization.string(model.status), readyStatus)
+            // Source/config invalidation never mutates the earlier record's terminal state.
+            if state != "preview" { XCTAssertEqual(fixture.tasks.records.first?.state, .completed) }
         }
     }
 
@@ -592,5 +771,395 @@ final class PageAssistantModelTests: XCTestCase {
         firstModel.lifetime.activateScene("First"); XCTAssertNil(firstModel.consent)
         secondModel.send(); let operation = try XCTUnwrap(secondModel.lifetime.operation); await operation.value
         XCTAssertTrue(secondModel.outputComplete)
+    }
+}
+
+private actor MarkdownReadGate {
+    private var pending: [String: CheckedContinuation<MarkdownDocument, Error>] = [:]
+    var count: Int { pending.count }
+    func read(_ url: URL) async throws -> MarkdownDocument {
+        try await withCheckedThrowingContinuation { pending[url.lastPathComponent] = $0 }
+    }
+    func finish(_ key: String, _ result: Result<MarkdownDocument, Error>) { pending.removeValue(forKey: key)?.resume(with: result) }
+    func finishAll() { for continuation in pending.values { continuation.resume(throwing: CancellationError()) }; pending.removeAll() }
+}
+private actor MarkdownImagesGate {
+    private var continuation: CheckedContinuation<[String], Error>?
+    var waiting: Bool { continuation != nil }
+    func read() async throws -> [String] { try await withCheckedThrowingContinuation { continuation = $0 } }
+    func finish(_ result: Result<[String], Error>) { continuation?.resume(with: result); continuation = nil }
+}
+@MainActor
+private func waitForMarkdown(_ predicate: @escaping @MainActor () async -> Bool) async throws {
+    for _ in 0..<500 { if await predicate() { return }; try await Task.sleep(for: .milliseconds(10)) }
+    XCTFail("Markdown operation did not reach the expected state")
+    throw CancellationError()
+}
+
+@MainActor
+final class MarkdownInputLifecycleTests: XCTestCase {
+    func testReceiptOrderSurvivesReversedCompletionAndVisibleFailure() async throws {
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        let routes = BrowserPresentationCoordinator(), gate = MarkdownReadGate()
+        let owner = BrowserInputOwner(read: { try await gate.read($0) })
+        defer { owner.close(); browser.closeWindow(); Task { await gate.finishAll() } }
+        owner.accept(URL(fileURLWithPath: "/A.md"), browser: browser, presentation: routes)
+        owner.accept(URL(fileURLWithPath: "/B.md"), browser: browser, presentation: routes)
+        routes.request(.reading)
+        XCTAssertTrue(routes.blocksBrowserCommands)
+        XCTAssertNil(routes.current)
+        try await waitForMarkdown { await gate.count == 2 }
+        await gate.finish("B.md", .failure(EnhancementError.invalid("second input failed")))
+        await Task.yield()
+        XCTAssertNil(routes.current)
+        let first = MarkdownDocument(title: "A", text: "first")
+        await gate.finish("A.md", .success(first))
+        try await waitForMarkdown { routes.current != nil }
+        try await waitForMarkdown { routes.pending.count == 2 }
+        guard case let .markdown(value) = routes.current?.route else { return XCTFail("First input was overtaken") }
+        XCTAssertEqual(value.id, first.id)
+        let id = try XCTUnwrap(routes.current?.id)
+        routes.didPresent(id); routes.dismiss(id); routes.didDismiss(id)
+        guard case let .inputError(message) = routes.current?.route else { return XCTFail("The ordered error must be visible") }
+        XCTAssertTrue(message.text.contains("second input failed"))
+        let errorID = try XCTUnwrap(routes.current?.id)
+        routes.dismiss(errorID); routes.didDismiss(errorID)
+        guard case .reading = routes.current?.route else { return XCTFail("Ready inputs must share the queue") }
+        routes.didDismiss(id)
+        guard case .reading = routes.current?.route else { return XCTFail("Old dismiss acknowledgement advanced another input") }
+    }
+    func testOneWakeDrainsBothInboxesAndAbsenceDoesNotBlock() async throws {
+        for hasMarkdown in [true, false] {
+            let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+            let routes = BrowserPresentationCoordinator()
+            let url = URL(string: "https://example.invalid/shared")!
+            let owner = BrowserInputOwner(markdown: {
+                hasMarkdown ? MarkdownShareEnvelope(nonce: UUID(), title: "shared", text: "text", expiresAt: Date().addingTimeInterval(60)) : nil
+            }, link: { url })
+            defer { owner.close(); browser.closeWindow() }
+            owner.wake(browser: browser, presentation: routes)
+            try await waitForMarkdown { routes.current != nil }
+            if hasMarkdown {
+                guard case .markdown = routes.current?.route else { return XCTFail("Markdown should be first") }
+                let id = try XCTUnwrap(routes.current?.id)
+                routes.dismiss(id); routes.didDismiss(id)
+                try await waitForMarkdown { routes.current != nil }
+            }
+            guard case let .external(value) = routes.current?.route else { return XCTFail("The link inbox was starved") }
+            XCTAssertEqual(value, url)
+        }
+    }
+    func testProfileRoundTripAndClosedWindowCannotReviveInput() async throws {
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        let other = BrowserSession(dataStore: browser.dataStore)
+        let routes = BrowserPresentationCoordinator(), otherRoutes = BrowserPresentationCoordinator(), gate = MarkdownReadGate()
+        let owner = BrowserInputOwner(read: { try await gate.read($0) })
+        defer { owner.close(); browser.closeWindow(); other.closeWindow(); Task { await gate.finishAll() } }
+        otherRoutes.request(.settings)
+        owner.accept(URL(fileURLWithPath: "/A.md"), browser: browser, presentation: routes)
+        try await waitForMarkdown { await gate.count == 1 }
+        browser.switchProfile(to: .privateMode); browser.switchProfile(to: .standard)
+        await gate.finish("A.md", .success(MarkdownDocument(title: "stale", text: "secret")))
+        await Task.yield()
+        XCTAssertNil(routes.current); XCTAssertFalse(routes.blocksBrowserCommands)
+        owner.accept(URL(fileURLWithPath: "/B.md"), browser: browser, presentation: routes)
+        try await waitForMarkdown { await gate.count == 1 }
+        browser.closeWindow()
+        await gate.finish("B.md", .failure(EnhancementError.invalid("late error")))
+        await Task.yield()
+        XCTAssertNil(routes.current)
+        guard case .settings = otherRoutes.current?.route else { return XCTFail("Other window was affected") }
+    }
+}
+
+@MainActor
+final class MarkdownReaderLifecycleTests: XCTestCase {
+    func testFileImportLatestWinsAndInitialIsConsumedOnce() async throws {
+        let gate = MarkdownReadGate()
+        let model = MarkdownReaderModel(read: { try await gate.read($0) })
+        defer { model.close(); Task { await gate.finishAll() } }
+        let initial = MarkdownDocument(title: "initial", text: "first")
+        model.initialize(initial)
+        let first = model.importFile(URL(fileURLWithPath: "/A.md"))
+        try await waitForMarkdown { await gate.count == 1 }
+        let second = model.importFile(URL(fileURLWithPath: "/B.md"))
+        try await waitForMarkdown { await gate.count == 2 }
+        let latest = MarkdownDocument(title: "latest", text: "new document")
+        await gate.finish("B.md", .success(latest)); await second?.value
+        await gate.finish("A.md", .failure(EnhancementError.invalid("old failure"))); await first?.value
+        model.initialize(initial)
+        XCTAssertEqual(model.document?.id, latest.id)
+        XCTAssertTrue(model.error.isEmpty)
+    }
+    func testResourceSuccessAndFailureAfterReplacementCannotRestoreOldDocument() async throws {
+        for fail in [false, true] {
+            let gate = MarkdownImagesGate()
+            let model = MarkdownReaderModel(images: { _, _ in try await gate.read() })
+            defer { model.close() }
+            model.load(MarkdownDocument(title: "old", text: "![image](image.png)"))
+            try await waitForMarkdown { model.rendered }
+            let oldToken = model.renderID
+            let task = model.loadResources(URL(fileURLWithPath: "/tmp"))
+            try await waitForMarkdown { await gate.waiting }
+            let next = MarkdownDocument(title: "new", text: "new text")
+            model.load(next)
+            if fail { await gate.finish(.failure(EnhancementError.invalid("obsolete JS failure"))) }
+            else { await gate.finish(.success(["image.png"])) }
+            await task?.value
+            model.receive(type: "relativeLink", value: "old.md", token: oldToken)
+            model.receive(type: "resources", value: "", token: oldToken)
+            XCTAssertEqual(model.document?.id, next.id)
+            XCTAssertEqual(model.document?.resources, [:]); XCTAssertTrue(model.error.isEmpty)
+            XCTAssertFalse(model.needsResources); XCTAssertNil(model.exportURL)
+            try await waitForMarkdown { model.rendered }
+            let text = try await model.webView.callAsyncJavaScript("return AegisMarkdown.text();", arguments: [:], in: nil, contentWorld: .page) as? String
+            XCTAssertEqual(text, "new text")
+        }
+    }
+    func testClosingDuringJavaScriptIsTerminalAndRetainsDirectoryLease() async throws {
+        let gate = MarkdownImagesGate()
+        let released = MarkdownLeaseCounter()
+        let model = MarkdownReaderModel(makeScope: { url in
+            MarkdownSecurityScope(url, onRelease: { released.increment() })
+        }, images: { _, _ in try await gate.read() })
+        defer { model.close() }
+        model.load(MarkdownDocument(title: "old", text: "![image](image.png)"))
+        try await waitForMarkdown { model.rendered }
+        let task = model.loadResources(URL(fileURLWithPath: "/tmp"))
+        try await waitForMarkdown { await gate.waiting }
+        XCTAssertEqual(released.value, 0)
+        let oldToken = model.renderID
+        model.close(); model.close()
+        XCTAssertEqual(released.value, 0, "Cancellation must not release a directory beneath unfinished work")
+        await gate.finish(.failure(EnhancementError.invalid("late"))); await task?.value
+        XCTAssertEqual(released.value, 1)
+        model.load(MarkdownDocument(title: "forbidden", text: "late"))
+        model.webView(model.webView, didFinish: nil)
+        model.receive(type: "resources", value: "", token: oldToken)
+        XCTAssertEqual(model.document?.title, "old")
+        XCTAssertFalse(model.ready); XCTAssertFalse(model.rendered); XCTAssertFalse(model.needsResources)
+        XCTAssertTrue(model.error.isEmpty); XCTAssertNil(model.openURL); XCTAssertNil(model.exportURL)
+    }
+    func testDownloadPreviewCannotPublishAfterReplacementOrClose() async throws {
+        let gate = MarkdownReadGate(), preview = MarkdownFilePreview(read: { try await gate.read($0) })
+        defer { preview.close(); Task { await gate.finishAll() } }
+        let first = preview.load(URL(fileURLWithPath: "/A.md"))
+        try await waitForMarkdown { await gate.count == 1 }
+        let second = preview.load(URL(fileURLWithPath: "/B.md"))
+        try await waitForMarkdown { await gate.count == 2 }
+        await gate.finish("B.md", .success(MarkdownDocument(title: "B", text: "new"))); await second?.value
+        await gate.finish("A.md", .success(MarkdownDocument(title: "A", text: "old"))); await first?.value
+        XCTAssertEqual(preview.document?.title, "B")
+        let third = preview.load(URL(fileURLWithPath: "/C.md"))
+        try await waitForMarkdown { await gate.count == 1 }
+        preview.close()
+        await gate.finish("C.md", .failure(EnhancementError.invalid("late preview error"))); await third?.value
+        XCTAssertNil(preview.document); XCTAssertNil(preview.error)
+    }
+}
+
+private final class MarkdownLeaseCounter: Sendable {
+    private let count = Mutex<Int>(0)
+    var value: Int { count.withLock { $0 } }
+    func increment() { count.withLock { $0 += 1 } }
+}
+
+@MainActor
+final class MarkdownReaderNativeBoundaryTests: XCTestCase {
+    func testRawCaptureAndFileImportShareReceiptGeneration() async throws {
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil)), gate = MarkdownReadGate()
+        let model = MarkdownReaderModel(read: { try await gate.read($0) },
+            capture: { _ in try await gate.read(URL(fileURLWithPath: "/raw.md")) })
+        defer { model.close(); browser.closeWindow(); Task { await gate.finishAll() } }
+        let raw = model.capture(try XCTUnwrap(browser.activeTab))
+        try await waitForMarkdown { await gate.count == 1 }
+        let file = model.importFile(URL(fileURLWithPath: "/file.md"))
+        try await waitForMarkdown { await gate.count == 2 }
+        await gate.finish("file.md", .success(MarkdownDocument(title: "file", text: "latest"))); await file?.value
+        await gate.finish("raw.md", .success(MarkdownDocument(title: "raw", text: "old"))); await raw?.value
+        XCTAssertEqual(model.document?.title, "file"); XCTAssertTrue(model.error.isEmpty)
+    }
+    func testActualJavaScriptPromiseAndStaleBridgeAreDocumentBound() async throws {
+        for reject in [false, true] {
+            let model = MarkdownReaderModel()
+            defer { model.close() }
+            model.load(MarkdownDocument(title: "old", text: "![image](image.png)"))
+            try await waitForMarkdown { model.rendered }
+            let oldToken = model.renderID
+            _ = try await model.webView.callAsyncJavaScript("""
+                const original = AegisMarkdown;
+                let first = true;
+                globalThis.AegisMarkdown = Object.freeze({...original, images: () => {
+                  if (!first) return original.images();
+                  first = false;
+                  return new Promise((resolve, reject) => { globalThis.releaseImages = resolve; globalThis.rejectImages = reject; });
+                }});
+                """, arguments: [:], in: nil, contentWorld: .page)
+            let task = model.loadResources(URL(fileURLWithPath: "/tmp"))
+            try await waitForMarkdown {
+                (try? await model.webView.callAsyncJavaScript("return typeof globalThis.releaseImages === 'function';", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
+            }
+            let next = MarkdownDocument(title: "new", text: "new document")
+            model.load(next)
+            try await waitForMarkdown { model.rendered }
+            _ = try await model.webView.callAsyncJavaScript(
+                "if(reject) rejectImages(Error('old image failure')); else releaseImages(['image.png']);",
+                arguments: ["reject": reject], in: nil, contentWorld: .page)
+            await task?.value
+            _ = try await model.webView.callAsyncJavaScript(
+                "window.webkit.messageHandlers.aegisMarkdown.postMessage({type:'relativeLink',value:'old.md',iosToken:token});",
+                arguments: ["token": oldToken], in: nil, contentWorld: .page)
+            let staleAccepted = try await model.webView.callAsyncJavaScript(
+                "return AegisMarkdown.load({text:'stale DOM',iosToken:token,iosRevision:1});",
+                arguments: ["token": oldToken], in: nil, contentWorld: .page) as? Bool
+            await Task.yield()
+            XCTAssertEqual(staleAccepted, false)
+            XCTAssertEqual(model.document?.id, next.id); XCTAssertEqual(model.document?.resources, [:])
+            XCTAssertTrue(model.error.isEmpty)
+            let text = try await model.webView.callAsyncJavaScript("return AegisMarkdown.text();", arguments: [:], in: nil, contentWorld: .page) as? String
+            XCTAssertEqual(text, next.text)
+        }
+    }
+    func testClosingDuringResourceIOHoldsLeaseUntilActualCompletion() async throws {
+        let gate = MarkdownReadGate(), released = MarkdownLeaseCounter()
+        let model = MarkdownReaderModel(resources: { _, _, _ in try await gate.read(URL(fileURLWithPath: "/resources.md")) },
+            makeScope: { MarkdownSecurityScope($0, onRelease: { released.increment() }) })
+        defer { model.close(); Task { await gate.finishAll() } }
+        model.load(MarkdownDocument(title: "old", text: "![image](image.png)"))
+        try await waitForMarkdown { model.rendered }
+        let task = model.loadResources(URL(fileURLWithPath: "/tmp"))
+        try await waitForMarkdown { await gate.count == 1 }
+        model.close()
+        XCTAssertEqual(released.value, 0)
+        await gate.finish("resources.md", .success(MarkdownDocument(title: "old", text: "ignored", resources: ["image.png": "stale"])) )
+        await task?.value
+        XCTAssertEqual(released.value, 1)
+        XCTAssertEqual(model.document?.resources, [:]); XCTAssertTrue(model.error.isEmpty)
+        XCTAssertFalse(model.ready)
+    }
+    func testProfileRoundTripClosesReaderAndDownloadPreviewImmediately() async throws {
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil)), gate = MarkdownReadGate()
+        let model = MarkdownReaderModel(), preview = MarkdownFilePreview(read: { try await gate.read($0) })
+        var opens = 0
+        model.bind(browser: browser) { _ in opens += 1 }; preview.bind(browser)
+        defer { model.close(); preview.close(); browser.closeWindow(); Task { await gate.finishAll() } }
+        model.load(MarkdownDocument(title: "ordinary", text: "private boundary"))
+        let token = model.renderID
+        let task = preview.load(URL(fileURLWithPath: "/pending.md"))
+        try await waitForMarkdown { await gate.count == 1 }
+        browser.switchProfile(to: .privateMode); browser.switchProfile(to: .standard)
+        model.receive(type: "open", value: "https://example.invalid/old", token: token)
+        await gate.finish("pending.md", .success(MarkdownDocument(title: "stale", text: "old"))); await task?.value
+        XCTAssertFalse(model.isOpen); XCTAssertNil(model.openURL); XCTAssertEqual(opens, 0)
+        XCTAssertNil(preview.document)
+    }
+}
+
+extension MarkdownInputLifecycleTests {
+    func testCancelledBeforeStartDoesNotClaimAndNewProfileInputsRemainOrdered() async throws {
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        let routes = BrowserPresentationCoordinator(), calls = MarkdownLeaseCounter()
+        let owner = BrowserInputOwner(markdown: { calls.increment(); return nil }, link: { calls.increment(); return nil })
+        defer { owner.close(); browser.closeWindow() }
+        let cachedCommands = try XCTUnwrap(BrowserKeyboardActions.forWindow(browser, presentation: routes))
+        owner.wake(browser: browser, presentation: routes)
+        XCTAssertNil(BrowserKeyboardActions.forWindow(browser, presentation: routes))
+        let original = browser.visibleTabs.count
+        cachedCommands.closeTab(); XCTAssertEqual(browser.visibleTabs.count, original)
+        browser.switchProfile(to: .privateMode)
+        let url = URL(string: "https://example.invalid/repeated")!
+        let deepLink = URL(string: "gcsa-aegis://open?url=https%3A%2F%2Fexample.invalid%2Frepeated")!
+        owner.accept(deepLink, browser: browser, presentation: routes)
+        owner.accept(deepLink, browser: browser, presentation: routes)
+        let first = try XCTUnwrap(routes.current)
+        XCTAssertNotEqual(first.id, routes.pending.first?.id)
+        await Task.yield()
+        XCTAssertEqual(calls.value, 0, "Revoked queued work must not consume a new share")
+        guard case let .external(value) = routes.current?.route else { return XCTFail("The new-profile input was invalidated") }
+        XCTAssertEqual(value, url)
+        browser.closeWindow()
+        XCTAssertNil(routes.current); XCTAssertFalse(routes.blocksBrowserCommands)
+    }
+}
+
+extension MarkdownReaderNativeBoundaryTests {
+    func testResourceIOSuccessAndFailureAfterReplacementStayWithTheirDocument() async throws {
+        for fail in [false, true] {
+            let gate = MarkdownReadGate()
+            let model = MarkdownReaderModel(resources: { _, _, _ in try await gate.read(URL(fileURLWithPath: "/images.md")) })
+            defer { model.close(); Task { await gate.finishAll() } }
+            model.load(MarkdownDocument(title: "A", text: "![image](a.png)"))
+            try await waitForMarkdown { model.rendered }
+            let task = model.loadResources(URL(fileURLWithPath: "/tmp"))
+            try await waitForMarkdown { await gate.count == 1 }
+            let next = MarkdownDocument(title: "B", text: "keep this")
+            model.load(next)
+            if fail { await gate.finish("images.md", .failure(EnhancementError.invalid("old resource error"))) }
+            else { await gate.finish("images.md", .success(MarkdownDocument(title: "A", text: "old", resources: ["a.png": "stale"]))) }
+            await task?.value
+            XCTAssertEqual(model.document?.id, next.id); XCTAssertEqual(model.document?.resources, [:]); XCTAssertTrue(model.error.isEmpty)
+        }
+    }
+}
+
+extension MarkdownInputLifecycleTests {
+    func testProductionActorReadsFileAndQueuesARealReadError() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("actual.md")
+        try Data("# Actual file\nowned input".utf8).write(to: file)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil)), routes = BrowserPresentationCoordinator()
+        let owner = BrowserInputOwner()
+        defer { owner.close(); browser.closeWindow() }
+        owner.accept(file, browser: browser, presentation: routes)
+        owner.accept(root.appendingPathComponent("missing.md"), browser: browser, presentation: routes)
+        try await waitForMarkdown { routes.current != nil && routes.pending.count == 1 }
+        guard case let .markdown(document) = routes.current?.route else { return XCTFail("Actual file did not reach its window") }
+        XCTAssertEqual(document.text, "# Actual file\nowned input"); XCTAssertEqual(document.sourceURL, file)
+        let id = try XCTUnwrap(routes.current?.id)
+        routes.dismiss(id); routes.didDismiss(id)
+        guard case let .inputError(message) = routes.current?.route else { return XCTFail("Actual read failure was lost") }
+        XCTAssertFalse(message.text.isEmpty)
+    }
+}
+
+extension MarkdownReaderNativeBoundaryTests {
+    func testWarmViewerAppliesPreferencesWithEachNewDocument() async throws {
+        let defaults = UserDefaults.standard, previous = UserDefaults.standard.object(forKey: "markdown.theme")
+        let model = MarkdownReaderModel()
+        defer {
+            model.close()
+            if let previous { defaults.set(previous, forKey: "markdown.theme") }
+            else { defaults.removeObject(forKey: "markdown.theme") }
+        }
+        try await waitForMarkdown { model.ready }
+        _ = try await model.webView.callAsyncJavaScript("document.body.classList.remove('embedded'); document.documentElement.style.colorScheme='light';", arguments: [:], in: nil, contentWorld: .page)
+        defaults.set("dark", forKey: "markdown.theme")
+        model.load(MarkdownDocument(title: "warm", text: "# Warm document"))
+        try await waitForMarkdown { model.rendered }
+        let actual = try await model.webView.callAsyncJavaScript("return {embedded:document.body.classList.contains('embedded'),scheme:document.documentElement.style.colorScheme};", arguments: [:], in: nil, contentWorld: .page) as? [String: Any]
+        XCTAssertEqual(actual?["embedded"] as? Bool, true)
+        XCTAssertEqual(actual?["scheme"] as? String, "dark")
+    }
+}
+
+extension MarkdownReaderLifecycleTests {
+    func testMissingNewSelectionRevokesPendingPreviewBeforePreflightReturns() async throws {
+        let gate = MarkdownReadGate(), preview = MarkdownFilePreview(read: { try await gate.read($0) })
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { preview.close(); Task { await gate.finishAll() }; try? FileManager.default.removeItem(at: root) }
+        let firstURL = root.appendingPathComponent("A.md")
+        try Data("first".utf8).write(to: firstURL)
+        XCTAssertTrue(preview.prepareFile(firstURL))
+        let first = preview.load(firstURL)
+        try await waitForMarkdown { await gate.count == 1 }
+        XCTAssertFalse(preview.prepareFile(root.appendingPathComponent("missing-B.md")))
+        let failure = preview.error?.text
+        XCTAssertNotNil(failure)
+        await gate.finish("A.md", .success(MarkdownDocument(title: "A", text: "stale"))); await first?.value
+        XCTAssertNil(preview.document)
+        XCTAssertEqual(preview.error?.text, failure)
     }
 }

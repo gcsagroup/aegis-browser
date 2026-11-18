@@ -169,7 +169,7 @@ TEST_F(AccessPrivatePublicationTest,
   ExpectOriginalConnection(*recreated);
 }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 TEST_F(AccessPrivatePublicationTest, AccountSitesCoexistWithPrivateLocalSelection) {
   HeldPrivateContext context;
   ASSERT_TRUE(Bind(context));

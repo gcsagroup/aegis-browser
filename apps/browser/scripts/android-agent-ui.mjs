@@ -371,16 +371,25 @@ function generateCoverageEvidence(directory, executionData, driverBuild, record,
   return summary;
 }
 
-function interact(action, options) {
-  if (!options.adb || !/^[A-Za-z0-9_-]{4,80}$/.test(options.serial ?? '') || !options['driver-build']) fail('缺少指定真机或验收工具');
-  if (options.output && fs.existsSync(options.output)) fail('不覆盖已有验收报告');
-  const {apk, record} = driverArtifact(options['driver-build']);
+export function runDeviceInteraction(action, options, {apk, record}, run = command) {
   const coverageEnabled = record.coverage?.enabled === true;
   if (coverageEnabled && action !== 'self-test') fail('coverage 工具只允许自身 fixture 验收');
   if (action === 'self-test' && coverageEnabled) requireNewAbsolute(options['coverage-output'], 'coverage 输出目录');
   else if (options['coverage-output']) fail('只有 coverage 工具 self-test 可以导出 coverage');
-  const adb = (...args) => command(options.adb, ['-s', options.serial, ...args]);
-  if (!command(options.adb, ['devices']).split(/\r?\n/).some(line => line.trim() === options.serial + '\tdevice')) fail('指定真机不在线或未授权');
+  const transportId = options['transport-id'];
+  if (transportId !== undefined && (!coverageEnabled || action !== 'self-test' ||
+      !/^[1-9][0-9]*$/.test(transportId) || !/^emulator-[0-9]+$/.test(options.serial))) {
+    fail('只允许 coverage 自测绑定指定模拟器的 ADB transport');
+  }
+  const selector = transportId === undefined ? ['-s', options.serial] : ['-t', transportId];
+  const adb = (...args) => run(options.adb, [...selector, ...args]);
+  if (transportId !== undefined) {
+    if (adb('get-serialno').trim() !== options.serial || adb('shell', 'getprop', 'ro.kernel.qemu').trim() !== '1') {
+      fail('指定 ADB transport 未绑定预期的模拟器');
+    }
+  } else if (!run(options.adb, ['devices']).split(/\r?\n/).some(line => line.trim() === options.serial + '\tdevice')) {
+    fail('指定真机不在线或未授权');
+  }
   const keyguard = parseKeyguard(adb('shell', 'dumpsys', 'window', 'policy'));
   if (adb('shell', 'am', 'get-current-user').trim() !== '0' || !keyguard.known || !keyguard.unlocked || !keyguard.screenOn) {
     fail('真机不是指定用户，或尚未解锁亮屏；未安装、启动或操作应用');
@@ -404,7 +413,15 @@ function interact(action, options) {
   const instrumentArgs = ['shell', 'am', 'instrument', '-w', '-r', '-e', 'request_base64', encoded];
   if (coverageEnabled) instrumentArgs.push('-e', 'jacoco_coverage', 'true');
   instrumentArgs.push(HELPER + '/.Driver');
-  const instrumentationOutput = command(options.adb, ['-s', options.serial, ...instrumentArgs], {maxBuffer: 4 * 1024 * 1024});
+  const instrumentationOutput = run(options.adb, [...selector, ...instrumentArgs], {maxBuffer: 4 * 1024 * 1024});
+  return {request, instrumentationOutput, coverageEnabled};
+}
+
+function interact(action, options) {
+  if (!options.adb || !/^[A-Za-z0-9_-]{4,80}$/.test(options.serial ?? '') || !options['driver-build']) fail('缺少指定真机或验收工具');
+  if (options.output && fs.existsSync(options.output)) fail('不覆盖已有验收报告');
+  const {apk, record} = driverArtifact(options['driver-build']);
+  const {request, instrumentationOutput, coverageEnabled} = runDeviceInteraction(action, options, {apk, record});
   const result = parseResult(instrumentationOutput);
   const executionData = parseCoverageExec(instrumentationOutput, coverageEnabled);
   if (action === 'self-test') validateSelfTestResult(result);
@@ -425,7 +442,7 @@ function main(argv) {
     console.log('下载固定 coverage 工件：fetch-jacoco --output NEW_DIR\n' +
       '构建：build --sdk DIR --jdk DIR --output NEW_DIR [--coverage --jacoco-dir DIR]\n' +
       '成对验证：verify-build-modes --normal-build DIR --coverage-build DIR --output NEW_FILE\n' +
-      '工具真机自测：self-test --adb FILE --serial SERIAL --driver-build DIR [--coverage-output NEW_DIR] [--output NEW_FILE]\n' +
+      '工具真机自测：self-test --adb FILE --serial SERIAL --driver-build DIR [--coverage-output NEW_DIR] [--transport-id ID] [--output NEW_FILE]\n' +
       '浏览器观察：snapshot，另需 --profile DIR --source-root DIR --manifest FILE --build-dir DIR [--source-before FILE]\n' +
       '点击/中文输入：click 或 set-text，另需 --snapshot FILE --node ID [--text TEXT]\n' +
       '不会解锁、修改系统权限、接触默认 Profile 或替换浏览器；自测会安装不存在的独立测试工具。');
@@ -434,7 +451,7 @@ function main(argv) {
   const action = argv.shift();
   const allowed = action === 'fetch-jacoco' ? ['output'] : action === 'build' ? ['sdk', 'jdk', 'output', 'coverage', 'jacoco-dir'] :
     action === 'verify-build-modes' ? ['normal-build', 'coverage-build', 'output'] : ['adb', 'serial', 'driver-build', 'coverage-output', 'output',
-      ...(action === 'self-test' ? [] : ['profile', 'source-root', 'manifest', 'build-dir', 'source-before', 'snapshot', 'node', 'text'])];
+      ...(action === 'self-test' ? ['transport-id'] : ['profile', 'source-root', 'manifest', 'build-dir', 'source-before', 'snapshot', 'node', 'text'])];
   if (!['fetch-jacoco', 'build', 'verify-build-modes', 'self-test', 'snapshot', 'click', 'set-text'].includes(action)) fail('未知模式');
   const options = {};
   while (argv.length) {

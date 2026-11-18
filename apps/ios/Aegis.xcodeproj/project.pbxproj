@@ -10,6 +10,7 @@
 		003A1E0D74A540349A8B3E7C /* icon-512.png in Resources */ = {isa = PBXBuildFile; fileRef = 97D5FD3BB7B355F6A9C3BBC9 /* icon-512.png */; };
 		00AF71D8F7205D0D606D680D /* MainFrameNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56B8E703726B0F24A8FBB8D2 /* MainFrameNavigationState.swift */; };
 		00E93231AE7435980CB5B5D1 /* AccessEmbeddedRealityDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20C10BC131ADACB5AA3380EB /* AccessEmbeddedRealityDialer.swift */; };
+		03260D511FCB04A738F9D49F /* AccessThreeXUIWebEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8125D6AEB6AD1F1B223D1B9 /* AccessThreeXUIWebEntry.swift */; };
 		03A791AF264E6A386C454D69 /* AccessProxyCapabilityPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5906A1EC91BCEE9FBCFFE63C /* AccessProxyCapabilityPresentationTests.swift */; };
 		046436D9AF085D3C39F114C8 /* AccessHTTPConnectParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 096C8DFA33A5AD5DB6D04746 /* AccessHTTPConnectParser.swift */; };
 		04CD02F5EC0A8B8F90BA0D9A /* AccessHTTPSRealityPathError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 618996D7018F409B5626616B /* AccessHTTPSRealityPathError.swift */; };
@@ -279,6 +280,7 @@
 		B9F51A266D55AECD80F09DE4 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FD6289F9399C3B8DA673D0 /* ShareViewController.swift */; };
 		BB1B674A3EBC8D523FE8AB20 /* AccessOwner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C63D3537FCB41D2B181C6C2 /* AccessOwner.swift */; };
 		BC8863CC38C26E88516FC281 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A8D16ACF69FA4A91D57115 /* AccessHTTPInboundListener.swift */; };
+		BE30DFF3E6CC18A7B4A48FE0 /* AccessThreeXUIWebEntryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5EAEF8ED14775D028597AA8 /* AccessThreeXUIWebEntryTests.swift */; };
 		BE8AA25920E431A1687B1D2E /* AccessKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8A17DFAF27700574B0C5F4C4 /* AccessKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		BEB3ECF830E7DD1A1EF566ED /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD0A9BE1373C1BED239FB08 /* AppLanguageTests.swift */; };
 		BF733973E4705255928BF8A3 /* WebsiteEnhancementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5DFA8B92557D78E2EFD667C /* WebsiteEnhancementsView.swift */; };
@@ -380,6 +382,7 @@
 		FE256921A683DF536BE4314D /* AccessProxyConfigurationApplicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93C45B3E4E73A2C7355B6DF1 /* AccessProxyConfigurationApplicatorTests.swift */; };
 		FE9F0161923B4F3B8113E7BA /* AccessSOCKS5InboundParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C847A626F65D47D1D17E704 /* AccessSOCKS5InboundParser.swift */; };
 		FF0A91425480299B9A465E34 /* ExternalPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2D2FFC6E99254E69EFC1E7 /* ExternalPageLink.swift */; };
+		FFD0D8F1BB9920FE7C0C3B35 /* ThreeXUISubscriptionRedirectFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EEC6BC393F5B54A72EFBC2B /* ThreeXUISubscriptionRedirectFixtureTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -633,6 +636,7 @@
 		4CBF991E1681495FC9851053 /* AccessRealityVisionParameters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionParameters.swift; sourceTree = "<group>"; };
 		4E2D2FFC6E99254E69EFC1E7 /* ExternalPageLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalPageLink.swift; sourceTree = "<group>"; };
 		4E644741C584B4E982328A7B /* RecordRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordRecoveryTests.swift; sourceTree = "<group>"; };
+		4EEC6BC393F5B54A72EFBC2B /* ThreeXUISubscriptionRedirectFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreeXUISubscriptionRedirectFixtureTests.swift; sourceTree = "<group>"; };
 		4F0BCDC77998B8308A198EE5 /* AccessRegistrationLeaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRegistrationLeaseTests.swift; sourceTree = "<group>"; };
 		5007B7312B96A7E4042826FF /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		5046F2194A1516558BBDAB9D /* id */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = id; path = id.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -773,6 +777,7 @@
 		A3AE3D2F51F37E43E0ACC20A /* security-rules.sig */ = {isa = PBXFileReference; path = "security-rules.sig"; sourceTree = "<group>"; };
 		A4B4D9F94AAEDB08545CAF89 /* ContentFilterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentFilterSettingsView.swift; sourceTree = "<group>"; };
 		A516AD15208D05CCF03B38F1 /* BrowserPreferenceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPreferenceViews.swift; sourceTree = "<group>"; };
+		A5EAEF8ED14775D028597AA8 /* AccessThreeXUIWebEntryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessThreeXUIWebEntryTests.swift; sourceTree = "<group>"; };
 		A61C95EFF88AFC8B68F424D3 /* easyprivacy.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = easyprivacy.txt; sourceTree = "<group>"; };
 		A65BD41B70253D0AE73A17A0 /* AccessXrayRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntime.swift; sourceTree = "<group>"; };
 		A70BD69C7AB42C81B299137D /* AccessSiteSessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionState.swift; sourceTree = "<group>"; };
@@ -905,6 +910,7 @@
 		F67D261112B4F44C70EECBAD /* ms */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ms; path = ms.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		F70AFBEFC3B264B91789FBC0 /* AccessSiteSessionError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionError.swift; sourceTree = "<group>"; };
 		F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseInstallPreferencesTests.swift; sourceTree = "<group>"; };
+		F8125D6AEB6AD1F1B223D1B9 /* AccessThreeXUIWebEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessThreeXUIWebEntry.swift; sourceTree = "<group>"; };
 		F8689B1B38C23556721AA3C3 /* AccessXrayDigestVerifying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayDigestVerifying.swift; sourceTree = "<group>"; };
 		F9594C0B3C26733D2849ABD0 /* ReadingLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingLibraryView.swift; sourceTree = "<group>"; };
 		FB0BDB1071C646F6F85D5065 /* ShareInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxTests.swift; sourceTree = "<group>"; };
@@ -1110,6 +1116,7 @@
 				8639BBDA3C7A77E352404520 /* AccessProxyRecoveryViewTests.swift */,
 				F2E3ECA8DE63818F6343B787 /* AccessSiteProxyToggleModelTests.swift */,
 				456A92525770EAEB36370B28 /* AccessSubscriptionUsageTests.swift */,
+				A5EAEF8ED14775D028597AA8 /* AccessThreeXUIWebEntryTests.swift */,
 				92F0B7B7172BCFC7AF4AD7AB /* AccessWebKitRoutingCapabilityTests.swift */,
 				BAD0A9BE1373C1BED239FB08 /* AppLanguageTests.swift */,
 				7C91529E9D1C3457DD010A42 /* BookmarkTransactionJournalTests.swift */,
@@ -1132,6 +1139,7 @@
 				FB0BDB1071C646F6F85D5065 /* ShareInboxTests.swift */,
 				C60E38A834126ED72EB6A3B0 /* StorageReliabilityTests.swift */,
 				1486ACADEC6B1D6FBFF390F1 /* TabLifecycleTests.swift */,
+				4EEC6BC393F5B54A72EFBC2B /* ThreeXUISubscriptionRedirectFixtureTests.swift */,
 				E17AB92643161AAA2FCC34B0 /* WebExtensionIntegrationTests.swift */,
 				314FC38B754B637D425BB05B /* WebKitProtectionTests.swift */,
 				EB49E0A8796D0A287F0110AC /* WebsiteEnhancementTests.swift */,
@@ -1483,6 +1491,7 @@
 				76A7A3DC4F70E812DCA5DA4B /* AccessSiteProxyToggleView.swift */,
 				3E6C902394C2430A497155B6 /* AccessSubscriptionUsageSession.swift */,
 				A7FF10EF054B2E1A9B253FE0 /* AccessSubscriptionUsageView.swift */,
+				F8125D6AEB6AD1F1B223D1B9 /* AccessThreeXUIWebEntry.swift */,
 				0CE69F147725CCB975EFDA4B /* AccessUsagePage.swift */,
 				A71C6CF9E940DE74ED2C5C5B /* AccessUsageSummaryView.swift */,
 				397CB2F7CB8A372260242996 /* AegisApp.swift */,
@@ -2171,6 +2180,7 @@
 				C53281994D7A64D56514744D /* AccessSiteProxyToggleView.swift in Sources */,
 				8F1191F2E7F99D45A44715A5 /* AccessSubscriptionUsageSession.swift in Sources */,
 				5605CEDA844AB6D0C7B46FA6 /* AccessSubscriptionUsageView.swift in Sources */,
+				03260D511FCB04A738F9D49F /* AccessThreeXUIWebEntry.swift in Sources */,
 				5DF6C5DD65244348EE137046 /* AccessUsagePage.swift in Sources */,
 				857C11DBFB6FC8DD89F67A46 /* AccessUsageSummaryView.swift in Sources */,
 				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
@@ -2269,6 +2279,7 @@
 				A7982EBA1F2A58A980A4C00F /* AccessSiteSessionControllerTests.swift in Sources */,
 				E47B18287F4109FDBDB633A9 /* AccessSiteSessionFaultTests.swift in Sources */,
 				CD318826AF80CE30677BD379 /* AccessSubscriptionUsageTests.swift in Sources */,
+				BE30DFF3E6CC18A7B4A48FE0 /* AccessThreeXUIWebEntryTests.swift in Sources */,
 				D2EC2DA381CB86BB45A7C476 /* AccessWebKitRoutingCapabilityTests.swift in Sources */,
 				66B205148868B0DA0BCC1A41 /* AccessXrayAssetPinTests.swift in Sources */,
 				20D753AB76FC5C33E6BF631F /* AccessXrayRuntimeTests.swift in Sources */,
@@ -2303,6 +2314,7 @@
 				5417E789F7D0BC2213D0615A /* ShareInboxTests.swift in Sources */,
 				47D60127B3940A9B8E958639 /* StorageReliabilityTests.swift in Sources */,
 				50CBB62480F78124F9AABD3B /* TabLifecycleTests.swift in Sources */,
+				FFD0D8F1BB9920FE7C0C3B35 /* ThreeXUISubscriptionRedirectFixtureTests.swift in Sources */,
 				0EFF0016AEE681BA688ABCA5 /* WebExtensionIntegrationTests.swift in Sources */,
 				990490FD4684FC60F2FA14AE /* WebKitProtectionTests.swift in Sources */,
 				083247805FAA0E8A1E91E650 /* WebsiteEnhancementTests.swift in Sources */,
