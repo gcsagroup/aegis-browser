@@ -6,7 +6,7 @@ Alpha 固定僅供內部測試，原生匯出開啟 `testFlightInternalTestingOn
 
 ## cloud 預設與明確 manual 回退
 
-CLI、Fastlane、Simple/Full Actions 和 candidate tag 建立的新 iOS 套件預設使用 `cloud`。雲端簽章在獲准的 GitHub-hosted macOS runner 使用 Xcode 26.6 和具 cloud-managed Distribution 權限的 ASC key，執行新的 archive→export，不匯入分發 P12。
+CLI、Fastlane、Simple/Full Actions 和 candidate tag 建立的新 iOS 套件預設使用 `cloud`。雲端簽章在獲准的自托管 macOS runner 使用 Xcode 27.2（build 27B52，`/Applications/Xcode.app`）和具 cloud-managed Distribution 權限的 ASC key，執行新的 archive→export，不匯入分發 P12。
 
 需要回退時明確選擇：CLI 使用 `--signing-mode manual`，Fastlane 使用 `signing_mode:manual`，Actions 將 **Signing mode** 選為 **manual**。本機打包使用此明確回退。cloud 失敗會停止當次嘗試；核對回執與遠端狀態後，以未占用 build 與新 run ID 發起 manual 打包，不自動重傳。
 
@@ -25,7 +25,7 @@ CLI、Fastlane、Simple/Full Actions 和 candidate tag 建立的新 iOS 套件�
 
 預設 cloud 使用 `AEGIS_APPLE_TEAM_ID` 和受保護的 ASC key：`AEGIS_ASC_KEY_ID`、`AEGIS_ASC_ISSUER_ID`、`AEGIS_ASC_KEY_BASE64`。僅明確選擇 manual 時匯入分發 P12 與 profiles。
 
-明確選擇 `manual` 時，Actions 打包使用 GitHub 託管的臨時 macOS。在 `aegis-ios-signing` 保留 team、憑證指紋和三份 profile 名稱變數，並設定加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二進位材料使用單行 Base64，打包後清理臨時鑰匙圈與 profiles；簽名材料不得進入日誌、Git、artifact 或上傳憑據環境。
+明確選擇 `manual` 時，Actions 打包使用獲准的自托管 macOS。在 `aegis-ios-signing` 保留 team、憑證指紋和三份 profile 名稱變數，並設定加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二進位材料使用單行 Base64，打包後清理臨時鑰匙圈與 profiles；簽名材料不得進入日誌、Git、artifact 或上傳憑據環境。
 
 Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Release Validation** 自動無憑證驗證與 **iOS Coverage** 模擬器覆蓋率。手動執行三個 iOS 工作流程均要求實際倉庫 Admin 權限（包含組織所有者授予的 Admin），原發起者和重跑者都必須通過驗證。Maintain/Write/Read 和權限未知均在受保護作業排隊前拒絕；GitHub 原生介面仍可能向 Write 顯示執行按鈕。本地流程驗證真實 token 使用者，runner 在簽章探測前驗證真實 CLI Admin。fork 交付入口維持停用。
 
