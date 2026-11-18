@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,6 +27,7 @@ func init() {
 
 var recoveryMu sync.Mutex
 var replayOnce sync.Once
+var flowRecordName = regexp.MustCompile(`^[0-9a-f]{32}\.json$`)
 
 func recoveryDirectory(socket string) (string, error) {
 	parent, err := os.Stat(filepath.Dir(socket))
@@ -43,58 +46,92 @@ func recoveryDirectory(socket string) (string, error) {
 }
 
 func pending(path string) ([]map[string]any, error) {
-	data, err := os.ReadFile(path)
+	name := filepath.Base(path)
+	if !flowRecordName.MatchString(name) {
+		return nil, errors.New("invalid meter record name")
+	}
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	info, err := root.Lstat(name)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
-	var frames []map[string]any
-	if err == nil {
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		decoder.UseNumber()
-		err = decoder.Decode(&frames)
+	if err != nil {
+		return nil, err
 	}
-	return frames, err
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("meter record must be a regular file")
+	}
+	data, err := root.ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+	var frames []map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&frames); err != nil {
+		return nil, err
+	}
+	var extra json.RawMessage
+	if len(frames) == 0 || decoder.Decode(&extra) != io.EOF {
+		return nil, errors.New("invalid meter record contents")
+	}
+	id := strings.TrimSuffix(name, ".json")
+	for _, frame := range frames {
+		if frame["flow"] != id {
+			return nil, errors.New("meter record flow differs from filename")
+		}
+	}
+	return frames, nil
 }
 
 func save(path string, frames []map[string]any) error {
+	name := filepath.Base(path)
+	if !flowRecordName.MatchString(name) {
+		return errors.New("invalid meter record name")
+	}
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	if len(frames) == 0 {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if err := root.Remove(name); err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		dir, err := os.Open(filepath.Dir(path))
+	} else {
+		data, err := json.Marshal(frames)
 		if err != nil {
 			return err
 		}
-		defer dir.Close()
-		return dir.Sync()
-	}
-	data, err := json.Marshal(frames)
-	if err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".pending-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if _, err = file.Write(data); err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(file.Name(), path)
-	}
-	if err == nil {
-		var dir *os.File
-		dir, err = os.Open(filepath.Dir(path))
-		if err == nil {
-			err = dir.Sync()
-			dir.Close()
+		file, err := os.CreateTemp(root.Name(), ".pending-")
+		if err != nil {
+			return err
+		}
+		temp := filepath.Base(file.Name())
+		defer root.Remove(temp)
+		if _, err = file.Write(data); err == nil {
+			err = file.Sync()
+		}
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return err
+		}
+		if err := root.Rename(temp, name); err != nil {
+			return err
 		}
 	}
-	return err
+	dir, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (f *Flow) retainLocked(frame map[string]any) error {
@@ -128,7 +165,8 @@ func (f *Flow) reliableSend(frame map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if err := f.retainLocked(frame); err != nil {
+	frame["v"], frame["flow"] = 1, f.id
+	if err := save(path, append(previous, frame)); err != nil {
 		return err
 	}
 	if f.broken || len(previous) != 0 {
@@ -154,11 +192,15 @@ func startReplay(socket, dir string) {
 func replay(socket, dir string) {
 	recoveryMu.Lock()
 	defer recoveryMu.Unlock()
-	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	for _, path := range paths {
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !flowRecordName.MatchString(entry.Name()) {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
 		frames, err := pending(path)
 		if err != nil || len(frames) == 0 {
 			continue
@@ -167,14 +209,8 @@ func replay(socket, dir string) {
 		if err != nil {
 			return
 		}
-		f := &Flow{conn: conn, reader: bufio.NewReaderSize(conn, 4096)}
+		f := &Flow{id: strings.TrimSuffix(entry.Name(), ".json"), conn: conn, reader: bufio.NewReaderSize(conn, 4096)}
 		for len(frames) != 0 {
-			id, ok := frames[0]["flow"].(string)
-			if !ok {
-				err = fmt.Errorf("invalid persisted flow")
-				break
-			}
-			f.id = id
 			if err = f.send(frames[0]); err != nil {
 				break
 			}

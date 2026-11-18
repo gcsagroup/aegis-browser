@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 import secrets
+import shutil
 import socket
 import sqlite3
 import ssl
@@ -75,7 +76,7 @@ class Runtime:
         env.pop("AEGIS_XRAY_METER_SOCKET", None)
         if meter:
             env["AEGIS_XRAY_METER_SOCKET"] = str(self.socket_path)
-        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env)
+        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=SERVICE.parents[1])
         def stop():
             proc.terminate()
             try:
@@ -99,7 +100,9 @@ class Runtime:
 
     def setup_targets(self):
         cert, key = self.root / "cert.pem", self.root / "key.pem"
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        openssl = shutil.which("openssl", path=os.defpath)
+        require(openssl, "System OpenSSL is required for the loopback certificate")
+        subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                         "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
                         "-keyout", key, "-out", cert], capture_output=True, check=True)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -189,7 +192,7 @@ class Runtime:
 
     def usage(self):
         return json.loads(subprocess.check_output([*self.cli, "usage", "--database", self.db,
-                                                   "--node", NODE, "--period", PERIOD]))
+                                                   "--node", NODE, "--period", PERIOD], cwd=SERVICE.parents[1]))
 
     def grant(self, name):
         with contextlib.closing(http.client.HTTPConnection(HOST, self.api, timeout=5)) as conn:

@@ -120,13 +120,13 @@ class Meter:
                 stamp = frame.get('measuredAt', now)
                 if stamp > now:
                     raise ValueError('future measurement')
-                self._sample(db, key, row, frame, stamp)
+                self._sample(db, row, frame, stamp)
             else:
                 self._finish(db, key, row, frame, now)
             db.commit()
 
     @staticmethod
-    def _sample(db, key, row, frame, now):
+    def _sample(db, row, frame, now):
         column = DIRECTION[frame['direction']]
         path = frame['path']
         total = max(row[column], frame['bytes'])
@@ -136,9 +136,12 @@ class Meter:
         path_sum = n + sum(row[p] for p in PATHS[frame['direction']] if p != path)
         if row['state'] != 'open' or path_sum > total:
             raise ValueError('invalid watermark')
-        # Both identifiers come exclusively from the validated direction/path contract.
-        db.execute(f'UPDATE node_meter_flows SET {column}=?, {path}=?, sampled_at=? '
-                   'WHERE node_id=? AND flow_id=?', (total, n, max(now, row['sampled_at'] or 0), *key))
+        counters = dict(row)
+        counters.update({column: total, path: n, 'sampled_at': max(now, row['sampled_at'] or 0)})
+        db.execute('UPDATE node_meter_flows SET uploaded=:uploaded, downloaded=:downloaded, '
+                   'target_tcp=:target_tcp, vision_padded=:vision_padded, vision_plain=:vision_plain, '
+                   'vision_raw=:vision_raw, sampled_at=:sampled_at '
+                   'WHERE node_id=:node_id AND flow_id=:flow_id', counters)
 
     @staticmethod
     def _finish(db, key, row, frame, now):
@@ -169,12 +172,12 @@ def usage(database, node, period=None):
     accounts = {}
     with closing(_connect(database, 'ro')) as db:
         # One read snapshot. Python integers preserve sums beyond SQLite's signed SUM range.
-        query = 'SELECT * FROM node_meter_flows WHERE node_id=?'
-        params = (node,)
-        if period is not None:
-            query += ' AND period_id=?'
-            params += (period,)
-        rows = db.execute(query + ' ORDER BY account_id, period_id', params)
+        if period is None:
+            rows = db.execute('SELECT * FROM node_meter_flows WHERE node_id=? '
+                              'ORDER BY account_id, period_id', (node,))
+        else:
+            rows = db.execute('SELECT * FROM node_meter_flows WHERE node_id=? AND period_id=? '
+                              'ORDER BY account_id, period_id', (node, period))
         for row in rows:
             key = (row['account_id'], row['period_id'])
             account = accounts.get(key)

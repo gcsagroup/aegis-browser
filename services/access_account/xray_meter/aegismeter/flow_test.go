@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 type observed map[string]any
@@ -136,7 +137,7 @@ func TestCollectorRestartReplaysConfirmedPrefixAndFinish(t *testing.T) {
 	if err := os.Chmod(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	socket := filepath.Join(root, "meter.sock")
+	socket := filepath.Join(root, "meter[1].sock")
 	dir, err := recoveryDirectory(socket)
 	if err != nil {
 		t.Fatal(err)
@@ -159,10 +160,14 @@ func TestCollectorRestartReplaysConfirmedPrefixAndFinish(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
+	if err := listener.(*net.UnixListener).SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	seen := make(chan []observed, 1)
 	go func() {
 		conn, err := listener.Accept()
 		if err != nil {
+			close(seen)
 			return
 		}
 		defer conn.Close()
@@ -184,7 +189,7 @@ func TestCollectorRestartReplaysConfirmedPrefixAndFinish(t *testing.T) {
 	replay(socket, dir)
 	messages := <-seen
 	if len(messages) != 2 || messages[0]["bytes"] != float64(3) || messages[1]["uploadedBytes"] != float64(3) {
-		t.Fatal(messages)
+		t.Fatalf("missing replay of sample and finish: %v", messages)
 	}
 	frames, err = pending(filepath.Join(dir, f.id+".json"))
 	if err != nil || len(frames) != 0 {
@@ -193,9 +198,10 @@ func TestCollectorRestartReplaysConfirmedPrefixAndFinish(t *testing.T) {
 }
 
 func TestRecoveryPreservesLargeIntegers(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "record.json")
+	const id = "0123456789abcdef0123456789abcdef"
+	path := filepath.Join(t.TempDir(), id+".json")
 	large := int64(9007199254740993)
-	if err := save(path, []map[string]any{{"bytes": large}}); err != nil {
+	if err := save(path, []map[string]any{{"flow": id, "bytes": large}}); err != nil {
 		t.Fatal(err)
 	}
 	frames, err := pending(path)
@@ -228,5 +234,21 @@ func TestLostOpenAckRetainsOnlyZeroByteAbort(t *testing.T) {
 	frames, err := pending(filepath.Join(dir, f.id+".json"))
 	if err != nil || len(frames) != 1 || frames[0]["op"] != "abort" {
 		t.Fatal(frames, err)
+	}
+}
+
+func TestPendingRejectsInconsistentRecords(t *testing.T) {
+	const id = "0123456789abcdef0123456789abcdef"
+	path := filepath.Join(t.TempDir(), id+".json")
+	for _, record := range []string{
+		`[{"flow":"11111111111111111111111111111111","op":"abort"}]`,
+		`[{"flow":"0123456789abcdef0123456789abcdef","op":"abort"}] []`,
+	} {
+		if err := os.WriteFile(path, []byte(record), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pending(path); err == nil {
+			t.Errorf("accepted inconsistent record: %s", record)
+		}
 	}
 }
