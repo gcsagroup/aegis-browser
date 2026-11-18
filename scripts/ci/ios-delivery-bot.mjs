@@ -113,6 +113,17 @@ export async function driveDelivery({environment = process.env, api, quality, re
       'Child run identity/source/context differs: '+url);
       if (run.status === 'completed') {
         requireValue(run.conclusion === 'success', 'Child delivery failed; reconcile '+url);
+        if (operation === 'Package and upload') {
+          const inventory = await api(PREFIX+'/actions/runs/'+id+'/attempts/1/jobs?per_page=100');
+          requireValue(Array.isArray(inventory?.jobs) && inventory.jobs.length <= 100 &&
+            inventory.total_count === inventory.jobs.length, 'Incomplete upload jobs inventory; reconcile '+url);
+          for (const name of ['ios-package', 'seal-package', 'upload-new']) {
+            const jobs = inventory.jobs.filter(job => job.name === name);
+            requireValue(jobs.length === 1 && positiveId(jobs[0].id) && jobs[0].run_id === id && jobs[0].run_attempt === 1 &&
+              jobs[0].head_sha === environment.GITHUB_SHA && jobs[0].status === 'completed' && jobs[0].conclusion === 'success',
+            'Required upload jobs did not succeed; reconcile '+url);
+          }
+        }
         recordRun({...retained, state: 'completed', conclusion: 'success'});
         return {id, operation, url};
       }

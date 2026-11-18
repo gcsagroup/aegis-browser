@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parse} from 'yaml';
+import {runInNewContext} from 'node:vm';
 
 const sha = 'a'.repeat(40);
 const repository = 'gcsagroup/aegis-browser';
@@ -330,7 +331,7 @@ test('public package upload is bound to the successful same-run producer', () =>
   assert.equal(fresh.environment, 'aegis-ios-store');
   const upload = doc.jobs['upload-new'];
   assert.deepEqual(upload.needs, ['admission', 'ios-package', 'seal-package']);
-  assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' && needs.ios-package.outputs.private_beta == 'false' }}");
+  assert(upload.if.includes("needs.admission.outputs.operation == 'package-upload'"));
   assert.equal(upload.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
   assert.equal(upload.env.PACKAGE_RUN_ID, '${{ github.run_id }}');
   assert.equal(upload.env.IMPORT_KIND, 'new-upload');
@@ -338,6 +339,28 @@ test('public package upload is bound to the successful same-run producer', () =>
   assert(upload.steps.find(s => s.run?.includes('ios-restore.py')));
   assert(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py export').if.includes('always()'));
   assert.equal(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py receipt').if, undefined);
+});
+
+test('new upload survives an optional skipped ancestor but rejects failed prerequisites and cancellation', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const expression = jobs['upload-new'].if.slice(3, -2).replace(/needs\.([a-z-]+)/gu, 'needs["$1"]');
+  const eligible = (patch = {}, cancelled = false) => {
+    const needs = {admission: {result: 'success', outputs: {operation: 'package-upload'}},
+      'ios-package': {result: 'success', outputs: {private_beta: 'false'}}, 'seal-package': {result: 'success'}, ...patch};
+    // GitHub adds success() unless the condition explicitly uses a status function.
+    const implicitSuccess = !/\b(?:always|cancelled|failure|success)\(/u.test(expression);
+    return !implicitSuccess && runInNewContext(expression, {needs, cancelled: () => cancelled});
+  };
+  assert.equal(eligible(), true, 'manual signing skips cloud archive ancestors');
+  assert.equal(eligible({}, true), false);
+  for (const name of jobs['upload-new'].needs) {
+    for (const result of ['failure', 'cancelled', 'skipped']) {
+      const outputs = name === 'admission' ? {operation: 'package-upload'} : {private_beta: 'false'};
+      assert.equal(eligible({[name]: {result, outputs}}), false, `${name}: ${result}`);
+    }
+  }
+  assert.equal(eligible({admission: {result: 'success', outputs: {operation: 'package'}}}), false);
+  assert.equal(eligible({'ios-package': {result: 'success', outputs: {private_beta: 'true'}}}), false);
 });
 
 test('private Beta crosses the store gate without publishing its package', () => {

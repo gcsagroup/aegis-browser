@@ -263,6 +263,12 @@ A newly dispatched run may initially return HTTP 404: the controller waits for
 that exact ID with at most four delayed read retries within its existing polling
 budget. Once visible, a missing run or any other read error stops monitoring.
 Dispatch and upload mutations are never retried by this visibility handling.
+For **Package and upload**, an overall green workflow is insufficient: the
+controller verifies successful package, seal and upload jobs at the exact run,
+attempt and source before recording completion or starting Wait. A skipped,
+missing or unbound upload stops the controller for reconciliation. The upload
+job explicitly tolerates skipped optional archive ancestors while requiring all
+three direct prerequisites to succeed and refusing cancellation.
 The shell adapter streams those records only to an existing, owned, non-symlink
 `step_summary_*` command file beneath the runner's canonical temporary directory.
 Preserve those child run URLs and the package receipt. A failed, timed-out or ambiguous dispatch/upload
