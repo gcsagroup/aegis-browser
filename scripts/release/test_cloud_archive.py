@@ -24,7 +24,7 @@ class CloudArchiveTests(unittest.TestCase):
             yield
         def run(*arguments, **_options):
             if '-version' in arguments:
-                return b'Xcode 26.6\nBuild version fixture'
+                return b'Xcode 27.2\nBuild version 27B52'
             events.append('archive')
             raise ValueError('stop at archive boundary')
         signing = SimpleNamespace(resolve=Mock(return_value=([], {'style': 'manual'})),
@@ -80,7 +80,7 @@ class CloudArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'transfer'
             native = SimpleNamespace(validate_identity=Mock(), source=Mock(side_effect=[identity, dict(identity, sha='c' * 40)]),
-                                     run=Mock(return_value=b'Xcode 26.6\nBuild version 17F113'),
+                                     run=Mock(return_value=b'Xcode 27.2\nBuild version 27B52'),
                                      stage=Mock(return_value=output / 'work'), isolated_keychain=isolated,
                                      key_access_runtime=lambda _env: native,
                                      module=Mock(side_effect=lambda _name, file: SimpleNamespace(

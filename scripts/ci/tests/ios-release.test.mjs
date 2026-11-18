@@ -39,6 +39,7 @@ test('archive gets only non-secret settings from the existing environment', () =
   const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const archive = jobs['ios-archive'];
   assert.equal(archive.environment, undefined);
+  assert.equal(archive.env.DEVELOPER_DIR, '/Applications/Xcode.app/Contents/Developer');
   assert(!JSON.stringify(archive).includes('secrets.'));
   assert(archive.needs.includes('archive-settings'));
   assert.equal(archive.outputs.manifest_sha256, '${{ steps.archive.outputs.manifest_sha256 }}');
@@ -438,7 +439,7 @@ test('hosted signing loads only environment secrets after source admission and c
   const job = doc.jobs['ios-package'];
   assert.equal(job['runs-on'], "${{ fromJSON(format('[\"self-hosted\",\"macOS\",\"ARM64\",\"{0}\"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}");
   assert.equal(job.environment, 'aegis-ios-signing');
-  assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
+  assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode.app/Contents/Developer');
   const ruby = job.steps.findIndex(s => s.uses === './.github/actions/ensure-ios-ruby');
   assert(ruby >= 0);
   assert(!job.steps.some(s => s.uses?.startsWith('ruby/setup-ruby@')),

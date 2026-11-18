@@ -172,7 +172,7 @@ Direct Fastlane/PoC inline Development archives apply the same explicit selectio
 and signed archive verification. The production transfer workflow provides the
 separate archive/export jobs.
 
-This selection changes only Development archive signing. Xcode 26.6's installed
+This selection changes only Development archive signing. Xcode 27.2's installed
 `xcodebuild -help` explicitly supports a manually signed archive followed by automatic
 distribution, including managed cloud signing certificates. Cloud export remains
 `signingStyle=automatic` and imports no Distribution P12. Archive transfer v2 requires

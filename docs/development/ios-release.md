@@ -5,8 +5,8 @@ One package has one immutable profile. Alpha is exported with native TestFlight 
 ## Cloud default and explicit manual fallback
 
 New iOS packages default to `cloud` in the CLI, Fastlane, Simple/Full Actions
-and candidate-tag deliveries. Cloud packaging uses an admitted GitHub-hosted
-macOS runner with Xcode 26.6 and an ASC key allowed to use cloud-managed
+and candidate-tag deliveries. Cloud packaging uses the admitted self-hosted
+macOS runner with Xcode 27.2 (build 27B52) at `/Applications/Xcode.app` and an ASC key allowed to use cloud-managed
 Distribution certificates. Each run creates a fresh archive and exports without
 importing a Distribution P12.
 
@@ -99,7 +99,7 @@ Cloud packaging requires `AEGIS_APPLE_TEAM_ID` and the protected ASC key inputs 
 
 Configure repository variable `AEGIS_IOS_RELEASE_ENABLED=false` first. Configure protected environments with custom deployment branch/tag policies, exact approved branch/main and `candidate/ios/*` tags as appropriate; no PR deployment refs.
 
-For explicit `manual` signing, in `aegis-ios-signing` retain `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` as variables. Add encrypted environment secrets `AEGIS_IOS_DISTRIBUTION_P12_BASE64` (single-line base64 of the existing Apple Distribution certificate and private key), `AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`, and `AEGIS_IOS_APP_PROFILE_BASE64`, `AEGIS_IOS_SAFARI_PROFILE_BASE64`, `AEGIS_IOS_SHARE_PROFILE_BASE64` (single-line base64 of the respective existing App Store provisioning profiles). The package job uses an ephemeral GitHub-hosted Mac, validates each profile against the configured team, name, target and certificate, and removes its temporary keychain and profiles after packaging. Do not print, commit, or put these secrets in artifacts or the store environment. Add only ASC key ID/issuer/base64 key as encrypted secrets in `aegis-ios-store`. Enable iOS only after passed main CI and configuration readback.
+For explicit `manual` signing, in `aegis-ios-signing` retain `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` as variables. Add encrypted environment secrets `AEGIS_IOS_DISTRIBUTION_P12_BASE64` (single-line base64 of the existing Apple Distribution certificate and private key), `AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`, and `AEGIS_IOS_APP_PROFILE_BASE64`, `AEGIS_IOS_SAFARI_PROFILE_BASE64`, `AEGIS_IOS_SHARE_PROFILE_BASE64` (single-line base64 of the respective existing App Store provisioning profiles). The package job uses the admitted self-hosted Mac, validates each profile against the configured team, name, target and certificate, and removes its temporary keychain and profiles after packaging. Do not print, commit, or put these secrets in artifacts or the store environment. Add only ASC key ID/issuer/base64 key as encrypted secrets in `aegis-ios-store`. Enable iOS only after passed main CI and configuration readback.
 
 Privileged fork delivery is retired. The delivery gate, local admission and owned signing-runner launcher accept only canonical `gcsagroup/aegis-browser` repository ID1348409663; old rehearsal flags cannot reopen it. Fork PR/quality checks remain uncredentialed. Historical workflows, runs, tags and artifacts remain evidence, rather than active duplicate delivery entrypoints.
 

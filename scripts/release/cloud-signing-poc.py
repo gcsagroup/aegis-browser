@@ -367,10 +367,8 @@ def experiment(options, environment):
                 'team': options.team, 'profile': options.profile, 'signingMode': 'cloud', 'runtime': options.runtime, 'status': 'started',
                 'upload': 'not_attempted', 'deviceAcceptance': 'not_verified', 'releaseReady': False}
     temporary_key = None
-    # Xcode 26.6 rejects ad-hoc/unsigned archives when targets carry entitlements
-    # ("require signing with a development certificate"). CI therefore defaults to
-    # Apple Development for the archive, then still exports via cloud Distribution.
-    # Explicit --archive-signing=ad-hoc remains available for older experiments.
+    # Entitlement-bearing archives use Apple Development, then cloud Distribution
+    # export. Ad-hoc archive signing stays an explicit opt-in.
     archive_signing = options.archive_signing or 'development'
     evidence['archiveSigningMode'] = archive_signing
     try:
@@ -381,8 +379,10 @@ def experiment(options, environment):
         archive_transfer = module('cloud_archive_transfer', 'cloud-archive.py')
         archive_environment = archive_transfer.build_environment(environment)
         evidence['xcode'] = run('xcodebuild', '-version').decode().strip()
-        if evidence['xcode'].splitlines()[0] != 'Xcode 26.6':
-            raise ValueError('Xcode 26.6 is required')
+        reported = evidence['xcode'].splitlines()
+        got = reported[0] if reported else ''
+        if got != 'Xcode 27.2':
+            raise ValueError(f'Xcode 27.2 is required; xcodebuild reported {got!r}')
         if options.runtime in ('github-hosted', 'self-hosted'):
             evidence.update(runId=environment['GITHUB_RUN_ID'], runAttempt=environment['GITHUB_RUN_ATTEMPT'])
         if options.runtime == 'github-hosted':
@@ -478,7 +478,7 @@ def main():
     parser.add_argument('--archive-input', type=Path, help='Development transfer from the separate credential-free archive job')
     parser.add_argument('--archive-manifest-sha256', help='Independent manifest digest from the original archive job output')
     parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'],
-                        help='Archive identity before cloud Distribution export (default: development; Xcode 26.6 rejects ad-hoc for entitlement-bearing targets)')
+                        help='Archive identity before cloud Distribution export (default: development)')
     parser.add_argument('--version', required=True)
     parser.add_argument('--build', required=True)
     parser.add_argument('--team', required=True)
