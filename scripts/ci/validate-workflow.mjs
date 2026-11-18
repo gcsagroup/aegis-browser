@@ -13,7 +13,6 @@ const expectedActions = new Set([
   'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903',
   'actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a',
   'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f',
-  'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d',
   'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413',
   'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
 ]);
@@ -181,6 +180,10 @@ try {
   const expectedJobs = ['impact', 'quality', 'quality-summary'];
   if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
   if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {})) !== JSON.stringify(['android-java-coverage'])) fail('Android job set must be exactly android-java-coverage');
+  const androidSteps = array(androidWorkflow.jobs['android-java-coverage'].steps);
+  if (androidSteps.filter((step) => step.run === 'bash apps/browser/scripts/run-android-java-coverage-emulator.sh').length !== 1) {
+    fail('Android coverage must run the owned AVD launcher exactly once');
+  }
   if (JSON.stringify(Object.keys(jobs).sort()) !== JSON.stringify(expectedJobs)) {
     fail(`Workflow job set must be exactly: ${expectedJobs.join(', ')}`);
   }

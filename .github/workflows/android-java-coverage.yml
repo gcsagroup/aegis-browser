@@ -44,12 +44,14 @@ jobs:
         run: |
           sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
           yes | "$sdkmanager" --licenses >/dev/null
-          "$sdkmanager" 'platform-tools' 'platforms;android-36' 'build-tools;36.1.0'
+          "$sdkmanager" 'platform-tools' 'platforms;android-36' 'build-tools;36.1.0' \
+            'emulator' 'system-images;android-36;default;x86_64'
 
       - name: Run host protocol tests
         run: |
           node --check apps/browser/scripts/android-agent-ui.mjs
-          node --test apps/browser/scripts/android-agent-ui_test.mjs apps/browser/scripts/verify-android-agent-target_test.mjs
+          node --test apps/browser/scripts/android-agent-ui_test.mjs apps/browser/scripts/verify-android-agent-target_test.mjs \
+            apps/browser/scripts/run-android-java-coverage-emulator_test.mjs
           bash -n apps/browser/scripts/run-android-java-coverage-emulator.sh
 
       - name: Fetch fixed JaCoCo and build both helper modes
@@ -91,17 +93,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Run six fixtures and collect real Java coverage
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
-        with:
-          api-level: 36
-          target: default
-          arch: x86_64
-          profile: pixel_6
-          cores: 2
-          ram-size: 4096M
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics -camera-back none
-          script: bash apps/browser/scripts/run-android-java-coverage-emulator.sh
+        run: bash apps/browser/scripts/run-android-java-coverage-emulator.sh
 
       - name: Bind report to exact SHA and scope
         run: |

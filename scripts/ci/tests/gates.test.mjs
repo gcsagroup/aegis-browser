@@ -540,6 +540,11 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [index, (w) => { Object.values(w.jobs)[0].steps[0].with['persist-credentials'] = true; }],
       [index, (w) => { Object.values(w.jobs)[0].steps[0].uses = 'actions/checkout@v7'; }],
     ]),
+    [3, (w) => {
+      const step = w.jobs['android-java-coverage'].steps.find((entry) => entry.name === 'Run six fixtures and collect real Java coverage');
+      delete step.run;
+      step.uses = 'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d';
+    }, 'old emulator action injects a key before AVD admission'],
     [1, (w) => { w.jobs['ios-coverage'].steps[1].with['node-version'] = '22.23.0'; }],
     [4, (w) => { w.on.pull_request_target.branches = ['main']; }],
     [4, (w) => { w.on.pull_request = {}; }],
