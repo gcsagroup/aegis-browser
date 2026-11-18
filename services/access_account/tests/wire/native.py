@@ -65,7 +65,6 @@ class Handler(socketserver.BaseRequestHandler):
 
 
 class NativeRuntime(Runtime):
-    enforce_quota = False
     quota_bytes = 10**9
     period_ms = 600000
 
@@ -76,14 +75,6 @@ class NativeRuntime(Runtime):
             db.execute("UPDATE snapshots SET quota_bytes=?,expires_at=?", (self.quota_bytes, expires))
             db.execute("UPDATE plans SET period_end=?", (expires,))
             db.commit()
-
-    def launch(self, name, args, **kwargs):
-        if self.enforce_quota:
-            if name == "collector":
-                args = [*args, "--enforce-quota"]
-            if kwargs.get("meter"):
-                args = ["env", "AEGIS_XRAY_QUOTA=enforce", *args]
-        return super().launch(name, args, **kwargs)
 
     def setup_targets(self):
         super().setup_targets()

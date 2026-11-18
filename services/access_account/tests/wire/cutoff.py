@@ -131,6 +131,8 @@ class TLSClient:
 
 
 class GuardRuntime(Runtime):
+    enforce_quota = True
+
     def setup_targets(self):
         super().setup_targets()
         target = socketserver.ThreadingTCPServer((HOST, 0), Peer)
@@ -149,19 +151,9 @@ class GuardRuntime(Runtime):
             db.execute("UPDATE snapshots SET quota_bytes=? WHERE account_id='a'", (LIMIT,))
             db.commit()
 
-    def start_collector(self):
-        self.collector = self.launch("collector", [*self.cli, "serve", "--database", self.db,
-                                     "--config", self.config, "--socket", self.socket_path, "--enforce-quota"],
-                                     socket_path=self.socket_path)
-
     def start_xray(self, socks):
         self.socks = socks
         super().start_xray(socks)
-
-    def launch(self, name, args, **kwargs):
-        if kwargs.get("meter"):
-            args = ["env", "AEGIS_XRAY_QUOTA=enforce", *args]
-        return super().launch(name, args, **kwargs)
 
     def restart_xray(self):
         self.xray_process.terminate()

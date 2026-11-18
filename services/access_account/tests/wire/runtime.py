@@ -60,6 +60,8 @@ def dump(path, obj):
 
 
 class Runtime:
+    enforce_quota = False
+
     def __init__(self, root, stack, stock, metered, socket_path):
         self.root, self.stack = root, stack
         self.stock, self.metered = stock, metered
@@ -83,8 +85,11 @@ class Runtime:
         self.logs.append((name, log))
         env = os.environ.copy()
         env.pop("AEGIS_XRAY_METER_SOCKET", None)
+        env.pop("AEGIS_XRAY_QUOTA", None)
         if meter:
             env["AEGIS_XRAY_METER_SOCKET"] = str(self.socket_path)
+            if self.enforce_quota:
+                env["AEGIS_XRAY_QUOTA"] = "enforce"
         # Only the fixture modules and the two operator-selected Xray binaries can start here.
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT,  # nosec B603
@@ -173,9 +178,11 @@ class Runtime:
                               "--key", self.root / "key.pem"], service_port=self.entry)
 
     def start_collector(self):
-        self.collector = self.launch("collector", [*self.cli, "serve", "--database", self.db,
-                                     "--config", self.config, "--socket", self.socket_path],
-                                     socket_path=self.socket_path)
+        args = [*self.cli, "serve", "--database", self.db, "--config", self.config,
+                "--socket", self.socket_path]
+        if self.enforce_quota:
+            args.append("--enforce-quota")
+        self.collector = self.launch("collector", args, socket_path=self.socket_path)
 
     def start_xray(self, socks):
         # The recorded stock binary receives one fixed key-generation subcommand.
