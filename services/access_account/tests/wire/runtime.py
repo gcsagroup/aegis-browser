@@ -6,10 +6,12 @@ import http.client
 import json
 import os
 import secrets
+import shutil
 import socket
 import sqlite3
 import ssl
-import subprocess
+# Loopback fixtures start the selected binaries with explicit argument lists.
+import subprocess  # nosec B404
 import sys
 import threading
 import time
@@ -58,6 +60,8 @@ def dump(path, obj):
 
 
 class Runtime:
+    enforce_quota = False
+
     def __init__(self, root, stack, stock, metered, socket_path):
         self.root, self.stack = root, stack
         self.stock, self.metered = stock, metered
@@ -69,13 +73,27 @@ class Runtime:
         self.origin = None
 
     def launch(self, name, args, *, service_port=None, socket_path=None, meter=False):
+        if args[:3] not in (
+            [sys.executable, "-m", "services.access_account.metering"],
+            [sys.executable, "-m", "services.access_account.server"],
+            [sys.executable, "-m", "services.access_account.node"],
+            [self.stock, "run", "-c"],
+            [self.metered, "run", "-c"],
+        ):
+            raise ValueError("unsupported wire fixture command")
         log = self.stack.enter_context((self.root / (name + ".log")).open("w+b"))
         self.logs.append((name, log))
         env = os.environ.copy()
         env.pop("AEGIS_XRAY_METER_SOCKET", None)
+        env.pop("AEGIS_XRAY_QUOTA", None)
         if meter:
             env["AEGIS_XRAY_METER_SOCKET"] = str(self.socket_path)
-        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env)
+            if self.enforce_quota:
+                env["AEGIS_XRAY_QUOTA"] = "enforce"
+        # Only the fixture modules and the two operator-selected Xray binaries can start here.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT,  # nosec B603
+                                env=env, cwd=SERVICE.parents[1])
         def stop():
             proc.terminate()
             try:
@@ -99,7 +117,11 @@ class Runtime:
 
     def setup_targets(self):
         cert, key = self.root / "cert.pem", self.root / "key.pem"
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        openssl = shutil.which("openssl", path=os.defpath)
+        require(openssl, "System OpenSSL is required for the loopback certificate")
+        # System OpenSSL receives fixed certificate options and paths in the private fixture directory.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",  # nosec B603
                         "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,DNS:paid-wire.invalid",
                         "-keyout", key, "-out", cert], capture_output=True, check=True)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -156,12 +178,16 @@ class Runtime:
                               "--key", self.root / "key.pem"], service_port=self.entry)
 
     def start_collector(self):
-        self.collector = self.launch("collector", [*self.cli, "serve", "--database", self.db,
-                                     "--config", self.config, "--socket", self.socket_path],
-                                     socket_path=self.socket_path)
+        args = [*self.cli, "serve", "--database", self.db, "--config", self.config,
+                "--socket", self.socket_path]
+        if self.enforce_quota:
+            args.append("--enforce-quota")
+        self.collector = self.launch("collector", args, socket_path=self.socket_path)
 
     def start_xray(self, socks):
-        result = subprocess.check_output([self.stock, "x25519"], text=True)
+        # The recorded stock binary receives one fixed key-generation subcommand.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        result = subprocess.check_output([self.stock, "x25519"], text=True)  # nosec B603
         keys = dict(line.split(": ", 1) for line in result.splitlines() if ": " in line)
         users = {name: {"id": str(uuid.uuid4()), "flow": "xtls-rprx-vision",
                         "email": "client-" + name} for name in socks}
@@ -193,8 +219,10 @@ class Runtime:
                         service_port=number)
 
     def usage(self):
-        return json.loads(subprocess.check_output([*self.cli, "usage", "--database", self.db,
-                                                   "--node", NODE, "--period", PERIOD]))
+        # Exercise the operator CLI with this interpreter and the private fixture database.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        return json.loads(subprocess.check_output([*self.cli, "usage", "--database", self.db,  # nosec B603
+                                                   "--node", NODE, "--period", PERIOD], cwd=SERVICE.parents[1]))
 
     def grant(self, name):
         with contextlib.closing(http.client.HTTPConnection(HOST, self.api, timeout=5)) as conn:

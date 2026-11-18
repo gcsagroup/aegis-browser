@@ -24,7 +24,8 @@ def exercise(rt, emit):
     with rt.connect('a', plain=True) as stream:
         stream.settimeout(5)
         stream.sendall(payload('p', 0, 32, 'up'))
-        require(stream.recv(819) == payload('p', 0, 819, 'down'), 'initial exchange mismatch')
+        with stream.makefile('rb') as reader:
+            require(reader.read(819) == payload('p', 0, 819, 'down'), 'initial exchange mismatch')
         until(lambda: rt.usage()['uploadedBytes'] == 32 and rt.usage()['downloadedBytes'] == 819)
         rt.collector_process.kill()
         rt.collector_process.wait()

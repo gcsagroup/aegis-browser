@@ -350,6 +350,35 @@ test('public export rejects external, personal, chained, and history-only symlin
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('quality push base uses the fork point only for a newly created iOS release line', (t) => {
+  const repo = initRepo();
+  t.after(() => rmSync(repo, {recursive: true, force: true}));
+  const commit = (message) => git(repo, 'commit', '--allow-empty', '-m', message);
+  commit('fork point');
+  const fork = git(repo, 'rev-parse', 'HEAD');
+  commit('main advanced');
+  git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git(repo, 'checkout', '-b', 'releases/ios/1.0', fork);
+  commit('previous release tip');
+  const previous = git(repo, 'rev-parse', 'HEAD');
+  commit('current release tip');
+
+  const workflow = YAML.parse(readFileSync(join(root, '.github/workflows/quality.yml'), 'utf8'));
+  const step = workflow.jobs.quality.steps.find((item) => item.id === 'push_base');
+  assert.ok(step, 'quality needs a push base resolver');
+  const output = join(repo, 'output');
+  const resolveBase = (before, ref) => {
+    writeFileSync(output, '');
+    return run('bash', ['-e', '-c', step.run], {cwd: repo, env: {PUSH_BEFORE: before, GITHUB_REF: ref, GITHUB_OUTPUT: output}});
+  };
+  for (const [before, want] of [['0'.repeat(40), fork], [previous, previous]]) {
+    const result = resolveBase(before, 'refs/heads/releases/ios/1.0');
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(output, 'utf8').trim(), 'sha=' + want);
+  }
+  assert.notEqual(resolveBase('0'.repeat(40), 'refs/heads/main').status, 0);
+});
+
 test('CI identity binds a pull request to the exact B/H/M graph', () => {
   for (const branch of ['main', 'develop']) {
     const cwd = initRepo();
