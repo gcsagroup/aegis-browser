@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
+import prepare_alpha_access_resources as resources
 from prepare_alpha_access_resources import stage
 from prepare_access_installer_release import prepare
 
@@ -44,6 +46,25 @@ class AlphaResourcesTest(unittest.TestCase):
             self.assertEqual(output.stat().st_mode & 0o777, 0o700)
             self.assertEqual((output / "node.json").stat().st_mode & 0o777, 0o600)
             self.assertEqual((output / self.binary_name).stat().st_mode & 0o777, 0o700)
+
+    def test_windows_staging_uses_system_tool_and_isolates_its_environment(self):
+        system = self.root / "system" / "System32"
+        output = self.root / "private staging"
+        with mock.patch.dict(os.environ, {"SystemRoot": str(self.root / "other"),
+                                         "PSModulePath": "caller modules"}), \
+                mock.patch.object(resources, "windows_system_directory", return_value=system), \
+                mock.patch.object(resources.subprocess, "run") as execute:
+            execute.return_value.returncode = 0
+            resources.stage_windows_directory(output)
+        argv, = execute.call_args.args
+        options = execute.call_args.kwargs
+        home = system / "WindowsPowerShell" / "v1.0"
+        self.assertEqual(Path(argv[0]), home / "powershell.exe")
+        self.assertEqual(options["cwd"], system)
+        self.assertEqual(Path(options["env"]["SystemRoot"]), system.parent)
+        self.assertEqual(Path(options["env"]["PSModulePath"]), home / "Modules")
+        self.assertEqual(options["env"]["AEGIS_PRIVATE_ACCESS_STAGE"], str(output))
+        self.assertNotIn(str(output), argv[-1])
 
     def test_ninja_precreated_output_parent_is_secured_before_staging(self):
         output = self.root / "ninja-parent"

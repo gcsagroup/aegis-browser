@@ -55,7 +55,8 @@ async function readAttemptJobs(repo, run, token, apiFn) {
   const path = `/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=${pageSize}`;
   const jobs = [];
   let total;
-  for (let page = 1; ; page++) {
+  let page = 1;
+  do {
     let batch;
     try {
       batch = await apiFn(repo, page === 1 ? path : `${path}&page=${page}`, {token});
@@ -68,8 +69,9 @@ async function readAttemptJobs(repo, run, token, apiFn) {
       throw new Error(`${repo} run ${run.id} attempt ${run.run_attempt}: incomplete job list`);
     }
     jobs.push(...batch.jobs);
-    if (jobs.length === total) return jobs;
-  }
+    page++;
+  } while (jobs.length < total);
+  return jobs;
 }
 
 async function readPushEvidence(expected, workflow, token, apiFn) {

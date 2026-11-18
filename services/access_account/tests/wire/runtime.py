@@ -227,6 +227,14 @@ class Runtime:
             self.launch("client-" + name, [self.stock, "run", "-c", dump(self.root / (name + ".json"), config)],
                         service_port=number)
 
+    def restart_xray(self):
+        if self.xray_process is None:
+            raise RuntimeError("Cannot restart Xray before the fixture starts it")
+        self.xray_process.terminate()
+        self.xray_process.wait(timeout=5)
+        self.xray_process = self.launch("server-xray-restarted", [self.metered, "run", "-c",
+                                      self.root / "xserver.json"], service_port=self.reality_port, meter=True)
+
     def usage(self):
         # Exercise the operator CLI with this interpreter and the private fixture database.
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
