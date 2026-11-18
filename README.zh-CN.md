@@ -90,6 +90,8 @@ Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser)，�
 
 GCSA 原创源码采用 [Apache-2.0](LICENSE)。第三方组件保留各自许可证，见[第三方声明](THIRD_PARTY_NOTICES.md)。
 
+感谢 SwitchyOmega 作者为 Access 设计提供代理配置和切换规则的参考，也感谢 ZeroOmega 作者提供 Options 设置界面的参考。两个项目均采用 GPL-3.0-or-later 许可证。[SwitchyOmega](https://github.com/FelisCatus/SwitchyOmega) · [ZeroOmega](https://github.com/zero-peak/ZeroOmega)
+
 <details>
 <summary>徽章说明</summary>
 

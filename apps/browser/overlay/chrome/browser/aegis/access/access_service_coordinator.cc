@@ -131,6 +131,34 @@ bool AccessServiceCoordinator::CanDispatch(const OwnershipKey& owner) const {
       (!async_store_ || committed_cache_.contains(owner.storage_partition_token));
 }
 
+void AccessServiceCoordinator::CheckOptionsStoreBinding(
+    base::OnceCallback<void(StoreStatus)> completion) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  auto* transport = AccessNetworkContextTransport::GetOrCreate(profile_);
+  auto owner = transport ? transport->OwnerForPartition(AccessChannelForCurrentBuild(), {})
+                         : std::nullopt;
+  if (!owner || !transport->OwnsConfiguredPartition(*owner)) {
+    std::move(completion).Run(StoreStatus::kRecoveryRequired);
+    return;
+  }
+  // Initialize through the existing restoration path before reusing its actor.
+  // Retaining an unopened actor would bypass callers' startup assumptions.
+  InitializeForProfile(*owner, base::BindOnce(
+      &AccessServiceCoordinator::OnOptionsStoreInitialized,
+      weak_factory_.GetWeakPtr(), std::move(completion)));
+}
+void AccessServiceCoordinator::OnOptionsStoreInitialized(
+    base::OnceCallback<void(StoreStatus)> completion, bool ready) {
+  if (!ready) {
+    std::move(completion).Run(last_store_status_ == StoreStatus::kValid
+        ? StoreStatus::kRecoveryRequired : last_store_status_);
+    return;
+  }
+  // Reuse the actor which owns access.db's exclusive connection. A second
+  // connection would hide identity conflicts behind SQLITE_BUSY.
+  async_store_->CheckIdentity(std::move(completion));
+}
+
 void AccessServiceCoordinator::InitializeForProfile(
     const OwnershipKey& owner, base::OnceCallback<void(bool)> completion) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -165,6 +193,7 @@ void AccessServiceCoordinator::InitializeForProfile(
 }
 void AccessServiceCoordinator::OnStoreInitialized(
     OwnershipKey owner, AsyncAccessStoreRestoration result) {
+  last_store_status_ = result.status;
   auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(profile_);
   bool ready = result.status == StoreStatus::kValid && result.committed &&
       result.publication && result.publication->owner == owner && runtime;

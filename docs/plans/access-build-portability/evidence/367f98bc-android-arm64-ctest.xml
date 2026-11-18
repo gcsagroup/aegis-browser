@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="(empty)"
+	tests="1"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname=""
+	time="0"
+	timestamp="2026-11-17T01:06:00"
+	>
+	<testcase name="aegis_access_contract" classname="aegis_access_contract" time="0.307285" status="run">
+		<properties/>
+		<system-out>Android test device:
+emulator-5692
+Android ABI list: arm64-v8a, API: 36
+aegis_access_native_test: 1 file pushed, 0 skipped. 457.9 MB/s (7166016 bytes in 0.015s)
+PASS: aegis_access native unit (892 checks)
+</system-out>
+	</testcase>
+</testsuite>

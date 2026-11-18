@@ -425,7 +425,7 @@ class AccessSiteProxyProductTest : public testing::Test {
   OwnershipKey owner_;
 };
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 TEST_F(AccessSiteProxyProductTest, DualSelectionReleasesPaidOnlyAfterCommittedLocalOff) {
   Enable();
   ASSERT_TRUE(transport_->SetAccountNodeSites({"news.example"}, "", 0, ""));
@@ -515,7 +515,9 @@ TEST_F(AccessSiteProxyProductTest, OnOffOnUsesRealCoreAndCommittedRevision) {
 
 TEST_F(AccessSiteProxyProductTest,
        DevPreviewDoesNotRewriteCommittedWebsiteIntentOrConnection) {
-  ASSERT_TRUE(bubble_->IsDevAllowBlockPanelRegistered());
+  const bool admitted = owner_.channel == aegis_access::ChannelNamespace::kDev ||
+                        owner_.channel == aegis_access::ChannelNamespace::kAlpha;
+  EXPECT_EQ(bubble_->IsDevAllowBlockPanelRegistered(), admitted);
   Enable();
   const auto stored = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
   ASSERT_TRUE(stored.value);
@@ -525,11 +527,15 @@ TEST_F(AccessSiteProxyProductTest,
   for (const auto action : {AccessDevAllowBlockAction::kOff,
                             AccessDevAllowBlockAction::kBlock}) {
     ASSERT_EQ(bubble_->ApplyDevAllowBlock("news.example", action).status,
-              AccessDevAllowBlockApplyStatus::kApplied);
-    EXPECT_EQ(bubble_->DevAllowBlockSnapshotForCommittedUrl(
-                  GURL("https://news.example")).intent,
-              action == AccessDevAllowBlockAction::kOff
-                  ? AccessSiteIntent::kOff : AccessSiteIntent::kBlock);
+              admitted ? AccessDevAllowBlockApplyStatus::kApplied
+                       : AccessDevAllowBlockApplyStatus::kChannelNotAdmitted);
+    const auto preview = bubble_->DevAllowBlockSnapshotForCommittedUrl(
+        GURL("https://news.example"));
+    EXPECT_EQ(preview.panel_registered, admitted);
+    if (admitted) {
+      EXPECT_EQ(preview.intent, action == AccessDevAllowBlockAction::kOff
+                    ? AccessSiteIntent::kOff : AccessSiteIntent::kBlock);
+    }
     EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
     EXPECT_TRUE(Snapshot().toggle_on);
     EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);

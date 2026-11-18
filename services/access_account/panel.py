@@ -6,7 +6,7 @@ import json
 import ssl
 from urllib.parse import quote, urlsplit
 
-from .store import Unavailable
+from .store import Unavailable, _check_alpha_panel_scope
 
 
 class Panel:
@@ -62,9 +62,7 @@ class Panel:
         return obj
 
     def read(self, client, now_ms):
-        # Check the operator's single-client allowlist before any panel HTTP request.
-        if self.alpha_panel_client is not None and client != self.alpha_panel_client:
-            raise Unavailable("panel client outside Alpha scope")
+        _check_alpha_panel_scope(self, client)
         if client in ("", ".", "..") or "/" in client or "\\" in client:
             raise Unavailable("invalid panel client binding")
         usage = self._get("traffic", client)

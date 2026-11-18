@@ -9,6 +9,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/sequence_bound.h"
+#include "build/build_config.h"
 
 namespace aegis::access {
 // Write only inside a freshly created private directory owned by the caller.
@@ -18,6 +19,11 @@ inline constexpr char kCoreLogSharePrefix[] = "aegis-access-share-";
 // The caller supplies the original profile directory. Never traverses links.
 bool RecoverCoreLogArchives(const base::FilePath& profile);
 inline constexpr char kCoreLogArchive[] = "Aegis-Access.log.gz";
+#if BUILDFLAG(IS_WIN)
+// Reads on the archive writer's sequence, ordered with session cleanup.
+void ReadCoreLogArchiveForExport(
+    base::FilePath path, base::OnceCallback<void(std::string)> done);
+#endif
 
 // UI owns the operation. Its worker owns the temporary directory from the
 // first write until cleanup; only a path, never file ownership, crosses to UI.

@@ -4,11 +4,13 @@
 
 #include <string_view>
 
-#include "components/aegis_access/browser_request_metadata_seed.h"
+#include "components/aegis_access/access_options_capability.h"
 
 namespace aegis::access {
-// Explicit private test builds use their selected channel even when unbranded Chromium
-// reports UNKNOWN. Chromium branding and the normal channel mapping are kept.
+// Explicit product identity controls Access ownership and internal capabilities.
+// Unspecified identities retain the existing Chromium/resource fallback.
+aegis_access::AccessBuildIdentity AccessBuildIdentityForCurrentBuild();
+bool CanUseAccessOptionsForCurrentBuild(aegis_access::AccessOptionsOperation operation);
 aegis_access::ChannelNamespace AccessChannelForCurrentBuild();
 aegis_access::ChannelNamespace BundledAccessTestChannel();
 const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel);

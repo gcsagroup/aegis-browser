@@ -6,7 +6,7 @@ on:
       operation:
         type: choice
         description: Authorized delivery operation
-        options: [Status, Wait, Package, Package and upload, Draft]
+        options: [Status, Wait, Package, Package and upload, Draft, Preview GitHub release, Publish Beta release, Publish stable release]
         default: Status
       version:
         type: string
@@ -30,7 +30,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ios-delivery-bot-${{ github.repository }}
+  group: ios-delivery-bot-${{ github.repository }}${{ inputs.operation == 'Preview GitHub release' && '-release-preview' || '' }}
   cancel-in-progress: false
 jobs:
   controller:
@@ -51,8 +51,19 @@ jobs:
         run: node scripts/ci/ios-operator.mjs --context controller
       - name: Dispatch and monitor exact App-owned delivery runs
         env:
+          RELEASE_DISPATCH_RECEIPT: ${{ runner.temp }}/aegis-ios-release-dispatch.json
           BOT_INPUTS: ${{ toJSON(inputs) }}
           AEGIS_IOS_DELIVERY_BOT: ${{ vars.AEGIS_IOS_DELIVERY_BOT }}
+          AEGIS_IOS_GITHUB_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED }}
+          AEGIS_IOS_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_RELEASE_ENABLED }}
           AEGIS_IOS_BOT_INSTALLATION_ID: ${{ vars.AEGIS_IOS_BOT_INSTALLATION_ID }}
           AEGIS_IOS_BOT_PRIVATE_KEY: ${{ secrets.AEGIS_IOS_BOT_PRIVATE_KEY }}
         run: bash scripts/ci/run-ios-delivery-bot.sh
+      - name: Seal the exact release dispatch receipt
+        if: ${{ inputs.operation == 'Preview GitHub release' || inputs.operation == 'Publish Beta release' || inputs.operation == 'Publish stable release' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-github-release-dispatch-${{ github.run_id }}-1
+          path: ${{ runner.temp }}/aegis-ios-release-dispatch.json
+          if-no-files-found: error
+          retention-days: 7

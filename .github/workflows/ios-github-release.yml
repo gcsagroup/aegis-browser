@@ -1,0 +1,197 @@
+name: iOS GitHub Release · Bot
+run-name: iOS GitHub Release ${{ inputs.operation }} · ${{ inputs.release_type }} · ${{ inputs.version }}(${{ inputs.build }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        description: Preview only, publish Beta, or publish stable after Admin approval
+        options: [Preview, Publish Beta, Publish stable]
+        required: true
+      release_type:
+        type: choice
+        description: Package profile and public release channel
+        options: [beta, stable]
+        required: true
+      version:
+        type: string
+        description: Exact uploaded product version
+        required: true
+      build:
+        type: string
+        description: Exact uploaded product build
+        required: true
+      status_run_id:
+        type: string
+        description: Exact successful read-only Apple Wait run
+        required: true
+      controller_run_id:
+        type: string
+        description: Human Admin controller run that authorized this request
+        required: true
+      controller_actor_id:
+        type: string
+        description: Initiating Admin identity from the controller run
+        required: true
+      controller_actor_login:
+        type: string
+        description: Initiating Admin login from the controller run
+        required: true
+      approved_source_sha:
+        type: string
+        description: Full source SHA approved by the controller
+        required: true
+permissions:
+  actions: read
+  contents: read
+env:
+  AEGIS_IOS_DELIVERY_BOT: ${{ vars.AEGIS_IOS_DELIVERY_BOT }}
+  AEGIS_IOS_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_RELEASE_ENABLED }}
+  AEGIS_IOS_GITHUB_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED }}
+jobs:
+  preview:
+    if: ${{ github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      plan_sha256: ${{ steps.preview.outputs.plan_sha256 }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TYPE: ${{ inputs.release_type }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD: ${{ inputs.build }}
+      STATUS_RUN_ID: ${{ inputs.status_run_id }}
+      CONTROLLER_RUN_ID: ${{ inputs.controller_run_id }}
+      CONTROLLER_ACTOR_ID: ${{ inputs.controller_actor_id }}
+      CONTROLLER_ACTOR_LOGIN: ${{ inputs.controller_actor_login }}
+      RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS: ${{ vars.AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - id: authorize
+        name: Verify Bot identity and original Admin controller
+        run: node scripts/ci/ios-operator.mjs --context github-release
+      - name: Require current upstream main and exact-source quality
+        run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA" --context github-release
+      - id: locate
+        name: Locate immutable package and Apple status artifacts
+        run: >-
+          python3 scripts/release/ios-github-release.py locate
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID"
+      - name: Download and verify the exact sealed package artifact bytes
+        env:
+          PACKAGE_RUN_ID: ${{ steps.locate.outputs.package_run_id }}
+          PACKAGE_ARTIFACT_ID: ${{ steps.locate.outputs.package_artifact_id }}
+        run: >-
+          python3 scripts/release/ios-github-release.py download-package
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID"
+          --package-run-id "$PACKAGE_RUN_ID"
+          --package-artifact-id "$PACKAGE_ARTIFACT_ID"
+          --package-archive .artifacts/package/package.zip
+      - name: Extract and verify the sealed package ZIP
+        run: >-
+          python3 scripts/release/ios-github-release.py extract --preview-package
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID"
+          --package-archive .artifacts/package/package.zip --package-directory .artifacts/package/unpacked
+      - id: preview
+        name: Verify package, upload, Apple state and public asset plan
+        env:
+          STATUS_ARTIFACT_ID: ${{ steps.locate.outputs.status_artifact_id }}
+        run: >-
+          python3 scripts/release/ios-github-release.py preview
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --status-artifact-id "$STATUS_ARTIFACT_ID"
+          --package-directory .artifacts/package/unpacked
+          --plan-file "$RUNNER_TEMP/ios-release-plan.json"
+  stable-approval:
+    if: ${{ needs.preview.result == 'success' && inputs.operation == 'Publish stable' && vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED == 'true' }}
+    needs: [preview]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: aegis-ios-github-production
+    permissions: {}
+    steps:
+      - name: Record approval gate completion
+        run: printf '%s\n' 'The publisher will verify the exact stable approval record.'
+  publish:
+    if: >-
+      ${{ !cancelled() && needs.preview.result == 'success' && vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED == 'true' &&
+          ((inputs.operation == 'Publish Beta' && needs.stable-approval.result == 'skipped') ||
+           (inputs.operation == 'Publish stable' && needs.stable-approval.result == 'success')) }}
+    needs: [preview, stable-approval]
+    concurrency:
+      group: ios-public-release-${{ github.repository }}
+      queue: max
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TYPE: ${{ inputs.release_type }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD: ${{ inputs.build }}
+      STATUS_RUN_ID: ${{ inputs.status_run_id }}
+      CONTROLLER_RUN_ID: ${{ inputs.controller_run_id }}
+      CONTROLLER_ACTOR_ID: ${{ inputs.controller_actor_id }}
+      CONTROLLER_ACTOR_LOGIN: ${{ inputs.controller_actor_login }}
+      RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      EXPECTED_PLAN_SHA256: ${{ needs.preview.outputs.plan_sha256 }}
+      AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS: ${{ vars.AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - id: authorize
+        name: Reverify Bot identity and original Admin controller
+        run: node scripts/ci/ios-operator.mjs --context github-release
+      - name: Recheck current main and exact-source quality after approval
+        run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA" --context github-release
+      - id: locate
+        name: Relocate the same immutable package and status artifacts
+        run: >-
+          python3 scripts/release/ios-github-release.py locate
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID"
+      - name: Download and verify the exact sealed package artifact bytes
+        env:
+          PACKAGE_RUN_ID: ${{ steps.locate.outputs.package_run_id }}
+          PACKAGE_ARTIFACT_ID: ${{ steps.locate.outputs.package_artifact_id }}
+        run: >-
+          python3 scripts/release/ios-github-release.py download-package
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID"
+          --package-run-id "$PACKAGE_RUN_ID"
+          --package-artifact-id "$PACKAGE_ARTIFACT_ID"
+          --package-archive .artifacts/package/package.zip
+      - name: Extract and verify the same sealed package ZIP
+        run: >-
+          python3 scripts/release/ios-github-release.py extract
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID"
+          --package-archive .artifacts/package/package.zip --package-directory .artifacts/package/unpacked
+      - name: Rebuild plan, verify exact Admin approval, and publish once
+        env:
+          CONTROLLER_ADMIN_IDS: ${{ steps.authorize.outputs.controller_admin_ids }}
+          STATUS_ARTIFACT_ID: ${{ steps.locate.outputs.status_artifact_id }}
+        run: >-
+          python3 scripts/release/ios-github-release.py publish
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --status-artifact-id "$STATUS_ARTIFACT_ID"
+          --package-directory .artifacts/package/unpacked
+          --plan-file "$RUNNER_TEMP/ios-release-plan.json"

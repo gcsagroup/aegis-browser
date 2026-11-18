@@ -11,6 +11,7 @@ on:
           - Package and upload
           - Status
           - Wait
+          - Release Wait
         default: Status
       version:
         description: "Version (e.g. 1.0.0)"
@@ -77,7 +78,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ${{ contains(fromJSON('["Status","Wait"]'), inputs.operation || fromJSON(inputs.delivery_inputs || '{}').operation) && !fromJSON(inputs.delivery_inputs || '{}').source && format('ios-delivery-read-{0}-{1}', github.repository, github.run_id) || format('ios-delivery-{0}', github.repository) }}
+  group: ${{ contains(fromJSON('["Status","Wait","Release Wait"]'), inputs.operation || fromJSON(inputs.delivery_inputs || '{}').operation) && !fromJSON(inputs.delivery_inputs || '{}').source && format('ios-delivery-read-{0}-{1}', github.repository, github.run_id) || format('ios-delivery-{0}', github.repository) }}
   cancel-in-progress: false
 env:
   DELIVERY_MODE: ${{ inputs.delivery_mode || 'simple' }}
@@ -526,7 +527,7 @@ jobs:
           retention-days: 14
     needs:
       - admission
-    if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' }}
+    if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' && needs.admission.outputs.operation != 'status-release-wait' }}
   store:
     permissions:
       contents: write
@@ -588,7 +589,7 @@ jobs:
           path: .artifacts/ios-delivery/package.zip
           if-no-files-found: error
           retention-days: 30
-    if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' }}
+    if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' && needs.admission.outputs.operation != 'status-release-wait' }}
   upload-new:
     permissions:
       contents: write
@@ -654,14 +655,14 @@ jobs:
   status-query:
     name: status-query
     needs: admission
-    if: ${{ needs.admission.outputs.operation == 'status-query' || needs.admission.outputs.operation == 'status-wait' }}
+    if: ${{ needs.admission.outputs.operation == 'status-query' || needs.admission.outputs.operation == 'status-wait' || needs.admission.outputs.operation == 'status-release-wait' }}
     runs-on: ubuntu-24.04
     environment: aegis-ios-store
     timeout-minutes: 40
     env:
       RELEASE_VERSION: ${{ needs.admission.outputs.version }}
       RELEASE_BUILD: ${{ needs.admission.outputs.build }}
-      RELEASE_QUERY_MODE: ${{ needs.admission.outputs.operation == 'status-wait' && 'wait' || 'status' }}
+      RELEASE_QUERY_MODE: ${{ needs.admission.outputs.operation == 'status-release-wait' && 'release-wait' || needs.admission.outputs.operation == 'status-wait' && 'wait' || 'status' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -683,7 +684,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ !cancelled() && hashFiles('.artifacts/ios-status/status.json') != '' }}
         with:
-          name: ios-status-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ needs.admission.outputs.operation == 'status-release-wait' && 'ios-release-status' || 'ios-status' }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/ios-status/status.json
           if-no-files-found: error
           retention-days: 30

@@ -29,6 +29,7 @@ class AccessAsyncRuleStore {
  public:
   explicit AccessAsyncRuleStore(AccessStoreBinding binding);
   ~AccessAsyncRuleStore();
+  void CheckIdentity(base::OnceCallback<void(StoreStatus)> completion);
   void InitializeAndRestore(std::string partition,
       base::OnceCallback<void(AsyncAccessStoreRestoration)> completion);
   void Prepare(SiteGroupMutationRequest request,

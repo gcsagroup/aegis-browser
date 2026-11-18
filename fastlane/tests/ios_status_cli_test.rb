@@ -38,7 +38,7 @@ class IosStatusCliTest < Minitest::Test
       value = { 'platform' => 'ios', 'version' => '1.0.1', 'build' => '14', 'readOnly' => true,
                 'packageProvenanceVerified' => false,
                 'remote' => { 'processingState' => state, 'uploadState' => 'COMPLETE', 'expired' => false,
-                              'buildId' => 'exact-build', 'uploads' => [], 'observedAt' => '2026-11-04T00:00:00Z' } }
+                              'buildId' => 'exact-build', 'uploads' => [], 'groups' => ['private-group'], 'observedAt' => '2026-11-04T00:00:00Z' } }
       File.write(File.join(directory, 'spaceship.rb'), <<~'RUBY')
         module Spaceship
           module ConnectAPI
@@ -103,6 +103,22 @@ class IosStatusCliTest < Minitest::Test
       assert_equal 'a' * 40, report.dig('querySource', 'sha')
       assert_equal report, JSON.parse(result[:text])
       assert_match(/Wait timed out.*last observed Apple state/, result[:summary])
+    end
+  end
+
+  def test_release_wait_emits_only_the_minimal_status_receipt
+    run_query(state: 'VALID', mode: 'release-wait') do |result|
+      assert result[:process].success?, result[:error]
+      assert_equal 'release-wait', result[:report].fetch('queryMode')
+      assert_match(/\A[0-9a-f]{64}\z/, result[:report].dig('remote', 'buildIdentitySha256'))
+      refute result[:report]['remote'].key?('uploads')
+      refute result[:report]['remote'].key?('groups')
+      refute_match(/exact-build|private-group/, result[:text])
+    end
+    run_query(mode: 'release-wait', failure: 'network') do |result|
+      refute result[:process].success?
+      assert_nil result[:report]
+      refute_match(/ASC response unavailable/, result[:error])
     end
   end
 

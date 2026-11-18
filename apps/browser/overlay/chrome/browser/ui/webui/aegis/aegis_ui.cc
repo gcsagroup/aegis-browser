@@ -6,6 +6,11 @@
 #include <string>
 
 #include "build/build_config.h"
+#if BUILDFLAG(IS_MAC)
+#include "base/functional/bind.h"
+#include "base/memory/ref_counted_memory.h"
+#include "chrome/browser/aegis/access/access_build_channel.h"
+#endif
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
 #include "chrome/browser/ui/webui/aegis/aegis_enhancement_handler.h"
@@ -686,6 +691,23 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   source->AddString("aiControlLabel", strings.ai_control_label);
   source->AddString("aiControlHint", strings.ai_control_hint);
   source->AddString("aiControlStatus", strings.ai_control_status);
+#if BUILDFLAG(IS_MAC)
+  source->SetRequestFilter(
+      base::BindRepeating([](const std::string& path) {
+        return path == "access-options" || path.starts_with("access-options/") ||
+               path.starts_with("access-options?");
+      }),
+      base::BindRepeating([](const std::string&, content::WebUIDataSource::GotDataCallback callback) {
+        if (!aegis::access::CanUseAccessOptionsForCurrentBuild(
+                aegis_access::AccessOptionsOperation::kPage)) {
+          std::move(callback).Run(nullptr);
+          return;
+        }
+        std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
+            "<!doctype html><meta charset=utf-8><title>Access Options</title>"
+            "<h1>Access Options</h1>"));
+      }));
+#endif
   source->AddString("aiControlConnect", strings.ai_control_connect);
   source->AddString("aiControlLimit", strings.ai_control_limit);
   source->AddString("note", strings.note);

@@ -2,6 +2,7 @@
 
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 #include "chrome/browser/aegis/access/access_build_channel.h"
+#include "chrome/browser/aegis/access/access_buildflags.h"
 
 #include <algorithm>
 #include <utility>
@@ -21,13 +22,17 @@
 #include "chrome/browser/aegis/aegis_prefs.h"
 #include "components/prefs/pref_service.h"
 #include "build/build_config.h"
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 #include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/aegis/access/access_core_log_share.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#if BUILDFLAG(IS_MAC)
 #include "third_party/blink/public/mojom/webshare/webshare.mojom.h"
+#else
+#include "chrome/browser/aegis/access/access_log_export_win.h"
+#endif
 #endif
 #include "components/aegis_access/access_proxy_route_adapter.h"
 #include "components/version_info/channel.h"
@@ -39,7 +44,7 @@ namespace {
 const void* const kAccessSiteProxyBubbleControllerKey =
     &kAccessSiteProxyBubbleControllerKey;
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 const void* const kLogHistoryKey = &kLogHistoryKey;
 // Keep both stores on the original profile. Reopening an incognito window
 // reuses its own private store even while the previous core is shutting down.
@@ -118,7 +123,7 @@ AccessSiteProxyBubbleController::AccessSiteProxyBubbleController(
     Profile* profile)
     : profile_(profile) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if ((profile_->IsRegularProfile() || profile_->IsPrimaryOTRProfile()) &&
       profile_->GetPrefs()->FindPreference(kAccessCoreLogLevel)) {
     app_terminating_ = browser_shutdown::AddAppTerminatingCallback(
@@ -198,6 +203,16 @@ bool AccessSiteProxyBubbleController::ApplyHostProxyToggle(
 }
 
 bool AccessSiteProxyBubbleController::IsDevAllowBlockPanelRegistered() const {
+  const auto identity = AccessBuildIdentityForCurrentBuild();
+  if (identity.conflict ||
+      (identity.channel != aegis_access::ChannelNamespace::kDev &&
+       identity.channel != aegis_access::ChannelNamespace::kAlpha))
+    return false;
+#if !BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
+  if (identity.product == aegis_access::AccessProductChannel::kUnknown &&
+      chrome::GetChannel() == version_info::Channel::UNKNOWN)
+    return false;
+#endif
   return IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) &&
          !IsGeneralAccessRuleEditorRegistered(chrome::GetChannel());
 }
@@ -205,6 +220,8 @@ bool AccessSiteProxyBubbleController::IsDevAllowBlockPanelRegistered() const {
 AccessDevAllowBlockPanelSnapshot
 AccessSiteProxyBubbleController::DevAllowBlockSnapshotForCommittedUrl(
     const GURL& committed_url) const {
+  if (!IsDevAllowBlockPanelRegistered())
+    return {};
   return BuildAccessDevAllowBlockPanelSnapshot(chrome::GetChannel(),
                                                dev_intent_store_, committed_url);
 }
@@ -214,6 +231,8 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
     std::string_view raw_host,
     AccessDevAllowBlockAction action) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsDevAllowBlockPanelRegistered())
+    return {.status = AccessDevAllowBlockApplyStatus::kChannelNotAdmitted};
   AccessDevAllowBlockApplyResult result = ApplyAccessDevAllowBlock(
       &dev_intent_store_, chrome::GetChannel(), raw_host, action);
   if (result.status != AccessDevAllowBlockApplyStatus::kApplied) {
@@ -235,7 +254,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
   const auto website = CanonicalWebsiteHost(requested_host);
   if (!website.host) return false;
   const auto host = *website.host;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (enabled) {
     auto* transport = AccessNetworkContextTransport::Get(profile_);
     if (transport && std::ranges::any_of(transport->AccountSites(), [&](const auto& paid) {
@@ -374,7 +393,8 @@ void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& hos
       ? transport->OwnerForPartition(AccessChannelForCurrentBuild(), base::FilePath())
       : std::nullopt;
   if (!owner || !transport->OwnsConfiguredPartition(*owner) ||
-      !IsDevAllowBlockPanelRegistered()) {
+      (!IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) ||
+       IsGeneralAccessRuleEditorRegistered(chrome::GetChannel()))) {
     FailCorePreparation(host, "The test proxy is unavailable in this build.");
     return;
   }
@@ -443,7 +463,7 @@ void AccessSiteProxyBubbleController::SetCoreLogLevel(std::string_view level) {
   core_logs_->SetLevel(level);
   ++state_revision_;
 }
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 void AccessSiteProxyBubbleController::ReadConfiguredNodeId(
     base::OnceCallback<void(std::string)> done) {
   auto input = ResolveAccessLocalCoreInput();
@@ -479,12 +499,31 @@ void AccessSiteProxyBubbleController::ShareCoreLogs(
             !tab->GetRenderWidgetHostView()) {
           return;
         }
+#if BUILDFLAG(IS_WIN)
+        auto window = tab->GetTopLevelNativeWindow();
+        if (!window) return;
+        ExportAccessLogOnWindows(
+            window, std::move(path), base::BindRepeating(
+                [](base::WeakPtr<content::WebContents> tab,
+                   content::GlobalRenderFrameHostId frame,
+                   scoped_refptr<AccessCoreLogStore> store, uint64_t version) {
+                  return tab && tab->GetPrimaryMainFrame()->GetGlobalId() == frame &&
+                         tab->GetVisibility() == content::Visibility::VISIBLE &&
+                         store->CanShare(version);
+                }, tab, frame, std::move(store), version),
+            base::BindOnce([](std::shared_ptr<bool> picker_succeeded,
+                              base::ScopedClosureRunner release, bool ok) {
+              *picker_succeeded = ok;
+              release.RunAndReset();
+            }, std::move(picker_succeeded), std::move(release)));
+#else
         tab->GetRenderWidgetHostView()->ShowSharePicker("", "", GURL(), {path.value()},
             base::BindOnce([](base::ScopedClosureRunner release, std::shared_ptr<bool> picker_succeeded,
                               blink::mojom::ShareError result) {
               *picker_succeeded = result != blink::mojom::ShareError::INTERNAL_ERROR;
               release.RunAndReset();
             }, std::move(release), std::move(picker_succeeded)));
+#endif
       }, tab->GetWeakPtr(), tab->GetPrimaryMainFrame()->GetGlobalId(), core_logs_,
       version, picker_succeeded),
       base::BindOnce([](std::shared_ptr<bool> picker_succeeded,
@@ -608,7 +647,9 @@ void AccessSiteProxyBubbleController::EnsureLocalCoreForRequest(
   auto* coordinator = AccessServiceCoordinator::Get(profile_);
   if (!expected_owner || *expected_owner != owner ||
       !transport->OwnsConfiguredPartition(owner) || group != LocalProxyGroup(owner) ||
-      !IsDevAllowBlockPanelRegistered() || !coordinator || !coordinator->CanDispatch(owner)) {
+      (!IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) ||
+       IsGeneralAccessRuleEditorRegistered(chrome::GetChannel())) ||
+      !coordinator || !coordinator->CanDispatch(owner)) {
     std::move(completion).Run(false);
     return;
   }

@@ -69,6 +69,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
   // Only the actor opens SQLite; ReadCommittedSnapshot is then a UI cache read.
   void InitializeForProfile(const OwnershipKey& owner,
                             base::OnceCallback<void(bool)> completion);
+  void CheckOptionsStoreBinding(base::OnceCallback<void(StoreStatus)> completion);
   bool CanDispatch(const OwnershipKey& owner) const;
   StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
       const std::string& storage_partition_token);
@@ -89,6 +90,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
   friend class AccessServiceCoordinatorTestPeer;
   explicit AccessServiceCoordinator(Profile* profile);
   struct MutationTransaction;
+  void OnOptionsStoreInitialized(base::OnceCallback<void(StoreStatus)> completion, bool ready);
   void OnStoreInitialized(OwnershipKey owner, AsyncAccessStoreRestoration result);
   void OnAsyncPrepared(std::unique_ptr<MutationTransaction> transaction,
                        AsyncAccessStorePrepared result);
@@ -131,6 +133,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
   std::unique_ptr<AccessAsyncRuleStore> async_store_;
   std::map<std::string, StoredPolicySnapshot> committed_cache_;
   std::map<std::string, std::vector<base::OnceCallback<void(bool)>>> initializing_;
+  StoreStatus last_store_status_ = StoreStatus::kRecoveryRequired;
   uint64_t state_generation_ = 0;
   bool mutation_in_flight_ = false;
   bool recovery_required_ = false;

@@ -4,7 +4,7 @@
 
 #include "base/feature_list.h"
 #include "build/build_config.h"
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 #include "chrome/browser/aegis/access/access_core_log_share.h"
 #endif
 #include "chrome/browser/aegis/aegis_service.h"
@@ -24,7 +24,7 @@ AegisServiceFactory* AegisServiceFactory::GetInstance() {
 // static
 void AegisServiceFactory::EnsureIncognitoGuardForProfile(Profile* profile) {
   GetForProfileImpl(profile, /*create=*/true);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (profile && profile->IsRegularProfile())
     access::CoreLogShareSession::RecoverAtStartup(profile->GetPath());
 #endif
