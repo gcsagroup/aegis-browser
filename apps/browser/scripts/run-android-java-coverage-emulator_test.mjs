@@ -13,6 +13,20 @@ function runCoverage(t, mode) {
   const bin = path.join(root, 'bin');
   const record = path.join(root, 'operations.log');
   const emulatorPid = path.join(root, 'emulator.pid');
+  const bashEnv = path.join(root, 'bash-env');
+  // Simulate GNU timeout's ambiguous 137 on either side of the shared deadline.
+  fs.writeFileSync(bashEnv, String.raw`
+timeout() {
+  if [[ $3 == */avdmanager ]]; then
+    case "$EMULATOR_MODE" in
+      early-killed) return 137 ;;
+      deadline-killed) SECONDS=$boot_deadline; return 137 ;;
+    esac
+  fi
+  command timeout "$@"
+}
+`);
+
   t.after(() => {
     if (fs.existsSync(emulatorPid)) {
       const pid = Number(fs.readFileSync(emulatorPid, 'utf8'));
@@ -99,7 +113,7 @@ exec "$@"
       REAL_NODE: process.execPath, ANDROID_SDK_ROOT: sdk, RUNNER_TEMP: root,
       EVIDENCE_DIR: path.join(root, 'evidence'), AVD_NAME: path.join(root, 'avd-name'),
       RECORD: record, EMULATOR_MODE: mode, REPLACED: path.join(root, 'transport-replaced'),
-      EMULATOR_PID: emulatorPid},
+      EMULATOR_PID: emulatorPid, BASH_ENV: bashEnv},
     encoding: 'utf8',
     timeout: 45000,
   });
@@ -172,4 +186,19 @@ test('helper failure diagnostics stay on the admitted transport after disconnect
   assert.match(result.operations, /adb -t 17 logcat .*am_anr am_crash/);
   assert.match(result.operations, /adb -t 17 logcat .*AndroidRuntime:E/);
   assert.doesNotMatch(result.operations, /adb -s /);
+});
+
+
+test('early SIGKILL is distinct from an emulator bootstrap timeout', t => {
+  const result = runCoverage(t, 'early-killed');
+  assert.equal(result.status, 137, result.stderr);
+  assert.doesNotMatch(result.stderr, /startup deadline/);
+  assert.doesNotMatch(result.operations, /emulator -port|self-test /);
+});
+
+test('SIGKILL at the shared startup deadline is reported as timeout', t => {
+  const result = runCoverage(t, 'deadline-killed');
+  assert.equal(result.status, 124, result.stderr);
+  assert.match(result.stderr, /startup deadline/);
+  assert.doesNotMatch(result.operations, /emulator -port|self-test /);
 });

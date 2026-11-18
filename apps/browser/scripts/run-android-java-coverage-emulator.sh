@@ -25,7 +25,7 @@ during_startup() {
   fi
   local status=0
   timeout --kill-after=2s "${remaining}s" "$@" || status=$?
-  if (( status == 124 || status == 137 )); then
+  if (( status == 124 || (status == 137 && SECONDS >= boot_deadline) )); then
     printf 'coverage emulator startup deadline exceeded during %s\n' "${1##*/}" >&2
     return 124
   fi
@@ -73,17 +73,21 @@ while (( SECONDS < boot_deadline )); do
     echo 'coverage emulator exited before completing boot' >&2
     exit 1
   fi
-  if transport=$(during_startup "$adb" devices -l | awk -v serial="$serial" '
+  if devices=$(during_startup "$adb" devices -l) &&
+    transport=$(awk -v serial="$serial" '
     $1 == serial && $2 == "device" {
       for (i = 3; i <= NF; i++) {
         if ($i ~ /^transport_id:[1-9][0-9]*$/) { id = substr($i, 14); found++ }
       }
     }
     END { if (found != 1) exit 1; print id }
-  ') && boot_completed=$(during_startup "$adb" -t "$transport" shell getprop sys.boot_completed | tr -d '\r') &&
+  ' <<< "$devices") && boot_completed=$(during_startup "$adb" -t "$transport" shell getprop sys.boot_completed | tr -d '\r') &&
     [[ "$boot_completed" == 1 ]]; then
     emulator_booted=1
     break
+  else
+    probe_rc=$?
+    if (( probe_rc == 124 || probe_rc == 137 )); then exit "$probe_rc"; fi
   fi
   during_startup sleep 2
 done
@@ -142,7 +146,7 @@ for attempt in {1..15}; do
     emulator_ready=1
     break
   fi
-  if (( probe_rc == 124 )); then exit 124; fi
+  if (( probe_rc == 124 || probe_rc == 137 )); then exit "$probe_rc"; fi
   if (( attempt < 15 )); then during_startup sleep 1; fi
 done
 if (( emulator_ready != 1 )); then
