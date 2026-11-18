@@ -7,6 +7,7 @@ namespace aegis::access {
 class AccessAsyncRuleStore::Worker {
  public:
   explicit Worker(AccessStoreBinding binding) : store_(std::move(binding)) {}
+  StoreStatus CheckIdentity() { return store_.Open(); }
   AsyncAccessStoreRestoration InitializeAndRestore(const std::string& partition) {
     if (initialized_.contains(partition))
       return {.status = StoreStatus::kConflict, .detail = "already_initialized"};
@@ -93,6 +94,9 @@ AccessAsyncRuleStore::AccessAsyncRuleStore(AccessStoreBinding binding)
           {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
            base::TaskShutdownBehavior::BLOCK_SHUTDOWN}), std::move(binding)) {}
 AccessAsyncRuleStore::~AccessAsyncRuleStore() = default;
+void AccessAsyncRuleStore::CheckIdentity(base::OnceCallback<void(StoreStatus)> completion) {
+  worker_.AsyncCall(&Worker::CheckIdentity).Then(std::move(completion));
+}
 void AccessAsyncRuleStore::InitializeAndRestore(std::string partition,
     base::OnceCallback<void(AsyncAccessStoreRestoration)> completion) {
   worker_.AsyncCall(&Worker::InitializeAndRestore).WithArgs(std::move(partition))

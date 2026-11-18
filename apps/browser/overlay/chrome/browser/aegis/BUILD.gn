@@ -352,7 +352,14 @@ if (!is_android) {
       "enhancements/enhancement_browsertest.cc",
       "google_service_prompt_browsertest.cc",
     ]
+    if (is_mac) {
+      sources += [ "access/access_options_browsertest.cc" ]
+    }
     deps = [
+      "//chrome/browser/aegis/access:access_buildflags",
+      "//chrome/common:channel_info",
+      "//chrome/browser/aegis/access:access_build_channel",
+      "//chrome/browser/aegis/access:access_site_proxy_bubble",
       ":aegis",
       ":agent_model_transport",
       "//base",

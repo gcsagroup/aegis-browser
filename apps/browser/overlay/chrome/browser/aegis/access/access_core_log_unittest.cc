@@ -11,6 +11,20 @@ constexpr char kTime[] = "2026/11/11 13:14:15.123456 ";
 // Run with each unbranded Aegis build variant, using the actual compiled
 // channel resolver instead of substituting a Chromium DEV enum value.
 TEST(AccessCoreLogTest, CurrentUnbrandedBuildChoosesDiagnosticDefault) {
+  const auto identity = AccessBuildIdentityForCurrentBuild();
+  if (identity.conflict) {
+    EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "warning");
+    return;
+  }
+  if (identity.product != aegis_access::AccessProductChannel::kUnknown) {
+    std::string_view expected = "warning";
+    if (identity.channel == aegis_access::ChannelNamespace::kDev)
+      expected = "debug";
+    if (identity.channel == aegis_access::ChannelNamespace::kAlpha)
+      expected = "info";
+    EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), expected);
+    return;
+  }
 #if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
 #if BUILDFLAG(AEGIS_BETA_TEST_NODE_ENABLED)
   EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "warning");

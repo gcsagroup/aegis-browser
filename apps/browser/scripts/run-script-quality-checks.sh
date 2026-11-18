@@ -23,6 +23,7 @@ run_covered_python() {
 }
 
 run_check '构建源码来源' python3 -B ./scripts/verify-build-source_test.py
+run_check 'Access build identity' python3 -B -m unittest discover -s ./overlay/chrome/browser/aegis/access -p 'verify_access_build_identity_test.py'
 run_check 'Windows MIDL 路径' python3 -B ./scripts/midl-dynamic-path_test.py
 run_check '构建容量' python3 -B ./scripts/build_capacity_test.py
 run_check '构建进程' python3 -B ./scripts/build_processes_test.py

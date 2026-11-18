@@ -2,6 +2,7 @@
 
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 #include "chrome/browser/aegis/access/access_build_channel.h"
+#include "chrome/browser/aegis/access/access_buildflags.h"
 
 #include <algorithm>
 #include <utility>
@@ -202,6 +203,16 @@ bool AccessSiteProxyBubbleController::ApplyHostProxyToggle(
 }
 
 bool AccessSiteProxyBubbleController::IsDevAllowBlockPanelRegistered() const {
+  const auto identity = AccessBuildIdentityForCurrentBuild();
+  if (identity.conflict ||
+      (identity.channel != aegis_access::ChannelNamespace::kDev &&
+       identity.channel != aegis_access::ChannelNamespace::kAlpha))
+    return false;
+#if !BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
+  if (identity.product == aegis_access::AccessProductChannel::kUnknown &&
+      chrome::GetChannel() == version_info::Channel::UNKNOWN)
+    return false;
+#endif
   return IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) &&
          !IsGeneralAccessRuleEditorRegistered(chrome::GetChannel());
 }
@@ -209,6 +220,8 @@ bool AccessSiteProxyBubbleController::IsDevAllowBlockPanelRegistered() const {
 AccessDevAllowBlockPanelSnapshot
 AccessSiteProxyBubbleController::DevAllowBlockSnapshotForCommittedUrl(
     const GURL& committed_url) const {
+  if (!IsDevAllowBlockPanelRegistered())
+    return {};
   return BuildAccessDevAllowBlockPanelSnapshot(chrome::GetChannel(),
                                                dev_intent_store_, committed_url);
 }
@@ -218,6 +231,8 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
     std::string_view raw_host,
     AccessDevAllowBlockAction action) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsDevAllowBlockPanelRegistered())
+    return {.status = AccessDevAllowBlockApplyStatus::kChannelNotAdmitted};
   AccessDevAllowBlockApplyResult result = ApplyAccessDevAllowBlock(
       &dev_intent_store_, chrome::GetChannel(), raw_host, action);
   if (result.status != AccessDevAllowBlockApplyStatus::kApplied) {
@@ -378,7 +393,8 @@ void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& hos
       ? transport->OwnerForPartition(AccessChannelForCurrentBuild(), base::FilePath())
       : std::nullopt;
   if (!owner || !transport->OwnsConfiguredPartition(*owner) ||
-      !IsDevAllowBlockPanelRegistered()) {
+      (!IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) ||
+       IsGeneralAccessRuleEditorRegistered(chrome::GetChannel()))) {
     FailCorePreparation(host, "The test proxy is unavailable in this build.");
     return;
   }
@@ -631,7 +647,9 @@ void AccessSiteProxyBubbleController::EnsureLocalCoreForRequest(
   auto* coordinator = AccessServiceCoordinator::Get(profile_);
   if (!expected_owner || *expected_owner != owner ||
       !transport->OwnsConfiguredPartition(owner) || group != LocalProxyGroup(owner) ||
-      !IsDevAllowBlockPanelRegistered() || !coordinator || !coordinator->CanDispatch(owner)) {
+      (!IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) ||
+       IsGeneralAccessRuleEditorRegistered(chrome::GetChannel())) ||
+      !coordinator || !coordinator->CanDispatch(owner)) {
     std::move(completion).Run(false);
     return;
   }

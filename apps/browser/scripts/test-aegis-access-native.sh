@@ -154,3 +154,11 @@ if [[ -n "$COVERAGE_DIR" ]]; then
 else
   "$TEST_ROOT/aegis_access_native_test"
 fi
+
+# The native build identity resolver has a standalone channel/admission matrix.
+"$CXX_BIN" -std=c++20 -Wall -Wextra -Werror -pedantic \
+  -I"$BROWSER_DIR/overlay" \
+  "$COMPONENT_DIR/access_options_capability_test.cc" \
+  "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
+  -o "$TEST_ROOT/access_options_capability_test"
+"$TEST_ROOT/access_options_capability_test"

@@ -327,3 +327,4 @@
 0327-validate-devtools-targets-at-navigation-commit.patch
 0328-prepare-integrated-candidate-339.patch
 0329-handle-ocr-lookup-and-errors.patch
+0330-share-access-options-capability.patch
