@@ -7,6 +7,15 @@ import {test} from 'node:test';
 
 const checkout = path.resolve(import.meta.dirname, '../../..');
 
+function readEmulatorPid(file) {
+  if (!fs.existsSync(file)) return null;
+  const record = fs.readFileSync(file, 'utf8');
+  const match = /^([1-9]\d{0,9})\n$/u.exec(record);
+  if (!match || match[0] !== record) return null;
+  const pid = Number(match[1]);
+  return pid > 1 && pid <= 0x7fffffff && pid !== process.pid ? pid : null;
+}
+
 function runCoverage(t, mode) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aegis-emulator-test-'));
   const sdk = path.join(root, 'sdk');
@@ -14,26 +23,25 @@ function runCoverage(t, mode) {
   const record = path.join(root, 'operations.log');
   const emulatorPid = path.join(root, 'emulator.pid');
   const bashEnv = path.join(root, 'bash-env');
-  // Simulate GNU timeout's ambiguous 137 on either side of the shared deadline.
+  // Advance the launcher's clock without waiting for the real startup budget.
   fs.writeFileSync(bashEnv, String.raw`
 timeout() {
   if [[ $3 == */avdmanager ]]; then
     case "$EMULATOR_MODE" in
       early-killed) return 137 ;;
       deadline-killed) SECONDS=$boot_deadline; return 137 ;;
+      screen-stalled)
+        command timeout "$@" || return $?
+        SECONDS=$((boot_deadline - 30))
+        return 0
+        ;;
     esac
   fi
   command timeout "$@"
 }
 `);
 
-  t.after(() => {
-    if (fs.existsSync(emulatorPid)) {
-      const pid = Number(fs.readFileSync(emulatorPid, 'utf8'));
-      try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-    }
-    fs.rmSync(root, {recursive: true, force: true});
-  });
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
   fs.writeFileSync(record, '');
   const script = (file, content) => {
     fs.mkdirSync(path.dirname(file), {recursive: true});
@@ -55,7 +63,12 @@ case "$*" in
   'wait-for-device') ;;
   'emu avd name'|'shell getprop ro.boot.qemu.avd_name')
     if [[ $EMULATOR_MODE == foreign ]]; then printf 'foreign-avd\n'; else cat "$AVD_NAME"; fi ;;
-  'shell getprop ro.kernel.qemu'|'shell getprop sys.boot_completed') printf '1\n' ;;
+  'shell getprop ro.kernel.qemu') printf '1\n' ;;
+  'shell getprop sys.boot_completed')
+    case "$EMULATOR_MODE" in
+      emulator-killed|emulator-exited) printf '0\n' ;;
+      *) printf '1\n' ;;
+    esac ;;
   'shell am get-current-user')
     if [[ $EMULATOR_MODE == replaced ]]; then touch "$REPLACED"; fi
     printf '0\n' ;;
@@ -79,7 +92,15 @@ done
 if [[ $EMULATOR_MODE == stubborn ]]; then trap '' TERM; fi
 printf '%s\n' "$$" > "$EMULATOR_PID"
 printf 'emulator %s\n' "$*" >> "$RECORD"
-exec /bin/sleep 120
+case "$EMULATOR_MODE" in
+  emulator-killed) kill -KILL "$$" ;;
+  emulator-exited) exit 0 ;;
+esac
+# Exit when the test removes its temporary files, with a bounded fallback.
+expires=$((SECONDS + 120))
+while [[ -f "$EMULATOR_PID" ]] && (( SECONDS < expires )); do
+  /bin/sleep 0.25
+done
 `);
   script(path.join(bin, 'node'), String.raw`
 if [[ "$*" == *'android-agent-ui.mjs self-test'* ]]; then
@@ -118,8 +139,9 @@ exec "$@"
     timeout: 45000,
   });
   assert.ifError(result.error);
-  const pid = fs.existsSync(emulatorPid) ? Number(fs.readFileSync(emulatorPid, 'utf8')) : null;
-  if (pid !== null) {
+  if (fs.existsSync(emulatorPid)) {
+    const pid = readEmulatorPid(emulatorPid);
+    assert.notEqual(pid, null, 'the fixture emulator must record a valid PID');
     assert.throws(() => process.kill(pid, 0), {code: 'ESRCH'}, 'the fixture emulator must be reaped');
     fs.unlinkSync(emulatorPid);
   }
@@ -169,11 +191,13 @@ test('cleanup reaps a child that ignores SIGTERM and preserves the fixture resul
 });
 
 
-test('a stalled screen probe preserves the startup timeout without another attempt', t => {
+test('a stalled screen probe receives only the remaining startup budget without another attempt', t => {
   const result = runCoverage(t, 'screen-stalled');
   assert.equal(result.status, 124, result.stderr);
   assert.match(result.stderr, /startup deadline/);
   assert.equal((result.operations.match(/^adb -t 17 shell dumpsys window policy$/gm) ?? []).length, 1);
+  const probe = result.operations.match(/^timeout --kill-after=2s ([1-9]\d*)s .*\/adb -t 17 shell dumpsys window policy$/m);
+  assert.ok(probe && Number(probe[1]) <= 30, result.operations);
   assert.doesNotMatch(result.operations, /self-test /);
 });
 
@@ -201,4 +225,28 @@ test('SIGKILL at the shared startup deadline is reported as timeout', t => {
   assert.equal(result.status, 124, result.stderr);
   assert.match(result.stderr, /startup deadline/);
   assert.doesNotMatch(result.operations, /emulator -port|self-test /);
+});
+
+test('the emulator child keeps its signal status and an early clean exit fails', t => {
+  for (const [mode, status] of [['emulator-killed', 137], ['emulator-exited', 1]]) {
+    const result = runCoverage(t, mode);
+    assert.equal(result.status, status, result.stderr);
+    assert.match(result.stderr, /emulator exited before completing boot/);
+    assert.doesNotMatch(result.operations, /self-test /);
+  }
+});
+
+test('only complete and valid PID records are used to check emulator liveness', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aegis-emulator-pid-'));
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  const file = path.join(root, 'emulator.pid');
+  assert.equal(readEmulatorPid(file), null);
+  const otherPid = process.pid === 1234 ? 1235 : 1234;
+  for (const value of ['', String(otherPid), otherPid + '\n\n', ' 23\n', '23\r\n',
+    '0\n', '1\n', '-1\n', '1e2\n', '21x\n', '2147483648\n', process.pid + '\n']) {
+    fs.writeFileSync(file, value);
+    assert.equal(readEmulatorPid(file), null, JSON.stringify(value));
+  }
+  fs.writeFileSync(file, otherPid + '\n');
+  assert.equal(readEmulatorPid(file), otherPid);
 });
