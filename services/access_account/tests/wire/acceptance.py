@@ -8,7 +8,8 @@ import json
 import os
 import shutil
 import socket
-import subprocess
+# The receipt reads the source commit using system Git.
+import subprocess  # nosec B404
 import tempfile
 import time
 from pathlib import Path
@@ -163,8 +164,11 @@ def run(work=exercise, runtime_class=Runtime):
                  *SERVICE.glob("*.py"), *SERVICE.glob("*.sql")]
         git = shutil.which("git", path=os.defpath)
         require(git, "System Git is required for the source receipt")
+        # System Git receives fixed arguments and runs in the checkout containing this fixture.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        head = subprocess.check_output([git, "rev-parse", "HEAD"], cwd=SERVICE, text=True).strip()  # nosec B603
         emit("identity", {"dependencies": {pkg: version(pkg) for pkg in ("requests", "CacheControl")},
-                          "head": subprocess.check_output([git, "rev-parse", "HEAD"], cwd=SERVICE, text=True).strip(),
+                          "head": head,
                           "sha256": {str(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in files}})
         try:
             with tempfile.TemporaryDirectory(prefix="n1-") as tmp, contextlib.ExitStack() as stack:

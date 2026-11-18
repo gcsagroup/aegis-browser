@@ -2,13 +2,16 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 import json
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 import unittest
 
 from services.access_account import metering as m
+from services.access_account.tests.wire.runtime import Runtime
 
 
 class MeterTest(unittest.TestCase):
@@ -196,3 +199,13 @@ class MeterTest(unittest.TestCase):
                     await daemon
             self.assertFalse(path.exists())
         asyncio.run(wire())
+
+
+class WireProcessTest(unittest.TestCase):
+    def test_rejects_unlisted_command_before_opening_a_log_or_starting_a_child(self):
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as stack:
+            root = Path(tmp)
+            rt = Runtime(root, stack, root / 'stock', root / 'metered', root / 'meter.sock')
+            with self.assertRaisesRegex(ValueError, 'unsupported wire fixture command'):
+                rt.launch('unexpected', [sys.executable, '--version'], socket_path=rt.socket_path)
+            self.assertEqual(list(root.iterdir()), [])

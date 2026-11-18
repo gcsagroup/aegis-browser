@@ -10,7 +10,8 @@ import shutil
 import socket
 import sqlite3
 import ssl
-import subprocess
+# Loopback fixtures start the selected binaries with explicit argument lists.
+import subprocess  # nosec B404
 import sys
 import threading
 import time
@@ -70,13 +71,24 @@ class Runtime:
         self.origin = None
 
     def launch(self, name, args, *, service_port=None, socket_path=None, meter=False):
+        if args[:3] not in (
+            [sys.executable, "-m", "services.access_account.metering"],
+            [sys.executable, "-m", "services.access_account.server"],
+            [sys.executable, "-m", "services.access_account.node"],
+            [self.stock, "run", "-c"],
+            [self.metered, "run", "-c"],
+        ):
+            raise ValueError("unsupported wire fixture command")
         log = self.stack.enter_context((self.root / (name + ".log")).open("w+b"))
         self.logs.append((name, log))
         env = os.environ.copy()
         env.pop("AEGIS_XRAY_METER_SOCKET", None)
         if meter:
             env["AEGIS_XRAY_METER_SOCKET"] = str(self.socket_path)
-        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=SERVICE.parents[1])
+        # Only the fixture modules and the two operator-selected Xray binaries can start here.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT,  # nosec B603
+                                env=env, cwd=SERVICE.parents[1])
         def stop():
             proc.terminate()
             try:
@@ -102,7 +114,9 @@ class Runtime:
         cert, key = self.root / "cert.pem", self.root / "key.pem"
         openssl = shutil.which("openssl", path=os.defpath)
         require(openssl, "System OpenSSL is required for the loopback certificate")
-        subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        # System OpenSSL receives fixed certificate options and paths in the private fixture directory.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        subprocess.run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",  # nosec B603
                         "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
                         "-keyout", key, "-out", cert], capture_output=True, check=True)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -159,7 +173,9 @@ class Runtime:
                               "--key", self.root / "key.pem"], service_port=self.entry)
 
     def start_xray(self, socks):
-        result = subprocess.check_output([self.stock, "x25519"], text=True)
+        # The recorded stock binary receives one fixed key-generation subcommand.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        result = subprocess.check_output([self.stock, "x25519"], text=True)  # nosec B603
         keys = dict(line.split(": ", 1) for line in result.splitlines() if ": " in line)
         users = {name: {"id": str(uuid.uuid4()), "flow": "xtls-rprx-vision",
                         "email": "client-" + name} for name in socks}
@@ -191,7 +207,9 @@ class Runtime:
                         service_port=number)
 
     def usage(self):
-        return json.loads(subprocess.check_output([*self.cli, "usage", "--database", self.db,
+        # Exercise the operator CLI with this interpreter and the private fixture database.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        return json.loads(subprocess.check_output([*self.cli, "usage", "--database", self.db,  # nosec B603
                                                    "--node", NODE, "--period", PERIOD], cwd=SERVICE.parents[1]))
 
     def grant(self, name):
