@@ -25,9 +25,25 @@ func init() {
 	}
 }
 
-var recoveryMu sync.Mutex
+var busyRecords sync.Map // outbox record path -> channel closed when its owner releases it
 var replayOnce sync.Once
 var flowRecordName = regexp.MustCompile(`^[0-9a-f]{32}\.json$`)
+
+// Both the live writer and replay own the record from its read through its
+// acknowledgement and removal. Other flows use different records.
+func lockRecord(path string) func() {
+	done := make(chan struct{})
+	for {
+		owner, busy := busyRecords.LoadOrStore(path, done)
+		if !busy {
+			return func() {
+				busyRecords.Delete(path)
+				close(done)
+			}
+		}
+		<-owner.(chan struct{})
+	}
+}
 
 func recoveryDirectory(socket string) (string, error) {
 	parent, err := os.Stat(filepath.Dir(socket))
@@ -136,31 +152,22 @@ func save(path string, frames []map[string]any) error {
 
 func (f *Flow) retainLocked(frame map[string]any) error {
 	frame["v"], frame["flow"] = 1, f.id
-	frames, err := pending(filepath.Join(f.recoveryDir, f.id+".json"))
+	path := filepath.Join(f.recoveryDir, f.id+".json")
+	frames, err := pending(path)
 	if err != nil {
 		return err
 	}
-	return save(filepath.Join(f.recoveryDir, f.id+".json"), append(frames, frame))
+	return save(path, append(frames, frame))
 }
 
-func (f *Flow) retain(frame map[string]any) error {
-	if f.recoveryDir == "" {
-		return errors.New("meter outbox unavailable")
-	}
-	recoveryMu.Lock()
-	defer recoveryMu.Unlock()
-	return f.retainLocked(frame)
-}
-
-// reliableSend holds the same lock as background replay. A terminal record can
-// never overtake a failed prefix from the same flow.
+// A terminal record cannot overtake an unacknowledged sample from the same flow.
 func (f *Flow) reliableSend(frame map[string]any) error {
 	if f.recoveryDir == "" { // In-memory unit-test collectors.
 		return f.send(frame)
 	}
-	recoveryMu.Lock()
-	defer recoveryMu.Unlock()
 	path := filepath.Join(f.recoveryDir, f.id+".json")
+	unlock := lockRecord(path)
+	defer unlock()
 	previous, err := pending(path)
 	if err != nil {
 		return err
@@ -190,8 +197,6 @@ func startReplay(socket, dir string) {
 }
 
 func replay(socket, dir string) {
-	recoveryMu.Lock()
-	defer recoveryMu.Unlock()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -200,39 +205,48 @@ func replay(socket, dir string) {
 		if !entry.Type().IsRegular() || !flowRecordName.MatchString(entry.Name()) {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
-		frames, err := pending(path)
-		if err != nil || len(frames) == 0 {
-			continue
-		}
-		conn, err := net.DialTimeout("unix", socket, timeout)
-		if err != nil {
+		if err := replayRecord(socket, filepath.Join(dir, entry.Name())); err != nil {
+			// The collector is offline. Retry the directory on the next pass.
 			return
 		}
-		f := &Flow{id: strings.TrimSuffix(entry.Name(), ".json"), conn: conn, reader: bufio.NewReaderSize(conn, 4096)}
-		for len(frames) != 0 {
-			if err = f.send(frames[0]); err != nil {
-				break
-			}
-			frames = frames[1:]
-			if err = save(path, frames); err != nil {
-				break
-			}
-		}
-		conn.Close()
 	}
+}
+
+func replayRecord(socket, path string) error {
+	unlock := lockRecord(path)
+	defer unlock()
+	frames, err := pending(path)
+	if err != nil || len(frames) == 0 {
+		return nil
+	}
+	conn, err := net.DialTimeout("unix", socket, timeout)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	f := &Flow{id: strings.TrimSuffix(filepath.Base(path), ".json"), conn: conn, reader: bufio.NewReaderSize(conn, 4096)}
+	for i, frame := range frames {
+		if err := f.send(frame); err != nil {
+			break
+		}
+		if err := save(path, frames[i+1:]); err != nil {
+			break
+		}
+	}
+	return nil
 }
 
 // An opening has no target bytes until this returns. Its recovery record only
 // closes a possible zero-byte row and is harmless if open never reached SQLite.
 func (f *Flow) open(frame map[string]any) error {
-	recoveryMu.Lock()
-	defer recoveryMu.Unlock()
+	path := filepath.Join(f.recoveryDir, f.id+".json")
+	unlock := lockRecord(path)
+	defer unlock()
 	if err := f.retainLocked(map[string]any{"op": "abort"}); err != nil {
 		return err
 	}
 	if err := f.send(frame); err != nil {
 		return err
 	}
-	return save(filepath.Join(f.recoveryDir, f.id+".json"), nil)
+	return save(path, nil)
 }

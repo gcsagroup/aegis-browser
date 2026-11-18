@@ -214,6 +214,68 @@ func TestRecoveryPreservesLargeIntegers(t *testing.T) {
 	}
 }
 
+func TestSlowReplayAllowsAnotherFlowToOpenAndReport(t *testing.T) {
+	// Use a short name for the Unix socket on platforms with a short sockaddr_un.
+	dir, err := os.MkdirTemp("/tmp", "meter-replay-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "meter.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := listener.SetDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatal(err)
+	}
+	const stalledID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	record := filepath.Join(dir, stalledID+".json")
+	if err := save(record, []map[string]any{{"v": 1, "flow": stalledID, "op": "abort"}}); err != nil {
+		t.Fatal(err)
+	}
+	replayed := make(chan struct{})
+	go func() {
+		defer close(replayed)
+		replay(socket, dir)
+	}()
+	conn, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		conn.Close()
+		<-replayed
+	}()
+	if _, err := bufio.NewReader(conn).ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+
+	// Withhold this acknowledgement until the other flow has finished.
+	live, observed := collector(t, false)
+	live.recoveryDir = dir
+	if err := live.open(map[string]any{"op": "open", "client": "other-client"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := live.Write(io.Discard, []byte{42}, 0, 1, "target_tcp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := live.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if events := <-observed; len(events) != 3 || events[1]["bytes"] != float64(1) {
+		t.Fatalf("missing live flow sample: %v", events)
+	}
+	if _, err := io.WriteString(conn, "{\"ok\":true}\n"); err != nil {
+		t.Fatalf("another flow could only progress after replay timed out: %v", err)
+	}
+	<-replayed
+	if _, err := os.Stat(record); !os.IsNotExist(err) {
+		t.Fatalf("acknowledged replay record still present: %v", err)
+	}
+}
+
 func TestLostOpenAckRetainsOnlyZeroByteAbort(t *testing.T) {
 	dir := t.TempDir()
 	client, server := net.Pipe()
