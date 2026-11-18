@@ -651,7 +651,7 @@ jobs:
           path: .artifacts/ios-delivery/package.zip
           if-no-files-found: error
           retention-days: 30
-    if: ${{ needs.admission.outputs.operation == 'package-upload' && needs.ios-package.outputs.private_beta == 'false' }}
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.ios-package.result == 'success' && needs.seal-package.result == 'success' && needs.admission.outputs.operation == 'package-upload' && needs.ios-package.outputs.private_beta == 'false' }}
   status-query:
     name: status-query
     needs: admission
