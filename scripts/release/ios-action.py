@@ -465,7 +465,8 @@ def unstarted_store_run(row):
             if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
                 return False
             name = str(job.get('name', '')).rsplit(' / ', 1)[-1]
-            if name in {'store', 'upload-new', 'private-beta-store'} and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
+            never_started = job.get('status') == 'completed' and job.get('conclusion') in {'skipped', 'cancelled'} and job.get('steps') == []
+            if name in {'store', 'upload-new', 'private-beta-store'} and not never_started:
                 return False
             if name == 'ios-package' and any(step.get('name') == 'Upload private Beta directly to TestFlight'
                     and step.get('conclusion') != 'skipped' for step in job.get('steps', [])):
