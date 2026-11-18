@@ -11,18 +11,29 @@ run_check() {
   "$@"
 }
 
+run_covered_python() {
+  local label="$1"
+  shift
+  if [[ -n "${AEGIS_PYTHON_COVERAGE_BIN:-}" ]]; then
+    PYTHONDONTWRITEBYTECODE=1 run_check "$label" "$AEGIS_PYTHON_COVERAGE_BIN" run \
+      --parallel-mode --branch --source "${AEGIS_PYTHON_COVERAGE_SOURCE:?}" "$@"
+  else
+    run_check "$label" python3 -B "$@"
+  fi
+}
+
 run_check '构建源码来源' python3 -B ./scripts/verify-build-source_test.py
 run_check 'Windows MIDL 路径' python3 -B ./scripts/midl-dynamic-path_test.py
 run_check '构建容量' python3 -B ./scripts/build_capacity_test.py
 run_check '构建进程' python3 -B ./scripts/build_processes_test.py
-run_check 'Chromium 上游监测' python3 -B ./scripts/check-chromium-upstream_test.py
-run_check '发行资产一致性' python3 -B ./scripts/release-assets_test.py
+run_covered_python 'Chromium 上游监测' ./scripts/check-chromium-upstream_test.py
+run_covered_python '发行资产一致性' ./scripts/release-assets_test.py
 run_check '第三方许可资源' python3 -B ../../scripts/licenses/third_party_notices.py check
 run_check '第三方许可打包回归' python3 -B -m unittest discover -s ../../scripts/licenses -p 'test_*.py'
-run_check 'GitHub发行编排' python3 -B ./scripts/release-github_test.py
+run_covered_python 'GitHub发行编排' ./scripts/release-github_test.py
 run_check 'Git/GitHub network policy' python3 -B ./scripts/github-network_test.py
-run_check '候选编排' python3 -B -m unittest discover -s ./scripts/ci -p "*_test.py"
-run_check 'terminal receipt unit and regression tests' python3 -B ./scripts/native_validation/terminal_receipt_test.py
+run_covered_python '候选编排' -m unittest discover -s ./scripts/ci -p "*_test.py"
+run_covered_python 'terminal receipt unit and regression tests' ./scripts/native_validation/terminal_receipt_test.py
 run_check '进程测量' python3 -B ./scripts/measure-browser-processes_test.py
 run_check 'workspace-paths' node --test ./scripts/workspace-paths_test.mjs
 run_check 'public-link-fixture' node --test ./scripts/public-link-fixture_test.mjs

@@ -219,19 +219,13 @@ try {
   await command('quality:fast', 'corepack', ['pnpm', 'run', 'quality:fast'], {
     env: instrumentedEnvironment,
   });
-  for (const test of [
-    'apps/browser/scripts/check-chromium-upstream_test.py',
-    'apps/browser/scripts/release-assets_test.py',
+  // The five overlapping script suites collect coverage during quality:fast.
+  // The release contract is only part of the full gate, so run it here.
+  await command('python-coverage-release-contract_test.py', coverageExecutable, [
+    'run', '--parallel-mode', '--branch',
+    '--source', instrumentedEnvironment.AEGIS_PYTHON_COVERAGE_SOURCE,
     'apps/browser/scripts/release-contract_test.py',
-    'apps/browser/scripts/release-github_test.py',
-    'apps/browser/scripts/ci/candidate_test.py',
-    'apps/browser/scripts/native_validation/terminal_receipt_test.py',
-  ]) {
-    await command(`python-coverage-${test.split('/').at(-1)}`, coverageExecutable, [
-      'run', '--parallel-mode', '--branch',
-      '--source', instrumentedEnvironment.AEGIS_PYTHON_COVERAGE_SOURCE, test,
-    ], {env: instrumentedEnvironment});
-  }
+  ], {env: instrumentedEnvironment});
   await command('javascript-coverage-raw-validation', process.execPath, [
     'scripts/ci/validate-v8-raw.mjs', '--raw-dir', javascriptRawDirectory,
   ]);
