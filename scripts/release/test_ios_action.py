@@ -483,6 +483,9 @@ with ExitStack() as stack:
         job['steps'] = [{'name': 'start'}]
         with patch.object(action, 'api', api):
             self.assertFalse(action.unstarted_store_run(row))
+        job.update(name='delivery / private-beta-store', steps=[])
+        with patch.object(action, 'api', api):
+            self.assertFalse(action.unstarted_store_run(row))
 
     def test_nested_full_store_execution_is_not_mistaken_for_unstarted(self):
         row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery-full.yml', status='completed')
