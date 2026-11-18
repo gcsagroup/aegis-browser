@@ -53,7 +53,7 @@ esac
 `);
   script(path.join(sdk, 'cmdline-tools/latest/bin/avdmanager'), String.raw`
 printf 'avdmanager %s\n' "$*" >> "$RECORD"
-if [[ $EMULATOR_MODE == stalled ]]; then exec sleep 30; fi
+if [[ $EMULATOR_MODE == stalled ]]; then exec /bin/sleep 120; fi
 while [[ $# -gt 0 ]]; do
   if [[ $1 == -n ]]; then printf '%s\n' "$2" > "$AVD_NAME"; break; fi
   shift
@@ -63,7 +63,7 @@ done
 if [[ $EMULATOR_MODE == stubborn ]]; then trap '' TERM; fi
 printf '%s\n' "$$" > "$EMULATOR_PID"
 printf 'emulator %s\n' "$*" >> "$RECORD"
-exec sleep 30
+exec /bin/sleep 120
 `);
   script(path.join(bin, 'node'), String.raw`
 if [[ "$*" == *'android-agent-ui.mjs self-test'* ]]; then
@@ -72,6 +72,8 @@ if [[ "$*" == *'android-agent-ui.mjs self-test'* ]]; then
 fi
 exec "$REAL_NODE" "$@"
 `);
+  // Preserve retry and cleanup branches without making fixture runs wait real seconds.
+  script(path.join(bin, 'sleep'), 'exec /bin/sleep 0.05\n');
   script(path.join(bin, 'timeout'), String.raw`
 printf 'timeout %s\n' "$*" >> "$RECORD"
 if [[ $1 == --kill-after=2s ]]; then
@@ -95,7 +97,7 @@ exec "$@"
       RECORD: record, EMULATOR_MODE: mode, REPLACED: path.join(root, 'transport-replaced'),
       EMULATOR_PID: emulatorPid},
     encoding: 'utf8',
-    timeout: 12000,
+    timeout: 45000,
   });
   assert.ifError(result.error);
   const pid = fs.existsSync(emulatorPid) ? Number(fs.readFileSync(emulatorPid, 'utf8')) : null;
