@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-11-14",
+  "updated": "2026-11-18",
   "platforms": [
     "macOS",
     "Windows",
@@ -3282,6 +3282,131 @@
           "source": [
             "apps/browser/scripts/windows-uninstall-locales_test.py",
             "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "webpage-capture-ocr",
+      "name": {
+        "zh-CN": "整页截图与图片识字",
+        "en": "Full-page capture and image OCR",
+        "zh-TW": "整頁截圖與圖片識字"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码已包含截图、裁剪和识字；本轮仅完成源码边界测试，本次候选的图像识别、保存分享与用户确认仍待实机验收。",
+            "en": "Capture, cropping and OCR source is integrated. This run covers source boundaries only; recognition, saving, sharing and user confirmation still require candidate device acceptance.",
+            "zh-TW": "原始碼已包含截圖、裁剪和識字；本輪僅完成原始碼邊界測試，本次候選的圖像辨識、儲存分享與使用者確認仍待實機驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/resources/aegis/capture.js"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码已包含截图、裁剪和识字；本轮仅完成源码边界测试，本次候选的图像识别、保存分享与用户确认仍待实机验收。",
+            "en": "Capture, cropping and OCR source is integrated. This run covers source boundaries only; recognition, saving, sharing and user confirmation still require candidate device acceptance.",
+            "zh-TW": "原始碼已包含截圖、裁剪和識字；本輪僅完成原始碼邊界測試，本次候選的圖像辨識、儲存分享與使用者確認仍待實機驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/resources/aegis/capture.js"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码已包含截图、裁剪和识字；本轮仅完成源码边界测试，本次候选的图像识别、保存分享与用户确认仍待实机验收。",
+            "en": "Capture, cropping and OCR source is integrated. This run covers source boundaries only; recognition, saving, sharing and user confirmation still require candidate device acceptance.",
+            "zh-TW": "原始碼已包含截圖、裁剪和識字；本輪僅完成原始碼邊界測試，本次候選的圖像辨識、儲存分享與使用者確認仍待實機驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/resources/aegis/capture.js"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码已包含截图、裁剪和识字；本轮仅完成源码边界测试，本次候选的图像识别、保存分享与用户确认仍待实机验收。",
+            "en": "Capture, cropping and OCR source is integrated. This run covers source boundaries only; recognition, saving, sharing and user confirmation still require candidate device acceptance.",
+            "zh-TW": "原始碼已包含截圖、裁剪和識字；本輪僅完成原始碼邊界測試，本次候選的圖像辨識、儲存分享與使用者確認仍待實機驗收。"
+          },
+          "source": [
+            "apps/ios/AegisApp/WebpageCaptureView.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "devtools-mcp-isolation",
+      "name": {
+        "zh-CN": "DevTools 与 MCP 连接隔离",
+        "en": "DevTools and MCP connection isolation",
+        "zh-TW": "DevTools 與 MCP 連線隔離"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码和隔离适配器已接入；本次候选仍须实际验证目标隔离、导航权限重验、网络路由及断开清理，原型测试不代表浏览器验收。",
+            "en": "Source and isolated adapters are integrated. Target isolation, navigation revalidation, network routing and disconnect cleanup still need candidate runtime acceptance; prototype tests do not establish browser acceptance.",
+            "zh-TW": "原始碼和隔離配接器已接入；本次候選仍須實際驗證目標隔離、導覽權限重驗、網路路由及斷開清理，原型測試不代表瀏覽器驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/common/aegis/cdp_target_filter_unittest.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码和隔离适配器已接入；本次候选仍须实际验证目标隔离、导航权限重验、网络路由及断开清理，原型测试不代表浏览器验收。",
+            "en": "Source and isolated adapters are integrated. Target isolation, navigation revalidation, network routing and disconnect cleanup still need candidate runtime acceptance; prototype tests do not establish browser acceptance.",
+            "zh-TW": "原始碼和隔離配接器已接入；本次候選仍須實際驗證目標隔離、導覽權限重驗、網路路由及斷開清理，原型測試不代表瀏覽器驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/common/aegis/cdp_target_filter_unittest.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码和隔离适配器已接入；本次候选仍须实际验证目标隔离、导航权限重验、网络路由及断开清理，原型测试不代表浏览器验收。",
+            "en": "Source and isolated adapters are integrated. Target isolation, navigation revalidation, network routing and disconnect cleanup still need candidate runtime acceptance; prototype tests do not establish browser acceptance.",
+            "zh-TW": "原始碼和隔離配接器已接入；本次候選仍須實際驗證目標隔離、導覽權限重驗、網路路由及斷開清理，原型測試不代表瀏覽器驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/common/aegis/cdp_target_filter_unittest.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "iOS 使用独立 WebKit 和应用适配器；Chromium DevTools 目标过滤不适用，尚无本轮 iOS MCP 真机验收。",
+            "en": "iOS uses WebKit and a separate app adapter. Chromium DevTools target filtering does not apply, and no current iOS MCP device acceptance is claimed.",
+            "zh-TW": "iOS 使用獨立 WebKit 和應用程式配接器；Chromium DevTools 目標過濾不適用，尚無本輪 iOS MCP 實機驗收。"
+          },
+          "source": [
+            "prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs",
+            "apps/ios/AegisApp/MobileDevToolsView.swift"
           ],
           "validation": "not-run",
           "evidence": []

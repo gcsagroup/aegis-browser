@@ -56,6 +56,8 @@ class AegisUIHandler : public content::WebUIMessageHandler,
   bool RequireSupportedProfile(const base::Value& callback_id);
   base::DictValue BuildStatus();
   void HandleGetStatus(const base::ListValue& args);
+  void HandleGetImageOcrSettings(const base::ListValue& args);
+  void HandleSaveImageOcrSettings(const base::ListValue& args);
   void HandleSetModuleEnabled(const base::ListValue& args);
   void HandleOpenBrowserAgent(const base::ListValue& args);
   void HandleUpdateFilterLists(const base::ListValue& args);

@@ -5,7 +5,24 @@ set -euo pipefail
 
 CS="${CODESIGN:-/usr/bin/codesign}"
 SIGNING_IDENTITY="7C33B517942161311A087CE893D2F1CE9B204B44"
-SIGNING_REQUIREMENT="=anchor apple generic and certificate leaf = H\"$SIGNING_IDENTITY\" and certificate leaf[subject.OU] = \"R3JK7R29AC\""
+SIGNING_TEAM="R3JK7R29AC"
+SIGNING_LABEL="固定 GCSA 证书"
+# 仅限用户明确授权的独立本地验收，不改变默认团队签名身份。
+LOCAL_ACCEPTANCE="${AEGIS_MACOS_LOCAL_ACCEPTANCE:-0}"
+case "$LOCAL_ACCEPTANCE" in
+  0) ;;
+  1)
+    SIGNING_IDENTITY="${AEGIS_MACOS_LOCAL_SIGNING_IDENTITY:-}"
+    SIGNING_TEAM="${AEGIS_MACOS_LOCAL_SIGNING_TEAM:-}"
+    if [[ ! "$SIGNING_IDENTITY" =~ ^[0-9A-Fa-f]{40}$ || ! "$SIGNING_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
+      echo "本地验收需设置 AEGIS_MACOS_LOCAL_SIGNING_IDENTITY（40 位指纹）和 AEGIS_MACOS_LOCAL_SIGNING_TEAM（10 位 Team ID）" >&2
+      exit 1
+    fi
+    SIGNING_LABEL="本机开发证书（仅独立本地验收）"
+    ;;
+  *) echo "AEGIS_MACOS_LOCAL_ACCEPTANCE 仅支持 0 或 1" >&2; exit 1 ;;
+esac
+SIGNING_REQUIREMENT="=anchor apple generic and certificate leaf = H\"$SIGNING_IDENTITY\" and certificate leaf[subject.OU] = \"$SIGNING_TEAM\""
 APP="${1:-}"
 OUT_DIR="${2:-}"
 
@@ -15,6 +32,11 @@ if [[ -z "$APP" || ! -d "$APP" ]]; then
 fi
 
 PARENT="${OUT_DIR:-$(cd "$(dirname "$APP")" && pwd)}"
+if [[ "$LOCAL_ACCEPTANCE" == 1 ]] && \
+    ! grep -Eq '^is_official_build[[:space:]]*=[[:space:]]*false[[:space:]]*$' "$PARENT/args.gn"; then
+  echo "本机开发证书仅允许用于明确关闭 official build 的本地验收目录" >&2
+  exit 1
+fi
 APP_EXECUTABLE_NAME="$(basename "$APP" .app)"
 INFO_PLIST="$APP/Contents/Info.plist"
 if [[ -f "$INFO_PLIST" && -x /usr/libexec/PlistBuddy ]]; then
@@ -53,13 +75,13 @@ sign_one() {
   "$CS" --force --sign "$SIGNING_IDENTITY" --timestamp=none "$path"
 }
 
-echo "使用固定 GCSA 证书签名 $APP …"
+echo "使用${SIGNING_LABEL}签名 $APP …"
 
 # 只有整包 strict/deep 验证通过时才允许跳过。Chromium 的 linker-signed
 # 顶层经常能通过浅层 verify，但资源封装仍然无效。
 if verify_package; then
   echo "整包及固定证书验证通过，保留现有签名。"
-  if command -v xattr >/dev/null 2>&1; then
+  if [[ "$LOCAL_ACCEPTANCE" == 0 ]] && command -v xattr >/dev/null 2>&1; then
     xattr -cr "$APP" 2>/dev/null || true
   fi
   exit 0
@@ -100,7 +122,7 @@ fi
   --verbose=2 "$APP"
 
 # Drop quarantine so Finder double-click works for local builds.
-if command -v xattr >/dev/null 2>&1; then
+if [[ "$LOCAL_ACCEPTANCE" == 0 ]] && command -v xattr >/dev/null 2>&1; then
   xattr -cr "$APP" 2>/dev/null || true
   shopt -s nullglob
   for h in "$PARENT"/"$SIBLING_HELPER_PREFIX"*.app; do
@@ -109,5 +131,5 @@ if command -v xattr >/dev/null 2>&1; then
   shopt -u nullglob
 fi
 
-echo "GCSA 固定签名通过（R3JK7R29AC，严格整包校验）。"
+echo "${SIGNING_LABEL}签名通过（${SIGNING_TEAM}，严格整包校验）。"
 echo "此结果不代表 Developer ID 签名或公证。"

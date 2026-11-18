@@ -68,8 +68,12 @@ class ReleaseTest < ReleaseFixture
   end
 
   def test_actual_xcodegen_default_and_explicit_delivery_identity
-    write('apps/ios/project.yml', File.read(File.join(AegisRelease::ROOT, 'apps/ios/project.yml')))
-    assert_equal '1.0', request.version
+    source = File.read(File.join(AegisRelease::ROOT, 'apps/ios/project.yml'))
+    defaults = Psych.safe_load(source).fetch('settings').fetch('base')
+    write('apps/ios/project.yml', source)
+    native = request
+    assert_equal defaults.fetch('MARKETING_VERSION').to_s, native.version
+    assert_equal defaults.fetch('CURRENT_PROJECT_VERSION').to_s, native.build
     delivery = request(version: '1.0.1', build: '16')
     assert_equal '1.0.1', delivery.version
     assert_equal '16', delivery.build

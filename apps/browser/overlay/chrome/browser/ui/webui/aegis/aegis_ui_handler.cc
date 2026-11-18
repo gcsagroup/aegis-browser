@@ -31,6 +31,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/aegis/aegis_capture_handler.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
@@ -359,6 +360,14 @@ void AegisUIHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getStatus", base::BindRepeating(&AegisUIHandler::HandleGetStatus,
                                        base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getImageOcrSettings",
+      base::BindRepeating(&AegisUIHandler::HandleGetImageOcrSettings,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "saveImageOcrSettings",
+      base::BindRepeating(&AegisUIHandler::HandleSaveImageOcrSettings,
+                          base::Unretained(this)));
 #if BUILDFLAG(IS_MAC)
   web_ui()->RegisterMessageCallback(
       "getAccessAccountSnapshot",
@@ -581,6 +590,40 @@ void AegisUIHandler::HandleGetStatus(const base::ListValue& args) {
   AllowJavascript();
   const base::Value& callback_id = args[0];
   ResolveJavascriptCallback(callback_id, BuildStatus());
+}
+
+void AegisUIHandler::HandleGetImageOcrSettings(const base::ListValue& args) {
+  if (args.size() != 1 || !args[0].is_string()) {
+    return;
+  }
+  AllowJavascript();
+  const auto* profile = Profile::FromWebUI(web_ui());
+  if (!IsAegisWebUIProfileSupported(profile)) {
+    RejectJavascriptCallback(args[0], base::Value("unavailable"));
+    return;
+  }
+  ResolveJavascriptCallback(args[0],
+                            aegis::ReadImageOcrSettings(*profile->GetPrefs()));
+}
+
+void AegisUIHandler::HandleSaveImageOcrSettings(const base::ListValue& args) {
+  if (args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
+      !args[2].is_string()) {
+    return;
+  }
+  AllowJavascript();
+  auto* profile = Profile::FromWebUI(web_ui());
+  if (!IsAegisWebUIProfileSupported(profile)) {
+    RejectJavascriptCallback(args[0], base::Value("unavailable"));
+    return;
+  }
+  if (!aegis::SaveImageOcrSettings(*profile->GetPrefs(), args[1].GetString(),
+                                  args[2].GetString())) {
+    RejectJavascriptCallback(args[0], base::Value("invalidEndpoint"));
+    return;
+  }
+  ResolveJavascriptCallback(args[0],
+                            aegis::ReadImageOcrSettings(*profile->GetPrefs()));
 }
 
 #if BUILDFLAG(IS_MAC)

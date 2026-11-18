@@ -10,7 +10,7 @@ import XCTest
 final class WebsiteEnhancementTests: XCTestCase {
   private var directory: URL!
   private var tabs: [BrowserTab] = []
-  private var window: UIWindow?
+  private var tabWindows: [UIWindow] = []
   override func setUp() async throws {
     directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -18,8 +18,8 @@ final class WebsiteEnhancementTests: XCTestCase {
   override func tearDown() async throws {
     tabs.forEach { $0.stop() }
     tabs = []
-    window?.isHidden = true
-    window = nil
+    tabWindows.forEach { $0.isHidden = true }
+    tabWindows.removeAll()
     try? FileManager.default.removeItem(at: directory)
   }
   private func source(
@@ -36,25 +36,25 @@ final class WebsiteEnhancementTests: XCTestCase {
     XCTAssertTrue(predicate())
   }
   private func load(_ tab: BrowserTab, _ path: String = "/enhancements/page") async throws {
-    // BrowserTab 等待 WebView 挂载后才发起本机 HTTP 请求。
-    if tab.webView.window == nil {
-      let scene = try XCTUnwrap(UIApplication.shared.connectedScenes
-        .compactMap { $0 as? UIWindowScene }.first { $0.activationState != .unattached })
-      let window = self.window ?? UIWindow(windowScene: scene)
-      window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-      tab.webView.frame = window.bounds
-      window.addSubview(tab.webView)
-      window.makeKeyAndVisible()
-      self.window = window
-    }
     tab.load(URL(string: "http://127.0.0.1:8768" + path)!)
     try await wait { !tab.isLoading && tab.url?.path == path }
     XCTAssertNil(tab.loadingError)
   }
-  private func makeTab(_ store: WebsiteEnhancementStore) -> BrowserTab {
+  private func makeTab(_ store: WebsiteEnhancementStore) throws -> BrowserTab {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     let tab = BrowserTab(profile: .standard, configuration: configuration, enhancementStore: store)
+    // BrowserTab 将本机 HTTP 导航留到 WebView 真正挂载后开始。
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    let view = tab.webView
+    view.frame = controller.view.bounds
+    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    controller.view.addSubview(view)
+    tabWindows.append(window)
     tabs.append(tab)
     return tab
   }
@@ -137,7 +137,7 @@ final class WebsiteEnhancementTests: XCTestCase {
         globalThis.scriptSecret='isolated';
         """, grants: "GM.getValue,GM.setValue,GM_addStyle,GM_registerMenuCommand"))
     try store.setEnabled(script.id, revision: script.revision, enabled: true)
-    let tab = makeTab(store)
+    let tab = try makeTab(store)
     try await load(tab)
     try await wait { tab.userScripts.menus.count == 1 }
     let values =
@@ -172,7 +172,7 @@ final class WebsiteEnhancementTests: XCTestCase {
   }
   func testTrialStorageIsTemporaryAndWrongURLDoesNotRun() async throws {
     let store = WebsiteEnhancementStore()
-    let tab = makeTab(store)
+    let tab = try makeTab(store)
     try await load(tab)
     let draft = try store.saveScript(
       source: source(
@@ -211,7 +211,7 @@ final class WebsiteEnhancementTests: XCTestCase {
     var remote = MarkdownDocument(
       title: "Remote", text: "", sourceURL: URL(string: "https://example.com/a.md"))
     XCTAssertThrowsError(try remote.loadResources(from: directory, references: ["image.png"]))
-    let tab = makeTab(WebsiteEnhancementStore())
+    let tab = try makeTab(WebsiteEnhancementStore())
     try await load(tab, "/enhancements/document.md")
     let captured = try await MarkdownDocument.capture(tab)
     XCTAssertTrue(captured.text.contains("Markdown 验收"))
@@ -279,7 +279,7 @@ final class WebsiteEnhancementTests: XCTestCase {
         "document.body.dataset.frame='allowed';GM_registerMenuCommand(window===top?'顶层菜单':'子框架菜单',()=>document.body.dataset.oldMenu='bad');",
         grants: "GM_registerMenuCommand"), allFrames: true)
     try store.setEnabled(script.id, revision: script.revision, enabled: true)
-    let tab = makeTab(store)
+    let tab = try makeTab(store)
     try await load(tab)
     try await wait { tab.userScripts.menus.count == 2 }
     let matched =
@@ -323,7 +323,7 @@ final class WebsiteEnhancementTests: XCTestCase {
     let store = WebsiteEnhancementStore()
     let script = try store.saveScript(source: source("document.body.dataset.pausedTest='ran'; GM_registerMenuCommand('暂停验收',()=>document.body.dataset.pausedTest='menu');", grants: "GM_registerMenuCommand"))
     try store.setEnabled(script.id, revision: 1, enabled: true)
-    let tab = makeTab(store)
+    let tab = try makeTab(store)
     try await load(tab)
     try await wait { !tab.userScripts.menus.isEmpty }
     let menu = try XCTUnwrap(tab.userScripts.menus.first)

@@ -58,6 +58,8 @@ Source: supported by source or the product contract. Partial: defined difference
 | Mac account nodes, quota and sign-out isolation | Source | Not ported | Not ported | Partial |
 | Mac local core diagnostic privacy and sharing | Source | Not ported | Not ported | Not ported |
 | Windows uninstall prompt localization | Not ported | Source | Not ported | Not ported |
+| Full-page capture and image OCR | Source | Source | Source | Source |
+| DevTools and MCP connection isolation | Source | Source | Source | Partial |
 
 ## iOS scope and evidence
 
@@ -458,6 +460,22 @@ Runtime acceptance not completed for this item in this work。
 `windows-uninstall-localization` — This item is scoped to the Windows uninstaller; its source and tests do not establish implementation on this platform.
 
 Source：[apps/browser/scripts/windows-uninstall-locales_test.py](../apps/browser/scripts/windows-uninstall-locales_test.py) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+Runtime acceptance not completed for this item in this work。
+
+### Full-page capture and image OCR
+
+`webpage-capture-ocr` — Capture, cropping and OCR source is integrated. This run covers source boundaries only; recognition, saving, sharing and user confirmation still require candidate device acceptance.
+
+Source：[apps/ios/AegisApp/WebpageCaptureView.swift](../apps/ios/AegisApp/WebpageCaptureView.swift)
+
+Runtime acceptance not completed for this item in this work。
+
+### DevTools and MCP connection isolation
+
+`devtools-mcp-isolation` — iOS uses WebKit and a separate app adapter. Chromium DevTools target filtering does not apply, and no current iOS MCP device acceptance is claimed.
+
+Source：[prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs](../prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs) · [apps/ios/AegisApp/MobileDevToolsView.swift](../apps/ios/AegisApp/MobileDevToolsView.swift)
 
 Runtime acceptance not completed for this item in this work。
 

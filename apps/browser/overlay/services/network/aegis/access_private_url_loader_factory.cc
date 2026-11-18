@@ -160,6 +160,7 @@ AccessPrivateURLLoaderFactory::AccessPrivateURLLoaderFactory(
           std::move(params), std::move(scheduler), origin_access_list, this)) {
   CHECK(aegis_access::IsCompleteOwner(binding_.owner));
   CHECK(!incarnation_.empty());
+  cors_factory_->RequireAccessRouteForOverride();
   receivers_.Add(this, std::move(receiver));
   receivers_.set_disconnect_handler(base::BindRepeating(
       &AccessPrivateURLLoaderFactory::OnDisconnect, base::Unretained(this)));

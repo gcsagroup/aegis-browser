@@ -336,3 +336,11 @@
 0336-prepare-quota-security-candidate-314.patch
 0337-align-product-version-267.patch
 0338-build-share-access-core-source-manifest.patch
+0339-webpage-capture-ocr-320.patch
+0340-bundle-offline-ocr.patch
+0341-image-ocr-settings-322.patch
+0342-hide-unsupported-mobile-settings.patch
+0343-fix-remote-devtools-session-teardown.patch
+0344-validate-devtools-targets-at-navigation-commit.patch
+0345-prepare-integrated-candidate-339.patch
+0346-handle-ocr-lookup-and-errors.patch

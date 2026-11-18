@@ -501,3 +501,14 @@
 0501-fix-macos-ignored-ax-button.patch
 0502-build-share-access-core-source-manifest.patch
 0503-increase-markdown-reader-limit.patch
+0504-webpage-capture-ocr-320.patch
+0505-bundle-offline-ocr.patch
+0506-image-ocr-settings-322.patch
+0507-fix-remote-devtools-session-teardown.patch
+0508-validate-devtools-targets-at-navigation-commit.patch
+0509-fix-desktop-cdp-new-page.patch
+0510-fix-devtools-network-mock-access-route.patch
+0511-scope-devtools-extension-targets-to-owning-pipe.patch
+0512-prepare-integrated-candidate-339.patch
+0513-align-mobile-settings-overlay.patch
+0514-handle-ocr-lookup-and-errors.patch

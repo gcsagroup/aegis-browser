@@ -244,7 +244,8 @@ class LocalFixtureServer {
     };
     this.controlledResponses.set(pathname, record);
     return {
-      release: (body) => this.release(record, body),
+      release: (body = '<!doctype html><title>Aegis pending grant control</title>') =>
+        this.release(record, body),
       url: `${this.origin}${pathname}`,
       waitForRequest: () =>
         withTimeout(
@@ -678,19 +679,22 @@ async function verifyMalformedHandshakeConsumesGrant(endpoint, timeoutMs) {
   );
 }
 
+async function verifyPendingDocumentGrant(socketUrl, timeoutMs) {
+  // HTTP 101 表示浏览器已附加目标会话。待提交导航可能暂停渲染器命令，
+  // 因此这里验证一次性握手授权，页面提交后再验证脚本求值。
+  const firstClient = await CdpClient.connect(socketUrl, timeoutMs);
+  await expectWebSocketRejected(
+    socketUrl, timeoutMs, '待提交文档的第二次连接应被拒绝',
+  ).then(() => {
+    assert(firstClient.socket.readyState === WebSocket.OPEN, '首次授权应保持连接');
+  }).finally(() => firstClient.close());
+}
+
 async function verifyPendingAndPublicTargets(endpoint, fixture, timeoutMs) {
   const controlled = fixture.createControlledUrl('pending-public');
   const target = await endpoint.newTarget(controlled.url);
   await controlled.waitForRequest();
-  const pendingClient = await CdpClient.connect(
-    target.webSocketDebuggerUrl,
-    timeoutMs,
-  );
-  await (async () => {
-    await pendingClient.evaluateMarker('about:blank');
-  })().finally(async () => {
-    await pendingClient.close();
-  });
+  await verifyPendingDocumentGrant(target.webSocketDebuggerUrl, timeoutMs);
 
   controlled.release(
     '<!doctype html><title>Aegis pending public fixture</title>',
@@ -727,15 +731,8 @@ async function provePendingInitialGrantUsable(
   const controlled = fixture.createControlledUrl(label);
   const target = await endpoint.newTarget(controlled.url);
   await controlled.waitForRequest();
-  const client = await CdpClient.connect(target.webSocketDebuggerUrl, timeoutMs);
-  return await (async () => {
-    await client.evaluateMarker('about:blank');
-  })().finally(async () => {
-    await client.close();
-    controlled.release(
-      '<!doctype html><title>Aegis pending grant control</title>',
-    );
-  });
+  await verifyPendingDocumentGrant(target.webSocketDebuggerUrl, timeoutMs);
+  controlled.release();
 }
 
 async function verifyCrossDocumentInvalidatesGrant(endpoint, fixture, timeoutMs) {

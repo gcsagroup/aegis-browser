@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -109,6 +110,8 @@ def setup():
             import plistlib
             profile = plistlib.loads(run('security', 'cms', '-D', '-i', str(source)))
             uuid = validate_profile(profile, identifier, names[identifier], team, fingerprint)
+            (root / 'signer.cer').write_bytes(next(c for c in profile['DeveloperCertificates']
+                if hashlib.sha1(c).hexdigest().upper() == fingerprint.upper()))
             source.unlink()
             for directory in profile_dirs:
                 directory.mkdir(parents=True, exist_ok=True)
@@ -136,7 +139,15 @@ def setup():
         identities = run('security', 'find-identity', '-v', '-p', 'codesigning', str(keychain)).decode()
         if not has_identity(identities, fingerprint):
             raise ValueError('Expected Apple Distribution signing identity is unavailable')
-        run('security', 'list-keychains', '-d', 'user', '-s', str(keychain))
+        # Preserve existing certificate chains and other owners' active keychains.
+        current = shlex.split(run('security', 'list-keychains', '-d', 'user').decode())
+        run('security', 'list-keychains', '-d', 'user', '-s', str(keychain),
+            *(path for path in current if path != str(keychain)))
+        try:
+            run('security', 'verify-cert', '-L', '-c', str(root / 'signer.cer'), '-p', 'codeSign')
+        except ValueError:
+            raise ValueError('Apple Distribution signing certificate chain is not trusted') from None
+        (root / 'signer.cer').unlink()
     except BaseException:
         cleanup()
         raise

@@ -21,6 +21,210 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(app.webViews.staticTexts["页面提示注入已隔离"].waitForExistence(timeout: 8))
     }
 
+    func testBrowserPageShareCanCopyCurrentURL() throws {
+        let url = try webAppFixtureURL()
+        let app = launchApp()
+        navigate(app, to: url.absoluteString)
+        XCTAssertTrue(app.webViews.staticTexts["PWA_INSTALL_LANDING"].waitForExistence(timeout: 12))
+        tapBrowserButton("page-actions", in: app)
+        app.buttons["share-webpage"].tap()
+        let copy = app.cells.matching(NSPredicate(format: "label IN %@", ["Copy", "拷贝", "复制"])).firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 8))
+        attachScreenshot("Aegis 系统分享", app)
+        copy.tap()
+        XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
+        let address = app.textFields["address-field"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        address.tap()
+        address.clearAndType("AEGIS_BEFORE_PASTE")
+        XCTAssertEqual(address.value as? String, "AEGIS_BEFORE_PASTE")
+        address.typeKey("a", modifierFlags: .command)
+        address.typeKey("v", modifierFlags: .command)
+        XCTAssertEqual(address.value as? String, url.absoluteString)
+    }
+
+    func testSafariWebAppFromHomeScreen() throws {
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        safari.open(try webAppFixtureURL())
+        XCTAssertTrue(safari.webViews.staticTexts["PWA_INSTALL_LANDING"].waitForExistence(timeout: 15))
+        let share = safari.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["Share", "分享", "共享"])).firstMatch
+        if !share.isHittable {
+            let more = safari.buttons["MoreMenuButton"]
+            XCTAssertTrue(more.waitForExistence(timeout: 5))
+            more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        finishWebAppInstallation(from: safari)
+    }
+
+    func testAegisWebAppFromHomeScreen() throws {
+        let url = try webAppFixtureURL()
+        guard ProcessInfo.processInfo.environment["AEGIS_PWA_SIMULATOR_WITH_ENTITLEMENT"] == "1" else {
+            throw XCTSkip("此用例需要启用浏览器能力的模拟器验收构建")
+        }
+        let app = launchApp()
+        navigate(app, to: url.absoluteString)
+        XCTAssertTrue(app.webViews.staticTexts["PWA_INSTALL_LANDING"].waitForExistence(timeout: 12))
+        tapBrowserButton("page-actions", in: app)
+        app.buttons["share-webpage"].tap()
+        finishWebAppInstallation(from: app)
+    }
+
+    private func webAppFixtureURL() throws -> URL {
+        guard let raw = ProcessInfo.processInfo.environment["AEGIS_PWA_SIMULATOR_URL"],
+              let url = URL(string: raw), url.host == "127.0.0.1", url.path == "/mobile-web-app/install" else {
+            throw XCTSkip("需指定本机网页应用验收夹具")
+        }
+        return url
+    }
+
+    private func finishWebAppInstallation(from browser: XCUIApplication) {
+        let addToHome = browser.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", ["Add to Home Screen", "添加到主屏幕"])).firstMatch
+        let activities = browser.collectionViews["activityCollectionView"]
+        XCTAssertTrue(activities.waitForExistence(timeout: 8))
+        for _ in 0..<3 where !addToHome.isHittable { activities.swipeUp() }
+        attachScreenshot("网页应用分享操作", browser)
+        XCTAssertTrue(addToHome.isHittable)
+        addToHome.tap()
+        let add = browser.buttons.matching(NSPredicate(format: "label IN %@", ["Add", "添加"])).firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 8))
+        attachScreenshot("系统添加到主屏幕确认", browser)
+        add.tap()
+
+        let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCUIDevice.shared.press(.home)
+        let icon = home.icons["Aegis PWA QA"].firstMatch
+        for _ in 0..<6 where !icon.isHittable { home.swipeLeft() }
+        XCTAssertTrue(icon.isHittable)
+        attachScreenshot("主屏幕上的测试网页应用", home)
+        icon.tap()
+        let webApp = XCUIApplication(bundleIdentifier: "com.apple.webapp")
+        XCTAssertTrue(webApp.staticTexts["PWA_START_READBACK"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(webApp.staticTexts["PWA_STANDALONE"].firstMatch.exists)
+        attachScreenshot("从主屏幕以独立模式启动", webApp)
+
+        // SpringBoard 在长按菜单弹出时可能一直等待空闲。通过 Device Hub 清理并核对主屏幕。
+    }
+
+    func testWebpageCaptureWithImageOCRAndConfirmation() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixture = environment["AEGIS_CAPTURE_FIXTURE_URL"] else {
+            throw XCTSkip("需设置本机网页截图夹具地址")
+        }
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        if let url = environment["AEGIS_OCR_TEST_URL"], let token = environment["AEGIS_OCR_TEST_TOKEN"] {
+            app.launchEnvironment["AEGIS_OCR_TEST_URL"] = url
+            app.launchEnvironment["AEGIS_OCR_TEST_TOKEN"] = token
+        }
+        app.launch()
+        let address = app.textFields["address-field"]
+        XCTAssertTrue(address.waitForExistence(timeout: 12))
+        address.tap()
+        address.clearAndType(fixture)
+        address.typeText("\n")
+        let pageImage = app.webViews.images["订单测试图片"].firstMatch
+        XCTAssertTrue(pageImage.waitForExistence(timeout: 12))
+
+        tapBrowserButton("page-actions", in: app)
+        app.buttons["capture-full-webpage"].tap()
+        let preview = app.descendants(matching: .any)["webpage-image-preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 12))
+        let scroll = app.scrollViews.firstMatch
+        for _ in 0..<7 { scroll.swipeUp(velocity: .fast) }
+        let screen = try XCTUnwrap(XCUIScreen.main.screenshot().image.cgImage)
+        let recognition = VNRecognizeTextRequest()
+        recognition.recognitionLanguages = ["en-US"]
+        try VNImageRequestHandler(cgImage: screen).perform([recognition])
+        let visible = recognition.results?.compactMap { $0.topCandidates(1).first?.string }.joined() ?? ""
+        attachScreenshot("整页预览到达页尾", app)
+        XCTAssertTrue(visible.contains("6519"), visible)
+        app.descendants(matching: .any)["导出图片"].firstMatch.tap()
+        app.buttons["复制图片"].tap()
+        XCTAssertTrue(app.staticTexts["已复制"].exists)
+        app.buttons["完成"].tap()
+
+        XCTAssertTrue(pageImage.waitForExistence(timeout: 8))
+        pageImage.press(forDuration: 0.9)
+        let ocr = app.buttons["识别图片文字"].firstMatch
+        XCTAssertTrue(ocr.waitForExistence(timeout: 8))
+        ocr.tap()
+        let text = app.descendants(matching: .any)["webpage-ocr-result"]
+        XCTAssertTrue(text.waitForExistence(timeout: 12))
+        XCTAssertTrue(text.label.contains("E1024"))
+        app.buttons["复制全部文字"].tap()
+        XCTAssertTrue(app.staticTexts["已复制"].exists)
+        if environment["AEGIS_OCR_TEST_URL"] != nil {
+            app.buttons["webpage-ocr-remote"].tap()
+            XCTAssertTrue(app.buttons["webpage-ocr-send"].waitForExistence(timeout: 8))
+            app.buttons["取消"].tap()
+            XCTAssertTrue(text.exists)
+            let image = app.descendants(matching: .any)["webpage-image-preview"].firstMatch
+            let frame = image.frame
+            XCTAssertGreaterThan(frame.height, 30)
+            app.buttons["webpage-crop"].tap()
+            let base = app.coordinate(withNormalizedOffset: .zero)
+            let left = base.withOffset(CGVector(dx: frame.minX + 4, dy: frame.minY + 2))
+            let right = base.withOffset(CGVector(dx: frame.maxX - 4, dy: frame.minY + frame.height * 0.33))
+            left.press(forDuration: 0.05, thenDragTo: right)
+            XCTAssertTrue(app.buttons["恢复整张"].exists)
+            app.buttons["webpage-crop"].tap()
+            app.buttons["webpage-ocr-remote"].tap()
+            app.buttons["webpage-ocr-send"].tap()
+            let done = app.staticTexts["webpage-capture-status"]
+            XCTAssertTrue(done.waitForExistence(timeout: 15))
+            XCTAssertEqual(done.label, "已用服务器识别")
+            XCTAssertTrue(text.label.contains("5729"))
+            XCTAssertFalse(text.label.contains("E1024"))
+        }
+    }
+
+    func testImageOcrSettingsValidateAndPersist() {
+        let app = launchApp()
+        func openSettings() {
+            app.buttons["browser-more"].tap()
+            app.buttons["设置"].tap()
+            let hub = app.buttons["aegis-feature-settings"]
+            XCTAssertTrue(scrollPortableControl(hub, in: app, shortScroll: true))
+            hub.tap()
+            let entry = app.buttons["image-ocr-settings"]
+            XCTAssertTrue(scrollPortableControl(entry, in: app, shortScroll: true))
+            entry.tap()
+        }
+        func choose(_ mode: String) {
+            app.buttons["image-ocr-mode"].tap()
+            app.buttons[mode].tap()
+        }
+        openSettings()
+        choose("自定义服务器")
+        let endpoint = app.textFields["image-ocr-endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        endpoint.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
+        endpoint.clearAndType("http://ocr.example.test/v1/ocr")
+        XCTAssertEqual(endpoint.value as? String, "http://ocr.example.test/v1/ocr")
+        app.buttons["image-ocr-save"].tap()
+        let status = app.staticTexts["image-ocr-settings-status"]
+        XCTAssertEqual(status.label, "请输入以 /v1/ocr 结尾的 HTTPS 接口地址。")
+        endpoint.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
+        endpoint.clearAndType("https://ocr.example.test/v1/ocr")
+        XCTAssertEqual(endpoint.value as? String, "https://ocr.example.test/v1/ocr")
+        app.buttons["image-ocr-save"].tap()
+        XCTAssertEqual(status.label, "设置已保存。")
+        app.terminate()
+        app.launchArguments += ["--ui-testing-preferences-keep"]
+        app.launch()
+        openSettings()
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        XCTAssertEqual(endpoint.value as? String, "https://ocr.example.test/v1/ocr")
+        choose("仅本机识别")
+        app.buttons["image-ocr-save"].tap()
+        XCTAssertFalse(endpoint.exists)
+        XCTAssertEqual(status.label, "设置已保存。")
+        choose("使用 Aegis 服务")
+        app.buttons["image-ocr-save"].tap()
+    }
+
     func testPolicyBlocksHighRiskURLBeforeNetwork() {
         let app = launchApp()
         let address = app.textFields["address-field"]
@@ -965,6 +1169,8 @@ final class AegisUITests: XCTestCase {
         navigate(app, to: "http://127.0.0.1:8768/long-article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
         let page = app.webViews.firstMatch
+        let tabs = app.buttons["tabs-button"]
+        let more = app.buttons["browser-more"]
         XCTAssertGreaterThan(page.frame.width, app.frame.width * 0.98)
         XCTAssertGreaterThan(page.frame.height, app.frame.height * 0.80)
         XCTAssertFalse(app.staticTexts["webextension-status"].exists)
@@ -972,10 +1178,18 @@ final class AegisUITests: XCTestCase {
         metrics.name = "紧凑布局可视面积"; metrics.lifetime = .keepAlways; add(metrics)
         attachScreenshot("单行工具栏与完整网页", app)
         if UIDevice.current.userInterfaceIdiom == .phone {
+            let expandedTabsFrame = tabs.frame
+            XCTAssertGreaterThan(tabs.frame.midY, page.frame.midY)
+            XCTAssertGreaterThanOrEqual(app.textFields["address-field"].frame.width, 100)
             page.swipeUp()
             XCTAssertTrue(app.otherElements["browser-toolbar-collapsed"].waitForExistence(timeout: 5))
-            XCTAssertTrue(app.buttons["browser-more"].isHittable)
+            XCTAssertTrue(more.isHittable)
+            XCTAssertTrue(tabs.isHittable)
+            XCTAssertEqual(tabs.frame.midX, expandedTabsFrame.midX, accuracy: 1)
             attachScreenshot("向下浏览收起工具", app)
+            tabs.tap()
+            XCTAssertTrue(app.buttons["tab-group-selector"].waitForExistence(timeout: 5))
+            app.buttons["完成"].tap()
             page.swipeDown()
             XCTAssertTrue(app.otherElements["browser-toolbar-expanded"].waitForExistence(timeout: 5))
             page.swipeUp()
@@ -1009,6 +1223,14 @@ final class AegisUITests: XCTestCase {
         XCTAssertFalse(app.switches["access-site-proxy-toggle"].exists)
         XCTAssertTrue(app.staticTexts["filter-network-count"].exists)
         attachScreenshot("地址栏直接打开广告过滤", app)
+        app.buttons["完成"].tap()
+        let tabs = app.buttons["tabs-button"]
+        let more = app.buttons["browser-more"]
+        XCTAssertTrue(tabs.isHittable)
+        XCTAssertEqual(tabs.frame.maxX, more.frame.minX, accuracy: 2)
+        XCTAssertEqual(tabs.frame.midY, more.frame.midY, accuracy: 2)
+        tabs.tap()
+        XCTAssertTrue(app.buttons["tab-group-selector"].waitForExistence(timeout: 5))
         app.buttons["完成"].tap()
         app.buttons["browser-more"].tap()
         for (id, label) in [("new-tab-button", "新建标签页"), ("profile-menu", "普通"),

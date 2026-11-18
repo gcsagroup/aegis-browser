@@ -37,9 +37,36 @@ generate_grd("enhancement_resources") {
   ]
 }
 
+generate_grd("capture_resources") {
+  grd_prefix = "aegis_capture"
+  out_grd = "$target_gen_dir/capture_resources.grdp"
+  input_files_base_dir = rebase_path(".", "//")
+  input_files = [
+    "capture.html",
+    "capture.css",
+    "capture.js",
+    "offline_ocr.html",
+    "offline_ocr.js",
+    "ocr_assets/tesseract.min.js",
+    "ocr_assets/worker.min.js",
+    "ocr_assets/tesseract-core-lstm.wasm.js",
+    "ocr_assets/eng.traineddata.gz",
+    "ocr_assets/chi_sim.traineddata.gz",
+    "ocr_assets/chi_tra.traineddata.gz",
+    "ocr_assets/tesseract-js-LICENSE.txt",
+    "ocr_assets/tesseract-core-LICENSE.txt",
+    "ocr_assets/tesseract.min.js.LICENSE.txt",
+    "ocr_assets/worker.min.js.LICENSE.txt",
+    "ocr_assets/tessdata-LICENSE.txt",
+  ]
+}
+
 build_webui("build") {
-  extra_grdp_deps = [ ":enhancement_resources" ]
-  extra_grdp_files = [ "$target_gen_dir/enhancement_resources.grdp" ]
+  extra_grdp_deps = [ ":capture_resources", ":enhancement_resources" ]
+  extra_grdp_files = [
+    "$target_gen_dir/capture_resources.grdp",
+    "$target_gen_dir/enhancement_resources.grdp",
+  ]
   grd_prefix = "aegis"
   static_files = [
     "aegis.css",

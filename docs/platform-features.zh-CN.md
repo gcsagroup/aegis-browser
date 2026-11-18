@@ -58,6 +58,8 @@
 | Mac账户节点、额度和登出隔离 | 源码接入 | 未移植 | 未移植 | 部分 |
 | Mac本地核心诊断隐私与分享 | 源码接入 | 未移植 | 未移植 | 未移植 |
 | Windows卸载提示本地化 | 未移植 | 源码接入 | 未移植 | 未移植 |
+| 整页截图与图片识字 | 源码接入 | 源码接入 | 源码接入 | 源码接入 |
+| DevTools 与 MCP 连接隔离 | 源码接入 | 源码接入 | 源码接入 | 部分 |
 
 ## iOS 范围与依据
 
@@ -458,6 +460,22 @@ iOS 模拟器证据：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 `windows-uninstall-localization` — 本项按既有设计仅适用于Windows卸载器；不能将该端源码与测试视为本平台实现。
 
 源码：[apps/browser/scripts/windows-uninstall-locales_test.py](../apps/browser/scripts/windows-uninstall-locales_test.py) · [apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json)
+
+本项未完成本轮运行验收。
+
+### 整页截图与图片识字
+
+`webpage-capture-ocr` — 源码已包含截图、裁剪和识字；本轮仅完成源码边界测试，本次候选的图像识别、保存分享与用户确认仍待实机验收。
+
+源码：[apps/ios/AegisApp/WebpageCaptureView.swift](../apps/ios/AegisApp/WebpageCaptureView.swift)
+
+本项未完成本轮运行验收。
+
+### DevTools 与 MCP 连接隔离
+
+`devtools-mcp-isolation` — iOS 使用独立 WebKit 和应用适配器；Chromium DevTools 目标过滤不适用，尚无本轮 iOS MCP 真机验收。
+
+源码：[prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs](../prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs) · [apps/ios/AegisApp/MobileDevToolsView.swift](../apps/ios/AegisApp/MobileDevToolsView.swift)
 
 本项未完成本轮运行验收。
 

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/browser_command_controller.h"
+#include "chrome/browser/aegis/webpage_capture.h"
 
 #include <stddef.h>
 
@@ -1086,6 +1087,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
       break;
     case IDC_SHARING_HUB:
       SharingHub(browser_);
+      break;
+    case IDC_AEGIS_CAPTURE_FULL_PAGE:
+      aegis::CaptureFullWebpage(browser_->GetTabStripModel()->GetActiveWebContents());
       break;
     case IDC_SHARING_HUB_SCREENSHOT:
       ScreenshotCapture(browser_);
@@ -2195,6 +2199,7 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
                                         !forced_incognito || is_guest);
   command_updater->UpdateCommandEnabled(IDC_AEGIS_ENHANCEMENTS, IsAegisProfileSupported(profile));
   command_updater->UpdateCommandEnabled(IDC_AEGIS_MARKDOWN, IsAegisProfileSupported(profile));
+  command_updater->UpdateCommandEnabled(IDC_AEGIS_CAPTURE_FULL_PAGE, true);
   command_updater->UpdateCommandEnabled(IDC_SHOW_AEGIS,
                                         IsAegisProfileSupported(profile));
   command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,

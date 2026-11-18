@@ -34,6 +34,7 @@ inline constexpr char kBounceTrackingEnabled[] =
     "aegis.bounce_tracking_enabled";
 inline constexpr char kPolicyWorkerEnabled[] = "aegis.policy_worker_enabled";
 inline constexpr char kPrivacyAiEnabled[] = "aegis.privacy_ai_enabled";
+inline constexpr char kImageOcrSettings[] = "aegis.image_ocr_settings";
 inline constexpr char kModelProvider[] = "aegis.model_provider";
 inline constexpr char kModelBaseUrl[] = "aegis.model_base_url";
 inline constexpr char kModelName[] = "aegis.model_name";

@@ -242,3 +242,59 @@ def722d19ac021d22d5847a3b935201b5b8f6546:apps/ios/BrowserKit/Resources/security-
 699b2eb0af4c322873491bbd77f6f739e5ee3a56:.gitleaksignore:sourcegraph-access-token:155
 699b2eb0af4c322873491bbd77f6f739e5ee3a56:.gitleaksignore:sourcegraph-access-token:157
 699b2eb0af4c322873491bbd77f6f739e5ee3a56:.gitleaksignore:sourcegraph-access-token:159
+
+# OCR 资源补丁的提交摘要、对象摘要和上游资源编码已逐行核对。
+# apps/browser/patches-android/0323-bundle-offline-ocr.patch
+# 行 1 SHA-256 b2b14d7bca8c6c7f528e93261aed6a499adbf6b68c6d916e0d969fa63cff7ffe
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:1
+# 行 40 SHA-256 7275d62437f5089e7a371d98ea4635c6d59c64431b5117d12a63ea0e67e850ec
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:40
+# 行 32925 SHA-256 b81c1f24ac24418a0b6da4e5e961190e009038d011e34d21169ad3f9d79a3ec1
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:32925
+# 行 64582 SHA-256 b8bbe2fb348331db603a6661b45d5839a2227cc001c484dd198e019f83302f42
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:64582
+# 行 121316 SHA-256 0a809a1bdea71e7830f7d87e03f55b05aa7ed49fa56af72e22042baffd780748
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:121316
+# 行 121384 SHA-256 32099f716a96ecfba5fdabda006d2b42fb60498762967c38931b64d2a3592421
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:121384
+# 行 121566 SHA-256 23fbb3c857508e0e3a2210278de1011fc7fb28247f735322d882fe4f9bff0cfa
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:121566
+# 行 121774 SHA-256 ed87f2299f6e4c260c11be504f22bcf03b7b55f858b09b4845510ab26a258d9d
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:121774
+# 行 122063 SHA-256 b131e300d724ad0299992f40ebf3b1e3e76703daae761e3078efb23f2aad733d
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:122063
+# 行 122270 SHA-256 b84ce52feede62c595d4249cac71d69171c86226a9d72772c676d5790ae60743
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:122270
+# 行 122280 SHA-256 25f740cb2c98d92747a0a5c9fc9a245892445e14c04057a8d7cb5f4e8c2b04b9
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:122280
+# 行 122287 SHA-256 d0eaab0cd6cf34d0ebae79910b70ef88751076f23067742e6d6fb301bcd8cf99
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:122287
+# 行 122307 SHA-256 a14ef60c06b2a07257e3a30108389f3876af58693e80a740c938bda81d76ae79
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches-android/0323-bundle-offline-ocr.patch:sourcegraph-access-token:122307
+# apps/browser/patches/0486-bundle-offline-ocr.patch
+# 行 1 SHA-256 a1874fc61d4bab3468aefed4462329f8982bd6496d8d75e35cc0cb8dbbb40177
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:1
+# 行 40 SHA-256 7275d62437f5089e7a371d98ea4635c6d59c64431b5117d12a63ea0e67e850ec
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:40
+# 行 32925 SHA-256 b81c1f24ac24418a0b6da4e5e961190e009038d011e34d21169ad3f9d79a3ec1
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:32925
+# 行 64582 SHA-256 b8bbe2fb348331db603a6661b45d5839a2227cc001c484dd198e019f83302f42
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:64582
+# 行 121316 SHA-256 0a809a1bdea71e7830f7d87e03f55b05aa7ed49fa56af72e22042baffd780748
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:121316
+# 行 121384 SHA-256 32099f716a96ecfba5fdabda006d2b42fb60498762967c38931b64d2a3592421
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:121384
+# 行 121566 SHA-256 23fbb3c857508e0e3a2210278de1011fc7fb28247f735322d882fe4f9bff0cfa
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:121566
+# 行 121774 SHA-256 ed87f2299f6e4c260c11be504f22bcf03b7b55f858b09b4845510ab26a258d9d
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:121774
+# 行 122063 SHA-256 b131e300d724ad0299992f40ebf3b1e3e76703daae761e3078efb23f2aad733d
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:122063
+# 行 122270 SHA-256 b84ce52feede62c595d4249cac71d69171c86226a9d72772c676d5790ae60743
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:122270
+# 行 122280 SHA-256 25f740cb2c98d92747a0a5c9fc9a245892445e14c04057a8d7cb5f4e8c2b04b9
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:122280
+# 行 122287 SHA-256 d0eaab0cd6cf34d0ebae79910b70ef88751076f23067742e6d6fb301bcd8cf99
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:122287
+# 行 122307 SHA-256 a14ef60c06b2a07257e3a30108389f3876af58693e80a740c938bda81d76ae79
+f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:122307

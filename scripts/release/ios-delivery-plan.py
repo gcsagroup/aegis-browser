@@ -46,13 +46,17 @@ def reject_constant(_value):
     raise ValueError('Non-finite Full JSON is not allowed')
 
 
-def normalize(event, ref, inputs, mode='simple'):
-    allowed = {'operation', 'product', 'version', 'build', 'signing_mode', 'private_beta'}
+def normalize(event, ref, inputs, mode='simple', source_sha=None):
+    allowed = {'operation', 'product', 'version', 'build', 'signing_mode', 'private_beta', 'approved_source_sha'}
     if mode == 'full':
         allowed |= {'source', 'groups', 'stage_input', 'package_entrypoint'}
     require(mode in {'simple', 'full'}, 'Unknown delivery mode')
     require(isinstance(inputs, dict) and not inputs.keys()-allowed and all(isinstance(v, str) for v in inputs.values()),
             'Unknown or invalid delivery inputs')
+    approved = inputs.get('approved_source_sha', '')
+    if approved:
+        require(re.fullmatch(r'[0-9a-f]{40}', approved) is not None and approved == source_sha,
+                'Approved source differs from this workflow source')
     if event == 'push':
         require(mode == 'simple', 'Only the canonical entrypoint accepts candidate tags')
         return _normalize_stage(event, ref, inputs)
@@ -205,7 +209,8 @@ if __name__ == '__main__':
     raw = os.environ.get('DELIVERY_INPUTS')
     require(raw is None or len(raw.encode()) <= 131072, 'Delivery inputs exceed bound')
     inputs = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant) if raw else event.get('inputs') or {}
-    values = normalize(os.environ['GITHUB_EVENT_NAME'], os.environ['GITHUB_REF'], inputs, os.environ.get('DELIVERY_MODE', 'simple'))
+    values = normalize(os.environ['GITHUB_EVENT_NAME'], os.environ['GITHUB_REF'], inputs,
+                       os.environ.get('DELIVERY_MODE', 'simple'), source_sha=os.environ.get('GITHUB_SHA'))
     if os.environ['GITHUB_EVENT_NAME'] == 'push':
         def github(path):
             result = subprocess.run(['gh', 'api', 'repos/' + os.environ['GITHUB_REPOSITORY'] + '/' + path], capture_output=True)

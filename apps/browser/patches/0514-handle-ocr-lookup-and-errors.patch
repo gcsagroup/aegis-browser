@@ -1,0 +1,81 @@
+From f78ded94c295505931763acc087e4436b2b5698c Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Tue, 17 Nov 2026 21:18:32 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20OCR=20=E9=A1=B5=E9=9D=A2?=
+ =?UTF-8?q?=E6=9F=A5=E6=89=BE=E4=B8=8E=E5=BC=82=E5=B8=B8=E5=A4=84=E7=90=86?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index eeca84719e44e586d0a9126d6c2c03480457d9bc..034955c980c7a238598e5074adf256f4104d6bfa 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -1557,7 +1557,7 @@ async function initializeImageOcrSettings() {
+   try {
+     renderSaved(await requestSettings<ImageOcrSettings>('getImageOcrSettings'));
+     fields.disabled = false;
+-  } catch (_) {
++  } catch (error) {
+     status.textContent = settingsText('无法读取设置，请重新打开此页。', 'Could not load settings. Reopen this page.', '無法讀取設定，請重新開啟此頁。');
+   }
+ }
+@@ -1575,7 +1575,7 @@ async function init() {
+       const result: AegisStatus = await sendWithPromise('openBrowserAgent', section);
+       if (result.ok === false) throw new Error(result.error || 'unavailable');
+     });
+-    void initializeImageOcrSettings();
++    void initializeImageOcrSettings().catch((error) => { console.error(error); });
+   }
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+diff --git a/chrome/browser/resources/aegis/capture.js b/chrome/browser/resources/aegis/capture.js
+index 2a897cf7b0db2c5b4c4f3d7bbe0982e470038b51..3d067b1aac95d3d6b68ab14994ab5f99d93ff597 100644
+--- a/chrome/browser/resources/aegis/capture.js
++++ b/chrome/browser/resources/aegis/capture.js
+@@ -2,7 +2,7 @@ import {sendWithPromise} from 'chrome://resources/js/cr.js';
+ 
+ const locale = navigator.language.toLowerCase();
+ const language = /^zh-(tw|hk|mo|hant)/.test(locale) ? 2 : locale.startsWith('zh') ? 1 : 0;
+-const copy = {
++const copy = new Map(Object.entries({
+   screenshot: ['Full page screenshot', '整页截图', '整頁截圖'],
+   recognize: ['Recognize image text', '识别图片文字', '辨識圖片文字'],
+   unavailable: ['The page could not be captured.', '无法截取这个网页。', '無法截取這個網頁。'],
+@@ -33,10 +33,10 @@ const copy = {
+   remoteDone: ['Recognized on server.', '已用服务器识别。', '已用伺服器辨識。'],
+   settingsChanged: ['Server settings changed. Open the upload preview again.', '服务器设置已变更，请重新打开上传预览。', '伺服器設定已變更，請重新開啟上傳預覽。'],
+   limited: ['Crop to a smaller area to send it.', '请裁成更小的区域后发送。', '請裁成更小的區域後傳送。'],
+-};
++}));
+ 
+ const $ = id => document.getElementById(id);
+-const t = key => copy[key][language];
++const t = key => copy.get(key).at(language);
+ const status = key => { $('status').textContent = key ? t(key) : ''; };
+ const source = $('source');
+ const paper = $('paper');
+@@ -144,7 +144,7 @@ function base64Image(blob) {
+ async function refreshRemoteAvailability() {
+   try {
+     $('server').hidden = !await sendWithPromise('aegisCaptureGetRemoteDestination');
+-  } catch (_) {
++  } catch (error) {
+     $('server').hidden = true;
+   }
+ }
+diff --git a/chrome/browser/resources/aegis/offline_ocr.js b/chrome/browser/resources/aegis/offline_ocr.js
+index 9dab32a708f6461b439269c7f72084e31638003f..e42bcd1fd91e4ee4c54fb08c0f0f9ebd9abda0d2 100644
+--- a/chrome/browser/resources/aegis/offline_ocr.js
++++ b/chrome/browser/resources/aegis/offline_ocr.js
+@@ -3,7 +3,7 @@ const assets = new URL('ocr_assets/', location.href);
+ const workerPath = new URL('worker.min.js', assets).href;
+ 
+ if (globalThis.trustedTypes) {
+-  trustedTypes.createPolicy('default', {
++  globalThis.trustedTypes.createPolicy('default', {
+     createScriptURL(value) {
+       if (value === workerPath) return value;
+       throw new TypeError('Unexpected OCR worker');

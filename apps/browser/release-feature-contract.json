@@ -437,7 +437,7 @@
         "apps/browser/tests/enhancements/settings-editing.test.mjs"
       ],
       "additionalChecks": "真实候选须覆盖八类设置入口、旧链接和参数保留、未保存表单、跨页来源校验、保存后重启回填、本地语言包保留与非可信来源隔离；DOM及脚本测试不能代替本次产物验收。",
-      "androidAcceptance": "按已合入main的移动设置布局验收手机、折叠内屏和横屏，覆盖返回路径、下载展开表单、阅读入口及资料保留；尚未合入的Android原生设置页面不在本候选范围。"
+      "androidAcceptance": "按已合入main的移动设置布局验收手机、折叠内屏和横屏，覆盖菜单与底部导航、支持的设置分类、旧入口返回、下载展开表单、OCR和阅读入口及资料保留。iOS使用独立WebKit验收，不由本合同的Chromium平台收据替代。"
     },
     {
       "id": "mac-access-site-proxy-session",
@@ -498,6 +498,39 @@
         "win-x64"
       ],
       "additionalChecks": "使用本次Windows真实构建执行python3 apps/browser/scripts/windows-uninstall-locales_test.py <src> <out>，读取英文、简体和繁体语言包；再实际确认卸载提示，不卸载日常App。"
+    },
+    {
+      "id": "webpage-capture-ocr",
+      "name": "整页截图、裁剪、离线识字及确认后服务器识字",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "sourceRegressionTests": [
+        "apps/browser/scripts/webpage-capture_test.mjs",
+        "services/webpage_ocr/test_server.py"
+      ],
+      "additionalChecks": "使用本次产物截取长页和图片，核对裁剪像素、复制/保存/分享、离线简繁英文识字；服务器识字仅在预览目标与图片并由用户确认后发送，覆盖取消、目标设置变更、超限、超时、失败重试和资料隔离。JS/服务夹具只验证边界，不能代替真实图像识别或App验收。",
+      "androidAcceptance": "在真实ARM64设备验证长按图片识字、长截图和系统分享/安装确认；不得套用桌面菜单或模拟器结果。"
+    },
+    {
+      "id": "devtools-mcp-isolation",
+      "name": "DevTools与MCP目标创建、导航访问重验及连接隔离",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "testFilters": [
+        "CdpTargetFilterTest.*"
+      ],
+      "sourceRegressionTests": [
+        "prototypes/browser-agent-v2/test/security.test.mjs",
+        "prototypes/browser-agent-v2/test/mcp-stdio-client.test.mjs",
+        "prototypes/browser-agent-v2/test/android-web-app-mcp.test.mjs"
+      ],
+      "additionalChecks": "使用隔离资料和本次App运行MCP连接，覆盖新建页面、允许目标导航、提交导航后的权限重验、扩展目标仅所属连接可见、断开清理、网络mock与Access路线；原型适配器或单测不代表浏览器实际授权完成。"
     }
   ]
 }

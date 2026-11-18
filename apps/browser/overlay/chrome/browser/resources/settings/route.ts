@@ -150,6 +150,7 @@ function createRoutes(): SettingsRoutes {
   r.AEGIS_AI = r.AEGIS.createSection('/aegisAi', 'aegisAi', loadTimeData.getString('aegisAiTitle'));
   r.AEGIS_EXPERIMENTS = r.AEGIS.createSection('/aegisExperiments', 'aegisExperiments', loadTimeData.getString('aegisExperimentsTitle'));
   r.AEGIS_DOWNLOADS = r.AEGIS.createSection('/aegisDownloads', 'aegisDownloads', loadTimeData.getString('aegisDownloadsTitle'));
+  r.AEGIS_OCR = r.AEGIS.createSection('/aegisOcr', 'aegisOcr', loadTimeData.getString('aegisOcrTitle'));
   r.AEGIS_TOOLS = r.AEGIS.createSection('/aegisTools', 'aegisTools', loadTimeData.getString('aegisToolsTitle'));
 
   r.ABOUT = r.BASIC.createSection(

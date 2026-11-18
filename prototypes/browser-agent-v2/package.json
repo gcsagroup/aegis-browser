@@ -7,6 +7,7 @@
     "test": "node --test",
     "test:unit": "node --test test/*.test.mjs",
     "fixture:preview": "node src/fixture-preview.mjs",
+    "devtools:smoke": "node src/chrome-devtools-smoke.mjs",
     "p0:smoke": "node src/p0-playwright-mcp.mjs E2",
     "p0:matrix": "node src/p0-matrix.mjs",
     "p1:preflight": "node src/p1-browser-use-preflight.mjs",
@@ -28,5 +29,8 @@
     "@browserbasehq/stagehand": "4.0.2",
     "@playwright/mcp": "0.0.79",
     "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "chrome-devtools-mcp": "1.13.0"
   }
 }
