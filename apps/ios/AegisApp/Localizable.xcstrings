@@ -21,6 +21,72 @@
             "state": "translated",
             "value": "圖片文字辨識"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texterkennung in Bildern"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconocimiento de texto en imágenes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnaissance du texte dans les images"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengenalan teks pada gambar"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riconoscimento del testo nelle immagini"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像内の文字認識"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 텍스트 인식"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengecaman teks dalam imej"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconhecimento de texto em imagens"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การจดจำข้อความในภาพ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhận dạng văn bản trong ảnh"
+          }
         }
       }
     },
@@ -43,6 +109,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "設定本機辨識與伺服器備援"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erkennung auf diesem Gerät und Server als Ausweichoption konfigurieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurar el reconocimiento en el dispositivo y el servidor alternativo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurer la reconnaissance sur l’appareil et le serveur de secours"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atur pengenalan di perangkat dan server cadangan"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configura il riconoscimento sul dispositivo e il server alternativo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイス上での認識と代替サーバーを設定"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기 내 인식 및 대체 서버 설정"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tetapkan pengecaman pada peranti dan pelayan sandaran"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurar o reconhecimento no dispositivo e o servidor de recurso"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ตั้งค่าการจดจำข้อความในเครื่องและเซิร์ฟเวอร์สำรอง"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thiết lập nhận dạng trên thiết bị và máy chủ dự phòng"
           }
         }
       }
@@ -67,6 +199,72 @@
             "state": "translated",
             "value": "伺服器備援"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server als Ausweichoption"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor como alternativa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur de secours"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server cadangan"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server come alternativa"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代替サーバー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대체 서버"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pelayan sandaran"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor de recurso"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เซิร์ฟเวอร์สำรองสำหรับการจดจำข้อความ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Máy chủ dự phòng"
+          }
         }
       }
     },
@@ -89,6 +287,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用 Aegis 服務"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aegis-Dienst verwenden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar el servicio de Aegis"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser le service Aegis"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gunakan layanan Aegis"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa il servizio Aegis"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aegis サービスを使用"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aegis 서비스 사용"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gunakan perkhidmatan Aegis"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar o serviço Aegis"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ใช้บริการ Aegis"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dùng dịch vụ Aegis"
           }
         }
       }
@@ -113,6 +377,72 @@
             "state": "translated",
             "value": "自訂伺服器"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Benutzerdefinierter Server"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor personalizado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur personnalisé"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server khusus"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server personalizzato"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムサーバー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 지정 서버"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pelayan tersuai"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor personalizado"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เซิร์ฟเวอร์ที่กำหนดเอง"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Máy chủ tùy chỉnh"
+          }
         }
       }
     },
@@ -135,6 +465,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "僅本機辨識"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erkennung nur auf diesem Gerät"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconocimiento solo en este dispositivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnaissance sur cet appareil uniquement"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengenalan hanya di perangkat ini"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riconoscimento solo su questo dispositivo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイス上でのみ認識"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기에서만 인식"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengecaman pada peranti ini sahaja"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconhecimento apenas neste dispositivo"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "จดจำข้อความในเครื่องนี้เท่านั้น"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chỉ nhận dạng trên thiết bị này"
           }
         }
       }
@@ -159,6 +555,72 @@
             "state": "translated",
             "value": "HTTPS 端點位址"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS-Endpunkt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección del punto de conexión HTTPS"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse du point de terminaison HTTPS"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alamat endpoint HTTPS"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indirizzo dell’endpoint HTTPS"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS エンドポイントのアドレス"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS 엔드포인트 주소"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alamat titik akhir HTTPS"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endereço do ponto de acesso HTTPS"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ที่อยู่ปลายทาง HTTPS"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Địa chỉ điểm cuối HTTPS"
+          }
         }
       }
     },
@@ -181,6 +643,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "此版本尚未設定 Aegis 伺服器。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für diese Version ist kein Aegis-Server konfiguriert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta versión aún no tiene configurado un servidor de Aegis."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun serveur Aegis n’est encore configuré pour cette version."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Aegis belum dikonfigurasi untuk versi ini."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per questa versione non è ancora stato configurato un server Aegis."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバージョンでは Aegis サーバーがまだ設定されていません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 버전에는 Aegis 서버가 아직 설정되어 있지 않습니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pelayan Aegis belum dikonfigurasi untuk versi ini."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ainda não foi configurado um servidor Aegis para esta versão."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เวอร์ชันนี้ยังไม่ได้ตั้งค่าเซิร์ฟเวอร์ Aegis"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phiên bản này chưa được cấu hình máy chủ Aegis."
           }
         }
       }
@@ -205,6 +733,72 @@
             "state": "translated",
             "value": "優先在本機辨識。使用伺服器時，每次傳送前都需要確認。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Erkennung erfolgt zuerst auf diesem Gerät. Vor jedem Senden an einen Server ist eine Bestätigung erforderlich."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El reconocimiento se intenta primero en este dispositivo. Debes confirmar cada envío al servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La reconnaissance est d’abord tentée sur cet appareil. Chaque envoi au serveur nécessite une confirmation préalable."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengenalan dicoba terlebih dahulu di perangkat ini. Setiap pengiriman ke server memerlukan konfirmasi terlebih dahulu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il riconoscimento viene tentato prima su questo dispositivo. Ogni invio al server richiede una conferma preventiva."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まずこのデバイス上で認識を試みます。サーバーを使用する場合は、送信のたびに事前の確認が必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 이 기기에서 인식을 시도합니다. 서버를 사용하는 경우 매번 전송 전에 확인해야 합니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengecaman dicuba pada peranti ini terlebih dahulu. Pengesahan diperlukan sebelum setiap penghantaran ke pelayan."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O reconhecimento é tentado primeiro neste dispositivo. É necessário confirmar cada envio para o servidor antes de o efetuar."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ระบบจะลองจดจำข้อความในเครื่องนี้ก่อน หากใช้เซิร์ฟเวอร์ ต้องยืนยันก่อนส่งทุกครั้ง"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quá trình nhận dạng được thử trước tiên trên thiết bị này. Mỗi lần gửi lên máy chủ đều cần xác nhận trước."
+          }
         }
       }
     },
@@ -227,6 +821,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "請輸入以 /v1/ocr 結尾的 HTTPS 端點位址。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geben Sie einen HTTPS-Endpunkt ein, der auf /v1/ocr endet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce una dirección HTTPS que termine en /v1/ocr."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez une adresse HTTPS se terminant par /v1/ocr."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masukkan alamat endpoint HTTPS yang diakhiri dengan /v1/ocr."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inserisci l’indirizzo di un endpoint HTTPS che termini con /v1/ocr."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "末尾が /v1/ocr の HTTPS エンドポイントのアドレスを入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/v1/ocr로 끝나는 HTTPS 엔드포인트 주소를 입력하세요."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masukkan alamat titik akhir HTTPS yang berakhir dengan /v1/ocr."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduza um endereço HTTPS que termine em /v1/ocr."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ป้อนที่อยู่ปลายทาง HTTPS ที่ลงท้ายด้วย /v1/ocr"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhập địa chỉ điểm cuối HTTPS kết thúc bằng /v1/ocr."
           }
         }
       }
@@ -251,6 +911,72 @@
             "state": "translated",
             "value": "用伺服器辨識"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem Server erkennen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconocer en el servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnaître sur le serveur"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kenali di server"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riconosci sul server"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーで認識"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버에서 인식"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cam pada pelayan"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconhecer no servidor"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "จดจำข้อความบนเซิร์ฟเวอร์"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhận dạng trên máy chủ"
+          }
         }
       }
     },
@@ -273,6 +999,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "僅將預覽中的圖片傳送給下列伺服器。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur das in der Vorschau gezeigte Bild wird an den unten angegebenen Server gesendet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se enviará la imagen de la vista previa al servidor indicado a continuación."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seule l’image affichée dans l’aperçu sera envoyée au serveur indiqué ci-dessous."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hanya gambar yang ditampilkan dalam pratinjau yang dikirim ke server di bawah ini."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al server indicato qui sotto verrà inviata solo l’immagine mostrata nell’anteprima."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューに表示されている画像だけが、以下のサーバーに送信されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 보기에 표시된 이미지만 아래 서버로 전송됩니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hanya imej yang dipaparkan dalam pratonton akan dihantar ke pelayan di bawah."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Só a imagem apresentada na pré-visualização será enviada para o servidor indicado abaixo."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ระบบจะส่งเฉพาะภาพที่แสดงในตัวอย่างไปยังเซิร์ฟเวอร์ด้านล่าง"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chỉ ảnh hiển thị trong bản xem trước sẽ được gửi đến máy chủ bên dưới."
           }
         }
       }
@@ -297,6 +1089,72 @@
             "state": "translated",
             "value": "伺服器設定已變更，請重新開啟上傳預覽。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Servereinstellungen wurden geändert. Öffnen Sie die Upload-Vorschau erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuración del servidor ha cambiado. Vuelve a abrir la vista previa de la carga."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les réglages du serveur ont changé. Rouvrez l’aperçu de l’envoi."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengaturan server telah berubah. Buka kembali pratinjau unggahan."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le impostazioni del server sono cambiate. Riapri l’anteprima del caricamento."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバー設定が変更されました。アップロードのプレビューを開き直してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버 설정이 변경되었습니다. 업로드 미리 보기를 다시 여세요."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tetapan pelayan telah berubah. Buka semula pratonton muat naik."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As definições do servidor foram alteradas. Volte a abrir a pré-visualização do envio."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การตั้งค่าเซิร์ฟเวอร์เปลี่ยนแปลงแล้ว โปรดเปิดตัวอย่างก่อนอัปโหลดอีกครั้ง"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cài đặt máy chủ đã thay đổi. Hãy mở lại bản xem trước nội dung tải lên."
+          }
         }
       }
     },
@@ -319,6 +1177,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "已用伺服器辨識"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem Server erkannt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconocido en el servidor"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnu sur le serveur"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dikenali di server"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riconosciuto sul server"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーで認識済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버에서 인식됨"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dicam pada pelayan"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconhecido no servidor"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "จดจำข้อความบนเซิร์ฟเวอร์แล้ว"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã nhận dạng trên máy chủ"
           }
         }
       }
@@ -79818,6 +80742,72 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件超過 16 MiB，請查看原始檔案。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Dokument ist größer als 16 MiB. Öffnen Sie die Originaldatei."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El documento supera los 16 MiB. Consulta el archivo original."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le document dépasse 16 MiB. Consultez le fichier d’origine."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dokumen melebihi 16 MiB. Lihat file asli."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il documento supera i 16 MiB. Consulta il file originale."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文書が 16 MiB を超えています。元のファイルを確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문서가 16 MiB를 초과합니다. 원본 파일을 확인하세요."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dokumen melebihi 16 MiB. Lihat fail asal."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O documento excede 16 MiB. Consulte o ficheiro original."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เอกสารมีขนาดเกิน 16 MiB โปรดดูไฟล์ต้นฉบับ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tài liệu có dung lượng vượt quá 16 MiB. Hãy xem tệp gốc."
           }
         }
       }
