@@ -33,7 +33,7 @@ struct AccessLocalCoreInput {
 // Resolves paths only. File parsing, pins, process launch and readiness remain
 // on the core IO thread. Alpha never takes node paths from command-line flags.
 std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput();
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 // Display-only anonymous label. Call on a blocking sequence.
 std::string ReadConfiguredAccessNodeId(const AccessLocalCoreInput& input);
 #endif

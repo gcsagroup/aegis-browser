@@ -425,7 +425,7 @@ class AccessSiteProxyProductTest : public testing::Test {
   OwnershipKey owner_;
 };
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 TEST_F(AccessSiteProxyProductTest, DualSelectionReleasesPaidOnlyAfterCommittedLocalOff) {
   Enable();
   ASSERT_TRUE(transport_->SetAccountNodeSites({"news.example"}, "", 0, ""));

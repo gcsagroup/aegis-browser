@@ -343,7 +343,7 @@ base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
 
 AegisUIHandler::AegisUIHandler() = default;
 AegisUIHandler::~AegisUIHandler() {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   OnJavascriptDisallowed();
 #endif
   if (active_model_request_id_) {
@@ -368,7 +368,7 @@ void AegisUIHandler::RegisterMessages() {
       "saveImageOcrSettings",
       base::BindRepeating(&AegisUIHandler::HandleSaveImageOcrSettings,
                           base::Unretained(this)));
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   web_ui()->RegisterMessageCallback(
       "getAccessAccountSnapshot",
       base::BindRepeating(&AegisUIHandler::HandleGetAccessAccountSnapshot,
@@ -626,7 +626,7 @@ void AegisUIHandler::HandleSaveImageOcrSettings(const base::ListValue& args) {
                             aegis::ReadImageOcrSettings(*profile->GetPrefs()));
 }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 void AegisUIHandler::HandleGetCurrentAccessAccount(const base::ListValue& args) {
   if (args.size() != 1 || !args[0].is_string()) return;
   AllowJavascript();

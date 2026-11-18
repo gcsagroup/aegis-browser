@@ -125,7 +125,7 @@ class AccessNetworkContextTransport
       const aegis_access::GenerationTuple& common,
       base::OnceCallback<void(bool)> completion);
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   bool AccountDispatchBlocked(const GURL& url) const;
   const std::vector<std::string>& AccountSites() const;
   // Default partition only. A selected site with no credential stays blocked.
@@ -202,7 +202,7 @@ class AccessNetworkContextTransport
     std::vector<base::OnceCallback<void(bool)>> private_publication_waiters;
     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
     std::vector<std::string> exact_hosts;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     network::mojom::CustomProxyConfigPtr account_config;
     std::vector<std::string> account_sites;
     std::set<std::string> account_fenced;
@@ -242,7 +242,7 @@ class AccessNetworkContextTransport
       const aegis_access::PolicyPublicationIdentity& identity,
       const aegis_access::OwnershipKey& owner,
       base::OnceCallback<void(bool)> all_clients_settled);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   void PublishAccountConfig(PartitionState& state);
 #endif
   void Broadcast(PartitionState& state);

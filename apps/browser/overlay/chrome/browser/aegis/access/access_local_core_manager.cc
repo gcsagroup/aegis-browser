@@ -1,9 +1,6 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
-#include <signal.h>
-#include <unistd.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -11,11 +8,8 @@
 #include <vector>
 
 #include "base/barrier_closure.h"
-#include "base/strings/string_util.h"
-
-#include "base/files/file_descriptor_watcher_posix.h"
 #include "base/base64.h"
-#include "chrome/browser/aegis/access/access_core_log_share.h"
+#include "base/strings/string_util.h"
 #include "base/command_line.h"
 #include "base/base_paths.h"
 #include "base/files/file.h"
@@ -53,6 +47,17 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "chrome/browser/aegis/access/access_local_core_win.h"
+#else
+#include <signal.h>
+#include <unistd.h>
+
+#include "base/files/file_descriptor_watcher_posix.h"
+#include "base/posix/eintr_wrapper.h"
+#endif
+#include "chrome/browser/aegis/access/access_core_log_share.h"
 
 namespace aegis::access {
 std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput() {
@@ -313,35 +318,57 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
 #if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
       const auto* channel = manifest->FindString("channel");
       const auto* relative = manifest->FindString("binaryRelativePath");
+#if BUILDFLAG(IS_WIN)
+      constexpr char kPrivateExecutable[] = "xray.exe";
+#else
+      constexpr char kPrivateExecutable[] = "xray";
+#endif
       const auto* node_name = manifest->FindString("nodeConfigRelativePath");
       const auto* node_pin = manifest->FindString("nodeConfigSha256");
       if (manifest->FindInt("schemaVersion") != 1 || !channel ||
           *channel != LocalAccessIdentityChannel(BundledAccessTestChannel()) ||
-          !relative || *relative != "xray" || !node_name || *node_name != "node.json" ||
+          !relative || *relative != kPrivateExecutable || !node_name || *node_name != "node.json" ||
           input_.node_config != input_.manifest.DirName().AppendASCII("node.json") ||
           !node_pin || base::HexEncodeLower(crypto::hash::Sha256(base::as_byte_span(node_json))) != *node_pin)
         return false;
-      binary = input_.manifest.DirName().AppendASCII("xray");
+      binary = input_.manifest.DirName().AppendASCII(kPrivateExecutable);
 #else
       return false;
 #endif
     } else {
       const auto* path = manifest->FindString("binaryPath");
       if (!path) return false;
-      binary = base::FilePath(*path);
+      if (path->find('\0') != std::string::npos) return false;
+      binary = base::FilePath::FromUTF8Unsafe(*path);
     }
     const auto* pin = manifest->FindString("binarySha256");
-    if (!pin) return false;
+    if (!pin || !binary.IsAbsolute()) return false;
+#if BUILDFLAG(IS_WIN)
+    if (!binary.MatchesExtension(FILE_PATH_LITERAL(".exe"))) return false;
+#endif
     auto bytes = base::ReadFileToBytes(binary);
-    if (!binary.IsAbsolute() || !bytes ||
-        base::HexEncodeLower(crypto::hash::Sha256(*bytes)) != *pin)
+    if (!bytes || base::HexEncodeLower(crypto::hash::Sha256(*bytes)) != *pin)
       return false;
     const auto* outbound = SelectedOutbound(*node);
     if (!outbound) return false;
     // The selected outbound is copied privately; no subscription, system
     // routing, original V2Ray process or original input file is changed.
+#if BUILDFLAG(IS_WIN)
+    if (!CreatePrivateCoreDirectory(directory_)) return false;
+    // Launch the exact bytes that passed the pin, from the private directory.
+    binary = directory_.GetPath().AppendASCII("xray.exe");
+    {
+      base::File executable(binary,
+                             base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+      if (!executable.IsValid() ||
+          !executable.WriteAtCurrentPosAndCheck(*bytes)) {
+        return false;
+      }
+    }
+#else
     if (!directory_.CreateUniqueTempDir() ||
         !base::SetPosixFilePermissions(directory_.GetPath(), 0700)) return false;
+#endif
     auto reservation = std::make_unique<net::TCPServerSocket>(nullptr, net::NetLogSource());
     if (reservation->Listen(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0),
                             1, std::nullopt) != net::OK) return false;
@@ -377,18 +404,30 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     if (!base::JSONWriter::Write(config, &serialized)) return false;
     // Create private before writing secret bytes, rather than chmod after.
     base::File file(config_path, base::File::FLAG_CREATE | base::File::FLAG_WRITE);
-    if (!file.IsValid() || !base::SetPosixFilePermissions(config_path, 0600) ||
-        !file.WriteAtCurrentPosAndCheck(base::as_byte_span(serialized))) return false;
+    if (!file.IsValid()) return false;
+#if BUILDFLAG(IS_MAC)
+    if (!base::SetPosixFilePermissions(config_path, 0600)) return false;
+#endif
+    if (!file.WriteAtCurrentPosAndCheck(base::as_byte_span(serialized))) return false;
     file.Close();
     base::CommandLine command(binary);
     command.AppendArg("run");
     command.AppendArg("-config");
     command.AppendArgPath(config_path);
+    // Release the reservation immediately before launching. A port race is a
+    // preparation failure: only the authenticated HTTPS probe may admit it.
+#if BUILDFLAG(IS_WIN)
+    reservation.reset();
+    process_ = LaunchOwnedCore(command, directory_.GetPath(), job_,
+                               level != "none" ? &log_read_ : nullptr);
+    if (log_read_.IsValid()) {
+      log_clear_epoch_ = input_.log_store->RegisterPipe(log_read_.GetPlatformFile());
+      log_poll_.Start(FROM_HERE, base::Milliseconds(100), this, &Worker::DrainLog);
+    }
+#else
     base::LaunchOptions options;
     options.clear_environment = true;
     options.current_directory = directory_.GetPath();
-    // Release the reservation immediately before launching. A port race is a
-    // preparation failure: only the authenticated HTTPS probe may admit it.
     reservation.reset();
     base::File null_output(base::FilePath("/dev/null"),
                            base::File::FLAG_OPEN | base::File::FLAG_WRITE);
@@ -408,6 +447,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     }
     options.fds_to_remap = {{output, STDOUT_FILENO}, {output, STDERR_FILENO}};
     process_ = base::LaunchProcess(command, options);
+#endif
     return process_.IsValid();
   }
   void DrainLog() {
@@ -445,7 +485,11 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     }
   }
   void CloseLogPipe() {
+#if BUILDFLAG(IS_WIN)
+    log_poll_.Stop();
+#else
     log_watch_.reset();
+#endif
     if (log_read_.IsValid()) {
       input_.log_store->UnregisterPipe(log_read_.GetPlatformFile());
       log_read_.Close();
@@ -530,6 +574,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     StopChild();
     if (stopped_callback_) stopped_callback_.Run(registration);
   }
+#if BUILDFLAG(IS_MAC)
   bool WaitForChildExit(base::TimeDelta maximum_wait) {
     auto deadline = maximum_wait.is_max()
         ? base::TimeTicks::Max() : base::TimeTicks::Now() + maximum_wait;
@@ -549,12 +594,17 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
       if (remaining <= base::TimeDelta()) return false;
     }
   }
+#endif
   void StopChild() {
     health_.Stop();
     timeout_.Stop();
     retry_.Stop();
     request_.reset();
     context_.reset();
+#if BUILDFLAG(IS_WIN)
+    StopOwnedCore(job_, directory_);
+    process_.Close();
+#else
     if (process_.IsValid()) {
       if (Running()) {
         process_.Terminate(0, false);
@@ -565,6 +615,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
       }
       process_.Close();
     }
+#endif
     DrainLog();
     CloseLogPipe();
     framer_ = CoreLogFramer();
@@ -573,20 +624,27 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     protected_values_.clear();
     credentials_.reset();
     authenticated_ = false;
+#if BUILDFLAG(IS_MAC)
     const bool deleted = directory_.Delete();
     (void)deleted;
+#endif
   }
 
   AccessLocalCoreInput input_;
   std::shared_ptr<ShutdownHandle> shutdown_;
-  base::File log_read_;
+#if BUILDFLAG(IS_WIN)
+  base::win::ScopedHandle job_;
+  base::RepeatingTimer log_poll_;
+#else
   std::unique_ptr<base::FileDescriptorWatcher::Controller> log_watch_;
+#endif
+  base::File log_read_;
   CoreLogFramer framer_;
-  uint64_t log_generation_ = 0;
   uint64_t log_clear_epoch_ = 0;
   size_t discard_bytes_ = 0;
   bool discard_until_empty_ = false;
   std::vector<std::string> protected_values_;
+  uint64_t log_generation_ = 0;
   base::ScopedTempDir directory_;
   base::Process process_;
   uint16_t port_ = 0;

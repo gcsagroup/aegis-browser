@@ -8,7 +8,7 @@ import {flush, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/pol
 import {loadTimeData} from '../i18n_setup.js';
 import type {SearchResult} from '../search_settings.js';
 import {getTemplate} from './aegis_page.html.js';
-// <if expr="is_macosx">
+// <if expr="is_macosx or is_win">
 import {startAccessUsage} from './access_account_usage.js';
 // </if>
 
@@ -25,7 +25,7 @@ export class SettingsAegisPageElement extends PolymerElement {
   private statusListener_: WebUiListener|undefined;
   private translate_: (value: string) => string = value => value;
   private cleanup_: (() => void)|undefined;
-  // <if expr="is_macosx">
+  // <if expr="is_macosx or is_win">
   private usageCleanup_: (() => void)|undefined;
   // </if>
   private state_: State = {};
@@ -68,7 +68,7 @@ export class SettingsAegisPageElement extends PolymerElement {
     queueMicrotask(() => {
       if (!this.isConnected) return;
       flush();
-      // <if expr="is_macosx">
+      // <if expr="is_macosx or is_win">
       const usage = this.shadowRoot?.querySelector<HTMLElement>('#access-account-usage');
       if (usage) this.usageCleanup_ = startAccessUsage(usage,
           () => sendWithPromise('getAccessAccountSnapshot'),
@@ -83,7 +83,7 @@ export class SettingsAegisPageElement extends PolymerElement {
     });
   }
   override disconnectedCallback() {
-    // <if expr="is_macosx">
+    // <if expr="is_macosx or is_win">
     this.usageCleanup_?.();
     // </if>
     if (this.statusListener_) removeWebUiListener(this.statusListener_);
@@ -119,7 +119,7 @@ export class SettingsAegisPageElement extends PolymerElement {
     const signatures = new Map<string, string[]>(Object.entries({
       getStatus: [], setModuleEnabled: ['string', 'boolean'],
       getImageOcrSettings: [], saveImageOcrSettings: ['string', 'string'],
-      // <if expr="is_macosx">
+      // <if expr="is_macosx or is_win">
       getCurrentAccessAccount: [],
       // </if>
       openBrowserAgent: [], updateFilterLists: [], summarizeActiveTab: [],

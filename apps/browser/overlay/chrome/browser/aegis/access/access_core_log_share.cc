@@ -1,7 +1,14 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_core_log_share.h"
 
+#include "build/build_config.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "base/uuid.h"
+#include "chrome/browser/aegis/access/access_private_files_win.h"
+#else
 #include <sys/stat.h>
+#endif
 
 #include <atomic>
 #include <cerrno>
@@ -30,17 +37,25 @@ base::LazyThreadPoolSequencedTaskRunner g_archive_runner =
                          base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
 
 bool IsOwnedDirectory(const base::FilePath& path) {
+#if BUILDFLAG(IS_WIN)
+  return IsOwnedAccessDirectory(path);
+#else
   struct stat info;
   return lstat(path.value().c_str(), &info) == 0 && S_ISDIR(info.st_mode) &&
          info.st_uid == geteuid();
+#endif
 }
 
 bool RemoveOwnedArchive(const base::FilePath& path) {
+#if BUILDFLAG(IS_WIN)
+  return IsPrivateAccessDirectory(path) && base::DeletePathRecursively(path);
+#else
   struct stat info;
   if (lstat(path.value().c_str(), &info) != 0)
     return errno == ENOENT;
   return S_ISDIR(info.st_mode) && info.st_uid == geteuid() &&
          (info.st_mode & 0777) == 0700 && base::DeletePathRecursively(path);
+#endif
 }
 
 // Accessed only on g_archive_runner. There is one active archive per
@@ -68,23 +83,39 @@ ArchiveState& StateForProfile(const base::FilePath& profile) {
 bool RecoverCoreLogArchives(const base::FilePath& profile) {
   if (!IsOwnedDirectory(profile))
     return false;
+#if BUILDFLAG(IS_WIN)
+  constexpr size_t kSuffixLength = 36;
+  // Windows treats a glob with zero matches as a failed enumeration. Inspect
+  // immediate entries and select only our archive names below.
+  const base::FilePath glob;
+#else
+  constexpr size_t kSuffixLength = 6;
+  const base::FilePath glob = base::FilePath().AppendASCII(
+      std::string(kCoreLogSharePrefix) + std::string(kSuffixLength, '?'));
+#endif
   base::FileEnumerator files(
       profile, false, base::FileEnumerator::FILES |
-                          base::FileEnumerator::DIRECTORIES |
-                          base::FileEnumerator::SHOW_SYM_LINKS,
-      std::string(kCoreLogSharePrefix) + "??????",
+                          base::FileEnumerator::DIRECTORIES
+#if !BUILDFLAG(IS_WIN)
+                          | base::FileEnumerator::SHOW_SYM_LINKS
+#endif
+      , glob.value(),
       base::FileEnumerator::FolderSearchPolicy::MATCH_ONLY,
       base::FileEnumerator::ErrorPolicy::STOP_ENUMERATION);
   bool recovered = true;
   for (auto path = files.Next(); !path.empty(); path = files.Next()) {
-    const auto name = path.BaseName().value();
+    const auto name = path.BaseName().MaybeAsASCII();
     const std::string_view prefix(kCoreLogSharePrefix);
-    if (!std::string_view(name).starts_with(prefix) || name.size() != prefix.size() + 6)
+    if (!std::string_view(name).starts_with(prefix) || name.size() != prefix.size() + kSuffixLength)
       continue;
     const auto suffix = std::string_view(name).substr(prefix.size());
+#if BUILDFLAG(IS_WIN)
+    if (!base::Uuid::ParseLowercase(suffix).is_valid()) continue;
+#else
     if (suffix.find_first_not_of(
             "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") != suffix.npos)
       continue;
+#endif
     if (!RemoveOwnedArchive(path))
       recovered = false;
   }
@@ -100,9 +131,27 @@ bool WriteCoreLogArchive(const base::FilePath& directory,
     return false;
   base::File file(directory.AppendASCII(kCoreLogArchive),
                   base::File::FLAG_CREATE | base::File::FLAG_WRITE);
-  return file.IsValid() && fchmod(file.GetPlatformFile(), 0600) == 0 &&
-         file.WriteAtCurrentPosAndCheck(base::as_byte_span(gzip));
+  if (!file.IsValid()) return false;
+#if !BUILDFLAG(IS_WIN)
+  if (fchmod(file.GetPlatformFile(), 0600) != 0) return false;
+#endif
+  return file.WriteAtCurrentPosAndCheck(base::as_byte_span(gzip));
 }
+
+#if BUILDFLAG(IS_WIN)
+void ReadCoreLogArchiveForExport(
+    base::FilePath path, base::OnceCallback<void(std::string)> done) {
+  g_archive_runner.Get()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce([](const base::FilePath& path) {
+        std::string bytes;
+        // Gzip headers and deflate overhead fit above the 64 KiB input limit.
+        if (!base::ReadFileToStringWithMaxSize(path, &bytes, 70 * 1024)) {
+          bytes.clear();
+        }
+        return bytes;
+      }, std::move(path)), std::move(done));
+}
+#endif
 
 class CoreLogShareSession::ShutdownHandle
     : public std::enable_shared_from_this<ShutdownHandle> {
@@ -183,9 +232,17 @@ class CoreLogShareSession::Writer {
       state.active = true;
       profile_ = parent;
     }
+#if BUILDFLAG(IS_WIN)
+    const auto path = parent.AppendASCII(
+        std::string(kCoreLogSharePrefix) + base::Uuid::GenerateRandomV4().AsLowercaseString());
+    if (!CreatePrivateAccessDirectory(path)) return {};
+    const bool created = directory_.Set(path);
+    if (!created) RemoveOwnedArchive(path);
+#else
     const bool created = directory_.CreateUniqueTempDirUnderPath(
         parent, kCoreLogSharePrefix);
     // mkdtemp creates a 0700 directory.
+#endif
     if (!created || !WriteCoreLogArchive(directory_.GetPath(), text))
       return {};
     return directory_.GetPath().AppendASCII(kCoreLogArchive);

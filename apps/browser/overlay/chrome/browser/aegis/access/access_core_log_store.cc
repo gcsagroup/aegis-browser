@@ -7,11 +7,20 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include "base/posix/eintr_wrapper.h"
+#endif
+
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+#endif
+
+#include <algorithm>
 #include <cerrno>
+
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 
 #include "base/check.h"
 #include "base/functional/bind.h"
-#include "base/posix/eintr_wrapper.h"
 #include "base/task/lazy_thread_pool_task_runner.h"
 #endif
 
@@ -36,7 +45,7 @@ void AccessCoreLogStore::SetLevel(std::string_view level) {
   if (level == "none")
     ++generation_;
   log_.SetLevel(level);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (level == "none")
     ScheduleClearLocked();
   else
@@ -52,7 +61,7 @@ void AccessCoreLogStore::SetProtectedValues(std::vector<std::string> values) {
   const std::string old = log_.Snapshot();
   log_.Clear();
   ReadSanitizedLines(log_, old, protected_values_);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (log_.Snapshot() != old)
     ScheduleSaveLocked();
 #endif
@@ -65,7 +74,7 @@ void AccessCoreLogStore::Add(uint64_t generation,
   if (generation != generation_ || clear_epoch != clear_epoch_ ||
       !log_.Add(line, protected_values, protected_values_))
     return;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   ScheduleSaveLocked();
 #endif
 }
@@ -74,29 +83,38 @@ void AccessCoreLogStore::Clear() {
   ++view_version_;
   ++clear_epoch_;
   log_.Clear();
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   // Reads share this lock. Only bytes already in each pipe at Clear belong
   // to the old history, even if the worker has no pending readability event.
   for (auto& [fd, prefix] : pipes_) {
+#if BUILDFLAG(IS_WIN)
+    DWORD pending = 0;
+    if (::PeekNamedPipe(fd, nullptr, 0, nullptr, &pending, nullptr)) {
+      prefix = pending;
+    } else {
+      prefix.reset();
+    }
+#else
     int pending = 0;
     if (HANDLE_EINTR(ioctl(fd, FIONREAD, &pending)) == 0) {
       prefix = static_cast<size_t>(std::max(pending, 0));
     } else {
       prefix.reset();
     }
+#endif
   }
   ScheduleClearLocked();
 #endif
 }
 
-#if BUILDFLAG(IS_MAC)
-uint64_t AccessCoreLogStore::RegisterPipe(int fd) {
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+uint64_t AccessCoreLogStore::RegisterPipe(base::PlatformFile fd) {
   base::AutoLock guard(lock_);
   CHECK(pipes_.try_emplace(fd, 0).second);
   return clear_epoch_;
 }
 
-void AccessCoreLogStore::UnregisterPipe(int fd) {
+void AccessCoreLogStore::UnregisterPipe(base::PlatformFile fd) {
   base::AutoLock guard(lock_);
   const size_t erased = pipes_.erase(fd);
   CHECK(erased == 1);
@@ -109,9 +127,21 @@ AccessCoreLogStore::PipeRead AccessCoreLogStore::ReadPipe(
   auto pipe = pipes_.find(file.GetPlatformFile());
   CHECK(pipe != pipes_.end());
   // One bounded, nonblocking read. The same lock protects the Clear snapshot.
+#if BUILDFLAG(IS_WIN)
+  DWORD pending = 0;
+  if (!::PeekNamedPipe(file.GetPlatformFile(), nullptr, 0, nullptr, &pending,
+                       nullptr))
+    return {std::nullopt, 0, clear_epoch_, pipe->second};
+  if (!pending) return {std::nullopt, EAGAIN, clear_epoch_, pipe->second};
+  const auto maximum = std::min<size_t>(pending, buffer.size());
+  const auto count = file.ReadAtCurrentPosNoBestEffort(
+      base::as_writable_byte_span(buffer.first(maximum)));
+  return {count, 0, clear_epoch_, pipe->second};
+#else
   const auto count =
       file.ReadAtCurrentPosNoBestEffort(base::as_writable_byte_span(buffer));
   return {count, count ? 0 : errno, clear_epoch_, pipe->second};
+#endif
 }
 
 namespace {

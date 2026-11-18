@@ -24,7 +24,7 @@
 
 class Profile;
 namespace content { class WebContents; }
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 #include "base/callback_list.h"
 #include "chrome/browser/aegis/access/access_core_log_share.h"
 #endif
@@ -51,7 +51,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   bool CanViewCoreLogs() const;
   AccessCoreLogStore* core_logs() const { return core_logs_.get(); }
   void SetCoreLogLevel(std::string_view level);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   void ReadConfiguredNodeId(base::OnceCallback<void(std::string)> done);
   enum class CoreLogShareResult { kCompleted, kFailed, kCleanupFailed };
   void ShareCoreLogs(content::WebContents* tab,
@@ -149,7 +149,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
       const OwnershipKey& owner) const;
 
   const raw_ptr<Profile> profile_;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   CoreLogShareSession log_share_;
   base::CallbackListSubscription app_terminating_;
 #endif

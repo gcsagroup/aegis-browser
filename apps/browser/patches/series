@@ -498,3 +498,4 @@
 0496-fix-macos-unshown-omnibox-popup.patch
 0497-fix-ios-markdown-render-ownership.patch
 0498-test-macos-aim-presentation-lifecycle.patch
+0499-feat-access-windows-desktop-parity.patch

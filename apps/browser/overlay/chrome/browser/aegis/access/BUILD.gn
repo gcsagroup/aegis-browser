@@ -16,12 +16,17 @@ buildflag_header("access_buildflags") {
 }
 
 if (aegis_private_test_node_enabled) {
+  private_binary = "xray"
+  if (is_win) {
+    private_binary = "xray.exe"
+  }
   private_channel = "alpha"
   private_dir = aegis_alpha_test_resources_dir
   if (aegis_beta_test_node_enabled) {
     private_channel = "beta"
     private_dir = aegis_beta_test_resources_dir
   }
+
   # Both variants overwrite the same three resources. This also keeps the
   # normal-build guard effective for output directories reused across channels.
   action("alpha_access_resource_files") {
@@ -29,16 +34,18 @@ if (aegis_private_test_node_enabled) {
     inputs = [
       "$private_dir/core-manifest.json",
       "$private_dir/node.json",
-      "$private_dir/xray",
+      "$private_dir/$private_binary",
     ]
     outputs = [
       "$root_out_dir/AegisAlphaAccess/core-manifest.json",
       "$root_out_dir/AegisAlphaAccess/node.json",
-      "$root_out_dir/AegisAlphaAccess/xray",
+      "$root_out_dir/AegisAlphaAccess/$private_binary",
     ]
     args = [
       "--channel",
       private_channel,
+      "--binary",
+      private_binary,
       "--source-dir",
       rebase_path(private_dir, root_build_dir),
       "--output-dir",
@@ -46,11 +53,13 @@ if (aegis_private_test_node_enabled) {
     ]
   }
 
-  bundle_data("alpha_access_bundle_data") {
-    sources = get_target_outputs(":alpha_access_resource_files")
-    outputs =
-        [ "{{bundle_resources_dir}}/AegisAlphaAccess/{{source_file_part}}" ]
-    public_deps = [ ":alpha_access_resource_files" ]
+  if (is_mac) {
+    bundle_data("alpha_access_bundle_data") {
+      sources = get_target_outputs(":alpha_access_resource_files")
+      outputs =
+          [ "{{bundle_resources_dir}}/AegisAlphaAccess/{{source_file_part}}" ]
+      public_deps = [ ":alpha_access_resource_files" ]
+    }
   }
 } else {
   action("alpha_test_resource_guard") {
@@ -94,6 +103,23 @@ source_set("access_core_log") {
     ]
   }
   public_deps = [ "//base" ]
+  if (is_win) {
+    sources += [
+      "access_core_log_disk.h",
+      "access_core_log_disk_win.cc",
+    ]
+    deps = [ ":access_private_files_win" ]
+  }
+}
+
+if (is_win) {
+  source_set("access_private_files_win") {
+    sources = [
+      "access_private_files_win.cc",
+      "access_private_files_win.h",
+    ]
+    public_deps = [ "//base" ]
+  }
 }
 
 source_set("access_local_core_manager") {
@@ -101,6 +127,12 @@ source_set("access_local_core_manager") {
   public_deps = [ ":access_core_log" ]
   if (is_mac) {
     sources += [ "access_local_core_manager.cc" ]
+  } else if (is_win) {
+    sources += [
+      "access_local_core_manager.cc",
+      "access_local_core_win.cc",
+      "access_local_core_win.h",
+    ]
   } else {
     sources += [ "access_local_core_manager_unavailable.cc" ]
   }
@@ -112,8 +144,11 @@ source_set("access_local_core_manager") {
     "//net",
     "//url",
   ]
-  if (is_mac) {
+  if (is_mac || is_win) {
     deps += [ ":access_core_log_archive" ]
+  }
+  if (is_win) {
+    deps += [ ":access_private_files_win" ]
   }
   if (aegis_private_test_node_enabled) {
     data_deps = [ ":alpha_access_resource_files" ]
@@ -145,6 +180,12 @@ test("access_local_core_manager_unittests") {
       "access_core_log_unittest.cc",
       "access_local_core_manager_unittest.cc",
     ]
+  } else if (is_win) {
+    sources = [
+      "access_core_log_disk_win_unittest.cc",
+      "access_local_core_win_unittest.cc",
+      "access_log_export_dialog_win_unittest.cc",
+    ]
   } else {
     sources = [ "access_local_core_manager_unavailable_unittest.cc" ]
   }
@@ -165,10 +206,39 @@ test("access_local_core_manager_unittests") {
       "//third_party/zlib/google:compression_utils",
     ]
     data_deps = [ ":access_local_core_test_child" ]
+  } else if (is_win) {
+    deps += [
+      ":access_core_log_archive",
+      ":access_log_export_dialog_win",
+      ":access_private_files_win",
+    ]
+    libs = [
+      "ole32.lib",
+      "shell32.lib",
+    ]
+    data_deps = [ ":access_local_core_win_test_child" ]
   }
 }
 
-if (is_mac) {
+if (is_win) {
+  source_set("access_log_export_dialog_win") {
+    sources = [
+      "access_log_export_dialog_win.cc",
+      "access_log_export_dialog_win.h",
+    ]
+    public_deps = [ "//base" ]
+  }
+}
+
+if (is_win) {
+  executable("access_local_core_win_test_child") {
+    testonly = true
+    sources = [ "access_local_core_win_test_child.cc" ]
+    deps = [ "//base" ]
+  }
+}
+
+if (is_mac || is_win) {
   source_set("access_core_log_archive") {
     sources = [
       "access_core_log_share.cc",
@@ -178,8 +248,13 @@ if (is_mac) {
       "//base",
       "//third_party/zlib/google:compression_utils",
     ]
+    if (is_win) {
+      deps += [ ":access_private_files_win" ]
+    }
   }
+}
 
+if (is_mac) {
   executable("access_local_core_test_child") {
     testonly = true
     sources = [ "access_local_core_test_child.cc" ]
@@ -499,22 +574,35 @@ source_set("access_site_proxy_bubble") {
     ":access_site_proxy_bubble_model",
     ":access_site_proxy_session",
     "//base",
+    "//chrome/browser/aegis:prefs",
     "//chrome/browser/aegis:profile_support",
     "//chrome/browser/profiles:profile",
     "//chrome/common:channel_info",
     "//components/aegis_access",
     "//components/prefs",
-    "//chrome/browser/aegis:prefs",
     "//components/version_info:channel",
     "//content/public/browser",
     "//url",
   ]
-  if (is_mac) {
+  if (is_mac || is_win) {
     deps += [
       ":access_core_log_archive",
       "//chrome/browser/lifetime:termination_notification",
-      "//third_party/blink/public/mojom:android_mojo_bindings",
     ]
+  }
+  if (is_mac) {
+    deps += [ "//third_party/blink/public/mojom:android_mojo_bindings" ]
+  }
+  if (is_win) {
+    sources += [
+      "access_log_export_win.cc",
+      "access_log_export_win.h",
+    ]
+    deps += [
+      ":access_log_export_dialog_win",
+      "//ui/views",
+    ]
+    libs = [ "ole32.lib" ]
   }
 }
 

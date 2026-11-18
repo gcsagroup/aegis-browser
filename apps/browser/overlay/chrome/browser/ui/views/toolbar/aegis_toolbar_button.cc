@@ -26,7 +26,7 @@
 #include "ui/views/controls/button/checkbox.h"
 #include "url/origin.h"
 #include "chrome/browser/browser_process.h"
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 #include "chrome/browser/aegis/access/access_account_refresh.h"
 #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
 #include "chrome/browser/aegis/access/access_paid_site_mac.h"
@@ -240,7 +240,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     }
   }
   ~AegisPageBubble() override {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     quota_visibility_.RunAndReset();
 #endif
   }
@@ -263,7 +263,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     panel_ = scroll->SetContents(CreatePanel());
     AddChildView(std::move(scroll));
     Build();
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     if (auto* controller = AccessBubble()) {
       controller->ReadConfiguredNodeId(base::BindOnce(
           [](base::WeakPtr<AegisPageBubble> bubble, std::string id) {
@@ -277,7 +277,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   }
   void Poll() {
     if (!Valid()) {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
       quota_visibility_.RunAndReset();
 #endif
       if (GetWidget()) GetWidget()->Close();
@@ -291,7 +291,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     const uint64_t access_revision = access ? access->state_revision() : 0;
     const auto access_snapshot = access
         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     const auto paid_state = access_snapshot && access_snapshot->has_trusted_site
         ? aegis::access::AccountNodeForSite(browser_->GetProfile(), access_snapshot->host.value)
         : aegis::access::AccountNodeStatus::kOff;
@@ -323,7 +323,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   }
   void Expand(const std::string& key) {
     if (!expanded_.erase(key)) expanded_.insert(key);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     if (key == "core-logs")
       log_share_confirmation_.reset();
 #endif
@@ -416,7 +416,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     return aegis::access::AccessSiteProxyBubbleController::GetOrCreate(
         browser_->GetProfile());
   }
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   bool UseAccountNode(aegis::access::AccessSiteProxyBubbleController* controller,
                       const aegis::access::AccessSiteProxyBubbleSnapshot& snap,
                       aegis::access::AccountNodeStatus state) const {
@@ -454,7 +454,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (!snap.has_trusted_site || !snap.toggle_enabled) {
       return;
     }
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     auto* profile = browser_->GetProfile();
     using AccountStatus = aegis::access::AccountNodeStatus;
     const auto account_status = aegis::access::AccountNodeForSite(profile, snap.host.value);
@@ -478,7 +478,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
 #endif
     RefreshSoon();
   }
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   void UpdateQuotaVisibility() {
     auto* widget = GetWidget();
     const bool visible = expanded_.contains("access-quota") && widget &&
@@ -624,7 +624,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                                std::string("core-logs")));
     if (!expanded_.contains("core-logs")) return;
     AddLabel(parent, Copy(u"普通和隐私浏览日志分开保存在本机磁盘，退出后仍保留最近 128 条，可能包含隐私浏览的目标地址。清除日志或选择 none 可删除当前模式的历史。分享前请检查内容，接收者可保留副本。",
-        u"Regular and private logs are saved separately on this Mac. The latest 128 entries survive quitting and may contain private browsing destinations. Clear logs or choose none to delete this mode’s history. Review before sharing; recipients can keep a copy.",
+        u"Regular and private logs are saved separately on this device. The latest 128 entries survive quitting and may contain private browsing destinations. Clear logs or choose none to delete this mode’s history. Review before sharing; recipients can keep a copy.",
         u"一般和私密瀏覽日誌分開儲存在本機磁碟，結束後仍保留最近 128 筆，可能包含私密瀏覽的目標位址。清除日誌或選擇 none 可刪除目前模式的歷史。分享前請檢查內容，接收者可保留副本。"));
     AddLabel(parent, Copy(u"当前级别：", u"Level: ", u"目前層級：") +
                      base::UTF8ToUTF16(controller->core_logs()->Level()));
@@ -667,7 +667,12 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     } else {
       AddLabel(parent, base::UTF8ToUTF16(text))->SetSelectable(true);
       if (!log_share_confirmation_) {
-        Button(parent, Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…"),
+#if BUILDFLAG(IS_WIN)
+        const auto archive_action = Copy(u"导出压缩日志…", u"Save compressed logs…", u"匯出壓縮日誌…");
+#else
+        const auto archive_action = Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…");
+#endif
+        Button(parent, archive_action,
             base::BindRepeating([](AegisPageBubble* self, std::string preview, uint64_t version) {
               if (!self->Valid()) return;
               self->log_notice_.clear();
@@ -675,10 +680,18 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
               self->RefreshSoon();
             }, base::Unretained(this), text, version));
       } else {
+#if BUILDFLAG(IS_WIN)
+        AddLabel(parent, Copy(u"此压缩包可能包含普通或隐私浏览的目标地址。确认保存到你选择的目录？",
+            u"This archive may contain regular or private browsing destinations. Save it to a folder you choose?",
+            u"此壓縮檔可能包含一般或私密瀏覽的目標位址。確認儲存到你選擇的資料夾？"));
+        const auto confirm_action = Copy(u"确认导出", u"Confirm export", u"確認匯出");
+#else
         AddLabel(parent, Copy(u"此压缩包可能包含普通或隐私浏览的目标地址。确认分享给可信的接收方？",
             u"This archive may contain regular or private browsing destinations. Share it with a trusted recipient?",
             u"此壓縮檔可能包含一般或私密瀏覽的目標位址。確認分享給可信的接收方？"));
-        Button(parent, Copy(u"确认分享", u"Confirm share", u"確認分享"),
+        const auto confirm_action = Copy(u"确认分享", u"Confirm share", u"確認分享");
+#endif
+        Button(parent, confirm_action,
                base::BindRepeating(&AegisPageBubble::ConfirmCoreLogShare,
                                    base::Unretained(this)));
         Button(parent, Copy(u"取消", u"Cancel", u"取消"),
@@ -735,7 +748,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       return;
     }
     bool toggle_on = snap.toggle_on;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     auto* profile = browser_->GetProfile();
     using Paid = aegis::access::AccountNodeStatus;
     const auto state = paid_status_ = aegis::access::AccountNodeForSite(profile, snap.host.value);
@@ -770,7 +783,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
            toggle_on,
            base::BindRepeating(&AegisPageBubble::ToggleSiteProxy,
                                base::Unretained(this)));
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     if (paid && state != Paid::kOff) {
       AddLabel(parent, state == Paid::kAssigned
           ? Copy(u"账户节点已分配", u"Account node assigned", u"帳戶節點已分配")
@@ -852,7 +865,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     access_revision_ = access ? access->state_revision() : 0;
     access_snapshot_ = access
         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     quota_status_ = nullptr;
     quota_values_ = nullptr;
     quota_freshness_ = nullptr;
@@ -861,7 +874,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (!address_.SchemeIsHTTPOrHTTPS()) {
       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
       AppendSiteProxySection(panel_);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
       AppendQuota(panel_);
       if (auto* controller = AccessBubble()) AppendCoreLogs(panel_, controller);
 #endif
@@ -875,7 +888,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (browser_->GetProfile()->IsOffTheRecord())
       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
     AppendSiteProxySection(panel_);
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
     AppendQuota(panel_);
     if (auto* controller = AccessBubble()) AppendCoreLogs(panel_, controller);
 #endif
@@ -996,7 +1009,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   std::string document_, tab_;
   raw_ptr<views::View> panel_ = nullptr;
   base::DictValue snapshot_;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   aegis::access::AccountNodeStatus paid_status_ = aegis::access::AccountNodeStatus::kOff;
 #endif
   int revision_ = -1;
@@ -1004,7 +1017,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   std::optional<aegis::access::AccessSiteProxyBubbleSnapshot> access_snapshot_;
   std::set<std::string> expanded_;
   std::u16string notice_;
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   base::ScopedClosureRunner quota_visibility_;
   raw_ptr<views::Label> quota_status_ = nullptr;
   raw_ptr<views::Label> quota_values_ = nullptr;
