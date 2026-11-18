@@ -134,7 +134,7 @@ quality 汇总 job 使用中性 ID `quality-summary`，条件为 `always() && (�
 
 `.github/workflows/ios-coverage.yml` 是独立报告 workflow。仅通过 `workflow_dispatch` 手动生成报告，PR/develop/main push 不自动运行。它继续严格绑定当次 GitHub tested SHA，测试失败仍为非零；当前分支保护的必需状态检查为 `quality-gate`，因此 iOS 报告不改变 macOS 优先的合并门。
 
-`.github/workflows/android-java-coverage.yml` 也是独立报告 workflow，仅通过 `workflow_dispatch` 手动运行，PR 和 develop/main push 不再自动触发。当前仅推进 macOS，其余平台后置。它构建 normal 与 coverage 两种验收工具以证明普通 APK 不含 JaCoCo，仅在专用 emulator 运行 coverage APK 的六项 fixture，并把 JaCoCo exec/XML、原始 class 摘要与实际 GitHub tested SHA 写入 artifact。该作业冷启动独立 API 36 模拟器，校验当次 AVD 名称后通过系统服务处理亮屏和锁屏，并保留模拟器日志。固定检查名为 `android-java-coverage`，不并入 macOS `quality-gate`；`browserTested=false` 明确保留工具覆盖率与浏览器 runtime 验收的边界。
+`.github/workflows/android-java-coverage.yml` 也是独立报告 workflow，仅通过 `workflow_dispatch` 手动运行，PR 和 develop/main push 不再自动触发。当前仅推进 macOS，其余平台后置。它构建 normal 与 coverage 两种验收工具以证明普通 APK 不含 JaCoCo，仅在专用 emulator 运行 coverage APK 的六项 fixture，并把 JaCoCo exec/XML、原始 class 摘要与实际 GitHub tested SHA 写入 artifact。该作业冷启动独立 API 36 模拟器，在同一个 ADB transport 上校验当次 AVD 名称、处理亮屏和锁屏并运行验收，保留模拟器日志。固定检查名为 `android-java-coverage`，不并入 macOS `quality-gate`；`browserTested=false` 明确保留工具覆盖率与浏览器 runtime 验收的边界。
 
 报告区分四种身份：
 

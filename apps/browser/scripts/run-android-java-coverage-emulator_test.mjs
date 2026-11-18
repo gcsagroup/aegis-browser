@@ -9,10 +9,17 @@ const checkout = path.resolve(import.meta.dirname, '../../..');
 
 function runCoverage(t, mode) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aegis-emulator-test-'));
-  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
   const sdk = path.join(root, 'sdk');
   const bin = path.join(root, 'bin');
   const record = path.join(root, 'operations.log');
+  const emulatorPid = path.join(root, 'emulator.pid');
+  t.after(() => {
+    if (fs.existsSync(emulatorPid)) {
+      const pid = Number(fs.readFileSync(emulatorPid, 'utf8'));
+      try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+    fs.rmSync(root, {recursive: true, force: true});
+  });
   fs.writeFileSync(record, '');
   const script = (file, content) => {
     fs.mkdirSync(path.dirname(file), {recursive: true});
@@ -22,17 +29,22 @@ function runCoverage(t, mode) {
 printf 'adb %s\n' "$*" >> "$RECORD"
 if [[ $1 == devices ]]; then
   printf 'List of devices attached\n'
-  if [[ $EMULATOR_MODE == occupied ]]; then printf 'emulator-5554\toffline\n'; fi
+  if [[ $EMULATOR_MODE == occupied ]]; then printf 'emulator-5554\toffline\n';
+  elif [[ -f $AVD_NAME ]]; then printf 'emulator-5554 device transport_id:17\n'; fi
   exit 0
 fi
-[[ $1 == -s && $2 == emulator-5554 ]]
+selector=$1
+[[ ( $1 == -s && $2 == emulator-5554 ) || ( $1 == -t && $2 == 17 ) ]]
 shift 2
+if [[ $selector == -t && -f $REPLACED ]]; then echo 'verified transport disconnected' >&2; exit 1; fi
 case "$*" in
   'wait-for-device') ;;
-  'emu avd name')
-    if [[ $EMULATOR_MODE == foreign ]]; then printf 'foreign-avd\nOK\n'; else cat "$AVD_NAME"; fi ;;
+  'emu avd name'|'shell getprop ro.boot.qemu.avd_name')
+    if [[ $EMULATOR_MODE == foreign ]]; then printf 'foreign-avd\n'; else cat "$AVD_NAME"; fi ;;
   'shell getprop ro.kernel.qemu'|'shell getprop sys.boot_completed') printf '1\n' ;;
-  'shell am get-current-user') printf '0\n' ;;
+  'shell am get-current-user')
+    if [[ $EMULATOR_MODE == replaced ]]; then touch "$REPLACED"; fi
+    printf '0\n' ;;
   'shell dumpsys window policy') printf 'KeyguardServiceDelegate\n showing=false\n screenState=2\n' ;;
   'shell svc power stayon true'|'shell wm dismiss-keyguard'|'shell settings put global '*) ;;
   'shell input '*) echo 'boot-time synthetic input would target the launcher' >&2; exit 23 ;;
@@ -41,12 +53,15 @@ esac
 `);
   script(path.join(sdk, 'cmdline-tools/latest/bin/avdmanager'), String.raw`
 printf 'avdmanager %s\n' "$*" >> "$RECORD"
+if [[ $EMULATOR_MODE == stalled ]]; then exec sleep 30; fi
 while [[ $# -gt 0 ]]; do
-  if [[ $1 == -n ]]; then printf '%s\nOK\n' "$2" > "$AVD_NAME"; break; fi
+  if [[ $1 == -n ]]; then printf '%s\n' "$2" > "$AVD_NAME"; break; fi
   shift
 done
 `);
   script(path.join(sdk, 'emulator/emulator'), String.raw`
+if [[ $EMULATOR_MODE == stubborn ]]; then trap '' TERM; fi
+printf '%s\n' "$$" > "$EMULATOR_PID"
 printf 'emulator %s\n' "$*" >> "$RECORD"
 exec sleep 30
 `);
@@ -57,27 +72,48 @@ if [[ "$*" == *'android-agent-ui.mjs self-test'* ]]; then
 fi
 exec "$REAL_NODE" "$@"
 `);
-  script(path.join(bin, 'timeout'), 'shift\nexec "$@"\n');
+  script(path.join(bin, 'timeout'), String.raw`
+printf 'timeout %s\n' "$*" >> "$RECORD"
+if [[ $1 == --kill-after=2s ]]; then
+  [[ $2 =~ ^[1-9][0-9]*s$ ]]
+  shift 2
+  if [[ $EMULATOR_MODE == stalled && $1 == */avdmanager ]]; then
+    exec "$REAL_NODE" -e 'const [, tool, ...args] = process.argv;
+      const result = require("node:child_process").spawnSync(tool, args, {timeout: 250, killSignal: "SIGKILL"});
+      process.exit(result.error?.code === "ETIMEDOUT" ? 124 : 1);' "$@"
+  fi
+else
+  shift
+fi
+exec "$@"
+`);
   const result = spawnSync('bash', ['apps/browser/scripts/run-android-java-coverage-emulator.sh'], {
     cwd: checkout,
     env: {...process.env, PATH: bin + path.delimiter + process.env.PATH,
       REAL_NODE: process.execPath, ANDROID_SDK_ROOT: sdk, RUNNER_TEMP: root,
       EVIDENCE_DIR: path.join(root, 'evidence'), AVD_NAME: path.join(root, 'avd-name'),
-      RECORD: record, EMULATOR_MODE: mode},
+      RECORD: record, EMULATOR_MODE: mode, REPLACED: path.join(root, 'transport-replaced'),
+      EMULATOR_PID: emulatorPid},
     encoding: 'utf8',
-    timeout: 15000,
+    timeout: 12000,
   });
   assert.ifError(result.error);
+  const pid = fs.existsSync(emulatorPid) ? Number(fs.readFileSync(emulatorPid, 'utf8')) : null;
+  if (pid !== null) {
+    assert.throws(() => process.kill(pid, 0), {code: 'ESRCH'}, 'the fixture emulator must be reaped');
+    fs.unlinkSync(emulatorPid);
+  }
   return {status: result.status, stderr: result.stderr, operations: fs.readFileSync(record, 'utf8')};
 }
 
-test('cold-boot coverage runs on the owned API 36 emulator without injecting key events', t => {
+test('cold-boot coverage runs on the owned API 36 transport without injecting key events', t => {
   const result = runCoverage(t, 'ready');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.operations, /avdmanager create avd .*system-images;android-36;default;x86_64/);
   assert.match(result.operations, /emulator -port 5554 -avd aegis-java-coverage\./);
-  assert.match(result.operations, /emu avd name\n[\s\S]*shell getprop sys\.boot_completed\n[\s\S]*shell wm dismiss-keyguard\n[\s\S]*self-test .* --serial emulator-5554/);
-  assert.doesNotMatch(result.operations, /shell input /);
+  assert.match(result.operations, /adb -t 17 shell getprop ro\.boot\.qemu\.avd_name\n[\s\S]*adb -t 17 shell wm dismiss-keyguard\n/);
+  assert.match(result.operations, /self-test .* --serial emulator-5554 .*--transport-id 17/);
+  assert.doesNotMatch(result.operations, /adb -s |shell input /);
 });
 
 test('foreign or occupied coverage serial fails before device changes or fixtures', t => {
@@ -88,4 +124,26 @@ test('foreign or occupied coverage serial fails before device changes or fixture
     assert.doesNotMatch(result.operations, /shell (?:svc|wm|settings|input) |self-test /);
     if (mode === 'occupied') assert.doesNotMatch(result.operations, /avdmanager create avd/);
   }
+});
+
+test('a serial rebound after admission does not receive device changes or fixtures', t => {
+  const result = runCoverage(t, 'replaced');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /verified transport disconnected/);
+  assert.match(result.operations, /adb -t 17 shell svc power stayon true/);
+  assert.doesNotMatch(result.operations, /adb -s |self-test /);
+});
+
+test('the startup deadline bounds stalled AVD creation', t => {
+  const result = runCoverage(t, 'stalled');
+  assert.equal(result.status, 124, result.stderr);
+  assert.match(result.stderr, /startup deadline/);
+  assert.match(result.operations, /timeout --kill-after=2s \d+s .*\/avdmanager create avd/);
+  assert.doesNotMatch(result.operations, /emulator -port|self-test /);
+});
+
+test('cleanup reaps a child that ignores SIGTERM and preserves the fixture result', t => {
+  const result = runCoverage(t, 'stubborn');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.operations, /self-test /);
 });
