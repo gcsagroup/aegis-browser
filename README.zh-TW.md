@@ -60,7 +60,7 @@ mise exec -- pnpm run quality:fast
 | --- | --- | --- |
 | iOS / iPadOS | 已上架維護 | App Store 1.0.0 已公開。目前維護這條已發布線，並驗收 Access。[美國](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [香港](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
 | macOS | 爭發布資格 | Chromium 整合已在原始碼中。執行驗收和散布資格仍未完成。 |
-| Windows | 同事推進 | 同事負責 Windows 原始碼移植和原生驗收。這條線不阻塞 iOS 或 macOS。 |
+| Windows | 同事負責 · 原生驗收暫停 | 同事負責 Windows 原始碼移植和原生驗收。runner 准入及原生建置、測試、瀏覽器和安裝器驗收按既有決定保持暫停。這條線不阻塞 iOS 或 macOS。 |
 | Android / Linux | 後續 | 已有原始碼和評估入口；目前不承諾近期發布。 |
 
 iOS 維護與 macOS 發布資格並行。Windows 保持在負責該軌道的同事手上。Access 順序和完成標準見[路線圖](docs/roadmap.zh-TW.md)。

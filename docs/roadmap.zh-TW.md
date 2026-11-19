@@ -10,7 +10,7 @@
 | --- | --- |
 | iOS / iPadOS | 已上架。App Store 1.0.0 已公開。目前工作是這條已發布線的維護，加上 Access 驗收。 |
 | macOS | 爭取發布資格。Chromium 整合已在原始碼中；執行與散布驗收仍未完成。 |
-| Windows | 同事負責 Windows 原始碼移植和原生驗收。Android 與 Linux 仍是後續評估，不承諾發布日期。 |
+| Windows | 同事負責 Windows 原始碼移植和原生驗收。runner 准入及原生建置、測試、瀏覽器和安裝器驗收按既有決定保持暫停。Android 與 Linux 仍是後續評估，不承諾發布日期。 |
 
 macOS 發布資格不等待下一次 iOS 商店提交。iOS 維護和 Access 驗收也不等待 macOS 發布資格。Access 順序見 [TODO.md](../TODO.md#access-roadmap-todo)：先收 [#157](https://github.com/gcsagroup/aegis-browser/issues/157)、[#158](https://github.com/gcsagroup/aegis-browser/issues/158)，再做 [#136](https://github.com/gcsagroup/aegis-browser/issues/136) 與 [#155](https://github.com/gcsagroup/aegis-browser/issues/155) 的網頁取證，然後是 iPhone [#137](https://github.com/gcsagroup/aegis-browser/issues/137)、[#160](https://github.com/gcsagroup/aegis-browser/issues/160)、[#138](https://github.com/gcsagroup/aegis-browser/issues/138)。macOS 同步清理 [#165](https://github.com/gcsagroup/aegis-browser/issues/165) 與 [#179](https://github.com/gcsagroup/aegis-browser/issues/179)，再推進 [#140](https://github.com/gcsagroup/aegis-browser/issues/140) 與 [#141](https://github.com/gcsagroup/aegis-browser/issues/141)。
 
@@ -101,7 +101,7 @@ Access 驗收順序：先收 [#157](https://github.com/gcsagroup/aegis-browser/i
 
 ## Windows 與後續平台
 
-同事負責 Windows 軌道：[#170](https://github.com/gcsagroup/aegis-browser/issues/170) 的原始碼對齊，以及 [#182](https://github.com/gcsagroup/aegis-browser/issues/182) 的原生建置、測試和 runner 驗收。本路線圖只記錄這一歸屬。不把 Windows 工作排進 iOS 或 macOS 軌道，也不把 Windows 寫成已具備發布資格。
+同事負責 Windows 軌道：[#170](https://github.com/gcsagroup/aegis-browser/issues/170) 的原始碼對齊，以及 [#182](https://github.com/gcsagroup/aegis-browser/issues/182) 的原生建置、測試和 runner 驗收。按 [2026-11-18 的決定](https://github.com/gcsagroup/aegis-browser/issues/182#issuecomment-6977894606)，Windows runner 准入、GN、編譯、原生測試、瀏覽器和安裝器驗收繼續暫停，待同事恢復授權執行。本路線圖只記錄這一歸屬。不把 Windows 工作排進 iOS 或 macOS 軌道，也不把 Windows 寫成已具備發布資格。
 
 Android 與 Linux 仍是後續評估。現有原始碼和手動入口保留。它們不阻塞 iOS 維護或 macOS 發布資格，目前也不承諾發布日期。
 

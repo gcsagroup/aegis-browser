@@ -10,7 +10,7 @@ Three tracks run at once, with different goals. Progress on one platform does no
 | --- | --- |
 | iOS / iPadOS | Shipped. App Store 1.0.0 is public. Current work is maintenance of that line plus Access acceptance. |
 | macOS | Release qualification. Chromium integration is in source; runtime and distribution qualification are still open. |
-| Windows | A colleague owns the Windows source port and native acceptance. Android and Linux stay later evaluation tracks, with no release-date commitment. |
+| Windows | A colleague owns the Windows source port and native acceptance. Runner admission and native build, test, browser and installer acceptance remain paused under the recorded decision. Android and Linux stay later evaluation tracks, with no release-date commitment. |
 
 macOS release qualification does not wait for the next iOS store submission. iOS maintenance and Access acceptance do not wait for macOS release qualification. The Access order is in [TODO.md](../TODO.md#access-roadmap-todo): close [#157](https://github.com/gcsagroup/aegis-browser/issues/157) and [#158](https://github.com/gcsagroup/aegis-browser/issues/158), then webpage evidence for [#136](https://github.com/gcsagroup/aegis-browser/issues/136) and [#155](https://github.com/gcsagroup/aegis-browser/issues/155), then iPhone [#137](https://github.com/gcsagroup/aegis-browser/issues/137), [#160](https://github.com/gcsagroup/aegis-browser/issues/160) and [#138](https://github.com/gcsagroup/aegis-browser/issues/138). In parallel, clear macOS [#165](https://github.com/gcsagroup/aegis-browser/issues/165) and [#179](https://github.com/gcsagroup/aegis-browser/issues/179), then [#140](https://github.com/gcsagroup/aegis-browser/issues/140) and [#141](https://github.com/gcsagroup/aegis-browser/issues/141).
 
@@ -101,7 +101,7 @@ Exit criteria:
 
 ## Windows and later platforms
 
-A colleague owns the Windows track: source alignment in [#170](https://github.com/gcsagroup/aegis-browser/issues/170) and native build, test and runner acceptance in [#182](https://github.com/gcsagroup/aegis-browser/issues/182). This roadmap records that ownership. It does not schedule Windows work on the iOS or macOS tracks, and it does not treat Windows as release-qualified.
+A colleague owns the Windows track: source alignment in [#170](https://github.com/gcsagroup/aegis-browser/issues/170) and native build, test and runner acceptance in [#182](https://github.com/gcsagroup/aegis-browser/issues/182). The [2026-11-18 decision](https://github.com/gcsagroup/aegis-browser/issues/182#issuecomment-6977894606) keeps Windows runner admission, GN, compilation, native tests, browser and installer acceptance paused until the colleague resumes authorized execution. This roadmap records that ownership. It does not schedule Windows work on the iOS or macOS tracks, and it does not treat Windows as release-qualified.
 
 Android and Linux remain later evaluation tracks. Existing source and manual entry points stay. They do not block iOS maintenance or macOS release qualification, and they carry no release-date commitment.
 

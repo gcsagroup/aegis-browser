@@ -8,7 +8,7 @@
 
 - **iOS / iPadOS：** 已上架维护。App Store 1.0.0 已公开。当前工作是维护这条已发布线，并按下面的顺序验收 Access。
 - **macOS：** 争取发行资格。源码集成不代替运行验收和分发资格。
-- **Windows：** 同事负责 [#170](https://github.com/gcsagroup/aegis-browser/issues/170) 源码对齐和 [#182](https://github.com/gcsagroup/aegis-browser/issues/182) 原生构建、测试与 runner 验收。本计划不在 iOS / macOS 轨道上排期 Windows，也不把它记为已完成。
+- **Windows：** 同事负责 [#170](https://github.com/gcsagroup/aegis-browser/issues/170) 源码对齐和 [#182](https://github.com/gcsagroup/aegis-browser/issues/182) 原生构建、测试与 runner 验收。#182 的 Windows runner、GN、编译、原生测试、浏览器和安装器验收按 [2026-11-18 的决定](https://github.com/gcsagroup/aegis-browser/issues/182#issuecomment-6977894606)继续暂停，待同事恢复授权与执行。本计划不在 iOS / macOS 轨道上排期 Windows，也不把它记为已完成。
 
 ### 目标与关键路径
 
@@ -20,7 +20,7 @@
 2. **再做 #136、#155 网页取证。** #136 承接 WebKit 路由并接入账户网页。#155 的网页取证与 #136 共用同一次节点及目标证据，覆盖有效账户、错账户、撤销拒绝、普通／私密隔离和切换后旧流停止。
 3. **然后验 iPhone。** #137 验冷启动与持久规则，#160 验权益界面，#138 汇总同一候选的真机结果。内部 Options 的第一步仍走 #183 的“应用 → 目标收件”，不替代 #138。
 4. **macOS 同步清理缺陷，再做浏览器验收。** 与上述 iOS 顺序并行清理 #165 首标签白屏和 #179 渲染进程崩溃。这两项清完后再推进 #140 原标签发布与重试，以及 #141 综合验收。#159 权益界面仍接在 #140 与后端账本证据之后。
-5. **其余后置。** #117 按本地化范围验收。阶段一按 #98 的退出清单汇总，两端闭环后再做 #142 的普通用户策略管理。Windows 由同事在 #170 / #182 上推进。
+5. **其余后置。** #117 按本地化范围验收。阶段一按 #98 的退出清单汇总，两端闭环后再做 #142 的普通用户策略管理。Windows 归同事；#182 按最新决定继续暂停，不在本计划中恢复执行。
 
 ### 按优先级执行与关闭
 
@@ -47,7 +47,7 @@
 | P2 | [#117 iOS 本地化](https://github.com/gcsagroup/aegis-browser/issues/117) | （独立） | 补齐 Swift 和 WebView 文案、语言回退及系统／扩展边界。以母语审校和 iPhone／iPad 的大字体、VoiceOver 记录结项。 |
 | P2 | [#142 普通用户网站策略](https://github.com/gcsagroup/aegis-browser/issues/142) | （iOS 域名持久化及 macOS 对等闭环） | 两端实现并验证 DIRECT／PROXY／REJECT，覆盖真实拒绝访问、离线编辑、冲突、重启和私密隔离。#183 的内部编辑器按自身渠道验收。 |
 | 同事 | [#170 Windows 源码移植](https://github.com/gcsagroup/aegis-browser/issues/170) | 同事负责；对齐时使用当时已验的 macOS 基线 | 同事将 Windows 适配与共享基线对齐，并核对差异和最终源码交付。[fork PR #353](https://github.com/quinn521/aegis-browser/pull/353) 仍是该轨道的源码入口。原生验证归 #182。本表不把这项工作排进 iOS 维护或 macOS 发行资格。 |
-| 同事 | [#182 Windows 原生验收](https://github.com/gcsagroup/aegis-browser/issues/182) | 同事负责；依赖 #170 的最终源码 | 同事在授权 Windows 环境完成 GN、编译、真实单元／回归、浏览器、安装与启动，并记录对应制品和候选。完成前不记为发行资格。 |
+| 同事 · 暂停 | [#182 Windows 原生验收](https://github.com/gcsagroup/aegis-browser/issues/182) | 同事负责；依赖 #170 的最终源码 | 按 [2026-11-18 的决定](https://github.com/gcsagroup/aegis-browser/issues/182#issuecomment-6977894606)继续暂停。待同事恢复授权后，在授权 Windows 环境完成 GN、编译、真实单元／回归、浏览器、安装与启动，并记录对应制品和候选。完成前不记为发行资格。 |
 
 ### 验收收据
 

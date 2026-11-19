@@ -60,7 +60,7 @@ Open `apps/ios/Aegis.xcodeproj`; follow the [iOS guide](apps/ios/README.md) for 
 | --- | --- | --- |
 | iOS / iPadOS | Shipped, in maintenance | App Store 1.0.0 is public. Current work maintains that line and accepts Access on device. [United States](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [Hong Kong](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
 | macOS | Release qualification | Chromium integration is in source. Runtime acceptance and distribution qualification are still open. |
-| Windows | Colleague-owned | A colleague owns the Windows source port and native acceptance. This line does not block iOS or macOS. |
+| Windows | Colleague-owned | A colleague owns the Windows source port and native acceptance. Runner admission and native build, test, browser and installer acceptance remain paused under the recorded decision. This line does not block iOS or macOS. |
 | Android / Linux | Later | Source and evaluation entry points exist; no near-term release commitment. |
 
 iOS maintenance and macOS release qualification proceed together. Windows stays with the colleague who owns that track. See the [roadmap](docs/roadmap.md) for the Access order and release criteria.
