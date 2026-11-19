@@ -140,9 +140,22 @@ class DevelopmentKeyAccessTests(unittest.TestCase):
         second.write_bytes(b'encrypted fixture')
         second.chmod(0o644)
         self.visible.append(str(second))
-        with self.assertRaisesRegex(ValueError, 'Unique owned dedicated'):
+        with self.assertRaisesRegex(ValueError, r'Unique owned dedicated.*matchCount=2'):
             self.prepare()
         self.unlock.assert_not_called()
+        receipt = json.loads((self.output / 'development-keychain-activation.json').read_bytes())
+        self.assertEqual(receipt['keychainScan']['matchCount'], 2)
+        self.assertEqual(receipt['status'], 'failed')
+
+    def test_missing_dedicated_search_list_entry_reports_scan_counts(self):
+        self.visible[:] = [str(self.root / 'login.keychain-db')]
+        (self.root / 'login.keychain-db').write_bytes(b'login fixture')
+        with self.assertRaisesRegex(ValueError, r'matchCount=0.*list-keychains'):
+            self.prepare()
+        self.unlock.assert_not_called()
+        receipt = json.loads((self.output / 'development-keychain-activation.json').read_bytes())
+        self.assertEqual(receipt['keychainScan']['matchCount'], 0)
+        self.assertEqual(receipt['keychainScan']['unretainable'], 1)
 
     def test_mixed_distribution_keychain_is_not_unlocked(self):
         self.native.keychain_has_distribution.return_value = True
