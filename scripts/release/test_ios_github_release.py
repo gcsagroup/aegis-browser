@@ -393,7 +393,9 @@ class FakePublisher:
         if path == 'releases/500':
             if len(self.release['assets']) != 4:
                 raise AssertionError('Cannot publish before all four assets are staged')
-            self.release['draft'] = payload['draft']
+            for key in ('name', 'body', 'prerelease', 'draft'):
+                if key in payload:
+                    self.release[key] = payload[key]
             return copy.deepcopy(self.release)
         raise AssertionError(path)
 
@@ -447,10 +449,13 @@ class PublicReleaseMutationTests(unittest.TestCase):
         approval.assert_called_once()
         api.assert_not_called()
 
-    def test_freshness_and_draft_are_rechecked_after_stable_approval(self):
+    def test_freshness_and_assets_are_rechecked_after_promotion_approval(self):
         evidence = valid_evidence('release', '1.2.0', '9')
-        plan = release.build_release_plan(release.validate_delivery_evidence(evidence, 'stable'))
-        assets = [{'name': name, 'sha256': digest} for name, digest in plan['assets'].items()]
+        candidate = release.validate_delivery_evidence(evidence, 'stable')
+        prerelease_plan = release.build_release_plan(candidate, 'prerelease')
+        plan = release.build_release_plan(candidate, 'stable')
+        assets = [{'name': name, 'path': '/tmp/' + name, 'size': 10, 'sha256': digest}
+                  for name, digest in plan['assets'].items()]
         for failure in ('stale', 'edited', 'main-moved'):
             with self.subTest(failure=failure):
                 state = FakePublisher()
@@ -458,6 +463,16 @@ class PublicReleaseMutationTests(unittest.TestCase):
 
                 def api(path, payload=None, method=None):
                     return state.request(path, payload) if payload is not None else state.get(path)
+
+                def upload(_id, asset):
+                    state.release['assets'].append({'name': asset['name'], 'state': 'uploaded',
+                                                    'digest': 'sha256:' + asset['sha256'], 'size': asset['size']})
+
+                with patch.object(release, '_api', side_effect=api), patch.object(release, 'GitHub', return_value=state), \
+                     patch.object(release, '_assert_current_release_source'), \
+                     patch.object(release, '_upload_asset_once', side_effect=upload), \
+                     patch.dict('os.environ', {'EXPECTED_PLAN_SHA256': prerelease_plan['planSha256']}):
+                    release.publish_release(prerelease_plan, assets)
 
                 main_moved = False
                 expired = False
@@ -478,26 +493,22 @@ class PublicReleaseMutationTests(unittest.TestCase):
                     if expired:
                         raise ValueError('stale')
 
-                def upload(_id, asset):
-                    state.release['assets'].append({'name': asset['name'], 'state': 'uploaded',
-                                                    'digest': 'sha256:' + asset['sha256']})
-
                 def approval(_plan, _run_id):
                     nonlocal checks
                     checks += 1
                     if checks == 2 and failure == 'edited':
-                        state.release['body'] = 'Changed outside the Bot'
+                        state.release['assets'][0]['digest'] = 'sha256:' + 'ab' * 32
 
                 with patch.object(release, '_api', side_effect=read_release), patch.object(release, 'GitHub', return_value=state), \
-                     patch.object(release, '_assert_current_release_source', side_effect=verify_current), patch.object(release, '_upload_asset_once', side_effect=upload), \
+                     patch.object(release, '_assert_current_release_source', side_effect=verify_current), \
                      patch.object(release, '_check_approval', side_effect=approval), patch.dict('os.environ', {
                          'EXPECTED_PLAN_SHA256': plan['planSha256'], 'GITHUB_RUN_ID': '444'}):
-                    with patch.object(release, '_require_fresh_observation',
-                                      side_effect=verify_fresh):
-                        with self.assertRaisesRegex(ValueError, 'stale|metadata conflicts|main moved'):
+                    with patch.object(release, '_require_fresh_observation', side_effect=verify_fresh):
+                        with self.assertRaisesRegex(ValueError, 'stale|digest conflicts|main moved'):
                             release.publish_release(plan, assets)
                 self.assertEqual(checks, 2)
-                self.assertTrue(state.release['draft'])
+                self.assertFalse(state.release['draft'])
+                self.assertTrue(state.release['prerelease'])
                 self.assertEqual(len(state.release['assets']), 4)
 
     def test_stable_preview_rejects_team_reviewers(self):
@@ -573,21 +584,20 @@ class PublicReleaseMutationTests(unittest.TestCase):
         self.assertEqual(first_upload_count, len(state.upload_calls))
         self.assertEqual({item['name'] for item in state.release['assets']}, set(plan['assets']))
 
-    def test_stable_approval_requires_exact_digest_and_a_separate_current_admin(self):
+    def test_stable_approval_accepts_the_initiating_admin_with_the_exact_digest(self):
         candidate = release.validate_delivery_evidence(valid_evidence('release', '1.2.0', '9'), 'stable')
         plan = release.build_release_plan(candidate)
         environment = {'id': 901, 'name': release.PRODUCTION_ENVIRONMENT,
             'can_admins_bypass': False,
             'deployment_branch_policy': {'protected_branches': True, 'custom_branch_policies': False},
-            'protection_rules': [{'type': 'required_reviewers', 'prevent_self_review': True,
-                'reviewers': [{'type': 'User', 'reviewer': {'id': 2, 'login': 'reviewer'}}]}]}
+            'protection_rules': [{'type': 'required_reviewers', 'prevent_self_review': False,
+                'reviewers': [{'type': 'User', 'reviewer': {'id': 1, 'login': 'controller'}}]}]}
         admins = [
             {'id': 1, 'login': 'controller', 'permissions': {'admin': True}},
-            {'id': 2, 'login': 'reviewer', 'permissions': {'admin': True}},
         ]
         approval = {'state': 'approved', 'comment': 'publish ' + plan['planSha256'],
             'environments': [{'id': 901, 'name': release.PRODUCTION_ENVIRONMENT}],
-            'user': {'id': 2, 'login': 'reviewer'}}
+            'user': {'id': 1, 'login': 'controller'}}
         def api(path, payload=None, method=None):
             if path.startswith('environments/'):
                 return environment
@@ -598,7 +608,7 @@ class PublicReleaseMutationTests(unittest.TestCase):
             raise AssertionError(path)
 
         with patch.object(release, '_api', side_effect=api), patch.dict('os.environ', {
-            'AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS': '2', 'CONTROLLER_ADMIN_IDS': '1'}):
+            'AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS': '1', 'CONTROLLER_ADMIN_IDS': '1'}):
             release._check_approval(plan, 444)
             approval['comment'] = 'approved'
             with self.assertRaisesRegex(ValueError, 'exact plan digest'):
@@ -686,13 +696,21 @@ class PublicReleaseMutationTests(unittest.TestCase):
 
         self.assertTrue(resumed['existingTag'])
 
-    def test_stable_publish_requires_reviewed_plan_and_sets_latest(self):
+    def test_release_package_publishes_as_prerelease_then_promotes_in_place(self):
         candidate = release.validate_delivery_evidence(valid_evidence('release', '1.2.0', '9'), 'stable')
-        plan = release.build_release_plan(candidate)
+        prerelease_plan = release.build_release_plan(candidate, 'prerelease')
+        stable_plan = release.build_release_plan(candidate, 'stable')
+        self.assertEqual(prerelease_plan['releaseIdentitySha256'], stable_plan['releaseIdentitySha256'])
+        self.assertNotEqual(prerelease_plan['planSha256'], stable_plan['planSha256'])
+        self.assertEqual(prerelease_plan['tag'], stable_plan['tag'])
+        self.assertTrue(prerelease_plan['prerelease'])
+        self.assertFalse(prerelease_plan['makeLatest'])
+        self.assertFalse(stable_plan['prerelease'])
+        self.assertTrue(stable_plan['makeLatest'])
         assets = [{'name': name, 'path': '/tmp/' + name, 'size': 10, 'sha256': digest}
-                  for name, digest in plan['assets'].items()]
+                  for name, digest in prerelease_plan['assets'].items()]
         state = FakePublisher()
-        state.approvals = [{'state': 'approved', 'comment': 'publish ' + plan['planSha256'],
+        state.approvals = [{'state': 'approved', 'comment': 'publish ' + stable_plan['planSha256'],
             'environments': [{'id': 901, 'name': release.PRODUCTION_ENVIRONMENT}],
             'user': {'id': 2, 'login': 'reviewer'}}]
 
@@ -707,17 +725,38 @@ class PublicReleaseMutationTests(unittest.TestCase):
                 'digest': 'sha256:' + asset['sha256'], 'size': asset['size']})
 
         with patch.object(release, '_api', side_effect=api), patch.object(release, 'GitHub', return_value=state), \
-             patch.object(release, '_assert_current_release_source'), patch.object(release, '_upload_asset_once', side_effect=upload), patch.dict('os.environ', {
-                'EXPECTED_PLAN_SHA256': plan['planSha256'], 'GITHUB_RUN_ID': '444',
-                'AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS': '2', 'CONTROLLER_ADMIN_IDS': '1'}):
-            release.publish_release(plan, assets)
+             patch.object(release, '_assert_current_release_source'), patch.object(release, '_upload_asset_once', side_effect=upload):
+            with patch.dict('os.environ', {'EXPECTED_PLAN_SHA256': stable_plan['planSha256'], 'GITHUB_RUN_ID': '444',
+                                            'AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS': '2'}):
+                with self.assertRaisesRegex(ValueError, 'Publish the prerelease'):
+                    release.publish_release(stable_plan, assets)
+            with patch.dict('os.environ', {'EXPECTED_PLAN_SHA256': prerelease_plan['planSha256']}):
+                release.publish_release(prerelease_plan, assets)
+            self.assertEqual(len(state.upload_calls), 4)
+            with patch.dict('os.environ', {'EXPECTED_PLAN_SHA256': stable_plan['planSha256'], 'GITHUB_RUN_ID': '444',
+                                            'AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS': '2'}):
+                preview = release.preview_release(stable_plan)
+                self.assertTrue(preview['existingRelease'])
+                self.assertTrue(preview['productionEnvironmentVerified'])
+                release.publish_release(stable_plan, assets)
+                release.publish_release(stable_plan, assets)
 
         payload = next(payload for path, payload in state.create_calls if path == 'releases')
-        self.assertIs(payload['prerelease'], False)
+        self.assertIs(payload['prerelease'], True)
         self.assertIs(payload['draft'], True)
         self.assertEqual(payload['make_latest'], 'false')
-        self.assertIn(('releases/500', {'draft': False, 'make_latest': 'true'}), state.create_calls)
-        self.assertEqual(plan['tag'], 'ios/1.2.0-release.9')
+        self.assertEqual(sum(path == 'git/tags' for path, _payload in state.create_calls), 1)
+        self.assertIn(('releases/500', {'draft': False, 'make_latest': 'false'}), state.create_calls)
+        self.assertIn(('releases/500', {'name': stable_plan['name'], 'body': stable_plan['body'], 'draft': False,
+                                        'prerelease': False, 'make_latest': 'true'}), state.create_calls)
+        self.assertEqual(stable_plan['tag'], 'ios/1.2.0-release.9')
+        self.assertIs(state.release['prerelease'], False)
+        self.assertEqual(state.release['name'], stable_plan['name'])
+
+    def test_beta_package_cannot_become_the_stable_release(self):
+        candidate = release.validate_delivery_evidence(valid_evidence('beta', '1.2.0', '9'), 'beta')
+        with self.assertRaisesRegex(ValueError, 'Beta package'):
+            release.build_release_plan(candidate, 'stable')
 
 
 if __name__ == '__main__':
