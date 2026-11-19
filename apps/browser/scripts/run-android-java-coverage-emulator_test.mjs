@@ -8,8 +8,10 @@ import {test} from 'node:test';
 const checkout = path.resolve(import.meta.dirname, '../../..');
 
 function readEmulatorPid(file) {
-  if (!fs.existsSync(file)) return null;
-  const record = fs.readFileSync(file, 'utf8');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- PID path is a fixed file under this test's private mkdtemp directory.
+  if (!fs.existsSync(file)) return null; // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read only the fixture PID file created above.
+  const record = fs.readFileSync(file, 'utf8'); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   const match = /^([1-9]\d{0,9})\n$/u.exec(record);
   if (!match || match[0] !== record) return null;
   const pid = Number(match[1]);
@@ -24,6 +26,7 @@ function runCoverage(t, mode) {
   const emulatorPid = path.join(root, 'emulator.pid');
   const bashEnv = path.join(root, 'bash-env');
   // Advance the launcher's clock without waiting for the real startup budget.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Fixed bootstrap file in this test's private mkdtemp directory.
   fs.writeFileSync(bashEnv, String.raw`
 timeout() {
   if [[ $3 == */avdmanager ]]; then
@@ -39,13 +42,16 @@ timeout() {
   fi
   command timeout "$@"
 }
-`);
+`); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 
   t.after(() => fs.rmSync(root, {recursive: true, force: true}));
-  fs.writeFileSync(record, '');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The operation log belongs to the current fixture directory.
+  fs.writeFileSync(record, ''); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   const script = (file, content) => {
-    fs.mkdirSync(path.dirname(file), {recursive: true});
-    fs.writeFileSync(file, '#!/usr/bin/env bash\nset -eu\n' + content, {mode: 0o700});
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- All callers supply fixed mock SDK or bin paths under this private directory.
+    fs.mkdirSync(path.dirname(file), {recursive: true}); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Only the static scripts below are written to the fixture SDK and bin directories.
+    fs.writeFileSync(file, '#!/usr/bin/env bash\nset -eu\n' + content, {mode: 0o700}); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   };
   script(path.join(sdk, 'platform-tools/adb'), String.raw`
 printf 'adb %s\n' "$*" >> "$RECORD"
@@ -139,13 +145,16 @@ exec "$@"
     timeout: 45000,
   });
   assert.ifError(result.error);
-  if (fs.existsSync(emulatorPid)) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The mock writes this PID to a fixed file under the private fixture directory.
+  if (fs.existsSync(emulatorPid)) { // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
     const pid = readEmulatorPid(emulatorPid);
     assert.notEqual(pid, null, 'the fixture emulator must record a valid PID');
     assert.throws(() => process.kill(pid, 0), {code: 'ESRCH'}, 'the fixture emulator must be reaped');
-    fs.unlinkSync(emulatorPid);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Remove only this fixture's PID marker so the mock emulator can exit.
+    fs.unlinkSync(emulatorPid); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   }
-  return {status: result.status, stderr: result.stderr, operations: fs.readFileSync(record, 'utf8')};
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read the fixed log that this fixture created.
+  return {status: result.status, stderr: result.stderr, operations: fs.readFileSync(record, 'utf8')}; // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 }
 
 test('cold-boot coverage runs on the owned API 36 transport without injecting key events', t => {
@@ -244,9 +253,11 @@ test('only complete and valid PID records are used to check emulator liveness', 
   const otherPid = process.pid === 1234 ? 1235 : 1234;
   for (const value of ['', String(otherPid), otherPid + '\n\n', ' 23\n', '23\r\n',
     '0\n', '1\n', '-1\n', '1e2\n', '21x\n', '2147483648\n', process.pid + '\n']) {
-    fs.writeFileSync(file, value);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- PID probe values are written only to this test's temporary file.
+    fs.writeFileSync(file, value); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
     assert.equal(readEmulatorPid(file), null, JSON.stringify(value));
   }
-  fs.writeFileSync(file, otherPid + '\n');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Final valid PID record stays inside the same temporary fixture file.
+  fs.writeFileSync(file, otherPid + '\n'); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   assert.equal(readEmulatorPid(file), otherPid);
 });
