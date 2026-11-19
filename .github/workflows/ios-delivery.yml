@@ -34,6 +34,11 @@ on:
         type: choice
         options: [cloud, manual]
         default: cloud
+      archive_signing:
+        description: "Cloud archive identity. Export still uses Distribution signing."
+        type: choice
+        options: [development, ad-hoc, unsigned]
+        default: development
       private_beta:
         description: "Embed protected test inputs and upload privately (Beta/manual only)"
         type: choice
@@ -109,6 +114,7 @@ jobs:
       groups: ${{ steps.plan.outputs.groups }}
       stage_input: ${{ steps.plan.outputs.stage_input }}
       signing_mode: ${{ steps.plan.outputs.signing_mode }}
+      archive_signing: ${{ steps.plan.outputs.archive_signing }}
       package_entrypoint: ${{ steps.plan.outputs.package_entrypoint }}
       private_beta: ${{ steps.plan.outputs.private_beta }}
     env:
@@ -178,6 +184,7 @@ jobs:
       RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
       RELEASE_VERSION: ${{ needs.admission.outputs.version }}
       RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      ARCHIVE_SIGNING: ${{ needs.admission.outputs.archive_signing }}
       AEGIS_APPLE_TEAM_ID: ${{ needs.archive-settings.outputs.team }}
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
@@ -198,6 +205,7 @@ jobs:
           python3 -B scripts/release/cloud-archive.py --output "$RUNNER_TEMP/aegis-development-archive"
           --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
           --profile "$RELEASE_PROFILE" --team "$AEGIS_APPLE_TEAM_ID"
+          --archive-signing "$ARCHIVE_SIGNING"
           --github-output "$GITHUB_OUTPUT"
       - name: Preserve uncredentialed archive diagnostics
         if: ${{ always() }}
