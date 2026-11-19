@@ -16,6 +16,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,15 +119,52 @@ def development_keychains(original):
     return retained
 
 
+NATIVE_BUILD_TOOLS = frozenset({'xcodebuild', 'codesign'})
+NATIVE_IDLE_TIMEOUT = 600
+NATIVE_IDLE_POLL = 15
+
+
+def conflicting_native_processes():
+    """Same-account xcodebuild and codesign processes share this keychain."""
+    account = str(os.getuid())
+    conflicts = []
+    for line in run('ps', '-axo', 'pid=,uid=,user=,comm=').decode().splitlines():
+        parts = line.split(None, 3)
+        if len(parts) != 4:
+            continue
+        pid, uid, user, command = parts
+        command = command.strip()
+        if uid != account or not pid.isdigit() or Path(command).name not in NATIVE_BUILD_TOOLS:
+            continue
+        conflicts.append(pid + ' ' + user + ' ' + command)
+    return conflicts
+
+
+def wait_until_native_host_idle():
+    """Wait until this account has no native build or signing process."""
+    deadline = time.monotonic() + NATIVE_IDLE_TIMEOUT
+    announced = False
+    while True:
+        conflicts = conflicting_native_processes()
+        if not conflicts:
+            return
+        detail = ', '.join(conflicts)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError('Native signing/build process active; retry on an idle host: ' + detail)
+        if not announced:
+            print('Waiting for native signing/build processes to exit: ' + detail, flush=True)
+            announced = True
+        time.sleep(min(NATIVE_IDLE_POLL, remaining))
+
+
 @contextmanager
 def native_session():
     """Serialize account-wide keychain changes and unwind on TERM/HUP."""
     lock_path = Path.home() / 'Library/Caches/aegis-cloud-signing-poc.lock'
     with lock_path.open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        processes = run('ps', '-axo', 'comm=').decode().splitlines()
-        if any(Path(process.strip()).name in {'xcodebuild', 'codesign'} for process in processes):
-            raise ValueError('Native signing/build process active; retry on an idle host')
+        wait_until_native_host_idle()
         previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGHUP)}
         def stop(signum, _frame):
             raise SystemExit(128 + signum)
