@@ -70,8 +70,11 @@ trap 'exit 143' TERM
 emulator_booted=0
 while (( SECONDS < boot_deadline )); do
   if ! kill -0 "$emulator_pid" 2>/dev/null; then
-    echo 'coverage emulator exited before completing boot' >&2
-    exit 1
+    emulator_rc=0
+    wait "$emulator_pid" || emulator_rc=$?
+    printf 'coverage emulator exited before completing boot (exit %s)\n' "$emulator_rc" >&2
+    if (( emulator_rc == 0 )); then exit 1; fi
+    exit "$emulator_rc"
   fi
   if devices=$(during_startup "$adb" devices -l) &&
     transport=$(awk -v serial="$serial" '
