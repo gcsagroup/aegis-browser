@@ -1,0 +1,210 @@
+name: Android GitHub Release · Bot
+run-name: Android GitHub Release ${{ inputs.operation }} · ${{ inputs.release_type }} · ${{ inputs.version }}(${{ inputs.build }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        description: Preview a Release package, publish it as a prerelease, or promote that prerelease after review
+        options: [Preview, Publish prerelease, Promote stable]
+        required: true
+      release_type:
+        type: choice
+        description: Release-profile package; publication starts as a prerelease
+        options: [stable]
+        required: true
+      version:
+        type: string
+        description: Exact uploaded product version
+        required: true
+      build:
+        type: string
+        description: Exact uploaded versionCode
+        required: true
+      status_run_id:
+        type: string
+        description: Exact successful read-only Play Release Wait run
+        required: true
+      controller_run_id:
+        type: string
+        description: Human Admin controller run that authorized this request
+        required: true
+      controller_actor_id:
+        type: string
+        description: Initiating Admin identity from the controller run
+        required: true
+      controller_actor_login:
+        type: string
+        description: Initiating Admin login from the controller run
+        required: true
+      approved_source_sha:
+        type: string
+        description: Full source SHA approved by the controller
+        required: true
+permissions:
+  actions: read
+  contents: read
+env:
+  AEGIS_ANDROID_DELIVERY_BOT: ${{ vars.AEGIS_ANDROID_DELIVERY_BOT }}
+  AEGIS_ANDROID_RELEASE_ENABLED: ${{ vars.AEGIS_ANDROID_RELEASE_ENABLED }}
+  AEGIS_ANDROID_GITHUB_RELEASE_ENABLED: ${{ vars.AEGIS_ANDROID_GITHUB_RELEASE_ENABLED }}
+jobs:
+  preview:
+    if: ${{ github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && vars.AEGIS_ANDROID_GITHUB_RELEASE_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      plan_sha256: ${{ steps.preview.outputs.plan_sha256 }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TYPE: ${{ inputs.release_type }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD: ${{ inputs.build }}
+      STATUS_RUN_ID: ${{ inputs.status_run_id }}
+      CONTROLLER_RUN_ID: ${{ inputs.controller_run_id }}
+      CONTROLLER_ACTOR_ID: ${{ inputs.controller_actor_id }}
+      CONTROLLER_ACTOR_LOGIN: ${{ inputs.controller_actor_login }}
+      RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      AEGIS_ANDROID_GITHUB_RELEASE_ADMIN_IDS: ${{ vars.AEGIS_ANDROID_GITHUB_RELEASE_ADMIN_IDS }}
+      PUBLICATION: ${{ inputs.operation == 'Promote stable' && 'stable' || 'prerelease' }}
+      RELEASE_DESTINATION: artifacts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a
+        with:
+          distribution: temurin
+          java-version: '17'
+      - id: authorize
+        name: Verify Bot identity and original Admin controller
+        run: node scripts/ci/android-operator.mjs --context github-release
+      - name: Require current upstream main and exact-source quality
+        run: node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA" --context github-release
+      - id: locate
+        name: Locate immutable package and Play status artifacts
+        run: >-
+          python3 scripts/release/android-github-release.py locate
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --publication "$PUBLICATION"
+      - name: Download and verify the exact sealed package artifact bytes
+        env:
+          PACKAGE_RUN_ID: ${{ steps.locate.outputs.package_run_id }}
+          PACKAGE_ARTIFACT_ID: ${{ steps.locate.outputs.package_artifact_id }}
+        run: >-
+          python3 scripts/release/android-github-release.py download-package
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --publication "$PUBLICATION"
+          --package-run-id "$PACKAGE_RUN_ID"
+          --package-artifact-id "$PACKAGE_ARTIFACT_ID"
+          --package-archive .artifacts/package/package.zip
+      - name: Extract and verify the sealed package ZIP
+        run: >-
+          python3 scripts/release/android-github-release.py extract
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --publication "$PUBLICATION"
+          --package-archive .artifacts/package/package.zip --package-directory .artifacts/package/unpacked
+      - id: preview
+        name: Verify package, Play draft, Play state and public asset plan
+        env:
+          STATUS_ARTIFACT_ID: ${{ steps.locate.outputs.status_artifact_id }}
+        run: >-
+          python3 scripts/release/android-github-release.py preview
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --publication "$PUBLICATION"
+          --status-run-id "$STATUS_RUN_ID" --status-artifact-id "$STATUS_ARTIFACT_ID"
+          --package-directory .artifacts/package/unpacked
+          --plan-file "$RUNNER_TEMP/android-release-plan.json"
+  stable-approval:
+    if: ${{ needs.preview.result == 'success' && inputs.operation == 'Promote stable' && vars.AEGIS_ANDROID_GITHUB_RELEASE_ENABLED == 'true' }}
+    needs: [preview]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: aegis-android-github-production
+    permissions: {}
+    steps:
+      - name: Record approval gate completion
+        run: printf '%s\n' 'The publisher will verify the exact stable approval record.'
+  publish:
+    if: >-
+      ${{ !cancelled() && needs.preview.result == 'success' && vars.AEGIS_ANDROID_GITHUB_RELEASE_ENABLED == 'true' &&
+          ((inputs.operation == 'Publish prerelease' && needs.stable-approval.result == 'skipped') ||
+           (inputs.operation == 'Promote stable' && needs.stable-approval.result == 'success')) }}
+    needs: [preview, stable-approval]
+    concurrency:
+      group: android-public-release-${{ github.repository }}
+      queue: max
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TYPE: ${{ inputs.release_type }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD: ${{ inputs.build }}
+      STATUS_RUN_ID: ${{ inputs.status_run_id }}
+      CONTROLLER_RUN_ID: ${{ inputs.controller_run_id }}
+      CONTROLLER_ACTOR_ID: ${{ inputs.controller_actor_id }}
+      CONTROLLER_ACTOR_LOGIN: ${{ inputs.controller_actor_login }}
+      RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      EXPECTED_PLAN_SHA256: ${{ needs.preview.outputs.plan_sha256 }}
+      AEGIS_ANDROID_GITHUB_RELEASE_ADMIN_IDS: ${{ vars.AEGIS_ANDROID_GITHUB_RELEASE_ADMIN_IDS }}
+      PUBLICATION: ${{ inputs.operation == 'Promote stable' && 'stable' || 'prerelease' }}
+      RELEASE_DESTINATION: artifacts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a
+        with:
+          distribution: temurin
+          java-version: '17'
+      - id: authorize
+        name: Reverify Bot identity and original Admin controller
+        run: node scripts/ci/android-operator.mjs --context github-release
+      - name: Recheck current main and exact-source quality after approval
+        run: node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA" --context github-release
+      - id: locate
+        name: Relocate the same immutable package and status artifacts
+        run: >-
+          python3 scripts/release/android-github-release.py locate
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --publication "$PUBLICATION"
+      - name: Download and verify the exact sealed package artifact bytes
+        env:
+          PACKAGE_RUN_ID: ${{ steps.locate.outputs.package_run_id }}
+          PACKAGE_ARTIFACT_ID: ${{ steps.locate.outputs.package_artifact_id }}
+        run: >-
+          python3 scripts/release/android-github-release.py download-package
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --publication "$PUBLICATION"
+          --package-run-id "$PACKAGE_RUN_ID"
+          --package-artifact-id "$PACKAGE_ARTIFACT_ID"
+          --package-archive .artifacts/package/package.zip
+      - name: Extract and verify the same sealed package ZIP
+        run: >-
+          python3 scripts/release/android-github-release.py extract
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --status-run-id "$STATUS_RUN_ID" --publication "$PUBLICATION"
+          --package-archive .artifacts/package/package.zip --package-directory .artifacts/package/unpacked
+      - name: Rebuild plan, verify exact Admin approval, and publish once
+        env:
+          STATUS_ARTIFACT_ID: ${{ steps.locate.outputs.status_artifact_id }}
+        run: >-
+          python3 scripts/release/android-github-release.py publish
+          --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --publication "$PUBLICATION"
+          --status-run-id "$STATUS_RUN_ID" --status-artifact-id "$STATUS_ARTIFACT_ID"
+          --package-directory .artifacts/package/unpacked
+          --plan-file "$RUNNER_TEMP/android-release-plan.json"
