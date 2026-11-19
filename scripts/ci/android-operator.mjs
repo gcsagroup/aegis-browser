@@ -41,18 +41,23 @@ async function readGithub(path, token) {
 const repositoryApi = (repository, path, {token}) => readGithub('/repos/'+repository+path, token);
 
 async function administratorInventory(repository, token, api) {
-  const users = [];
-  const ids = new Set();
-  for (let page = 1; page <= 20; page++) {
-    const batch = await api(repository, `/collaborators?affiliation=all&permission=admin&per_page=100&page=${page}`, {token});
-    requireValue(Array.isArray(batch) && batch.length <= 100, 'Invalid Admin permissions inventory');
-    for (const user of batch) {
-      requireValue(validUser(user) && user.permissions?.admin === true && !ids.has(user.id), 'Invalid or duplicate Admin permissions inventory');
-      ids.add(user.id); users.push(user);
+  try {
+    const users = [];
+    const ids = new Set();
+    for (let page = 1; page <= 20; page++) {
+      const batch = await api(repository, `/collaborators?affiliation=all&permission=admin&per_page=100&page=${page}`, {token});
+      requireValue(Array.isArray(batch) && batch.length <= 100, 'Invalid Admin permissions inventory');
+      for (const user of batch) {
+        requireValue(validUser(user) && user.permissions?.admin === true && !ids.has(user.id), 'Invalid or duplicate Admin permissions inventory');
+        ids.add(user.id); users.push(user);
+      }
+      if (batch.length < 100) return users;
     }
-    if (batch.length < 100) return users;
+    throw new OperatorError('Incomplete Admin permissions inventory pagination');
+  } catch (error) {
+    if (error instanceof OperatorError) throw error;
+    throw new OperatorError('Unable to verify repository Admin authorization');
   }
-  throw new OperatorError('Incomplete Admin permissions inventory pagination');
 }
 
 function botPolicy(environment) {
@@ -79,7 +84,9 @@ async function requireDeliveryBot(user, run, environment, identityApi, token, co
     Object.keys(inputs).sort().join(',') === 'approved_source_sha,build,controller_actor_id,controller_actor_login,controller_run_id,operation,release_type,status_run_id,version' &&
     ['Preview', 'Publish prerelease', 'Promote stable'].includes(inputs.operation) && inputs.release_type === 'stable' &&
     validAndroidCoordinate(inputs.version, inputs.build) &&
-    ['status_run_id', 'controller_run_id', 'controller_actor_id'].every(key => /^[1-9][0-9]{0,15}$/u.test(inputs[key] || '')) &&
+    /^[1-9][0-9]{0,15}$/u.test(inputs.status_run_id || '') &&
+    /^[1-9][0-9]{0,15}$/u.test(inputs.controller_run_id || '') &&
+    /^[1-9][0-9]{0,15}$/u.test(inputs.controller_actor_id || '') &&
     /^[A-Za-z0-9-]{1,39}$/u.test(inputs.controller_actor_login || '');
   const deliveryInputsValid = inputs && typeof inputs === 'object' && !Array.isArray(inputs) &&
     inputs.approved_source_sha === environment.GITHUB_SHA && validAndroidCoordinate(inputs.version, inputs.build) &&

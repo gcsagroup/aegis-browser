@@ -9,18 +9,18 @@ const REPOSITORY_ID = 1348409663;
 const PREFIX = '/repos/'+REPOSITORY;
 const OPERATIONS = ['Package', 'Package and upload', 'Status', 'Wait', 'Release Wait',
   'Preview GitHub release', 'Publish prerelease', 'Promote to stable'];
-const DELIVERY_OPERATION = {
-  Package: '仅打包 / Package',
-  'Package and upload': '打包并上传 / Package and upload',
-  Status: '查询状态 / Status',
-  Wait: '等待状态 / Wait',
-  'Release Wait': '发布核对 / Release Wait',
-};
-const DELIVERY_PRODUCT = {
-  Alpha: 'Alpha · 仅内测 / Internal only',
-  Beta: 'Beta · 内外测 / Internal and external',
-  Release: 'Release · 通用 / Universal',
-};
+const DELIVERY_OPERATION = new Map([
+  ['Package', '仅打包 / Package'],
+  ['Package and upload', '打包并上传 / Package and upload'],
+  ['Status', '查询状态 / Status'],
+  ['Wait', '等待状态 / Wait'],
+  ['Release Wait', '发布核对 / Release Wait'],
+]);
+const DELIVERY_PRODUCT = new Map([
+  ['Alpha', 'Alpha · 仅内测 / Internal only'],
+  ['Beta', 'Beta · 内外测 / Internal and external'],
+  ['Release', 'Release · 通用 / Universal'],
+]);
 const requireValue = (value, message) => { if (!value) throw new Error(message); };
 const positiveId = value => Number.isSafeInteger(value) && value > 0;
 
@@ -33,8 +33,13 @@ export async function githubRequest(path, {token, method = 'GET', body} = {}) {
       body: body === undefined ? undefined : JSON.stringify(body)});
   } catch { throw new Error('GitHub request outcome unavailable; reconcile before repeating a mutation'); }
   if (!response.ok) throw Object.assign(new Error('GitHub request failed: HTTP '+response.status), {status: response.status});
-  try { return response.status === 204 ? null : await response.json(); }
-  catch { throw new Error('GitHub response unavailable; reconcile before repeating a mutation'); }
+  if (response.status === 204) return null;
+  try {
+    const payload = await response.json();
+    return payload;
+  } catch {
+    throw new Error('GitHub response unavailable; reconcile before repeating a mutation');
+  }
 }
 
 export function installationClient({appId, installationId, privateKey, request = githubRequest, now = Date.now}) {
@@ -99,11 +104,13 @@ export async function driveDelivery({environment = process.env, api, quality, re
   const runs = [];
   const dispatch = async operation => {
     await assertSource();
-    requireValue(DELIVERY_OPERATION[operation] && DELIVERY_PRODUCT[inputs.product], 'Android delivery operation cannot be dispatched');
+    const operationLabel = DELIVERY_OPERATION.get(operation);
+    const productLabel = DELIVERY_PRODUCT.get(inputs.product);
+    requireValue(operationLabel && productLabel, 'Android delivery operation cannot be dispatched');
     let receipt;
     try {
       receipt = await api(PREFIX+'/actions/workflows/android-delivery.yml/dispatches', {method: 'POST', body: {ref: 'main',
-        inputs: {...inputs, operation: DELIVERY_OPERATION[operation], product: DELIVERY_PRODUCT[inputs.product]}}});
+        inputs: {...inputs, operation: operationLabel, product: productLabel}}});
     } catch { throw new Error('Dispatch outcome unknown for '+inputs.version+'('+inputs.build+'); reconcile before another request'); }
     requireValue(positiveId(receipt?.workflow_run_id), 'Dispatch run identity unknown; reconcile without retrying');
     const id = receipt.workflow_run_id;
@@ -129,8 +136,9 @@ export async function driveDelivery({environment = process.env, api, quality, re
         'Child run identity/source/context differs: '+url);
       if (run.status === 'completed') {
         requireValue(run.conclusion === 'success', 'Child delivery failed; reconcile '+url);
-        const required = {'Package': ['delivery / package'], 'Package and upload': ['delivery / package', 'delivery / store'],
-          'Wait': ['delivery / query'], 'Release Wait': ['delivery / query'], 'Status': ['delivery / query']}[operation];
+        const required = operation === 'Package' ? ['delivery / package']
+          : operation === 'Package and upload' ? ['delivery / package', 'delivery / store']
+            : ['Wait', 'Release Wait', 'Status'].includes(operation) ? ['delivery / query'] : null;
         if (required) {
           const inventory = await api(PREFIX+'/actions/runs/'+id+'/attempts/1/jobs?per_page=100');
           requireValue(Array.isArray(inventory?.jobs) && inventory.jobs.length <= 100 &&

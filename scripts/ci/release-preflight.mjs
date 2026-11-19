@@ -10,10 +10,19 @@ const DESTINATIONS = new Set(['artifacts', 'play-draft', 'play-internal', 'play-
 
 function exactCandidateTag(tag) {
   if (typeof tag !== 'string' || tag.length > 160) return false;
-  const match = /^candidate\/android\/((?:0|[1-9][0-9]{0,9})(?:\.(?:0|[1-9][0-9]{0,9})){3})-(alpha|beta|release)\.([1-9][0-9]{0,9})$/u.exec(tag);
-  if (!match) return false;
-  const code = Number(match[3]);
-  const build = Number(match[1].split('.')[3]);
+  const parts = tag.split('/');
+  if (parts.length !== 3 || parts[0] !== 'candidate' || parts[1] !== 'android') return false;
+  const dash = parts[2].lastIndexOf('-');
+  if (dash <= 0 || dash >= parts[2].length - 1) return false;
+  const version = parts[2].slice(0, dash);
+  const audience = parts[2].slice(dash + 1).split('.');
+  const components = version.split('.');
+  const decimal = value => typeof value === 'string' && value.length >= 1 && value.length <= 10 &&
+    (value === '0' || (/^[1-9][0-9]*$/u.test(value) && value.length <= 10));
+  if (components.length !== 4 || !components.every(decimal) || audience.length !== 2) return false;
+  if (!['alpha', 'beta', 'release'].includes(audience[0]) || !/^[1-9][0-9]{0,9}$/u.test(audience[1])) return false;
+  const code = Number(audience[1]);
+  const build = Number(components[3]);
   return Number.isSafeInteger(code) && code <= 2100000000 && code % 10000 === build && build < 10000;
 }
 
