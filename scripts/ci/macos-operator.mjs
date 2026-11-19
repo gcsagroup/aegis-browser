@@ -18,12 +18,17 @@ const WORKFLOWS = new Map([
   ['bot-dmg', '.github/workflows/macos-delivery.yml'],
   ['dmg', '.github/workflows/macos-dmg.yml'],
 ]);
-const VERSION = /^(?:0|[1-9][0-9]{0,9})(?:\.(?:0|[1-9][0-9]{0,9})){1,3}$/u;
+const COMPONENT = /^(?:0|[1-9][0-9]{0,9})$/u;
 const DMG_INPUT_KEYS = 'app_path,approved_source_sha,arch,controller_actor_id,controller_actor_login,controller_run_id,operation,product_checkout,product_sha,signing_mode,version';
 const RECEIPT_NAME = 'aegis-macos-dmg-dispatch.json';
 
 class OperatorError extends Error {}
 function requireValue(value, message) { if (!value) throw new OperatorError(message); }
+function validVersion(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 44) return false;
+  const parts = value.split('.');
+  return parts.length >= 2 && parts.length <= 4 && parts.every(part => COMPONENT.test(part));
+}
 function validUser(user) {
   return user && Number.isSafeInteger(user.id) && user.id > 0 && typeof user.login === 'string' && /^[A-Za-z0-9[\]-]{1,100}$/u.test(user.login);
 }
@@ -70,7 +75,7 @@ function parseDmgInputs(environment) {
     Object.values(inputs).every(item => typeof item === 'string'), 'Invalid DMG Bot inputs');
   requireValue(inputs.operation === 'Rebuild DMG' && inputs.arch === 'arm64' && inputs.signing_mode === 'ad-hoc' &&
     inputs.app_path === '' && inputs.product_checkout === '' && inputs.product_sha === '' &&
-    inputs.approved_source_sha === environment.GITHUB_SHA && VERSION.test(inputs.version) &&
+    inputs.approved_source_sha === environment.GITHUB_SHA && validVersion(inputs.version) &&
     /^[1-9][0-9]{0,15}$/u.test(inputs.controller_run_id) && /^[1-9][0-9]{0,15}$/u.test(inputs.controller_actor_id) &&
     /^[A-Za-z0-9-]{1,39}$/u.test(inputs.controller_actor_login) &&
     inputs.controller_actor_login === environment.CONTROLLER_ACTOR_LOGIN,
