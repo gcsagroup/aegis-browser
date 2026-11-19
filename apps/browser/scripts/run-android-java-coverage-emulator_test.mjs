@@ -26,8 +26,7 @@ function runCoverage(t, mode) {
   const emulatorPid = path.join(root, 'emulator.pid');
   const bashEnv = path.join(root, 'bash-env');
   // Advance the launcher's clock without waiting for the real startup budget.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Fixed bootstrap file in this test's private mkdtemp directory.
-  fs.writeFileSync(bashEnv, String.raw`
+  const timeoutOverride = String.raw`
 timeout() {
   if [[ $3 == */avdmanager ]]; then
     case "$EMULATOR_MODE" in
@@ -42,7 +41,9 @@ timeout() {
   fi
   command timeout "$@"
 }
-`); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+`;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Fixed bootstrap file in this test's private mkdtemp directory.
+  fs.writeFileSync(bashEnv, timeoutOverride); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 
   t.after(() => fs.rmSync(root, {recursive: true, force: true}));
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- The operation log belongs to the current fixture directory.
