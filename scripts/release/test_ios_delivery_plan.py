@@ -64,7 +64,11 @@ class DeliveryPlanTests(unittest.TestCase):
             for profile in ['Alpha', 'Beta', 'Release']:
                 for operation in ['Package', 'Package and upload', *(['Draft'] if form == 'full' else [])]:
                     values = dict(base, product=profile, operation=operation)
-                    self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', values, form)['signing_mode'], 'cloud')
+                    normalized = planner.normalize('workflow_dispatch', 'refs/heads/main', values, form)
+                    self.assertEqual(normalized['signing_mode'], 'cloud')
+                    self.assertEqual(normalized['archive_signing'], 'development')
+                    self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', dict(values, archive_signing='ad-hoc'), form)['archive_signing'], 'ad-hoc')
+                    self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', dict(values, archive_signing='unsigned'), form)['archive_signing'], 'unsigned')
                     self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', dict(values, signing_mode='manual'), form)['signing_mode'], 'manual')
         for operation in ['Status', 'Package']:
             with self.assertRaises(ValueError):

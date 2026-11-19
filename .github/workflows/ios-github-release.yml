@@ -5,13 +5,13 @@ on:
     inputs:
       operation:
         type: choice
-        description: Preview only, publish Beta, or publish stable after Admin approval
-        options: [Preview, Publish Beta, Publish stable]
+        description: Preview a Release package, publish it as a prerelease, or promote that prerelease after review
+        options: [Preview, Publish prerelease, Promote stable]
         required: true
       release_type:
         type: choice
-        description: Package profile and public release channel
-        options: [beta, stable]
+        description: Release-profile package; publication starts as a prerelease
+        options: [stable]
         required: true
       version:
         type: string
@@ -69,6 +69,7 @@ jobs:
       CONTROLLER_ACTOR_LOGIN: ${{ inputs.controller_actor_login }}
       RELEASE_INPUTS: ${{ toJSON(inputs) }}
       AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS: ${{ vars.AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS }}
+      PUBLICATION: ${{ inputs.operation == 'Promote stable' && 'stable' || 'prerelease' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -111,11 +112,12 @@ jobs:
         run: >-
           python3 scripts/release/ios-github-release.py preview
           --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --publication "$PUBLICATION"
           --status-run-id "$STATUS_RUN_ID" --status-artifact-id "$STATUS_ARTIFACT_ID"
           --package-directory .artifacts/package/unpacked
           --plan-file "$RUNNER_TEMP/ios-release-plan.json"
   stable-approval:
-    if: ${{ needs.preview.result == 'success' && inputs.operation == 'Publish stable' && vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED == 'true' }}
+    if: ${{ needs.preview.result == 'success' && inputs.operation == 'Promote stable' && vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED == 'true' }}
     needs: [preview]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -127,8 +129,8 @@ jobs:
   publish:
     if: >-
       ${{ !cancelled() && needs.preview.result == 'success' && vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED == 'true' &&
-          ((inputs.operation == 'Publish Beta' && needs.stable-approval.result == 'skipped') ||
-           (inputs.operation == 'Publish stable' && needs.stable-approval.result == 'success')) }}
+          ((inputs.operation == 'Publish prerelease' && needs.stable-approval.result == 'skipped') ||
+           (inputs.operation == 'Promote stable' && needs.stable-approval.result == 'success')) }}
     needs: [preview, stable-approval]
     concurrency:
       group: ios-public-release-${{ github.repository }}
@@ -150,6 +152,7 @@ jobs:
       RELEASE_INPUTS: ${{ toJSON(inputs) }}
       EXPECTED_PLAN_SHA256: ${{ needs.preview.outputs.plan_sha256 }}
       AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS: ${{ vars.AEGIS_IOS_GITHUB_RELEASE_ADMIN_IDS }}
+      PUBLICATION: ${{ inputs.operation == 'Promote stable' && 'stable' || 'prerelease' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -192,6 +195,7 @@ jobs:
         run: >-
           python3 scripts/release/ios-github-release.py publish
           --release-type "$RELEASE_TYPE" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --publication "$PUBLICATION"
           --status-run-id "$STATUS_RUN_ID" --status-artifact-id "$STATUS_ARTIFACT_ID"
           --package-directory .artifacts/package/unpacked
           --plan-file "$RUNNER_TEMP/ios-release-plan.json"

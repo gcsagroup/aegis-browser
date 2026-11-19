@@ -149,7 +149,7 @@ test('the configured App can dispatch an exact-source Beta without an Admin user
 });
 test('release versions must be text with two or three decimal components', async () => {
   const {requireIosAdministrator} = await load();
-  const releaseInputs = {operation: 'Preview', release_type: 'beta', version: '1.2', build: '9',
+  const releaseInputs = {operation: 'Preview', release_type: 'stable', version: '1.2', build: '9',
     status_run_id: '210', controller_run_id: '300', controller_actor_id: '7',
     controller_actor_login: 'original', approved_source_sha: sha};
   const check = version => requireIosAdministrator({...botFixture({
@@ -191,14 +191,14 @@ test('controller entrypoint retains human Admin admission and cannot be started 
 });
 
 function releaseControllerFixture({runChanges = {}, admins = [admin(original)], inputChanges = {}, controllerJobChanges = {}, receiptChanges = {}} = {}) {
-  const inputs = {operation: 'Publish Beta', release_type: 'beta', version: '1.2.0', build: '9',
+  const inputs = {operation: 'Promote stable', release_type: 'stable', version: '1.2.0', build: '9',
     status_run_id: '210', controller_run_id: '300', controller_actor_id: String(original.id),
     controller_actor_login: original.login, approved_source_sha: sha, ...inputChanges};
   const environment = {...environmentBase(), GITHUB_RUN_ID: '301', GITHUB_RUN_ATTEMPT: '1',
     GITHUB_SHA: sha, CONTROLLER_ACTOR_LOGIN: original.login, RELEASE_INPUTS: JSON.stringify(inputs)};
   const run = {id: 300, run_attempt: 1, status: 'completed', conclusion: 'success', head_sha: sha,
     head_branch: 'main', event: 'workflow_dispatch', path: '.github/workflows/ios-delivery-bot.yml',
-    display_title: 'iOS Bot Publish Beta release 1.2.0(9)', repository: {id: 1348409663, full_name: repository},
+    display_title: 'iOS Bot Promote to stable 1.2.0(9)', repository: {id: 1348409663, full_name: repository},
     head_repository: {id: 1348409663, full_name: repository}, actor: original, triggering_actor: original, ...runChanges};
   const api = async (repo, path) => {
     assert.equal(repo, repository);
@@ -254,7 +254,7 @@ test('release workflow rejects a lower-role rerunner, altered controller title a
         {name: 'Require current administrator for this controller request', status: 'completed', conclusion: 'failure'},
         {name: 'Dispatch and monitor exact App-owned delivery runs', status: 'in_progress', conclusion: null},
       ]}}),
-    releaseControllerFixture({inputChanges: {release_type: 'stable'}}),
+    releaseControllerFixture({inputChanges: {release_type: 'beta'}}),
     releaseControllerFixture({inputChanges: {controller_actor_id: '8'}}),
   ]) {
     await assert.rejects(requireReleaseControllerAuthorization({...fixture, sleep: async () => {}}), /Admin|controller|succeed|initiator/iu);
