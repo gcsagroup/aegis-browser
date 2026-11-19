@@ -2,9 +2,9 @@
 
 This workflow publishes GitHub tags and Releases from an already uploaded Android Release package. It does not build a new App Bundle. The Admin-gated `Android Delivery · Bot` controller is the entry point.
 
-## Fork first, then upstream promotion
+## Upstream promotion, then live testing
 
-Land the implementation on the personal fork `quinn521/aegis-browser` (repository id `1363949860`, parent `gcsagroup/aegis-browser`) before any upstream PR. On the fork branch, keep the credential-free contract job green: Android plan/Play/archive/evidence/publication matrices under `scripts/release/test_android*.py`, plus `scripts/ci/tests/android-*.test.mjs`. Privileged Play upload, candidate Draft, and public GitHub release stay fail-closed on canonical `gcsagroup/aegis-browser` / `1348409663` and current `main`. Do not enable `AEGIS_ANDROID_RELEASE_ENABLED` or `AEGIS_ANDROID_GITHUB_RELEASE_ENABLED` on upstream until that fork matrix is green and the upstream promotion/sync PR has merged. Fork proof does not admit a different merged main SHA.
+Ship the Android delivery and GitHub public-release implementation through a fork branch PR into `gcsagroup/aegis-browser` `main`. Credential-free contracts and the Android matrices under `scripts/release/test_android*.py` / `scripts/ci/tests/android-*.test.mjs` must stay green on that PR. Privileged Play upload, candidate Draft, and public GitHub release remain fail-closed on canonical `gcsagroup/aegis-browser` / `1348409663` and current `main`. Do not enable `AEGIS_ANDROID_RELEASE_ENABLED` or `AEGIS_ANDROID_GITHUB_RELEASE_ENABLED` until the gates below exist after merge; live package, signing, and channel uploads are exercised on upstream after that merge.
 
 ## Operations
 
