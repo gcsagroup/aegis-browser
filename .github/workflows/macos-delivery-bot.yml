@@ -1,0 +1,149 @@
+name: macOS Delivery · Bot
+run-name: macOS Bot ${{ inputs.operation }} ${{ inputs.version }}(${{ inputs.build }}) ${{ inputs.package_kind }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Package a DMG, publish its candidate tag, or promote a notarized candidate"
+        type: choice
+        options:
+          - Package
+          - Tag release
+          - Promote
+          - Complete
+        default: Package
+      version:
+        description: "Marketing version, for example 0.8.0"
+        type: string
+        required: true
+      build:
+        description: "Build number, for example 800001"
+        type: string
+        required: true
+      package_kind:
+        description: "Ad-hoc, host-signed, or notarized DMG. unsigned-dmg is recorded as ad-hoc."
+        type: choice
+        options:
+          - ad-hoc
+          - host-signed
+          - notarized
+          - unsigned-dmg
+        default: ad-hoc
+      signing_mode:
+        description: "Must match the package kind. none is recorded as ad-hoc."
+        type: choice
+        options:
+          - ad-hoc
+          - host-signed
+          - notarized
+          - none
+        default: ad-hoc
+      approved_source_sha:
+        description: "Complete only. Package uses the controller SHA."
+        type: string
+        required: false
+        default: ""
+      manifest_sha256:
+        description: "Sealed manifest SHA-256. Complete only."
+        type: string
+        required: false
+        default: ""
+      completed_operation:
+        description: "Finished delivery operation. Complete only."
+        type: string
+        required: false
+        default: ""
+      parent_run_id:
+        description: "Delivery run that finished. Complete only."
+        type: string
+        required: false
+        default: ""
+      candidate_tag:
+        description: "candidate/macos/<version>-<kind>.<build>. Promote only, after admin approval."
+        type: string
+        required: false
+        default: ""
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: macos-delivery-bot-${{ github.repository }}-${{ inputs.operation }}
+  cancel-in-progress: false
+jobs:
+  controller:
+    name: controller
+    if: ${{ vars.AEGIS_MACOS_DELIVERY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.operation != 'Complete' && inputs.operation != 'Promote' }}
+    runs-on: ubuntu-24.04
+    environment: aegis-ios-bot
+    timeout-minutes: 430
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Require current administrator for this controller request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/macos-operator.mjs --context controller
+      - name: Dispatch and monitor the DMG run
+        env:
+          BOT_INPUTS: ${{ toJSON(inputs) }}
+          AEGIS_MACOS_DELIVERY_ENABLED: ${{ vars.AEGIS_MACOS_DELIVERY_ENABLED }}
+          AEGIS_IOS_DELIVERY_BOT: ${{ vars.AEGIS_IOS_DELIVERY_BOT }}
+          AEGIS_IOS_BOT_INSTALLATION_ID: ${{ vars.AEGIS_IOS_BOT_INSTALLATION_ID }}
+          AEGIS_IOS_BOT_PRIVATE_KEY: ${{ secrets.AEGIS_IOS_BOT_PRIVATE_KEY }}
+        run: bash scripts/ci/run-macos-delivery-bot.sh
+
+  promote:
+    name: promote
+    if: ${{ vars.AEGIS_MACOS_DELIVERY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.operation == 'Promote' }}
+    runs-on: ubuntu-24.04
+    environment: aegis-macos-dmg-stable
+    permissions:
+      actions: read
+      contents: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Require current administrator for this controller request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/macos-operator.mjs --context controller
+      - name: Promote one approved notarized candidate to the stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AEGIS_MACOS_DMG_STABLE_RELEASE_APPROVED: "true"
+        run: python3 scripts/release/macos-dmg-delivery.py promote --candidate-tag "${{ inputs.candidate_tag }}"
+
+  accept-complete:
+    name: accept-complete
+    if: ${{ vars.AEGIS_MACOS_DELIVERY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') && github.ref == 'refs/heads/main' && inputs.operation == 'Complete' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Record the bot receipt for the finished DMG
+        env:
+          AEGIS_IOS_DELIVERY_BOT: ${{ vars.AEGIS_IOS_DELIVERY_BOT }}
+          AEGIS_MACOS_INPUT_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          AEGIS_MACOS_INPUT_COMPLETED_OPERATION: ${{ inputs.completed_operation }}
+          AEGIS_MACOS_INPUT_PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          AEGIS_MACOS_INPUT_VERSION: ${{ inputs.version }}
+          AEGIS_MACOS_INPUT_BUILD: ${{ inputs.build }}
+          AEGIS_MACOS_INPUT_APPROVED_SOURCE_SHA: ${{ inputs.approved_source_sha }}
+        run: python3 scripts/release/macos-dmg-delivery.py accept-complete --receipt "$RUNNER_TEMP/macos-delivery-bot-receipt.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-delivery-bot-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/macos-delivery-bot-receipt.json
+          if-no-files-found: error
+          retention-days: 30

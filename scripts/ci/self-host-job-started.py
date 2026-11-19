@@ -19,8 +19,9 @@ WORKFLOW_JOBS = {
     "ios-delivery-full.yml": {"ios-package", "store", "upload-new", "ios-draft"},
     "ios-fork-access.yml": {"simulator", "internal"},
     "macos-delivery.yml": {"access-tests", "package", "internal-dmg"},
+    "macos-dmg.yml": {"package-ad-hoc", "package-host-signed", "package-notarized"},
 }
-INTERNAL_WORKFLOW_FILES = {"ios-fork-access.yml", "macos-delivery.yml"}
+INTERNAL_WORKFLOW_FILES = {"ios-fork-access.yml", "macos-delivery.yml", "macos-dmg.yml"}
 ALLOWED_BRANCH_REFS = {"refs/heads/main", "refs/heads/develop"}
 DEVELOPMENT_REFS = ALLOWED_BRANCH_REFS | {"refs/heads/promote/ios-access-closed-loop-2cd7"}
 
