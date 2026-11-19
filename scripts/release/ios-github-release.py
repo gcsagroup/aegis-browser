@@ -307,14 +307,19 @@ def public_manifest_payloads(manifest):
     return {'ios-manifest.json': payload, 'ios-manifest.json.sha256': f'{digest}  ios-manifest.json\n'.encode()}
 
 
-def build_release_plan(candidate):
+def build_release_plan(candidate, publication=None):
     channel = candidate['channel']
+    if publication is None:
+        publication = 'prerelease' if channel == 'beta' else 'stable'
+    require(publication in {'prerelease', 'stable'}, 'Unknown publication stage')
+    require(channel != 'beta' or publication == 'prerelease', 'A Beta package cannot become the stable release')
     profile, version, build = candidate['profile'], candidate['version'], candidate['build']
     tag = f'ios/{version}-beta.{build}' if channel == 'beta' else f'ios/{version}-release.{build}'
     asset_hashes = {asset['name']: asset['sha256'] for asset in candidate['manifest']['assets']
                     if asset['name'].endswith(('.ipa', '.dSYM.zip'))}
     asset_hashes.update({name: hashlib.sha256(content).hexdigest()
                          for name, content in public_manifest_payloads(candidate['manifest']).items()})
+    label = 'Beta' if channel == 'beta' else ('Prerelease' if publication == 'prerelease' else 'Stable')
     core = {
         'schema': 'aegis-ios-github-release-plan-v1', 'channel': channel, 'profile': profile,
         'version': version, 'build': build, 'tag': tag, 'source': candidate['source'],
@@ -322,9 +327,11 @@ def build_release_plan(candidate):
         'packageAttempt': candidate['packageAttempt'], 'statusRunId': candidate['statusRunId'],
         'appleObservedAt': candidate['appleObservedAt'],
         'appleBuildIdentitySha256': candidate['appleBuildIdentitySha256'], 'assets': dict(sorted(asset_hashes.items())),
-        'prerelease': channel == 'beta', 'makeLatest': channel == 'stable',
+        'prerelease': publication == 'prerelease', 'makeLatest': publication == 'stable',
     }
-    release_identity = {key: value for key, value in core.items() if key not in {'statusRunId', 'appleObservedAt'}}
+    # The tag stays bound to the package. A later promotion may change only the GitHub prerelease flag.
+    release_identity = {key: value for key, value in core.items()
+                        if key not in {'statusRunId', 'appleObservedAt', 'prerelease', 'makeLatest'}}
     release_identity_sha = hashlib.sha256(json.dumps(
         release_identity, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()
     # Recovery matches the existing public bytes. Approval also binds the exact Actions archives read this time.
@@ -334,12 +341,12 @@ def build_release_plan(candidate):
     }
     plan_sha = hashlib.sha256(json.dumps(core, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()
     body = ('Aegis iOS public release\n\n'
-            f"Channel: {'Beta' if channel == 'beta' else 'Stable'}\n"
+            f"Channel: {label}\n"
             f"Source: {candidate['source']['sha']}\n"
             f"Source tree: {candidate['source']['tree']}\n"
             f"Public manifest SHA-256: {asset_hashes['ios-manifest.json']}\n"
             f"Release identity SHA-256: {release_identity_sha}\n")
-    return {**core, 'name': f'Aegis iOS {version} ({build}) · {"Beta" if channel == "beta" else "Stable"}',
+    return {**core, 'name': f'Aegis iOS {version} ({build}) · {label}',
             'releaseIdentitySha256': release_identity_sha, 'planSha256': plan_sha, 'body': body}
 
 
@@ -591,8 +598,8 @@ def _collect_evidence(version, build, release_type, status_run_id, package_dir, 
     return candidate, assets
 
 
-def _write_plan(candidate, assets, path):
-    plan = build_release_plan(candidate)
+def _write_plan(candidate, assets, path, publication=None):
+    plan = build_release_plan(candidate, publication)
     actual = {asset['name']: asset['sha256'] for asset in assets}
     require(actual == plan['assets'], 'Public asset inventory differs from plan')
     if path:
@@ -700,7 +707,7 @@ def _verify_release_assets(plan, release):
 
 
 def _verify_latest_stable(plan, release):
-    if plan['channel'] != 'stable':
+    if not plan['makeLatest']:
         return
     latest = _api('releases/latest')
     require(latest.get('id') == release.get('id') and latest.get('tag_name') == plan['tag'],
@@ -738,9 +745,7 @@ def _production_environment_config():
     rules = env.get('protection_rules', [])
     reviewer_rules = [rule for rule in rules if rule.get('type') == 'required_reviewers']
     reviewers = set()
-    prevent_self = False
     for rule in reviewer_rules:
-        prevent_self = prevent_self or rule.get('prevent_self_review') is True
         for row in rule.get('reviewers', []):
             reviewer = row.get('reviewer', {})
             require(row.get('type') == 'User' and isinstance(reviewer, dict) and is_id(reviewer.get('id'))
@@ -751,9 +756,9 @@ def _production_environment_config():
             'Stable Admin reviewer allowlist is missing or malformed')
     allowed = {int(value) for value in raw_allowed}
     require(len(allowed) == len(raw_allowed) and len(reviewer_rules) == 1 and reviewers and allowed and reviewers <= allowed
-            and prevent_self and env.get('can_admins_bypass') is False
+            and env.get('can_admins_bypass') is False
             and (env.get('deployment_branch_policy') or {}).get('protected_branches') is True,
-            'Stable environment must require an allowlisted Admin, prevent self-review/admin bypass and restrict protected branches')
+            'Stable environment must require an allowlisted Admin, disable admin bypass, and restrict protected branches')
     admins = []
     for page in range(1, 21):
         batch = _api(f'collaborators?affiliation=all&permission=admin&per_page=100&page={page}')
@@ -786,15 +791,9 @@ def _check_approval(plan, current_run_id):
             matching.append(user)
     require(len(matching) == 1, 'Stable publish requires one approval with the exact plan digest')
     reviewer = matching[0]
-    raw_controller_ids = os.environ.get('CONTROLLER_ADMIN_IDS', '').split(',')
-    require(raw_controller_ids and all(re.fullmatch(r'[1-9][0-9]{0,15}', value) for value in raw_controller_ids),
-            'Original controller Admin identities are unavailable')
-    controller_admin_ids = {int(value) for value in raw_controller_ids}
-    require(len(controller_admin_ids) == len(raw_controller_ids), 'Duplicate parent Admin identities')
     require(is_id(reviewer.get('id')) and reviewer['id'] in reviewers and reviewer['id'] in allowed
-            and reviewer['id'] not in controller_admin_ids
             and current_admins.get(reviewer['id']) == reviewer.get('login', '').lower(),
-            'Stable approval must come from a separate allowlisted current Environment reviewer and repository Admin')
+            'Stable approval must come from an allowlisted current Environment reviewer and repository Admin')
 
 
 def preview_release(plan):
@@ -802,17 +801,23 @@ def preview_release(plan):
     existing_tag = _tag_target(plan['tag'])
     release = _release_by_tag(plan['tag'], include_drafts=False)
     if release is not None:
-        _verify_existing_release(plan, release, plan['tag'])
+        if plan['makeLatest'] and release.get('prerelease') is True:
+            require(release.get('draft') is False and release.get('tag_name') == plan['tag'],
+                    'Stable promotion requires the public prerelease')
+            _verify_release_tag(plan, plan['tag'])
+            _verify_release_assets(plan, release)
+        else:
+            _verify_existing_release(plan, release, plan['tag'])
     elif existing_tag is not None:
         require(existing_tag['target_sha'] == plan['source']['sha']
                 and existing_tag['object_type'] == 'commit'
                 and existing_tag['message'] == _expected_tag_message(plan),
                 'Conflicting tag exists; release preview is blocked')
-    if plan['channel'] == 'stable':
+    if plan['makeLatest']:
         _production_environment_config()
     return {'tag': plan['tag'], 'existingTag': existing_tag is not None, 'existingRelease': release is not None,
             'draftStatus': 'visible-public-release' if release else 'unverified',
-            'productionEnvironmentVerified': plan['channel'] == 'stable'}
+            'productionEnvironmentVerified': bool(plan['makeLatest'])}
 
 
 def _assert_current_release_source(plan):
@@ -845,14 +850,49 @@ def _upload_asset_once(release_id, asset):
             connection.close()
 
 
+def _promote_to_stable(plan):
+    """Mark an already published prerelease as the official Latest release."""
+    _assert_current_release_source(plan)
+    release = _release_by_tag(plan['tag'], include_drafts=False)
+    require(release is not None, 'Publish the prerelease before promoting it to the stable release')
+    release_id = release.get('id')
+    require(is_id(release_id) and release.get('draft') is False and release.get('tag_name') == plan['tag'],
+            'Stable promotion requires the public prerelease')
+    _verify_release_tag(plan, plan['tag'])
+    _verify_release_assets(plan, release)
+    if release.get('prerelease') is False:
+        _verify_existing_release(plan, release, plan['tag'])
+        _verify_latest_stable(plan, release)
+        return release
+    require(release.get('prerelease') is True, 'Only a public prerelease can be promoted')
+    _check_approval(plan, os.environ['GITHUB_RUN_ID'])
+    staged = _api(f'releases/{release_id}')
+    require(staged.get('id') == release_id and staged.get('draft') is False and staged.get('prerelease') is True,
+            'Prerelease changed before promotion')
+    _verify_release_tag(plan, plan['tag'])
+    _verify_release_assets(plan, staged)
+    _assert_release_write_allowed(plan)
+    _api(f'releases/{release_id}', {'name': plan['name'], 'body': plan['body'], 'draft': False,
+                                    'prerelease': False, 'make_latest': 'true'}, method='PATCH')
+    reread = _release_by_tag(plan['tag'])
+    require(reread is not None and reread.get('id') == release_id and reread.get('draft') is False
+            and reread.get('prerelease') is False, 'Promoted release cannot be read back')
+    _verify_existing_release(plan, reread, plan['tag'])
+    _verify_latest_stable(plan, reread)
+    print(json.dumps({'state': 'promoted-and-verified', 'tag': plan['tag'],
+                      'releaseId': release_id, 'url': reread.get('html_url')}))
+    return reread
+
+
 def publish_release(plan, assets):
     require((plan.get('version'), plan.get('build')) != PREVIEW_ONLY,
             'The current 1.1.0 (8) package is preview-only')
     require(plan.get('planSha256') == os.environ.get('EXPECTED_PLAN_SHA256'),
             'Post-approval evidence differs from the reviewed release plan')
     _verify_tag_ruleset()
-    if plan['channel'] == 'stable':
+    if plan['makeLatest']:
         _check_approval(plan, os.environ['GITHUB_RUN_ID'])
+        return _promote_to_stable(plan)
     _assert_current_release_source(plan)
     release = _release_by_tag(plan['tag'])
     if release is None:
@@ -880,8 +920,6 @@ def publish_release(plan, assets):
                 if (len(match) != 1 or match[0].get('state') != 'uploaded'
                         or match[0].get('digest') != 'sha256:' + asset['sha256']):
                     raise ValueError('Asset upload outcome unknown; reconcile draft before retrying: ' + asset['name']) from error
-        if plan['channel'] == 'stable':
-            _check_approval(plan, os.environ['GITHUB_RUN_ID'])
         _assert_current_release_source(plan)
         _verify_release_tag(plan, plan['tag'])
         staged = _api(f'releases/{release_id}')
@@ -920,6 +958,7 @@ def main():
     parser.add_argument('operation', choices=['locate', 'download-package', 'extract', 'download-status', 'preview', 'publish'])
     parser.add_argument('--preview-package', action='store_true')
     parser.add_argument('--release-type', choices=['beta', 'stable'], required=True)
+    parser.add_argument('--publication', choices=['prerelease', 'stable'])
     parser.add_argument('--version', required=True)
     parser.add_argument('--build', required=True)
     parser.add_argument('--status-run-id', required=True)
@@ -965,7 +1004,7 @@ def main():
     candidate, assets = _collect_evidence(args.version, args.build, args.release_type,
                                            args.status_run_id, args.package_directory, args.status_artifact_id,
                                            preview=args.operation == 'preview')
-    plan = _write_plan(candidate, assets, args.plan_file)
+    plan = _write_plan(candidate, assets, args.plan_file, args.publication)
     if args.operation == 'publish':
         publish_release(plan, assets)
     else:

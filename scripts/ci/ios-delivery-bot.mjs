@@ -7,7 +7,7 @@ const REPOSITORY = 'gcsagroup/aegis-browser';
 const REPOSITORY_ID = 1348409663;
 const PREFIX = '/repos/'+REPOSITORY;
 const OPERATIONS = ['Package', 'Package and upload', 'Draft', 'Status', 'Wait',
-  'Preview GitHub release', 'Publish Beta release', 'Publish stable release'];
+  'Preview GitHub release', 'Publish prerelease', 'Promote to stable'];
 const requireValue = (value, message) => { if (!value) throw new Error(message); };
 const positiveId = value => Number.isSafeInteger(value) && value > 0;
 
@@ -55,21 +55,22 @@ function requestInputs(environment) {
   requireValue(raw.length <= 10000, 'Bot inputs exceed limit');
   const value = JSON.parse(raw);
   requireValue(value && typeof value === 'object' && !Array.isArray(value) &&
-    Object.keys(value).every(key => ['operation', 'version', 'build', 'product', 'signing_mode'].includes(key)) &&
+    Object.keys(value).every(key => ['operation', 'version', 'build', 'product', 'signing_mode', 'archive_signing'].includes(key)) &&
     Object.values(value).every(item => typeof item === 'string'), 'Unknown Bot inputs');
-  const {operation = 'Status', version, build, product = 'Beta', signing_mode = 'cloud'} = value;
+  const {operation = 'Status', version, build, product = 'Beta', signing_mode = 'cloud', archive_signing = 'development'} = value;
   const parts = (version || '').split('.');
   const validVersion = [2, 3].includes(parts.length) && parts.every(part => part.length > 0 && part.length <= 10 && !/[^0-9]/u.test(part));
   requireValue(OPERATIONS.includes(operation) && ['Alpha', 'Beta', 'Release'].includes(product) &&
-    ['cloud', 'manual'].includes(signing_mode) && validVersion &&
+    ['cloud', 'manual'].includes(signing_mode) && ['development', 'ad-hoc', 'unsigned'].includes(archive_signing) &&
+    (signing_mode === 'cloud' || archive_signing === 'development') && validVersion &&
     /^[1-9][0-9]{0,9}$/u.test(build || ''), 'Invalid Bot operation or package coordinate');
-  if (operation === 'Preview GitHub release') requireValue(['Beta', 'Release'].includes(product), 'Only Beta or stable releases can be previewed');
-  if (operation === 'Publish Beta release') requireValue(product === 'Beta', 'Beta publication requires the Beta product profile');
-  if (operation === 'Publish stable release') requireValue(product === 'Release', 'Stable publication requires the Release product profile');
-  if (['Publish Beta release', 'Publish stable release'].includes(operation)) {
+  if (operation === 'Preview GitHub release' || operation === 'Publish prerelease' || operation === 'Promote to stable') {
+    requireValue(product === 'Release', 'GitHub release accepts only the Release product');
+  }
+  if (operation === 'Publish prerelease' || operation === 'Promote to stable') {
     requireValue(!(version === '1.1.0' && build === '8'), 'The current 1.1.0 (8) package is preview-only');
   }
-  return {operation, version, build, product, signing_mode, private_beta: 'no', approved_source_sha: environment.GITHUB_SHA};
+  return {operation, version, build, product, signing_mode, archive_signing, private_beta: 'no', approved_source_sha: environment.GITHUB_SHA};
 }
 
 export async function driveDelivery({environment = process.env, api, quality, recordRun = () => {}, recordReleaseDispatch = () => {}, sleep = ms => new Promise(resolve => globalThis.setTimeout(resolve, ms)), maxPolls = 240, pollMs = 15000}) {
@@ -140,21 +141,23 @@ export async function driveDelivery({environment = process.env, api, quality, re
     }
     throw new Error('Child run still pending; retain and reconcile '+url);
   };
-  const releaseOperation = ['Preview GitHub release', 'Publish Beta release', 'Publish stable release'].includes(inputs.operation);
-  if (releaseOperation) {
+  const releaseOperation = {
+    'Preview GitHub release': 'Preview',
+    'Publish prerelease': 'Publish prerelease',
+    'Promote to stable': 'Promote stable',
+  };
+  if (Object.hasOwn(releaseOperation, inputs.operation)) {
     requireValue(environment.AEGIS_IOS_GITHUB_RELEASE_ENABLED === 'true' && environment.AEGIS_IOS_RELEASE_ENABLED === 'true',
       'GitHub release is disabled until the repository release gates are configured');
     const statusRun = await dispatch('Release Wait');
     runs.push(statusRun);
-    const releaseType = inputs.product === 'Beta' ? 'beta' : 'stable';
-    const operation = inputs.operation === 'Preview GitHub release' ? 'Preview' :
-      inputs.operation === 'Publish Beta release' ? 'Publish Beta' : 'Publish stable';
+    const operation = releaseOperation[inputs.operation];
     await assertSource();
     const controllerId = Number(environment.GITHUB_RUN_ID);
     const controllerActorId = Number(environment.GITHUB_ACTOR_ID);
     requireValue(positiveId(controllerId) && positiveId(controllerActorId), 'Human Admin controller identity required');
     const releaseInputs = {
-      operation, release_type: releaseType, version: inputs.version, build: inputs.build,
+      operation, release_type: 'stable', version: inputs.version, build: inputs.build,
       status_run_id: String(statusRun.id), controller_run_id: String(controllerId),
       controller_actor_id: String(controllerActorId), controller_actor_login: environment.GITHUB_ACTOR,
       approved_source_sha: environment.GITHUB_SHA,

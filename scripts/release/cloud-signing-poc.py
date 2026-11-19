@@ -177,15 +177,6 @@ def native_session():
                 signal.signal(sig, handler)
 
 
-def verify_ad_hoc_archive(archive):
-    app = archive / 'Products/Applications/Aegis.app'
-    for bundle in [app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex']:
-        run('codesign', '--verify', '--strict', str(bundle))
-        result = subprocess.run(['codesign', '-d', '--verbose=4', str(bundle)], capture_output=True)
-        if result.returncode or b'Signature=adhoc' not in result.stderr:
-            raise ValueError('Expected ad-hoc archive signature before cloud export: ' + bundle.name)
-
-
 @contextmanager
 def isolated_keychain(directory, evidence, retain_development=False):
     """Save/restore the user search list and default; never import a P12 or touch ACLs.
@@ -354,19 +345,20 @@ def prepare_inline_development(options, directory, environment):
 
 def build_inline_archive(work, directory, options, archive_signing, environment, evidence, archive_transfer,
                          development_selection=None):
-    """Direct Fastlane/PoC archives share the production Development selection."""
+    """Direct Fastlane/PoC archives use the selected archive identity."""
+    if archive_signing not in ('development', 'ad-hoc', 'unsigned'):
+        raise ValueError('Archive signing must be development, ad-hoc, or unsigned')
     archive = work / 'Aegis.xcarchive'
     signing = None
-    if archive_signing == 'ad-hoc':
-        signing_args = ['CODE_SIGN_STYLE=Automatic', 'PROVISIONING_PROFILE_SPECIFIER=',
-                        'CODE_SIGN_IDENTITY=-', 'AD_HOC_CODE_SIGNING_ALLOWED=YES', 'CODE_SIGNING_REQUIRED=NO']
-    else:
+    if archive_signing == 'development':
         signing, signing_args, proof, access, keychain = (development_selection
             if development_selection is not None else prepare_inline_development(options, directory, environment))
         runtime = key_access_runtime(environment)
         signing.require_identity(proof, runtime.run)
         access.verify(proof, runtime, directory, environment, keychain)
         evidence['developmentSigning'] = proof
+    else:
+        signing_args = archive_transfer.signing_arguments(archive_signing)
     run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'), '-scheme', 'Aegis-Release',
         '-configuration', 'Release', '-destination', 'generic/platform=iOS',
         '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
@@ -378,8 +370,8 @@ def build_inline_archive(work, directory, options, archive_signing, environment,
         archive_transfer.verify_development(archive, options.team, run)
         signing.verify_archive(archive, proof, run)
     else:
-        verify_ad_hoc_archive(archive)
-        evidence['adHocArchiveSignaturesVerified'] = True
+        archive_transfer.verify_recorded_archive(archive, options.team, {'archiveSigning': archive_signing}, run)
+        evidence['archiveSignaturesVerified'] = archive_signing
     evidence['archiveCompleted'] = True
 
 
@@ -405,9 +397,9 @@ def experiment(options, environment):
                 'team': options.team, 'profile': options.profile, 'signingMode': 'cloud', 'runtime': options.runtime, 'status': 'started',
                 'upload': 'not_attempted', 'deviceAcceptance': 'not_verified', 'releaseReady': False}
     temporary_key = None
-    # Entitlement-bearing archives use Apple Development, then cloud Distribution
-    # export. Ad-hoc archive signing stays an explicit opt-in.
-    archive_signing = options.archive_signing or 'development'
+    archive_signing = getattr(options, 'archive_signing', None) or 'development'
+    if archive_signing not in ('development', 'ad-hoc', 'unsigned'):
+        raise ValueError('Archive signing must be development, ad-hoc, or unsigned')
     evidence['archiveSigningMode'] = archive_signing
     try:
         environment = dict(environment)
@@ -439,22 +431,24 @@ def experiment(options, environment):
                             archiveManifestSha256=hashlib.sha256((previous / 'archive-provenance.json').read_bytes()).hexdigest())
         elif getattr(options, 'archive_input', None):
             work = stage(directory, archive_environment, options.profile, build_core=False)
-            archive_transfer.extract(options.archive_input, work / 'Aegis.xcarchive', identity,
+            transferred = archive_transfer.extract(options.archive_input, work / 'Aegis.xcarchive', identity,
                                      options.version, options.build, options.team, options.profile,
                                      expected_manifest_sha256=manifest_sha256)
-            archive_transfer.verify_development(work / 'Aegis.xcarchive', options.team, run)
+            evidence['archiveSigningMode'] = transferred.get('archiveSigning', 'development')
+            archive_transfer.verify_recorded_archive(work / 'Aegis.xcarchive', options.team, transferred, run)
             snapshot_archive(directory, identity)
             evidence.update(archiveCompleted=True, archiveTransferred=True,
                             archiveManifestSha256=hashlib.sha256((directory / 'archive-provenance.json').read_bytes()).hexdigest())
         else:
             work = stage(directory, archive_environment, options.profile)
         archive = work / 'Aegis.xcarchive'
+        building = not options.archive_from and not getattr(options, 'archive_input', None)
         inline_selection = None
-        if archive_signing == 'development' and not options.archive_from and not getattr(options, 'archive_input', None):
+        if archive_signing == 'development' and building:
             # Activate in this worker's session before isolation inventories identities.
             inline_selection = prepare_inline_development(options, directory, archive_environment)
         with isolated_keychain(directory, evidence, retain_development=(archive_signing == 'development')):
-            if not options.archive_from and not getattr(options, 'archive_input', None):
+            if building:
                 print('Archiving with ' + archive_signing + ' signing and no Distribution identity', flush=True)
                 build_inline_archive(work, directory, options, archive_signing, archive_environment, evidence,
                                      archive_transfer, inline_selection)
@@ -515,8 +509,8 @@ def main():
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], default='beta')
     parser.add_argument('--archive-input', type=Path, help='Development transfer from the separate credential-free archive job')
     parser.add_argument('--archive-manifest-sha256', help='Independent manifest digest from the original archive job output')
-    parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'],
-                        help='Archive identity before cloud Distribution export (default: development)')
+    parser.add_argument('--archive-signing', choices=['development', 'ad-hoc', 'unsigned'], default='development',
+                        help='Archive identity before cloud Distribution export')
     parser.add_argument('--version', required=True)
     parser.add_argument('--build', required=True)
     parser.add_argument('--team', required=True)
