@@ -78,6 +78,7 @@
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -514,6 +515,21 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
         aegis_access::ChannelNamespace::kDev, base::FilePath());
     ASSERT_TRUE(owner_.has_value());
     ASSERT_TRUE(transport_->OwnsConfiguredPartition(*owner_));
+
+    // Startup reserves a policy version even when the durable store is empty.
+    // Join restoration before publishing test policies with newer versions.
+    auto* coordinator =
+        AccessServiceCoordinator::GetOrCreate(browser()->GetProfile());
+    ASSERT_NE(coordinator, nullptr);
+    base::test::TestFuture<bool> initialized;
+    coordinator->InitializeForProfile(*owner_, initialized.GetCallback());
+    ASSERT_TRUE(initialized.Get());
+    auto* runtime =
+        AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
+    ASSERT_NE(runtime, nullptr);
+    const auto* restored = runtime->GetPublishedPolicySnapshot(*owner_);
+    ASSERT_NE(restored, nullptr);
+    bootstrap_policy_generation_ = restored->policy_generation;
   }
 
  protected:
@@ -665,9 +681,15 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     network::URLLoaderFactoryBuilder factory_builder;
     AccessProxyingURLLoaderFactory::MaybeProxyBrowserProcessPrefetch(
         profile, partition, factory_builder);
-    scoped_refptr<network::SharedURLLoaderFactory> factory =
-        std::move(factory_builder)
-            .Finish(partition->GetURLLoaderFactoryForBrowserProcess());
+    scoped_refptr<network::SharedURLLoaderFactory> factory;
+    if (factory_builder.RequiresFreshFactory()) {
+      factory = std::move(factory_builder)
+                    .Finish(partition->GetNetworkContext(),
+                            partition->CreateURLLoaderFactoryParams());
+    } else {
+      factory = std::move(factory_builder)
+                    .Finish(partition->GetURLLoaderFactoryForBrowserProcess());
+    }
 
     auto request = std::make_unique<network::ResourceRequest>();
     request->method = "GET";
@@ -1032,7 +1054,9 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   void PublishCommittedRule(const std::string& destination_host,
                             aegis_access::AccessMode mode,
-                            uint64_t policy_generation = 1) {
+                            uint64_t publication_sequence = 1) {
+    const uint64_t policy_generation =
+        bootstrap_policy_generation_ + publication_sequence;
     aegis_access::AccessPolicyRule rule;
     rule.rule_id = "rule-browser-test";
     rule.owner = *owner_;
@@ -1088,7 +1112,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
   void PublishProxyPolicy(bool publish_endpoint,
                           std::string destination_host = kTargetHost) {
     const aegis_access::GenerationTuple generations{
-        1,
+        bootstrap_policy_generation_ + 1,
         CommitIdentityGenerationForProxyPolicy(),
         CommitSelectionGenerationForProxyPolicy(),
         transport_->network_epoch(),
@@ -1255,6 +1279,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   std::atomic<size_t> origin_requests_{0};
   std::atomic<size_t> proxy_requests_{0};
+  uint64_t bootstrap_policy_generation_ = 0;
   // Servers are destroyed before their callback state (reverse member order).
   std::atomic<bool> lifecycle_fault_{false};
   base::Lock lifecycle_lock_;
@@ -1287,15 +1312,17 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "healthy", false, false));
   ASSERT_EQ(browser()->GetProfile(), profile);
 
+  const uint64_t on_generation = bootstrap_policy_generation_ + 1;
+  const uint64_t off_generation = on_generation + 1;
   PublishProxyPolicy(/*publish_endpoint=*/true);
-  ASSERT_EQ(last_publication_generation_, 1u);
+  ASSERT_EQ(last_publication_generation_, on_generation);
   auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(profile);
   ASSERT_NE(runtime, nullptr);
   const auto on = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
   ASSERT_EQ(on.status, aegis_access::RequestGenerationTupleBuildStatus::kComplete);
   ASSERT_TRUE(on.generations.has_value());
-  ASSERT_EQ(on.generations->policy_generation, 1u);
-  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "on", 1, true));
+  ASSERT_EQ(on.generations->policy_generation, on_generation);
+  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "on", on_generation, true));
   ASSERT_TRUE(last_lifecycle_ack_.has_value());
   ASSERT_EQ(last_lifecycle_ack_->policy_generation, on.generations->policy_generation);
   ASSERT_EQ(last_lifecycle_ack_->selection_generation, on.generations->selection_generation);
@@ -1313,16 +1340,16 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   ASSERT_EQ(recovered.generations, on.generations);
 
   PublishCommittedRule(kTargetHost, aegis_access::AccessMode::kDirect,
-                       /*policy_generation=*/2);
+                       /*publication_sequence=*/2);
   ASSERT_TRUE(transport_->ClearProxySelection(base::FilePath()));
   ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
-  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "off", 2, false));
+  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "off", off_generation, false));
   ASSERT_TRUE(last_lifecycle_ack_.has_value());
-  ASSERT_EQ(last_lifecycle_ack_->policy_generation, 2u);
+  ASSERT_EQ(last_lifecycle_ack_->policy_generation, off_generation);
   ASSERT_TRUE(last_lifecycle_ack_->proxy_group_id.empty());
   ASSERT_EQ(last_lifecycle_ack_->selection_generation, 0u);
   ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
-  ASSERT_EQ(last_publication_generation_, 2u);
+  ASSERT_EQ(last_publication_generation_, off_generation);
   ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "off", false, false));
   ASSERT_EQ(browser()->GetProfile(), profile);
 }
@@ -1914,6 +1941,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        MainNavigationConsumesPreparedSnapshotBeforeCommit) {
   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(*owner_));
   ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  const auto restored =
+      store.ReserveCommittedPolicyForPublication(owner_->storage_partition_token);
+  ASSERT_TRUE(restored.value) << restored.detail;
+  ASSERT_EQ(restored.value->policy_generation, bootstrap_policy_generation_);
   const auto request = PreparedNavigationRequest(*owner_);
   const auto prepared = store.PrepareSiteGroupMutation(request);
   ASSERT_TRUE(prepared.value) << prepared.detail;

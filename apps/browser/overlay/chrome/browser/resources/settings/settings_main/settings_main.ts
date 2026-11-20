@@ -292,14 +292,15 @@ export class SettingsMainElement extends SettingsMainElementBase {
     this.eventTracker_.add(this.$.switcher, 'change', notifyInteraction);
   }
 
-  protected renderPlugin_(route: Route): boolean {
-    return this.hasSearched_ || this.renderedRoutes_.has(route);
-  }
-
   protected renderAegisPlugin_(route: Route): boolean {
-    // 保留原有离开页面即卸载的行为，避免隐藏的 Aegis 页面继续运行。
+    // Aegis pages own route guards, listeners and embedded tool pages. Keep
+    // their previous restamp lifecycle while upstream plugins remain cached.
     return this.inSearchMode_ ||
         (!!this.lastRoute_ && route.contains(this.lastRoute_));
+  }
+
+  protected renderPlugin_(route: Route): boolean {
+    return this.hasSearched_ || this.renderedRoutes_.has(route);
   }
 
   protected showPage_(

@@ -22,8 +22,8 @@
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
-#include "chrome/browser/actor/actor_proto_conversion.h"
 #include "chrome/browser/actor/actor_surface_handle.h"
+#include "chrome/browser/actor/actor_proto_conversion.h"
 #include "chrome/browser/actor/actor_task.h"
 #include "chrome/browser/actor/actor_task_metadata.h"
 #include "chrome/browser/actor/enterprise_policy_checker.h"
@@ -431,14 +431,8 @@ std::string SafeObservationUrl(std::string_view value) {
 }
 
 std::unique_ptr<actor::ToolRequest> BuildActorRequest(
-    tabs::TabInterface& tab,
+    actor::ActorSurfaceHandle surface_handle,
     const AgentToolCall& call) {
-  // Chromium 的页面句柄与标签页 ID 不保证相同，必须通过受支持的映射获取。
-  const actor::ActorSurfaceHandle surface_handle =
-      actor::ActorSurfaceHandle::From(tab.GetHandle());
-  if (surface_handle.is_null()) {
-    return nullptr;
-  }
   if (call.tool_name == "page.navigate") {
     const std::string* url = call.arguments.FindString("url");
     return url ? std::make_unique<actor::NavigateToolRequest>(surface_handle,
@@ -1056,7 +1050,15 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
         task_fingerprints->second.at(*tab_id), std::move(callback));
   }
 
-  std::unique_ptr<actor::ToolRequest> request = BuildActorRequest(*tab, call);
+  const auto surface = actor::ActorSurfaceHandle::From(tab->GetHandle());
+  if (surface.is_null() || !surface.Get()) {
+    std::move(callback).Run(ErrorResult(
+        call.action_id, AgentErrorCode::kStaleDocument,
+        "tab is no longer available for page actions"));
+    return;
+  }
+  std::unique_ptr<actor::ToolRequest> request =
+      BuildActorRequest(surface, call);
   if (!request) {
     std::move(callback).Run(ErrorResult(call.action_id,
                                         AgentErrorCode::kToolUnavailable,

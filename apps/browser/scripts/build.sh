@@ -21,5 +21,6 @@ if [[ ! -f "$OUT/build.ninja" ]]; then
 fi
 
 echo "Building chrome at $OUT (long)…"
-autoninja -C "$OUT" chrome
+# Dawn runs the Go toolchain pinned by Chromium DEPS.
+env -u GOROOT GOENV=off GOTOOLCHAIN=local autoninja -C "$OUT" chrome
 echo "Build complete: $(desktop_app_path "$OUT") or $OUT/chrome"
