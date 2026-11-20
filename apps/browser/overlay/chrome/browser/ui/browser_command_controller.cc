@@ -156,7 +156,8 @@
 #endif
 
 #if BUILDFLAG(IS_MAC)
-#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+// 下方停止加载命令的重试状态只在 macOS 读取，依赖随 is_mac 分支引入。
+#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"  // nogncheck
 #include "chrome/browser/ui/browser_commands_mac.h"
 #endif
 

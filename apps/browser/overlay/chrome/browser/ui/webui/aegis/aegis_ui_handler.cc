@@ -22,8 +22,9 @@
 #include "chrome/browser/aegis/aegis_service.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #if BUILDFLAG(IS_MAC)
-#include "chrome/browser/aegis/access/access_build_channel.h"
-#include "chrome/browser/aegis/access/access_options_service.h"
+// Access 选项桥仅在 macOS 构建，依赖在 BUILD.gn 的 is_mac 分支声明。
+#include "chrome/browser/aegis/access/access_build_channel.h"  // nogncheck
+#include "chrome/browser/aegis/access/access_options_service.h"  // nogncheck
 #include "chrome/browser/aegis/aegis_torrent_client.h"
 #endif
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
