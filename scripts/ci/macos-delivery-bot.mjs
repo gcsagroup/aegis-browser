@@ -2,8 +2,10 @@ import {createHash, sign} from 'node:crypto';
 import {lstatSync, readFileSync} from 'node:fs';
 import {basename} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {performance} from 'node:perf_hooks';
 import {githubRequest} from './ios-delivery-bot.mjs';
 import {requireGreenQuality} from './promotion-quality.mjs';
+import {downloadEvidenceArchive, requireDmgEvidence} from './macos-delivery-evidence.mjs';
 
 const UPSTREAM = 'gcsagroup/aegis-browser';
 const FORK = 'quinn521/aegis-browser';
@@ -43,7 +45,7 @@ export function installationClient({appId, installationId, privateKey, repositor
       token = value.token;
       expires = nextExpiry;
     }
-    return request(path, {...options, token});
+    return options.archive ? downloadEvidenceArchive(path, token) : request(path, {...options, token});
   };
 }
 
@@ -81,11 +83,14 @@ function childInputs(environment, inputs) {
     signing_mode: inputs.signingMode,
     approved_source_sha: environment.GITHUB_SHA,
     tag_release: inputs.operation === 'Tag release' ? 'yes' : 'no',
-    bot_callback: 'no',
+    bot_callback: 'yes',
   };
 }
 
-export async function driveMacosDmg({environment = process.env, api, quality, recordRun = () => {}, sleep = ms => new Promise(resolve => globalThis.setTimeout(resolve, ms)), maxPolls = 1680, pollMs = 15000} = {}) {
+export async function driveMacosDmg({environment = process.env, api, quality, recordRun = () => {}, sleep = ms => new Promise(resolve => globalThis.setTimeout(resolve, ms)), maxPolls = 1200, pollMs = 15000, now = () => performance.now(), monitorBudgetMs = 300 * 60000} = {}) {
+  requireValue(Number.isFinite(monitorBudgetMs) && monitorBudgetMs > 0 && monitorBudgetMs <= 300 * 60000,
+    'DMG monitoring must fit the hosted controller budget');
+  const deadline = now() + monitorBudgetMs;
   requireValue(environment.AEGIS_MACOS_DELIVERY_ENABLED === 'true', 'macOS DMG delivery is disabled until AEGIS_MACOS_DELIVERY_ENABLED=true');
   const inputs = requestInputs(environment);
   const admitted = admittedRepository(environment.GITHUB_REPOSITORY);
@@ -97,7 +102,7 @@ export async function driveMacosDmg({environment = process.env, api, quality, re
     typeof policy.slug === 'string' && /^[a-z0-9][a-z0-9-]{0,98}$/u.test(policy.slug),
   'Pinned App configuration required');
   const repository = await api(admitted.prefix);
-  requireValue(repository?.id === admitted.id && repository.full_name === admitted.name && repository.default_branch === 'main',
+  requireValue(repository?.id === admitted.id && repository.full_name === admitted.name,
     'Repository identity differs');
   const assertSource = async () => {
     const tip = await api(admitted.prefix+'/git/ref/heads/main');
@@ -118,19 +123,19 @@ export async function driveMacosDmg({environment = process.env, api, quality, re
   const id = receipt.workflow_run_id;
   const url = 'https://github.com/'+admitted.name+'/actions/runs/'+id;
   const retained = {id, attempt: 1, operation: inputs.operation, packageKind: inputs.packageKind,
-    signingMode: inputs.signingMode, notarized: inputs.packageKind === 'notarized', upload: false,
+    signingMode: inputs.signingMode, notarized: false, upload: false,
     url, approvedSourceSha: environment.GITHUB_SHA, version: inputs.version, build: inputs.build,
     repository: admitted.name};
   recordRun({...retained, state: 'dispatched'});
   const botLogin = policy.slug+'[bot]';
   let observed = false, invisible = 0;
-  for (let poll = 0; poll < maxPolls; poll++) {
+  for (let poll = 0; poll < maxPolls && now() < deadline; poll++) {
     let run;
     try { run = await api(admitted.prefix+'/actions/runs/'+id); }
     catch (error) {
       if (observed || error.status !== 404 || invisible >= 4 || poll+1 >= maxPolls) throw error;
       invisible++;
-      await sleep(pollMs);
+      await sleep(Math.max(0, Math.min(pollMs, deadline-now())));
       continue;
     }
     observed = true;
@@ -142,17 +147,22 @@ export async function driveMacosDmg({environment = process.env, api, quality, re
     'Child run identity/source/context differs: '+url);
     if (run.status === 'completed') {
       requireValue(run.conclusion === 'success', 'Child DMG delivery failed; reconcile '+url);
-      const completed = {...retained, state: 'completed', conclusion: 'success'};
+      const evidence = await requireDmgEvidence({api, repository: admitted.name, sha: environment.GITHUB_SHA, id, inputs});
+      const completed = {...retained, ...evidence, state: 'completed', conclusion: 'success'};
       recordRun(completed);
       const result = {sourceSha: environment.GITHUB_SHA, version: inputs.version, build: inputs.build,
-        packageKind: inputs.packageKind, notarized: inputs.packageKind === 'notarized', upload: false,
+        packageKind: inputs.packageKind, notarized: evidence.notarized, upload: false,
         repository: admitted.name, run: completed};
       if (inputs.operation === 'Tag release') result.tag = `candidate/macos/${inputs.version}-${inputs.packageKind}.${inputs.build}`;
       return result;
     }
-    await sleep(pollMs);
+    await sleep(Math.max(0, Math.min(pollMs, deadline-now())));
   }
-  throw new Error('Child run still pending; retain and reconcile '+url);
+  const pending = {...retained, state: 'monitoring-deferred', completion: 'verified-child-callback'};
+  recordRun(pending);
+  return {sourceSha: environment.GITHUB_SHA, version: inputs.version, build: inputs.build,
+    packageKind: inputs.packageKind, notarized: false, upload: false, pending: true,
+    repository: admitted.name, run: pending};
 }
 
 export async function completeMacosDmg({environment = process.env, api, manifestPath} = {}) {
@@ -163,10 +173,12 @@ export async function completeMacosDmg({environment = process.env, api, manifest
   const packageKind = environment.AEGIS_MACOS_DELIVERY_PACKAGE_KIND || '';
   const signingMode = environment.AEGIS_MACOS_DELIVERY_SIGNING_MODE || '';
   const parent = environment.GITHUB_RUN_ID || '';
+  const tagRelease = environment.AEGIS_MACOS_DELIVERY_TAG_RELEASE || 'false';
   requireValue(/^[0-9a-f]{40}$/u.test(sha), 'Completed delivery source is malformed');
   requireValue(VERSION.test(version) && BUILD.test(build), 'Completed delivery coordinate is malformed');
   requireValue(KINDS.has(packageKind) && signingMode === packageKind, 'Completed DMG kind differs');
   requireValue(/^[1-9][0-9]*$/u.test(parent), 'Completed delivery run is malformed');
+  requireValue(['true', 'false'].includes(tagRelease), 'Completed candidate request is malformed');
   requireValue(basename(manifestPath || '') === 'macos-delivery-manifest.json', 'Completed manifest name differs');
   /* eslint-disable security/detect-non-literal-fs-filename -- The delivery workflow passes the sealed manifest it just downloaded. */
   const stat = lstatSync(manifestPath);
@@ -181,10 +193,23 @@ export async function completeMacosDmg({environment = process.env, api, manifest
     manifest.artifacts?.length === 1 && manifest.artifacts[0].architecture === 'arm64' &&
     manifest.artifacts[0].uploadable === false && manifest.artifacts[0].sha256?.length === 64,
   'Completed manifest differs');
+  const parentRun = await api(admitted.prefix+'/actions/runs/'+parent);
+  requireValue(parentRun?.id === Number(parent) && parentRun.run_attempt === 1 && parentRun.head_sha === sha &&
+    (parentRun.status === 'in_progress' || (parentRun.status === 'completed' && parentRun.conclusion === 'success')) &&
+    parentRun.head_branch === 'main' && parentRun.path === '.github/workflows/macos-dmg.yml' &&
+    parentRun.event === 'workflow_dispatch' && parentRun.repository?.id === admitted.id &&
+    parentRun.repository.full_name === admitted.name && parentRun.head_repository?.id === admitted.id &&
+    parentRun.head_repository.full_name === admitted.name &&
+    String(parentRun.actor?.id) === environment.GITHUB_ACTOR_ID && parentRun.actor?.login === environment.GITHUB_ACTOR &&
+    parentRun.triggering_actor?.id === parentRun.actor.id,
+  'Completed parent run identity differs');
+  const evidence = await requireDmgEvidence({api, repository: admitted.name, sha, id: Number(parent),
+    inputs: {version, build, packageKind, operation: tagRelease === 'true' ? 'Tag release' : 'Package'}});
+  requireValue(evidence.manifestSha256 === digest, 'Completed local and sealed manifest digests differ');
   const inputs = {
     operation: 'Complete', version, build, package_kind: packageKind, signing_mode: signingMode,
     approved_source_sha: sha, manifest_sha256: digest, completed_operation: 'package',
-    parent_run_id: parent, candidate_tag: '',
+    parent_run_id: parent, candidate_tag: tagRelease === 'true' ? `candidate/macos/${version}-${packageKind}.${build}` : '',
   };
   let receipt;
   try {
@@ -193,7 +218,7 @@ export async function completeMacosDmg({environment = process.env, api, manifest
   } catch { throw new Error('Bot dispatch outcome unknown; reconcile before another request'); }
   requireValue(positiveId(receipt?.workflow_run_id), 'Bot run identity unknown; reconcile without retrying');
   return {workflowRunId: receipt.workflow_run_id, parentRunId: Number(parent), operation: 'package',
-    manifestSha256: digest, repository: admitted.name};
+    manifestSha256: digest, candidateTag: inputs.candidate_tag, repository: admitted.name};
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

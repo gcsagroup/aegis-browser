@@ -148,6 +148,10 @@ def seal(directory, package_kind, version, build, source_sha, repository):
     require(receipt.get('notarized') is False and receipt.get('signingMode') == expected_signing and
             receipt.get('version') == version and receipt.get('arch') == 'arm64',
             'Low-level package receipt does not match this DMG kind')
+    require(receipt.get('sourceSha') == source_sha and receipt.get('packagingSourceSha') == source_sha,
+            'Package receipt source differs from the requested delivery source')
+    if package_kind == 'notarized':
+        require(receipt.get('notarizationSigning') is True, 'Notarized DMG requires distribution signing')
     digest = _sha256(path)
     if package_kind != 'notarized':
         require(receipt.get('dmg', {}).get('sha256') == digest, 'DMG digest differs from the package receipt')
@@ -323,12 +327,41 @@ def promote_candidate(api, candidate_tag, actor_login, approved, repository=UPST
     message = annotation.get('message') or ''
     require(message.startswith(TAG_SCHEMA + '\n'), 'Candidate annotation is not a DMG tag')
     payload = json.loads(message.split('\n', 1)[1])
+    require(payload.get('schema') == TAG_SCHEMA and
+            re.fullmatch(r'[0-9a-f]{40}', str(payload.get('sourceSha', ''))) is not None,
+            'Candidate annotation identity is malformed')
     require(payload.get('packageKind') == 'notarized', 'Only a notarized candidate can become the stable release')
     commit = annotation.get('object') or {}
     require(commit.get('type') == 'commit' and commit.get('sha') == payload.get('sourceSha'),
             'Candidate target differs from its recorded source')
     version = str(payload.get('version', ''))
     require(VERSION.fullmatch(version) is not None, 'Candidate version is malformed')
+    require(candidate_tag == dmg_tag_name(version, str(payload.get('build', '')), 'notarized'),
+            'Candidate tag differs from its recorded coordinate')
+    artifacts = payload.get('artifacts')
+    require(isinstance(artifacts, list) and len(artifacts) == 1 and isinstance(artifacts[0], dict),
+            'Candidate must record one arm64 DMG')
+    expected = artifacts[0]
+    require(expected.get('architecture') == 'arm64' and expected.get('filename') == dmg_filename(version) and
+            re.fullmatch(r'[0-9a-f]{64}', str(expected.get('sha256', ''))) is not None,
+            'Candidate DMG identity is malformed')
+    candidate = api('/repos/' + UPSTREAM + '/releases/tags/' + urllib.parse.quote(candidate_tag, safe=''))
+    require(isinstance(candidate, dict) and type(candidate.get('id')) is int and candidate['id'] > 0 and
+            candidate.get('tag_name') == candidate_tag and candidate.get('prerelease') is True and
+            candidate.get('draft') is False, 'Candidate prerelease identity differs')
+
+    def verified_asset(release):
+        assets = release.get('assets')
+        require(isinstance(assets, list), 'Candidate DMG asset inventory is missing')
+        matches = [asset for asset in assets if isinstance(asset, dict) and asset.get('name') == expected['filename']]
+        require(len(matches) == 1, 'Candidate must contain exactly one matching DMG asset')
+        asset = matches[0]
+        require(type(asset.get('id')) is int and asset['id'] > 0 and asset.get('state') == 'uploaded' and
+                type(asset.get('size')) is int and asset['size'] > 0 and
+                asset.get('digest') == 'sha256:' + expected['sha256'], 'Candidate DMG asset digest or state differs')
+        return asset['id']
+
+    asset_id = verified_asset(candidate)
     stable = 'v' + version
     try:
         api('/repos/' + UPSTREAM + '/git/ref/tags/' + urllib.parse.quote(stable, safe=''))
@@ -337,7 +370,12 @@ def promote_candidate(api, candidate_tag, actor_login, approved, repository=UPST
             raise
     else:
         raise DeliveryError('Stable tag already exists; reconcile instead of replacing it')
-    release = api('/repos/' + UPSTREAM + '/releases', method='POST', body={
+    # Promote the existing release so the verified asset stays attached. The
+    # annotated candidate tag remains available as the original evidence.
+    api('/repos/' + UPSTREAM + '/git/refs', method='POST', body={
+        'ref': 'refs/tags/' + stable, 'sha': payload['sourceSha'],
+    })
+    release = api('/repos/' + UPSTREAM + '/releases/' + str(candidate['id']), method='PATCH', body={
         'tag_name': stable,
         'target_commitish': payload['sourceSha'],
         'name': f'GCSA Aegis {version}',
@@ -345,12 +383,12 @@ def promote_candidate(api, candidate_tag, actor_login, approved, repository=UPST
         'draft': False,
         'prerelease': False,
         'make_latest': 'true',
-        'generate_release_notes': False,
     })
-    require(isinstance(release, dict) and isinstance(release.get('id'), int) and release.get('id') > 0 and
-            release.get('prerelease') is not True and release.get('draft') is not True, 'Stable release identity differs')
+    require(isinstance(release, dict) and release.get('id') == candidate['id'] and
+            release.get('tag_name') == stable and release.get('prerelease') is False and
+            release.get('draft') is False and verified_asset(release) == asset_id, 'Stable release identity differs')
     return {'tag': stable, 'candidate': candidate_tag, 'releaseId': release['id'], 'prerelease': False,
-            'repository': UPSTREAM}
+            'assetId': asset_id, 'repository': UPSTREAM}
 
 
 def accept_complete(environment, destination):
@@ -367,10 +405,16 @@ def accept_complete(environment, destination):
     sha = environment.get('AEGIS_MACOS_INPUT_APPROVED_SOURCE_SHA', '')
     parent = environment.get('AEGIS_MACOS_INPUT_PARENT_RUN_ID', '')
     manifest = environment.get('AEGIS_MACOS_INPUT_MANIFEST_SHA256', '')
+    package_kind = environment.get('AEGIS_MACOS_INPUT_PACKAGE_KIND', '')
+    signing_mode = environment.get('AEGIS_MACOS_INPUT_SIGNING_MODE', '')
+    candidate_tag = environment.get('AEGIS_MACOS_INPUT_CANDIDATE_TAG', '')
     require(VERSION.fullmatch(version) is not None and BUILD.fullmatch(build) is not None, 'Completed coordinate is malformed')
     require(re.fullmatch(r'[0-9a-f]{40}', sha) is not None, 'Completed source is malformed')
     require(re.fullmatch(r'[1-9][0-9]*', parent) is not None, 'Completed parent run is malformed')
     require(re.fullmatch(r'[0-9a-f]{64}', manifest) is not None, 'Completed manifest is missing')
+    require(package_kind in DMG_KINDS and signing_mode == package_kind, 'Completed package kind differs')
+    require(not candidate_tag or candidate_tag == dmg_tag_name(version, build, package_kind),
+            'Completed candidate coordinate differs')
     receipt = {
         'schema': 'aegis-macos-delivery-bot-v1',
         'operation': operation,
@@ -381,6 +425,8 @@ def accept_complete(environment, destination):
         'manifestSha256': manifest,
         'repository': repository,
         'actor': policy['slug'] + '[bot]',
+        'packageKind': package_kind,
+        'candidateTag': candidate_tag,
     }
     require(not destination.exists(), 'Refusing to replace a bot receipt')
     destination.write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8')
