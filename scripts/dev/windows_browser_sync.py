@@ -25,9 +25,7 @@ def git(repo, *args, data=None, env=None):
     ])
     # Git 从开发者工具链解析为绝对路径；路径参数按字面传递，补丁字节只进入标准输入。
     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
-    return subprocess.check_output(  # nosec B603
-        command, input=data, env=env, shell=False,
-    )
+    return subprocess.check_output(command, input=data, env=env, shell=False)  # nosec B603
 
 
 def names(data):
