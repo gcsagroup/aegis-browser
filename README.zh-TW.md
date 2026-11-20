@@ -58,11 +58,12 @@ mise exec -- pnpm run quality:fast
 
 | 平台 | 階段 | 狀態 |
 | --- | --- | --- |
-| macOS | 目前 | Chromium 整合和 Access Service 持續推進；目前原始碼的執行與散布驗收仍待完成。 |
-| iOS / iPadOS | 已上架 | 原生 SwiftUI/WKWebView 應用程式。App Store 1.0.0：[美國](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [香港](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
-| Windows / Android / Linux | 後續 | 已有原始碼和評估入口；目前不承諾近期發布。 |
+| iOS / iPadOS | 已上架維護 | App Store 1.0.0 已公開。目前維護這條已發布線，並驗收 Access。[美國](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [香港](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
+| macOS | 爭發布資格 | Chromium 整合已在原始碼中。執行驗收和散布資格仍未完成。 |
+| Windows | 同事負責 · 原生驗收暫停 | 同事負責 Windows 原始碼移植和原生驗收。runner 准入及原生建置、測試、瀏覽器和安裝器驗收按既有決定保持暫停。這條線不阻塞 iOS 或 macOS。 |
+| Android / Linux | 後續 | 已有原始碼和評估入口；目前不承諾近期發布。 |
 
-macOS 可獨立於 iOS 達到發布條件。完成標準見[路線圖](docs/roadmap.zh-TW.md)。
+iOS 維護與 macOS 發布資格並行。Windows 保持在負責該軌道的同事手上。Access 順序和完成標準見[路線圖](docs/roadmap.zh-TW.md)。
 
 ## 隱私與 AI
 
