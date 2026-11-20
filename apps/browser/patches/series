@@ -530,3 +530,4 @@
 0530-adapt-chromium158-actor-surface343.patch
 0531-preserve-reading-split-default344.patch
 0532-fix-chromium158-native-runtime-regressions.patch
+0533-fix-preserve-aegis-context-menu-uma.patch

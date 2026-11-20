@@ -44,6 +44,7 @@ run_check 'update-metadata-prototype' node --test ./scripts/update-metadata-prot
 run_check '截图与 OCR 输入和确认边界' node --test ./scripts/webpage-capture_test.mjs
 
 run_check 'patch series formats' bash ./scripts/patch-series-format_test.sh
+run_check 'persisted context-menu UMA compatibility' python3 -B ./scripts/context-menu-uma_test.py
 run_check 'patch series regression fixtures' bash ./scripts/patch-series-format-regression_test.sh
 run_check 'Access native unit tests' bash ./scripts/test-aegis-access-native.sh
 run_check 'Android Access adb runner offline regressions' python3 -B ./access-cmake/run_android_test_test.py
