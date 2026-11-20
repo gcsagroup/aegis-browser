@@ -1,0 +1,199 @@
+From 5d51d907a9381cc43b888d73c442dc9c94bb2449 Mon Sep 17 00:00:00 2001
+From: Aegis Patch Maintenance <aegis-patches@example.invalid>
+Date: Fri, 20 Nov 2026 11:51:34 +0800
+Subject: [PATCH] Fix full-page capture command dispatch on Chromium 157
+
+---
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 140cbb372ee7f78eacf6c2357bcb3f53ff2e31d0..bc3075a08f903cee09c0e4aa8b970a58751eae1a 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -359,6 +359,7 @@ if (!is_android) {
+       "agent/aegis_agent_browsertest.cc",
+       "enhancements/enhancement_browsertest.cc",
+       "google_service_prompt_browsertest.cc",
++      "webpage_capture_browsertest.cc",
+     ]
+     if (is_mac) {
+       sources += [ "access/access_options_browsertest.cc" ]
+@@ -399,6 +400,7 @@ if (!is_android) {
+       "//chrome/browser/ui:browser_command_controller",
+       "//chrome/browser/ui:browser_commands",
+       "//chrome/browser/ui:browser_tabstrip",
++      "//chrome/browser/ui:ui_features",
+       "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/side_panel",
+       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+diff --git a/chrome/browser/aegis/webpage_capture_browsertest.cc b/chrome/browser/aegis/webpage_capture_browsertest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..29f344c721daaeb0bc8611d09cd145cd6347923c
+--- /dev/null
++++ b/chrome/browser/aegis/webpage_capture_browsertest.cc
+@@ -0,0 +1,111 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/webpage_capture.h"
++
++#include "base/run_loop.h"
++#include "base/test/run_until.h"
++#include "base/test/scoped_feature_list.h"
++#include "chrome/app/chrome_command_ids.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/toolbar/app_menu_model.h"
++#include "chrome/browser/ui/ui_features.h"
++#include "chrome/common/pref_names.h"
++#include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/ui_test_utils.h"
++#include "components/prefs/pref_service.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test.h"
++#include "content/public/test/browser_test_utils.h"
++#include "content/public/test/test_navigation_observer.h"
++#include "net/test/embedded_test_server/embedded_test_server.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++
++// Chromium 157 enables Actions by default; keep the legacy fallback working too.
++class WebpageCaptureCommandBrowserTest
++    : public InProcessBrowserTest,
++      public testing::WithParamInterface<bool> {
++ public:
++  WebpageCaptureCommandBrowserTest() {
++    features_.InitWithFeatureState(::features::kUseActionsForBrowserCommands,
++                                   GetParam());
++  }
++
++  void SetUpOnMainThread() override {
++    InProcessBrowserTest::SetUpOnMainThread();
++    ASSERT_TRUE(embedded_test_server()->Start());
++    ASSERT_TRUE(ui_test_utils::NavigateToURL(
++        browser(), embedded_test_server()->GetURL("/title1.html")));
++  }
++
++ protected:
++  content::WebContents* contents() {
++    return browser()->GetTabStripModel()->GetActiveWebContents();
++  }
++
++ private:
++  base::test::ScopedFeatureList features_;
++};
++
++IN_PROC_BROWSER_TEST_P(WebpageCaptureCommandBrowserTest,
++                       AppMenuCommandOpensCapturedImage) {
++  ASSERT_TRUE(CanCaptureWebpage(contents()));
++  AppMenuModel menu(nullptr, browser());
++  menu.Init();
++  // An unmapped IDC is unsupported by CommandActionUpdater, even when the
++  // legacy controller has a switch case and UpdateCommandEnabled call.
++  ASSERT_TRUE(chrome::IsCommandEnabled(browser(), IDC_AEGIS_CAPTURE_FULL_PAGE));
++  ASSERT_TRUE(menu.IsCommandIdEnabled(IDC_AEGIS_CAPTURE_FULL_PAGE));
++  content::TestNavigationObserver navigation(contents());
++  menu.ExecuteCommand(IDC_AEGIS_CAPTURE_FULL_PAGE, 0);
++  navigation.Wait();
++  ASSERT_EQ(GURL(kCapturePageUrl), contents()->GetLastCommittedURL());
++  ASSERT_TRUE(content::WaitForLoadStop(contents()));
++  // Prove that the command reached the real capture callback and produced PNG
++  // pixels, rather than merely opening an empty/error preview page.
++  EXPECT_TRUE(base::test::RunUntil([&]() {
++    return content::EvalJs(contents(), R"JS(
++      (() => {
++        const image = document.getElementById('source');
++        return !!image && image.src.startsWith('data:image/png;base64,') &&
++            image.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
++      })()
++    )JS").ExtractBool();
++  }));
++}
++
++IN_PROC_BROWSER_TEST_P(WebpageCaptureCommandBrowserTest,
++                       PolicyChangeAfterMenuCreationBlocksCapture) {
++  const GURL original = contents()->GetLastCommittedURL();
++  AppMenuModel menu(nullptr, browser());
++  menu.Init();
++  ASSERT_TRUE(menu.IsCommandIdEnabled(IDC_AEGIS_CAPTURE_FULL_PAGE));
++  browser()->GetProfile()->GetPrefs()->SetBoolean(::prefs::kDisableScreenshots,
++                                                 true);
++  ASSERT_FALSE(CanCaptureWebpage(contents()));
++  menu.ExecuteCommand(IDC_AEGIS_CAPTURE_FULL_PAGE, 0);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(original, contents()->GetLastCommittedURL());
++  EXPECT_TRUE(TakeCapturedWebpage(contents()).png.empty());
++}
++
++IN_PROC_BROWSER_TEST_P(WebpageCaptureCommandBrowserTest,
++                       CommandDoesNotCaptureInternalPage) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("chrome://version/")));
++  ASSERT_FALSE(CanCaptureWebpage(contents()));
++  ASSERT_TRUE(chrome::ExecuteCommand(browser(), IDC_AEGIS_CAPTURE_FULL_PAGE));
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(GURL("chrome://version/"), contents()->GetLastCommittedURL());
++  EXPECT_TRUE(TakeCapturedWebpage(contents()).png.empty());
++}
++
++INSTANTIATE_TEST_SUITE_P(ActionsAndLegacy,
++                        WebpageCaptureCommandBrowserTest,
++                        testing::Bool());
++
++}  // namespace aegis
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 4f72558fcde246e0f0eca805c2fc990ad2ac9bfd..e8644aa2bdadb93606630f9443dc7c83cc299177 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -296,6 +296,7 @@ if (!is_android) {
+     sources = [ "browser_actions.cc" ]
+     public_deps = [ "//base" ]
+     deps = [
++      "//chrome/browser/aegis",
+       ":browser_actions",
+       ":browser_command_controller",
+       ":browser_commands",
+diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
+index e5841aaa54f816d7d6169abf2282c4a3e67733e2..8c60519ec07caedf7ad5a9a1c2b17e394bc8349c 100644
+--- a/chrome/browser/ui/actions/chrome_action_id.h
++++ b/chrome/browser/ui/actions/chrome_action_id.h
+@@ -163,6 +163,7 @@
+   E(kActionOpenAegisAgent, IDC_SHOW_AEGIS_AGENT) \
+   E(kActionAegisEnhancements, IDC_AEGIS_ENHANCEMENTS) \
+   E(kActionAegisMarkdown, IDC_AEGIS_MARKDOWN) \
++  E(kActionAegisCaptureFullPage, IDC_AEGIS_CAPTURE_FULL_PAGE) \
+   E(kActionEditSearchEngines, IDC_EDIT_SEARCH_ENGINES) \
+   E(kActionViewPasswords, IDC_VIEW_PASSWORDS) \
+   E(kActionAbout, IDC_ABOUT) \
+diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
+index c1fbfc60357fff265b54e2ada0d2c7816a51f11f..891500ebcf2ae7417e7bd0ad3a44697abc5838b6 100644
+--- a/chrome/browser/ui/browser_actions.cc
++++ b/chrome/browser/ui/browser_actions.cc
+@@ -23,6 +23,7 @@
+ #include "build/branding_buildflags.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/app/vector_icons/vector_icons.h"
++#include "chrome/browser/aegis/webpage_capture.h"
+ #include "chrome/browser/browsing_data/browsing_data_important_sites_util.h"
+ #include "chrome/browser/contextual_cueing/contextual_cueing_controller.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+@@ -2016,6 +2017,18 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+   BrowserWindowInterface* const bwi = base::to_address(bwi_);
+   TabStripModel* const tab_strip_model = bwi_->GetTabStripModel();
+ 
++  root_action_item_->AddChild(
++      actions::ActionItem::Builder(base::BindRepeating(
++          [](BrowserWindowInterface* browser, actions::ActionItem*,
++             actions::ActionInvocationContext) {
++            // Resolve the current tab at invocation; CaptureFullWebpage rechecks
++            // the URL and screenshot policy even if the menu is already open.
++            aegis::CaptureFullWebpage(
++                browser->GetTabStripModel()->GetActiveWebContents());
++          }, bwi))
++          .SetActionId(kActionAegisCaptureFullPage)
++          .Build());
++
+   // 157 默认通过 Action 分发命令；保留原入口及受限资料检查。
+   root_action_item_->AddChild(
+       actions::ActionItem::Builder(base::BindRepeating(

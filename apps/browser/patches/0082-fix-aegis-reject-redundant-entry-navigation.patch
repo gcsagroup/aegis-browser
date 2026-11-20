@@ -1,12 +1,9 @@
-From bce3f0cf28db99765c05d557a69dbf4f29cf5c64 Mon Sep 17 00:00:00 2001
+From a2aa55dffc2ac7585a6c2844e6745b65333aa410 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 21:40:45 +0800
 Subject: [PATCH] fix(aegis): reject redundant entry navigation
 
 ---
- chrome/browser/aegis/agent/agent_planner.cc   | 16 ++++++++
- .../aegis/agent/agent_planner_unittest.cc     | 40 ++++++++++++++++++-
- 2 files changed, 55 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
 index fd62d25837f0ea90ed38f05da6434805259fc08b..626183ab8c46e2a2eef1cbbdf402f0e75cc96586 100644
@@ -122,6 +119,3 @@ index f82cfc187055fcd84015d2d40d12ad92132d3863..27af268719d0b31b0b19b31eab614cb7
    const base::ListValue* catalog = parsed->GetDict().FindList("tool_catalog");
    ASSERT_TRUE(catalog);
    ASSERT_EQ(catalog->size(), 3u);
--- 
-2.52.0
-

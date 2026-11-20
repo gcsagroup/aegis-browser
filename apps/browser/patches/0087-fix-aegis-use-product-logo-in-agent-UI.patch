@@ -1,16 +1,9 @@
-From 840b99004a303fa9963854b84314b599da04fbb0 Mon Sep 17 00:00:00 2001
+From b6dcc2ffd29f24e7572e097d14a3fe4e1ed2b68e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:15:29 +0800
 Subject: [PATCH] fix(aegis): use product logo in agent UI
 
 ---
- .../agent/aegis_agent_interactive_uitest.cc   |  4 +++
- chrome/browser/resources/aegis_agent/BUILD.gn |  1 +
- .../browser/resources/aegis_agent/agent.css   | 11 ++------
- .../browser/resources/aegis_agent/agent.html  |  2 +-
- .../resources/aegis_agent/product_logo.svg    | 27 +++++++++++++++++++
- 5 files changed, 35 insertions(+), 10 deletions(-)
- create mode 100644 chrome/browser/resources/aegis_agent/product_logo.svg
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 index 95cb0a2f65d8de6800b0f45fc56f148db10407b2..1d4a929ca49e3b431abfa932b6dd19fcefcedab1 100644
@@ -110,6 +103,3 @@ index 0000000000000000000000000000000000000000..4bb68d7322f63c4e274ca3dd8833663f
 +    </g>
 +  </g>
 +</svg>
--- 
-2.52.0
-

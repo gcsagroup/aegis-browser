@@ -1,4 +1,4 @@
-From b9bc3ff8c0a5d7d20b4a9f34b7875eda44440882 Mon Sep 17 00:00:00 2001
+From c7b486c27cecab5c02733cc626899cfb064fb5ab Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 01:49:48 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E6=8C=89=E4=BB=BB=E5=8A=A1=E8=A3=81?=
@@ -9,20 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   3 +
- .../browser/aegis/agent/aegis_actor_bridge.cc | 160 +++-----------
- .../browser/aegis/agent/agent_observation.cc  | 196 ++++++++++++++++++
- .../browser/aegis/agent/agent_observation.h   |  25 +++
- .../aegis/agent/agent_observation_unittest.cc | 169 +++++++++++++++
- chrome/browser/aegis/summary_policy.cc        |   4 +
- chrome/browser/aegis/summary_policy.h         |   4 +
- chrome/browser/resources/aegis_agent/agent.ts |  10 +-
- .../ui/webui/help/aegis_github_update.h       |   6 +-
- .../help/aegis_github_update_unittest.cc      |  16 +-
- 10 files changed, 456 insertions(+), 137 deletions(-)
- create mode 100644 chrome/browser/aegis/agent/agent_observation.cc
- create mode 100644 chrome/browser/aegis/agent/agent_observation.h
- create mode 100644 chrome/browser/aegis/agent/agent_observation_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index c4475d01cfa88d4ebddf0b4bda2e25c73aad4d72..d53733123f750026c4e4c13252cf228ab3575257 100644
@@ -811,6 +797,3 @@ index edb92f0af0b6a368f08938af852cfa7552e6bad0..eed6c5e07fcbf5e3fe6798ec21da5c8b
    EXPECT_EQ(Parse(Release("1.1.0.1")).state, ReleaseState::kLocalNewer);
    EXPECT_EQ(Parse(Release("1.0.0.999")).state, ReleaseState::kLocalNewer);
    EXPECT_EQ(Parse(Release("151.0.7922")).state, ReleaseState::kInvalid);
--- 
-2.52.0
-

@@ -169,6 +169,8 @@ class WindowsBrowserTests(unittest.TestCase):
                 binary = self.src / "out/AegisRelease/chrome.exe"
                 binary.parent.mkdir(parents=True, exist_ok=True)
                 binary.touch()
+                # POSIX 主机也执行共用命令校验；夹具需具备真实可执行权限。
+                binary.chmod(0o755)
                 launcher.run(self.project, self.checkout, 2, False)
                 self.assertEqual(command.call_args.args[0][-3:], ["-j", "2", "chrome"])
                 self.assertIn("--user-data-dir=" + str(self.root / "Aegis-Dev"), start.call_args.args[0])

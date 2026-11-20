@@ -11,15 +11,42 @@ trap cleanup EXIT
 
 patch_dir="$fixture_root/patches"
 mkdir -p "$patch_dir"
-cat > "$patch_dir/valid.patch" <<'PATCH'
-diff --git a/example.txt b/example.txt
-new file mode 100644
-index 0000000..8e27be7
---- /dev/null
-+++ b/example.txt
-@@ -0,0 +1 @@
-+example
-PATCH
+repo="$fixture_root/repo"
+git init -q "$repo"
+git -C "$repo" config user.name 'Patch Format Test'
+git -C "$repo" config user.email 'patch-format@example.invalid'
+git -C "$repo" -c core.hooksPath=/dev/null commit -q --allow-empty -m baseline
+base="$(git -C "$repo" rev-parse HEAD)"
+printf 'example\n' > "$repo/example.txt"
+git -C "$repo" add example.txt
+git -C "$repo" -c core.hooksPath=/dev/null commit -q -m 'Add example'
+git -C "$repo" format-patch -1 --stdout > "$patch_dir/valid.patch"
+# Exercise the same mail consumer as production, not just the diff parser.
+git -C "$repo" reset -q --hard "$base"
+git -C "$repo" -c core.hooksPath=/dev/null am --3way "$patch_dir/valid.patch" >/dev/null
+[[ "$(cat "$repo/example.txt")" == example ]]
+
+expect_rejected() {
+  local name="$1" expected="$2"
+  printf '%s\n' "$name" > "$patch_dir/series"
+  if bash "$script_dir/patch-series-format_test.sh" "$patch_dir" \
+      >"$fixture_root/rejected.out" 2>"$fixture_root/rejected.err"; then
+    printf 'FAIL: invalid patch mail was accepted: %s\n' "$name" >&2
+    exit 1
+  fi
+  grep -F "$expected" "$fixture_root/rejected.err" >/dev/null
+}
+
+# This is syntactically valid diff input, but git am needs its mail headers.
+sed -n '/^diff --git /,$p' "$patch_dir/valid.patch" > "$patch_dir/bare.patch"
+git apply --stat "$patch_dir/bare.patch" >/dev/null
+expect_rejected bare.patch 'FAIL: missing format-patch commit header:'
+for field in From Date Subject; do
+  sed "/^$field: /d" "$patch_dir/valid.patch" > "$patch_dir/no-$field.patch"
+  expect_rejected "no-$field.patch" 'FAIL: missing patch mail '
+done
+sed 's/^From: .*/From: <>/' "$patch_dir/valid.patch" > "$patch_dir/empty-author.patch"
+expect_rejected empty-author.patch 'FAIL: missing patch mail Author:'
 
 # Deliberately omit the final newline. A missing last entry must be rejected,
 # which proves that the loop executed instead of only printing its success line.

@@ -1,14 +1,12 @@
-From 2140712dc5e116ac7ee5293bb5e150b231dc8210 Mon Sep 17 00:00:00 2001
+From 17bbbf29edb2fb7bf80035d53c66bfe236d7d0cd Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 15:36:40 +0800
 Subject: [PATCH] fix(branding): use GCSA Aegis in browser identity surfaces
 
 ---
- chrome/app/chromium_strings.grd | 52 ++++++++++++++++-----------------
- 1 file changed, 26 insertions(+), 26 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
-index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123f430e3fe 100644
+index dea90cda0be32f0d6c94ce7950a00970aded6299..f033b197a496c7f3e94fe48a8cd192bfdb3bed5b 100644
 --- a/chrome/app/chromium_strings.grd
 +++ b/chrome/app/chromium_strings.grd
 @@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
@@ -88,7 +86,7 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
            </message>
          </else>
        </if>
-@@ -576,18 +576,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -581,18 +581,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
          </message>
        </if>
        <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu." translateable="false">
@@ -110,7 +108,7 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
          </message>
        </if>
        <!-- Sharing messages -->
-@@ -684,10 +684,10 @@ Chromium is unable to recover your settings.
+@@ -689,10 +689,10 @@ Chromium is unable to recover your settings.
  
        <!-- Password manager onboarding strings -->
        <message name="IDS_PASSWORD_MANAGER_ONBOARDING_DETAILS_C" desc="The explanation text that is shown below the title in the password manager onboarding dialog.">
@@ -123,7 +121,7 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
        </message>
        <message name="IDS_PASSWORD_MANAGER_BRAND_NAME" desc="This string is used both as a standalone label and injected into sentences. Please translate this as a standalone noun in the Nominative case to ensure it looks correct in titles. Sentence structures surrounding it may read slightly awkwardly.">
          Password Manager
-@@ -1123,19 +1123,19 @@ Chromium is unable to recover your settings.
+@@ -1128,19 +1128,19 @@ Chromium is unable to recover your settings.
  
        <!-- Main Chrome menu -->
        <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
@@ -147,7 +145,7 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
        </message>
  
        <if expr="use_titlecase and not is_chromeos">
-@@ -1147,12 +1147,12 @@ Chromium is unable to recover your settings.
+@@ -1152,12 +1152,12 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
@@ -162,7 +160,7 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
          </message>
        </if>
        <if expr="not use_titlecase and not is_chromeos">
-@@ -1164,12 +1164,12 @@ Chromium is unable to recover your settings.
+@@ -1169,12 +1169,12 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
@@ -177,7 +175,7 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
          </message>
        </if>
        <if expr="is_chromeos">
-@@ -1183,13 +1183,13 @@ Chromium is unable to recover your settings.
+@@ -1188,13 +1188,13 @@ Chromium is unable to recover your settings.
  
        <if expr="is_macosx">
          <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome." translateable="false">
@@ -194,6 +192,3 @@ index bad5d6abf79104023aeaa591e054396d70036285..586f922f3ee52a62dd429de1b3bad123
          </message>
        </if>
  
--- 
-2.52.0
-

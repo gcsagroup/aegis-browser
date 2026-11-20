@@ -1,4 +1,4 @@
-From 79ecf1b7011dd23d2c53ba4c061ff04c76a46350 Mon Sep 17 00:00:00 2001
+From fef3a5323e295c770631e71496c4ab2e8bd9e19e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 05:26:26 +0800
 Subject: [PATCH] =?UTF-8?q?=E7=A7=BB=E9=99=A4=E4=B8=8B=E8=BD=BD=E9=A1=B5?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h     | 6 +++---
- chrome/test/data/webui/settings/downloads_page_test.ts | 2 +-
- 2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index b75faad465f20c36f5f95e15cb16f888ecf6b595..7848b31beaee67c82c56ae2418b8125cf612bf8f 100644
@@ -43,6 +40,3 @@ index f9688c6b0079cc6c508cc54bc257f6c9fbf762a9..6fcdc298044de8205b3ab91716fcdce2
          '.aegis-select');
      assertTrue(!!select);
      assertTrue(select.value === '0');
--- 
-2.52.0
-

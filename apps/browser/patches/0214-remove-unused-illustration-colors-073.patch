@@ -1,4 +1,4 @@
-From 59b3a7f315cd46482f63a2f114e4feb80f67adb4 Mon Sep 17 00:00:00 2001
+From 7a8756b98da2caeff5365d18f36417dab8ca0eb8 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 29 Sep 2026 19:50:29 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=B8=85=E7=90=86=E5=93=81=E7=89=8C=E6=8F=92?=
@@ -10,10 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../notifications/android/java/res/values-night/colors.xml    | 4 +---
- .../browser/notifications/android/java/res/values/colors.xml  | 4 +---
- chrome/browser/ui/webui/help/aegis_github_update.h            | 4 ++--
- 3 files changed, 4 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/notifications/android/java/res/values-night/colors.xml b/chrome/browser/notifications/android/java/res/values-night/colors.xml
 index 93ba522c1e90d23c0cd5ae7f33aeb91a364f83b5..25ea4ae39d968a4a4d78ffbea5b39bd0f4d60f6d 100644
@@ -56,6 +52,3 @@ index 9ec2c354b137e0bcdfbd576be4bea92d38f4446c..4c0dd4ee97ea7d511faea6a991d8b996
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

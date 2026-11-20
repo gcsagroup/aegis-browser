@@ -1,12 +1,9 @@
-From 3d9a1de1e714f65269675d49e79be50cbb737699 Mon Sep 17 00:00:00 2001
+From 5b445be7b9bd8f9a4ce8cb14336aed921830bf06 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 11 Oct 2026 06:23:22 +0800
 Subject: [PATCH] fix: correct reading checkbox size for build 152
 
 ---
- chrome/browser/resources/aegis_agent/agent.css    | 15 +++++++++++++++
- .../browser/ui/webui/help/aegis_github_update.h   |  4 ++--
- 2 files changed, 17 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
 index bd85b68591c8c299998f009fa156f5003d67115d..e4695952f1ab56e09858bead86dfc281e67a5811 100644
@@ -49,6 +46,3 @@ index 29cae767da253fd893ce2d4bd0c24b8349410df1..c219afa9377c1c9bf6a9d27adfe5c4b2
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

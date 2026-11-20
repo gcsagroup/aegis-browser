@@ -1,0 +1,131 @@
+From 8a24c43298d90742a771332cff39e2fe19d91a90 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@local>
+Date: Mon, 16 Nov 2026 18:31:12 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=8C=89=E6=96=87=E6=A1=A3=E6=8F=90=E4=BA=A4?=
+ =?UTF-8?q?=E6=97=B6=E6=9C=BA=E9=87=8D=E9=AA=8C=E5=92=8C=E9=99=84=E5=8A=A0?=
+ =?UTF-8?q?=20CDP=20=E6=A0=87=E7=AD=BE=E7=9B=AE=E6=A0=87?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+
+diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
+index 1f6f297a9de78a7734bf8b1ed029e4cad71a2f08..0a677b1b14cf87c5ae06eb5683206723fcef40c5 100644
+--- a/content/browser/devtools/protocol/target_handler.cc
++++ b/content/browser/devtools/protocol/target_handler.cc
+@@ -1773,7 +1773,14 @@ void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
+ }
+ 
+ void TargetHandler::DevToolsAgentHostNavigated(DevToolsAgentHost* host) {
++  auto weak_this = weak_factory_.GetWeakPtr();
+   TargetInfoChanged(host);
++  if (weak_this && access_mode_ == AccessMode::kBrowser && auto_attach_ &&
++      root_session_->GetClient()->IsRemoteDebuggingClient() &&
++      host->GetType() == DevToolsAgentHost::kTypeTab) {
++    // 目标可能因创建时仍为空白而未自动附加。提交后按同一策略重试。
++    AutoAttach(auto_attacher_, host, /*waiting_for_debugger=*/false);
++  }
+ }
+ 
+ void TargetHandler::DevToolsAgentHostDestroyed(DevToolsAgentHost* host) {
+diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
+index 08280b1a7c3bc5c528caa37de81c5f43c43ee1b7..c635313d27d9877ee8cf39a6294542d5531df071 100644
+--- a/content/browser/devtools/render_frame_devtools_agent_host.cc
++++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
+@@ -668,9 +668,36 @@ scoped_refptr<RenderFrameDevToolsAgentHost>
+ RenderFrameDevToolsAgentHost::RevalidateSessionAccess(
+     RenderFrameHostImpl* frame_host) {
+   scoped_refptr<RenderFrameDevToolsAgentHost> retain_this(this);
++
++  // 渲染帧在提交前就会更换，此时新帧还没有已提交 URL。
++  // 只对已经附加的会话检查匹配的提交请求，新的附加仍采用已提交 URL。
++  NavigationRequest* committing_navigation = nullptr;
++  if (frame_host && frame_host->GetLastCommittedURL().is_empty() &&
++      navigation_requests_.size() == 1) {
++    NavigationRequest* request = *navigation_requests_.begin();
++    if (request->IsWaitingToCommit() &&
++        request->GetRenderFrameHost() == frame_host) {
++      committing_navigation = request;
++    }
++  }
++
+   std::vector<DevToolsSession*> restricted_sessions;
+   for (DevToolsSession* session : sessions()) {
+-    if (!ShouldAllowSession(frame_host, session)) {
++    DevToolsAgentHostClient* client = session->GetClient();
++    bool allowed;
++    if (committing_navigation && client->IsRemoteDebuggingClient()) {
++      auto* delegate = DevToolsManager::GetInstance()->delegate();
++      allowed =
++          (!delegate || (delegate->AllowRemoteDebugging() &&
++                         delegate->AllowInspectingRenderFrameHost(frame_host))) &&
++          client->MayAttachToRenderFrameHost(frame_host) &&
++          ShouldAllowSessionForNavigation(
++              committing_navigation->GetURL(), frame_host->GetWebUI() != nullptr,
++              session);
++    } else {
++      allowed = ShouldAllowSession(frame_host, session);
++    }
++    if (!allowed) {
+       restricted_sessions.push_back(session);
+     }
+   }
+diff --git a/content/browser/devtools/web_contents_devtools_agent_host.cc b/content/browser/devtools/web_contents_devtools_agent_host.cc
+index c49f985bba985afc86caa21266e474bb38ea26bd..1c30cee1a0247ec226f6c19aaa60c1bb8b8660b7 100644
+--- a/content/browser/devtools/web_contents_devtools_agent_host.cc
++++ b/content/browser/devtools/web_contents_devtools_agent_host.cc
+@@ -4,8 +4,10 @@
+ 
+ #include "content/browser/devtools/web_contents_devtools_agent_host.h"
+ 
++#include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/no_destructor.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/unguessable_token.h"
+ #include "content/browser/devtools/devtools_manager.h"
+ #include "content/browser/devtools/protocol/io_handler.h"
+@@ -367,10 +369,23 @@ void WebContentsDevToolsAgentHost::RenderFrameHostChanged(
+     RenderFrameHost* old_host,
+     RenderFrameHost* new_host) {
+   CHECK(web_contents());
+-  if (new_host == web_contents()->GetPrimaryMainFrame()) {
+-    std::ignore = RevalidateSessionAccess();
+-    // `this` is invalid at this point!
++  if (new_host != web_contents()->GetPrimaryMainFrame()) {
++    return;
+   }
++  if (new_host->GetLastCommittedURL().is_empty()) {
++    // 换帧通知早于提交 URL 的写入。ReadyToCommitNavigation 已检查
++    // 即将提交的 URL，保留会话到本轮提交结束后再检查实际文档。
++    // 即使没有完成提交，下一次任务也会重新检查空白目标。
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            [](scoped_refptr<WebContentsDevToolsAgentHost> host) {
++              std::ignore = host->RevalidateSessionAccess();
++            },
++            base::WrapRefCounted(this)));
++    return;
++  }
++  std::ignore = RevalidateSessionAccess();
+ }
+ 
+ void WebContentsDevToolsAgentHost::ReadyToCommitNavigation(
+@@ -469,8 +484,13 @@ WebContentsDevToolsAgentHost::RevalidateSessionAccess() {
+ 
+ void WebContentsDevToolsAgentHost::DidFinishNavigation(
+     NavigationHandle* navigation_handle) {
+-  if (navigation_handle->IsInPrimaryMainFrame() && navigation_handle->HasCommitted()) {
+-    std::ignore = RevalidateSessionAccess();
++  if (navigation_handle->IsInPrimaryMainFrame() &&
++      navigation_handle->HasCommitted()) {
++    auto retain_this = RevalidateSessionAccess();
++    if (web_contents()) {
++      NotifyNavigated();
++    }
+   }
+ }
++
+ }  // namespace content

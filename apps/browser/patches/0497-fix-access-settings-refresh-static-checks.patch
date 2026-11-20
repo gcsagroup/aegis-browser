@@ -1,0 +1,95 @@
+From 962dcb58a9567d51f38334a33e34d9520378d88d Mon Sep 17 00:00:00 2001
+From: Aegis Upstream <aegis-upstream@example.invalid>
+Date: Sun, 15 Nov 2026 16:08:24 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=95=B4=E5=90=88=E5=B7=B2=E5=90=88=E5=85=A5?=
+ =?UTF-8?q?=E4=B8=BB=E7=BA=BF=E7=9A=84=E9=A2=9D=E5=BA=A6=E4=B8=8E=E5=88=B7?=
+ =?UTF-8?q?=E6=96=B0=E5=8A=9F=E8=83=BD=EF=BC=9A0497-fix-access-settings-re?=
+ =?UTF-8?q?fresh-static-checks.patch?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+
+diff --git a/chrome/browser/resources/settings/aegis_page/access_account_usage.ts b/chrome/browser/resources/settings/aegis_page/access_account_usage.ts
+index 638eacfe2581f2e196e14714589cdaa102de8ef0..c8714f9de7302ab0f9459b8697308eba140d6621 100644
+--- a/chrome/browser/resources/settings/aegis_page/access_account_usage.ts
++++ b/chrome/browser/resources/settings/aegis_page/access_account_usage.ts
+@@ -29,16 +29,16 @@ export function formatUsageBytes(raw: string|null): string {
+   if (raw === null || !/^(0|[1-9]\d*)$/.test(raw)) return '—';
+   const bytes = BigInt(raw);
+   if (bytes > 18446744073709551615n) return '—';
+-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
+   let divisor = 1n;
+-  let unit = 0;
+-  while (unit < units.length - 1 && bytes / divisor >= 1024n) {
++  let unit = 'B';
++  for (const nextUnit of ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB']) {
++    if (bytes / divisor < 1024n) break;
+     divisor *= 1024n;
+-    ++unit;
++    unit = nextUnit;
+   }
+-  if (!unit) return `${raw} B`;
++  if (unit === 'B') return `${raw} B`;
+   const fraction = ((bytes % divisor) * 100n / divisor).toString().padStart(2, '0');
+-  return `${bytes / divisor}.${fraction} ${units[unit]} (${raw} B)`;
++  return `${bytes / divisor}.${fraction} ${unit} (${raw} B)`;
+ }
+ 
+ export function usageFreshness(
+@@ -90,6 +90,11 @@ export class AccessUsageRefresh {
+     if (this.visible_ && !this.isVisible_()) this.setVisible(false);
+     return this.visible_ && generation === this.generation_;
+   }
++  private refreshNewGeneration_(generation: number): void {
++    if (generation !== this.generation_ && this.current_(this.generation_)) {
++      void this.refresh();
++    }
++  }
+   setVisible(visible: boolean) {
+     if (visible === this.visible_) return;
+     this.visible_ = visible;
+@@ -126,7 +131,7 @@ export class AccessUsageRefresh {
+       }
+     } finally {
+       this.inFlight_ = false;
+-      if (this.visible_ && generation !== this.generation_) void this.refresh();
++      this.refreshNewGeneration_(generation);
+     }
+   }
+ }
+@@ -231,7 +236,7 @@ export function startAccessUsage(
+   let visible = false;
+   let manual = false;
+   const button = root.querySelector<HTMLButtonElement>('[data-usage="refresh"]');
+-  const onRefresh = async () => {
++  const queryUsage = async () => {
+     if (!visibleNow() || manual) return;
+     manual = true;
+     if (button) button.disabled = true;
+@@ -245,6 +250,9 @@ export function startAccessUsage(
+       if (visibleNow()) void refresh.refresh();
+     }
+   };
++  const onRefresh = () => {
++    void queryUsage();
++  };
+   button?.addEventListener('click', onRefresh);
+   const tick = () => {
+     const next = visibleNow();
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.ts b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+index 153d5e1242ad597cd9a5d37929ddc08091c72526..d0b5c054744a5b2477abc89f15a21b094dd73c7e 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.ts
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+@@ -76,7 +76,9 @@ export class SettingsAegisPageElement extends PolymerElement {
+           () => this.isConnected && this.mode === 'home' &&
+               usage.checkVisibility({checkVisibilityCSS: true}));
+       // </if>
+-      void this.initialize_().catch(error => this.message_(String(error)));
++      void this.initialize_().catch(error => {
++        this.message_(String(error));
++      });
+     });
+   }
+   override disconnectedCallback() {
