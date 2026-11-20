@@ -220,7 +220,7 @@ jobs:
       group: aegis-ios-cloud-poc
       cancel-in-progress: false
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
       AEGIS_IOS_CLOUD_POC_SOURCE_SHA: ${{ vars.AEGIS_IOS_CLOUD_POC_SOURCE_SHA }}
       AEGIS_APPLE_TEAM_ID: ${{ vars.AEGIS_APPLE_TEAM_ID }}
       POC_SOURCE_SHA: ${{ inputs.source_sha }}

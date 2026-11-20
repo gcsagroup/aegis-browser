@@ -153,6 +153,11 @@ finds the unique owned non-login keychain containing the pinned certificate,
 rejects Distribution identities, and passes the password directly to
 Security.framework. It never passes that password to a command or build phase.
 Without the companion file, the existing pre-unlocked-keychain contract applies.
+The dedicated Development keychain file must remain in the runner account's
+`security list-keychains -d user` search list (alongside login). If only
+`login.keychain-db` is listed, archive activation fails with
+`Unique owned dedicated Development keychain required` even when the dedicated
+database still exists under `~/Library/Keychains/`.
 
 Before building the app, the isolated worker compiles a fixed trivial probe,
 signs it with the configured Development identity and verifies the signature.
@@ -172,7 +177,7 @@ Direct Fastlane/PoC inline Development archives apply the same explicit selectio
 and signed archive verification. The production transfer workflow provides the
 separate archive/export jobs.
 
-This selection changes only Development archive signing. Xcode 26.6's installed
+This selection changes only Development archive signing. Xcode 27.2's installed
 `xcodebuild -help` explicitly supports a manually signed archive followed by automatic
 distribution, including managed cloud signing certificates. Cloud export remains
 `signingStyle=automatic` and imports no Distribution P12. Archive transfer v2 requires

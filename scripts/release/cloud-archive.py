@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Development-only archive transfer for the product-owned cloud export job."""
+"""Archive transfer for the product-owned cloud export job.
+
+The archive identity is development, ad-hoc, or unsigned. Export still applies
+Apple cloud Distribution signing.
+"""
 import argparse
 import hashlib
 import importlib.util
@@ -28,6 +32,24 @@ def build_environment(environment):
                     or key in {'GH_TOKEN', 'GITHUB_TOKEN'})}
 
 
+ARCHIVE_SIGNING = ('development', 'ad-hoc', 'unsigned')
+
+
+def archive_bundles(archive):
+    app = archive / 'Products/Applications/Aegis.app'
+    return (app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex')
+
+
+def signing_arguments(archive_signing):
+    if archive_signing == 'ad-hoc':
+        return ['CODE_SIGN_STYLE=Automatic', 'PROVISIONING_PROFILE_SPECIFIER=',
+                'CODE_SIGN_IDENTITY=-', 'AD_HOC_CODE_SIGNING_ALLOWED=YES', 'CODE_SIGNING_REQUIRED=NO']
+    if archive_signing == 'unsigned':
+        return ['CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO', 'CODE_SIGN_IDENTITY=',
+                'AD_HOC_CODE_SIGNING_ALLOWED=NO']
+    raise ValueError('Archive signing must be development, ad-hoc, or unsigned')
+
+
 def verify_development(archive, team, native_run):
     app = archive / 'Products/Applications/Aegis.app'
     for target in (app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex'):
@@ -39,12 +61,44 @@ def verify_development(archive, team, native_run):
             raise ValueError('Expected the exact team Development archive')
 
 
-def create(output, version, build, team, profile, environment):
+def verify_ad_hoc(archive, native_run):
+    for target in archive_bundles(archive):
+        native_run('codesign', '--verify', '--strict', str(target))
+        result = subprocess.run(['codesign', '-d', '--verbose=4', str(target)], capture_output=True, timeout=30)
+        if result.returncode or b'Signature=adhoc' not in result.stderr:
+            raise ValueError('Expected an ad-hoc archive signature: ' + target.name)
+
+
+def verify_unsigned(archive):
+    for target in archive_bundles(archive):
+        result = subprocess.run(['codesign', '-d', '--verbose=4', str(target)], capture_output=True, timeout=30)
+        detail = result.stderr + result.stdout
+        if result.returncode == 0 or b'not signed' not in detail.lower():
+            raise ValueError('Expected an unsigned archive: ' + target.name)
+
+
+def verify_recorded_archive(archive, team, manifest, native_run):
+    mode = manifest.get('archiveSigning', 'development')
+    if mode == 'development':
+        verify_development(archive, team, native_run)
+    elif mode == 'ad-hoc':
+        verify_ad_hoc(archive, native_run)
+    elif mode == 'unsigned':
+        verify_unsigned(archive)
+    else:
+        raise ValueError('Archive signing must be development, ad-hoc, or unsigned')
+
+
+def create(output, version, build, team, profile, environment, archive_signing='development'):
+    if archive_signing not in ARCHIVE_SIGNING:
+        raise ValueError('Archive signing must be development, ad-hoc, or unsigned')
     native = engine()
     native.validate_identity(version, build, team)
     identity = native.source()
-    if native.run('xcodebuild', '-version').splitlines()[0] != b'Xcode 26.6':
-        raise ValueError('Fixed Xcode 26.6 is required')
+    reported = native.run('xcodebuild', '-version').splitlines()
+    got = reported[0].decode(errors='replace') if reported else ''
+    if got != 'Xcode 27.2':
+        raise ValueError(f'Fixed Xcode 27.2 is required; xcodebuild reported {got!r}')
     if any(environment.get(key) for key in environment
            if key.startswith(('AEGIS_ASC_', 'APP_STORE_CONNECT_', 'ASC_')) or 'P12' in key):
         raise ValueError('Archive job must not load ASC or distribution credentials')
@@ -52,31 +106,45 @@ def create(output, version, build, team, profile, environment):
     build_env = build_environment(environment)
     work = native.stage(output, build_env, profile)
     archive = work / 'Aegis.xcarchive'
-    signing = native.module('development_signing', 'development_signing.py')
-    signing_args, signing_evidence = signing.resolve(
-        team, native.module('development_profile_trust', 'verify-signed-ios.py').verified_profile)
-    access = native.module('development_key_access', 'development_key_access.py')
-    runtime = native.key_access_runtime(build_env)
-    keychain = access.prepare(signing_evidence, runtime, output)
+    signing_evidence = None
     evidence = {}
-    with native.isolated_keychain(output, evidence, retain_development=True):
-        signing.require_identity(signing_evidence, runtime.run)
-        access.verify(signing_evidence, runtime, output, build_env, keychain)
-        native.run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'),
-                   '-scheme', 'Aegis-Release', '-configuration', 'Release', '-destination', 'generic/platform=iOS',
-                   '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
-                   '-disableAutomaticPackageResolution', 'archive', *signing_args,
-                   'DEVELOPMENT_TEAM=' + team, 'MARKETING_VERSION=' + version,
-                   'CURRENT_PROJECT_VERSION=' + build, 'AEGIS_FIREBASE_CHANNEL=' + profile,
-                   'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, env=build_env, log=output / 'archive.log', timeout=2400)
-        verify_development(archive, team, native.run)
-        signing.verify_archive(archive, signing_evidence, native.run)
+    if archive_signing == 'development':
+        signing = native.module('development_signing', 'development_signing.py')
+        signing_args, signing_evidence = signing.resolve(
+            team, native.module('development_profile_trust', 'verify-signed-ios.py').verified_profile)
+        access = native.module('development_key_access', 'development_key_access.py')
+        runtime = native.key_access_runtime(build_env)
+        keychain = access.prepare(signing_evidence, runtime, output)
+        with native.isolated_keychain(output, evidence, retain_development=True):
+            signing.require_identity(signing_evidence, runtime.run)
+            access.verify(signing_evidence, runtime, output, build_env, keychain)
+            native.run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'),
+                       '-scheme', 'Aegis-Release', '-configuration', 'Release', '-destination', 'generic/platform=iOS',
+                       '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
+                       '-disableAutomaticPackageResolution', 'archive', *signing_args,
+                       'DEVELOPMENT_TEAM=' + team, 'MARKETING_VERSION=' + version,
+                       'CURRENT_PROJECT_VERSION=' + build, 'AEGIS_FIREBASE_CHANNEL=' + profile,
+                       'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, env=build_env, log=output / 'archive.log', timeout=2400)
+            verify_development(archive, team, native.run)
+            signing.verify_archive(archive, signing_evidence, native.run)
+    else:
+        with native.isolated_keychain(output, evidence, retain_development=False):
+            native.run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'),
+                       '-scheme', 'Aegis-Release', '-configuration', 'Release', '-destination', 'generic/platform=iOS',
+                       '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
+                       '-disableAutomaticPackageResolution', 'archive', *signing_arguments(archive_signing),
+                       'DEVELOPMENT_TEAM=' + team, 'MARKETING_VERSION=' + version,
+                       'CURRENT_PROJECT_VERSION=' + build, 'AEGIS_FIREBASE_CHANNEL=' + profile,
+                       'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, env=build_env, log=output / 'archive.log', timeout=2400)
+            verify_recorded_archive(archive, team, {'archiveSigning': archive_signing}, native.run)
     native.module('archive_structure', 'verify-ios-archive.py').verify(archive, version, build)
     if native.source() != identity:
         raise ValueError('Source changed during Development archive construction')
     manifest = {'schema': 'aegis-development-archive-v2', 'source': identity, 'version': version,
-                'build': build, 'team': team, 'profile': profile, 'files': native.archive_files(archive),
-                'keychainRestored': evidence['keychainRestored'], 'developmentSigning': signing_evidence}
+                'build': build, 'team': team, 'profile': profile, 'archiveSigning': archive_signing,
+                'files': native.archive_files(archive), 'keychainRestored': evidence['keychainRestored']}
+    if archive_signing == 'development':
+        manifest['developmentSigning'] = signing_evidence
     archive_zip = output / 'archive.zip'
     with zipfile.ZipFile(archive_zip, 'x', compression=zipfile.ZIP_DEFLATED) as transfer:
         for path in sorted(archive.rglob('*')):
@@ -111,7 +179,13 @@ def extract(source, output, identity, version, build, team, profile, *, expected
                 'build': build, 'team': team, 'profile': profile, 'keychainRestored': True}
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError('Development archive identity differs')
-    signing.validate_evidence(manifest.get('developmentSigning'))
+    mode = manifest.get('archiveSigning', 'development')
+    if mode not in ARCHIVE_SIGNING:
+        raise ValueError('Archive signing must be development, ad-hoc, or unsigned')
+    if mode == 'development':
+        signing.validate_evidence(manifest.get('developmentSigning'))
+    elif manifest.get('developmentSigning') is not None:
+        raise ValueError('Only a Development archive carries Development signing evidence')
     archive_zip = source / 'archive.zip'
     if (archive_zip.is_symlink() or archive_zip.stat().st_size > 2 * 1024**3
             or hashlib.sha256(archive_zip.read_bytes()).hexdigest() != manifest['archive_sha256']):
@@ -138,7 +212,10 @@ def extract(source, output, identity, version, build, team, profile, *, expected
             target.chmod((row.external_attr >> 16) & 0o755)
     if native.archive_files(output) != manifest['files']:
         raise ValueError('Extracted archive differs from its original manifest')
-    signing.verify_archive(output, manifest.get('developmentSigning'), native.run)
+    if mode == 'development':
+        signing.verify_archive(output, manifest.get('developmentSigning'), native.run)
+    else:
+        verify_recorded_archive(output, team, manifest, native.run)
     return manifest
 
 
@@ -149,10 +226,11 @@ def main():
     parser.add_argument('--build', required=True)
     parser.add_argument('--team', required=True)
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], required=True)
+    parser.add_argument('--archive-signing', choices=ARCHIVE_SIGNING, default='development')
     parser.add_argument('--github-output', type=Path, help='Publish the manifest digest independently of artifact bytes')
     args = parser.parse_args()
     with engine().native_session():
-        digest = create(args.output, args.version, args.build, args.team, args.profile, os.environ)
+        digest = create(args.output, args.version, args.build, args.team, args.profile, os.environ, args.archive_signing)
     if args.github_output:
         with args.github_output.open('a') as stream:
             stream.write('manifest_sha256=' + digest + '\n')

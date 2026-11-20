@@ -41,6 +41,11 @@ on:
         type: choice
         options: [cloud, manual]
         default: cloud
+      archive_signing:
+        description: "Cloud archive identity. Export still uses Distribution signing."
+        type: choice
+        options: [development, ad-hoc, unsigned]
+        default: development
       private_beta:
         description: "Embed protected test inputs and upload privately (Beta/manual only)"
         type: choice

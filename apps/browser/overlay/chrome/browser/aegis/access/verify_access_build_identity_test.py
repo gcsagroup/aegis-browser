@@ -1,7 +1,7 @@
 # Copyright 2026 GCSA
 import unittest
 import plistlib
-import subprocess
+import subprocess  # nosec B404 - exercise the build action through its CLI.
 import sys
 import tempfile
 from pathlib import Path
@@ -65,12 +65,14 @@ class BuildIdentityTests(unittest.TestCase):
                        "--plist", str(info), "--product-channel", "alpha",
                        "--internal-options", "false", "--chrome-branded", "true",
                        "--stamp", str(stamp)]
-            conflict = subprocess.run(command, capture_output=True, text=True)
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            conflict = subprocess.run(command, capture_output=True, text=True)  # nosec B603 - test interpreter and local fixture.
             self.assertNotEqual(conflict.returncode, 0)
             self.assertIn("conflicts", conflict.stderr)
             self.assertFalse(stamp.exists())
             command[command.index("alpha")] = "beta"
-            accepted = subprocess.run(command, capture_output=True, text=True)
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            accepted = subprocess.run(command, capture_output=True, text=True)  # nosec B603 - test interpreter and local fixture.
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
             self.assertTrue(stamp.is_file())
 

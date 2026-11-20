@@ -315,10 +315,10 @@ try {
   const iosNode = array(iosCoverage.steps).find((step) => String(step.uses ?? '').startsWith('actions/setup-node@'));
   if (
     !iosRun || !String(iosRun.run).includes('--execute') || !String(iosRun.run).includes('$IOS_REPORT_DIR') ||
-    iosRun.env?.DEVELOPER_DIR !== '/Applications/Xcode_26.6.app/Contents/Developer' ||
+    iosRun.env?.DEVELOPER_DIR !== '/Applications/Xcode.app/Contents/Developer' ||
     !String(iosCoverage.env?.IOS_REPORT_DIR ?? '').startsWith('/tmp/aegis-ios-') ||
     iosNode?.with?.['node-version'] !== '22.23.1'
-  ) fail('ios-coverage must use the frozen simulator coverage interface with Xcode 26.6');
+  ) fail('ios-coverage must use the frozen simulator coverage interface with Xcode 27.2');
   const iosUpload = array(iosCoverage.steps).find((step) => String(step.uses ?? '').startsWith('actions/upload-artifact@'));
   if (
     String(iosUpload?.with?.path ?? '').includes('DerivedData') ||

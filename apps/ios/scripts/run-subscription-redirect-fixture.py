@@ -67,6 +67,8 @@ def main():
         environment = os.environ.copy()
         environment["TEST_RUNNER_AEGIS_3XUI_REDIRECT_ORIGIN"] = f"https://localhost:{origin.server_port}"
         environment["TEST_RUNNER_AEGIS_3XUI_REDIRECT_DESTINATION"] = origin.destination
+        # This local wrapper launches argv explicitly supplied by the test operator. The HTTPS handlers never set it.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         result = subprocess.run(command, env=environment, check=False)  # nosec B603 - explicit local command
         print(json.dumps({"originPaths": origin.paths, "destinationVisits": destination.visits}))
         return result.returncode

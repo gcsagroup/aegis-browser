@@ -27,6 +27,18 @@ function qualityJob(run, name, conclusion = 'success') {
   };
 }
 
+test('a failed job listing identifies the source run, attempt and page', async () => {
+  const run = qualityRun({id: 123, branch: 'develop', sha: 'a'.repeat(40), runAttempt: 2});
+  const failure = new Error('job list unavailable');
+  const api = async (_repo, path) => {
+    if (path.startsWith('/actions/workflows/quality.yml/runs?')) return {workflow_runs: [run]};
+    if (path === '/actions/runs/123') return run;
+    throw failure;
+  };
+  await assert.rejects(requireGreenQuality(promotionConfig.personalRepo, 'develop', run.head_sha, 'read', api),
+    error => error.cause === failure && /run 123 attempt 2.*page 1/u.test(error.message));
+});
+
 test('quality workflow state requires exact push identity and both mandatory jobs', () => {
   const expected = {repo: promotionConfig.personalRepo, branch: 'develop', sha: 'abc'};
   const run = {

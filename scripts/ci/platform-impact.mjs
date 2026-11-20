@@ -14,6 +14,7 @@ if (git('rev-parse', 'HEAD') !== tested) throw new Error('Checkout differs from 
 let base = tested;
 let head = tested;
 if (event === 'pull_request') {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- GitHub Actions provides the event file to this trusted base-owned script.
   const pr = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')).pull_request;
   const parents = git('show', '-s', '--format=%P', tested).split(' ');
   if (parents.length !== 2 || parents[1] !== sha(pr.head.sha)) {
@@ -38,10 +39,12 @@ const raw = git('diff', '--raw', '--no-abbrev', '--no-renames', '-z', base, test
 const fields = raw ? raw.split('\0') : [];
 if (fields.at(-1) === '') fields.pop();
 const changes = [];
-for (let index = 0; index < fields.length; index += 2) {
-  const match = /^:(\d{6}) (\d{6}) ([0-9a-f]{40}) ([0-9a-f]{40}) ([AMDT])$/u.exec(fields[index]);
-  if (!match || !fields[index + 1]) throw new Error('Incomplete or unsupported Git diff');
-  changes.push({path: fields[index + 1], beforeMode: match[1], afterMode: match[2], status: match[5]});
+const entries = fields.values();
+for (const header of entries) {
+  const match = /^:(\d{6}) (\d{6}) ([0-9a-f]{40}) ([0-9a-f]{40}) ([AMDT])$/u.exec(header);
+  const {value: path} = entries.next();
+  if (!match || !path) throw new Error('Incomplete or unsupported Git diff');
+  changes.push({path, beforeMode: match[1], afterMode: match[2], status: match[5]});
 }
 const docsOnly = event === 'pull_request' && changes.length > 0 && changes.every(change =>
   explanationPaths.has(change.path) &&
@@ -50,4 +53,5 @@ const iosOnly = event === 'pull_request' && changes.length > 0 && changes.every(
 const plan = {schemaVersion: 1, event, base, head, tested, rulesSha: base, changes,
   docs: docsOnly && process.env.CI_LIGHTWEIGHT_ADMITTED === 'true', ios: !docsOnly, macos: !docsOnly && !iosOnly, reason: docsOnly ? 'verified-document-content' : 'full-platform-fallback'};
 console.log(JSON.stringify(plan, null, 2));
+// eslint-disable-next-line security/detect-non-literal-fs-filename -- The runner supplies its own job output file and only boolean decisions are written.
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `docs=${plan.docs}\nios=${plan.ios}\nmacos=${plan.macos}\n`);

@@ -6,6 +6,8 @@ engines:
     exclude_paths:
       - "services/access_account/credentials.sql"
       - "services/access_account/orders.sql"
+      - "services/access_account/quota.sql"
+      - "services/access_account/settlement.sql"
 exclude_paths:
   - ".artifacts/**"
   - "**/node_modules/**"

@@ -58,6 +58,13 @@ const localNodeScriptFiles = [
 export default tseslint.config(
   {
     files: [
+      "apps/browser/scripts/run-android-java-coverage-emulator_test.mjs",
+      "scripts/ci/ios-delivery-bot.mjs",
+      "scripts/ci/ios-operator.mjs",
+      "scripts/ci/macos-delivery-bot.mjs",
+      "scripts/ci/macos-delivery-evidence.mjs",
+      "scripts/ci/macos-operator.mjs",
+      "scripts/ci/platform-impact.mjs",
       "apps/browser/scripts/ios-access-phase1-evidence.mjs",
       "apps/browser/scripts/ios-access-phase1-evidence_test.mjs",
       "apps/browser/scripts/macos-access-phase1-evidence.mjs",

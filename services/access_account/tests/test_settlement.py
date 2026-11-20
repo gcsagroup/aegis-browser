@@ -29,7 +29,7 @@ class SettlementTest(CredentialFixture, unittest.TestCase):
                                          path='target_tcp' if direction == 'up' else 'vision_raw',
                                          bytes=n, pathBytes=n))
 
-    def read(self, token='token-A', panel=None):
+    def read(self, token='token-A', panel=None):  # nosec B107 - synthetic identity seeded by this test.
         return store.read_current(self.path, token, self.clock, panel=panel)
 
     def replay(self, up, down, when=None):

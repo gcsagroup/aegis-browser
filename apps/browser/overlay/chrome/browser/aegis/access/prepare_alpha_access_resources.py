@@ -2,19 +2,34 @@
 """Stage private Access inputs without printing node values."""
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - fixed system PowerShell for the directory ACL.
 from pathlib import Path
 import tempfile
+
+
+def windows_system_directory() -> Path:
+    # kernel32 is a Windows KnownDLL. Resolve the system directory via the OS.
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    get_directory = kernel.GetSystemDirectoryW
+    get_directory.argtypes = (ctypes.POINTER(ctypes.c_wchar), ctypes.c_uint)
+    get_directory.restype = ctypes.c_uint
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = get_directory(buffer, len(buffer))
+    if not length or length >= len(buffer):
+        raise OSError("Cannot locate Windows system directory")
+    return Path(buffer.value)
 
 
 def stage_windows_directory(output: Path) -> None:
     # The path is data, not interpolated into PowerShell source. Create the
     # directory with an inheritable current-user DACL before writing secrets.
-    windows = Path(os.environ["SystemRoot"])
-    exe = windows / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    system = windows_system_directory()
+    powershell = system / "WindowsPowerShell" / "v1.0"
+    exe = powershell / "powershell.exe"
     script = r"""
 $ErrorActionPreference = 'Stop'
 $path = $env:AEGIS_PRIVATE_ACCESS_STAGE
@@ -46,9 +61,18 @@ if (-not $actual.AreAccessRulesProtected -or
     $rules[0].InheritanceFlags -ne $rule.InheritanceFlags -or
     $rules[0].PropagationFlags -ne 'None') { exit 1 }
 """
-    result = subprocess.run(
+    # Resolve cmdlets only from the system installation. The path remains data.
+    environment = {
+        "SystemRoot": str(system.parent),
+        "WINDIR": str(system.parent),
+        "PATH": str(system),
+        "PSModulePath": str(powershell / "Modules"),
+        "AEGIS_PRIVATE_ACCESS_STAGE": str(output.absolute()),
+    }
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    result = subprocess.run(  # nosec B603 - system executable and constant script.
         [str(exe), "-NoProfile", "-NonInteractive", "-Command", script],
-        env={**os.environ, "AEGIS_PRIVATE_ACCESS_STAGE": str(output.absolute())},
+        cwd=system, env=environment,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
         timeout=20)
     if result.returncode:

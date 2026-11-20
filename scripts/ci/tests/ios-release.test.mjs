@@ -39,6 +39,7 @@ test('archive gets only non-secret settings from the existing environment', () =
   const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const archive = jobs['ios-archive'];
   assert.equal(archive.environment, undefined);
+  assert.equal(archive.env.DEVELOPER_DIR, '/Applications/Xcode.app/Contents/Developer');
   assert(!JSON.stringify(archive).includes('secrets.'));
   assert(archive.needs.includes('archive-settings'));
   assert.equal(archive.outputs.manifest_sha256, '${{ steps.archive.outputs.manifest_sha256 }}');
@@ -204,7 +205,7 @@ test('Bot controller keeps App key access behind canonical main and administrato
   assert.equal(doc.on.workflow_dispatch.inputs.operation.default, 'Status');
   assert.deepEqual(doc.on.workflow_dispatch.inputs.operation.options, [
     'Status', 'Wait', 'Package', 'Package and upload', 'Draft',
-    'Preview GitHub release', 'Publish Beta release', 'Publish stable release',
+    'Preview GitHub release', 'Publish prerelease', 'Promote to stable',
   ]);
 });
 
@@ -217,9 +218,11 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   const simple = workflow('ios-delivery');
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'private_beta', 'approved_source_sha']);
+  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'archive_signing', 'private_beta', 'approved_source_sha']);
   assert.equal(inputs.signing_mode.default, 'cloud');
   assert.deepEqual(inputs.signing_mode.options, ['cloud', 'manual']);
+  assert.equal(inputs.archive_signing.default, 'development');
+  assert.deepEqual(inputs.archive_signing.options, ['development', 'ad-hoc', 'unsigned']);
   assert.equal(simple.name, 'iOS Delivery · Simple');
   assert.equal(full.name, 'iOS Delivery · Full');
   assert.deepEqual(inputs.operation.options, ['Package', 'Package and upload', 'Status', 'Wait', 'Release Wait']);
@@ -228,6 +231,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   const fullInputs = full.on.workflow_dispatch.inputs;
   assert.equal(fullInputs.signing_mode.default, 'cloud');
   assert.deepEqual(fullInputs.signing_mode.options, ['cloud', 'manual']);
+  assert.deepEqual(fullInputs.archive_signing.options, ['development', 'ad-hoc', 'unsigned']);
   assert.deepEqual(fullInputs.operation.options, [
     'Package', 'Package and upload', 'Draft', 'Upload', 'Wait', 'Status',
     'Metadata', 'Compliance', 'Distribute internal', 'Distribute external',
@@ -237,7 +241,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   assert.equal(inputs.version.required, true);
   assert.equal(inputs.build.required, true);
   assert(!inputs.source && !inputs.advanced);
-  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'private_beta', 'package_entrypoint', 'groups', 'stage_input', 'approved_source_sha']);
+  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'archive_signing', 'private_beta', 'package_entrypoint', 'groups', 'stage_input', 'approved_source_sha']);
   assert.deepEqual(Object.keys(full.jobs), ['delivery']);
   assert.equal(full.jobs.delivery.uses, './.github/workflows/ios-delivery.yml');
   assert.equal(full.jobs.delivery.with.delivery_mode, 'full');
@@ -438,7 +442,7 @@ test('hosted signing loads only environment secrets after source admission and c
   const job = doc.jobs['ios-package'];
   assert.equal(job['runs-on'], "${{ fromJSON(format('[\"self-hosted\",\"macOS\",\"ARM64\",\"{0}\"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}");
   assert.equal(job.environment, 'aegis-ios-signing');
-  assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
+  assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode.app/Contents/Developer');
   const ruby = job.steps.findIndex(s => s.uses === './.github/actions/ensure-ios-ruby');
   assert(ruby >= 0);
   assert(!job.steps.some(s => s.uses?.startsWith('ruby/setup-ruby@')),
@@ -462,7 +466,12 @@ test('public release workflow limits write permission to the serialized publishe
   assert.deepEqual(doc.jobs.preview.permissions, {actions: 'read', contents: 'read'});
   assert.deepEqual(doc.jobs.publish.permissions, {actions: 'read', contents: 'write'});
   assert.deepEqual(doc.jobs.publish.needs, ['preview', 'stable-approval']);
-  assert(doc.jobs.publish.if.includes("inputs.operation == 'Publish Beta'"));
+  assert(doc.jobs.publish.if.includes("inputs.operation == 'Publish prerelease'"));
+  assert(doc.jobs.publish.if.includes("inputs.operation == 'Promote stable'"));
+  assert(doc.jobs['stable-approval'].if.includes("inputs.operation == 'Promote stable'"));
+  assert(!doc.jobs.publish.if.includes('Publish Beta'));
+  assert(!doc.jobs.publish.if.includes('Publish stable'));
+  assert(doc.jobs.publish.if.includes("needs.stable-approval.result == 'skipped'"));
   assert(doc.jobs.publish.if.includes("needs.stable-approval.result == 'success'"));
   assert(doc.jobs.publish.if.includes("vars.AEGIS_IOS_GITHUB_RELEASE_ENABLED == 'true'"));
   assert.equal(doc.jobs.publish.environment, undefined);

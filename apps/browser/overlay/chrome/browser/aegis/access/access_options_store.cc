@@ -220,12 +220,12 @@ StoreResult<AccessOptionsSnapshot> AccessOptionsStore::Read() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!open_ || !Admitted(aegis_access::AccessOptionsOperation::kRead))
     return {StoreStatus::kConflict, std::nullopt, "options_not_available"};
-  sql::Statement read(database_.GetUniqueStatement(
+  sql::Statement configuration(database_.GetUniqueStatement(
       "SELECT revision,payload FROM configuration WHERE singleton=1"));
-  if (!read.Step() || read.ColumnInt64(0) < 0 || !ValidConfiguration(read.ColumnString(1)))
+  if (!configuration.Step() || configuration.ColumnInt64(0) < 0 || !ValidConfiguration(configuration.ColumnString(1)))
     return {StoreStatus::kCorrupt, std::nullopt, "invalid_configuration"};
   return {StoreStatus::kValid,
-          AccessOptionsSnapshot{static_cast<uint64_t>(read.ColumnInt64(0)), read.ColumnString(1)}, {}};
+          AccessOptionsSnapshot{static_cast<uint64_t>(configuration.ColumnInt64(0)), configuration.ColumnString(1)}, {}};
 }
 StoreStatus AccessOptionsStore::Write(uint64_t expected_revision,
                                      const std::string& configuration) {

@@ -121,17 +121,15 @@ accepts `signing_mode:manual`, and Actions exposes an explicit manual selection.
 Cloud failure stops the current attempt; manual is never an automatic retry.
 Only new-package operations consume this selector. Status/Wait and retained
 package stages use their original identity and signing evidence. Cloud production
-packaging runs only on GitHub-hosted macOS; the isolated-keychain local command is an explicit fallback, never an
+packaging runs only on the admitted self-hosted macOS runner; the isolated-keychain local command is an explicit fallback, never an
 automatic retry after a cloud failure.
 
-The hosted proof must use Xcode 26.6, a clean runner without installed profiles or
-Distribution identities, and a newly created archive. Archive signing defaults to
-Apple Development (via ASC API key + `-allowProvisioningUpdates`), then export
-performs Apple cloud Distribution signing. Xcode 26.6 rejects ad-hoc/unsigned
-archives when targets carry entitlements, so ad-hoc archive signing is opt-in
-only (`--archive-signing=ad-hoc`) and is not the CI default. Development-signed
-archives are still not distributable packages; the exported IPA must pass the
-full Apple-trusted distribution signature/profile/entitlement checks.
+The hosted proof must use Xcode 27.2 (build 27B52) at `/Applications/Xcode.app`, a clean runner without installed profiles or
+Distribution identities, and a newly created archive. Archive signing accepts
+Apple Development, ad-hoc, or unsigned. The default is Apple Development.
+Export then performs Apple cloud Distribution signing. Development, ad-hoc,
+and unsigned archives are not distributable packages; the exported IPA must pass
+the full Apple-trusted distribution signature/profile/entitlement checks.
 
 Each package contains a source-bound receipt, IPA, dSYM ZIP and independent
 signature/dSYM checks. Every target's dSYM UUID must match its archived binary.
@@ -324,7 +322,7 @@ operation. The hosted validation exercise above has a separate explicit upload
 selection. To return production packaging to manual signing, select `manual`
 in the existing iOS Delivery Package operation.
 
-Run from an idle macOS host with Xcode 26.6 and at least 10 GiB free:
+Run from an idle macOS host with Xcode 27.2 (build 27B52) at `/Applications/Xcode.app` and at least 10 GiB free:
 
 ```sh
 python3 scripts/release/cloud-signing-poc.py --signing-mode cloud-poc \

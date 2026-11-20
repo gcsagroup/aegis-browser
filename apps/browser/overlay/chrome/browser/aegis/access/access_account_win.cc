@@ -485,9 +485,9 @@ std::optional<AccountNodeGrant> Issue(
          base::OnceCallback<void(int64_t)> done) {
         base::ThreadPool::PostTaskAndReplyWithResult(
             FROM_HERE, {base::MayBlock()},
-            base::BindOnce([](Binding binding, std::string resource,
-                              std::string credential, std::string period,
-                              std::string context, std::string mode) -> int64_t {
+            base::BindOnce([](const Binding& binding, const std::string& resource,
+                              const std::string& credential, const std::string& period,
+                              const std::string& context, const std::string& mode) -> int64_t {
               if (binding.verify_on_worker && !binding.verify_on_worker.Run().empty()) return 0;
               auto body = base::DictValue().Set("mode", mode).Set("contextId", context);
               auto res = Request(binding, L"POST", resource + "/renew", &body);

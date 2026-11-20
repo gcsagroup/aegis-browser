@@ -103,8 +103,8 @@ The optional `operator-merged-activation-pr-v1` proof identifies the actual
 `GCSA-ToolsTeam` administrator account (`316909304`) that merged one frozen
 development activation PR. The central executor owns this policy; the activation
 PR cannot change it. Authorization lasts at most 24 hours and consumes the same
-global build allocation. Central signing uses a separate GitHub-hosted `macos-26`
-job with fixed Xcode 26.6.
+global build allocation. Central signing uses a separate self-hosted macOS
+job with fixed Xcode 27.2 (build 27B52) at `/Applications/Xcode.app`.
 
 `verify-retained --scope quinn-develop-poc` authenticates this proof from original
 START/RESULT records and frozen Git/PR evidence, including its canonical digest.

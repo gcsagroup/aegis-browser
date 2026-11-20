@@ -59,6 +59,14 @@ def dump(path, obj):
     return path
 
 
+def source_head():
+    git = shutil.which("git", path=os.defpath)
+    require(git, "System Git is required for the source receipt")
+    # System Git receives fixed arguments in the fixture's own checkout.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    return subprocess.check_output([git, "rev-parse", "HEAD"], cwd=SERVICE, text=True).strip()  # nosec B603
+
+
 class Runtime:
     enforce_quota = False
 
@@ -71,6 +79,7 @@ class Runtime:
         self.tokens = {}
         self.logs = []
         self.origin = None
+        self.xray_process = None
 
     def launch(self, name, args, *, service_port=None, socket_path=None, meter=False):
         if args[:3] not in (
@@ -217,6 +226,14 @@ class Runtime:
                                      "streamSettings": stream(reality)}]}
             self.launch("client-" + name, [self.stock, "run", "-c", dump(self.root / (name + ".json"), config)],
                         service_port=number)
+
+    def restart_xray(self):
+        if self.xray_process is None:
+            raise RuntimeError("Cannot restart Xray before the fixture starts it")
+        self.xray_process.terminate()
+        self.xray_process.wait(timeout=5)
+        self.xray_process = self.launch("server-xray-restarted", [self.metered, "run", "-c",
+                                      self.root / "xserver.json"], service_port=self.reality_port, meter=True)
 
     def usage(self):
         # Exercise the operator CLI with this interpreter and the private fixture database.

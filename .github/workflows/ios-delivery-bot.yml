@@ -6,7 +6,7 @@ on:
       operation:
         type: choice
         description: Authorized delivery operation
-        options: [Status, Wait, Package, Package and upload, Draft, Preview GitHub release, Publish Beta release, Publish stable release]
+        options: [Status, Wait, Package, Package and upload, Draft, Preview GitHub release, Publish prerelease, Promote to stable]
         default: Status
       version:
         type: string
@@ -26,6 +26,11 @@ on:
         description: Signing mode for new packages
         options: [cloud, manual]
         default: cloud
+      archive_signing:
+        type: choice
+        description: Cloud archive identity before Distribution export
+        options: [development, ad-hoc, unsigned]
+        default: development
 permissions:
   contents: read
   actions: read
@@ -60,7 +65,7 @@ jobs:
           AEGIS_IOS_BOT_PRIVATE_KEY: ${{ secrets.AEGIS_IOS_BOT_PRIVATE_KEY }}
         run: bash scripts/ci/run-ios-delivery-bot.sh
       - name: Seal the exact release dispatch receipt
-        if: ${{ inputs.operation == 'Preview GitHub release' || inputs.operation == 'Publish Beta release' || inputs.operation == 'Publish stable release' }}
+        if: ${{ inputs.operation == 'Preview GitHub release' || inputs.operation == 'Publish prerelease' || inputs.operation == 'Promote to stable' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ios-github-release-dispatch-${{ github.run_id }}-1
