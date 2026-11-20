@@ -265,7 +265,7 @@ index 0000000000000000000000000000000000000000..c33796d00d724c76364e295e4b344059
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrome/browser/download/chrome_download_manager_delegate.cc
-index 5d999436c7e7c5440198fa1d2fd7e7fbad3156e6..458c01105bf0a0602524ac3858864c11a2094cd4 100644
+index ef34eed137be91832621cb607e4e0925ba7bbba6..fd705cfc3b1fad8272f415d7a00e4f02a22f4baf 100644
 --- a/chrome/browser/download/chrome_download_manager_delegate.cc
 +++ b/chrome/browser/download/chrome_download_manager_delegate.cc
 @@ -32,6 +32,7 @@
@@ -276,7 +276,7 @@ index 5d999436c7e7c5440198fa1d2fd7e7fbad3156e6..458c01105bf0a0602524ac3858864c11
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/download/download_core_service.h"
  #include "chrome/browser/download/download_core_service_factory.h"
-@@ -710,6 +711,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
+@@ -718,6 +719,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
        download_message_bridge_(std::make_unique<DownloadMessageBridge>()),
  #endif
        download_prefs_(std::make_unique<DownloadPrefs>(profile)) {
@@ -287,7 +287,7 @@ index 5d999436c7e7c5440198fa1d2fd7e7fbad3156e6..458c01105bf0a0602524ac3858864c11
  
  ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index 609feae3334e551e8a71f765fa8d6317ef62bd37..a0f4ce2a6a230f1d00b8140bb31a319dc89bb35c 100644
+index fa7e9be8c37beac634608ec40e42e8d202749167..9125b895d1e0f0ab968abe3afa4ee33642730c46 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -19,6 +19,7 @@
@@ -298,7 +298,7 @@ index 609feae3334e551e8a71f765fa8d6317ef62bd37..a0f4ce2a6a230f1d00b8140bb31a319d
  #include "chrome/browser/aegis/aegis_prefs.h"
  #include "chrome/browser/accessibility/accessibility_labels_service.h"
  #include "chrome/browser/accessibility/invert_bubble_prefs.h"
-@@ -1664,6 +1665,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -1723,6 +1724,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
    accessibility::AccessibilityPrefsController::RegisterLocalStatePrefs(
        registry);
  #endif
@@ -777,7 +777,7 @@ index 827395e3c36964d8eade628926089916b2ab22c7..609b5efbca307f4dc9e63ff7af001f21
  
    protected onChangeDownloadsPathClick_() {
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index 89336bcc3e5935a182c5595aee732d42f33a88eb..d9ef9a765593f67acf444b67db8609798741dd71 100644
+index 98a992699f2d880b6795c9086802753cda6c71f6..694c64a4d48c937cb39cb159aa6ee604b7301ca1 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
 @@ -13,6 +13,7 @@

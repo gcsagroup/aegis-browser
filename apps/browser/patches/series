@@ -519,3 +519,9 @@
 0519-feat-macos-access-options-admission-store.patch
 0520-fix-access-private-staging-tool-and-review-findings.patch
 0521-fix-full-page-capture-action-dispatch.patch
+0522-fix-desktop-ui-gn-dependencies.patch
+0523-fix-windows-access-empty-process.patch
+0524-fix-access-bind-storage-partition-type.patch
+0525-fix-windows-access-network-environment.patch
+0526-adapt-chromium158-api-and-candidate341.patch
+0527-preserve-settings-lifecycle-on-lit.patch

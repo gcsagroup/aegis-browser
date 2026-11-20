@@ -6,10 +6,10 @@ Subject: [PATCH] feat(aegis): complete cross-platform v2 runtime
 ---
 
 diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
-index 271801af5323ad07e60e701d575e3f16b7d2f58f..a44f804eea5a2bb7ee1816e02e3ea654d68bceb2 100644
+index e3e9d0318a10d0988fbb30cdc4bd38d372d4cf2e..ad19373cdb9d4b47522a10e6b39bbacf32b02c9b 100644
 --- a/chrome/android/BUILD.gn
 +++ b/chrome/android/BUILD.gn
-@@ -2976,6 +2976,7 @@ if (_is_default_toolchain) {
+@@ -2759,6 +2759,7 @@ if (_is_default_toolchain) {
        "java/src/org/chromium/chrome/browser/WarmupManager.java",
        "java/src/org/chromium/chrome/browser/about_settings/AboutSettingsBridge.java",
        "java/src/org/chromium/chrome/browser/accessibility/settings/AccessibilitySettingsBridge.java",
@@ -18,10 +18,10 @@ index 271801af5323ad07e60e701d575e3f16b7d2f58f..a44f804eea5a2bb7ee1816e02e3ea654
        "java/src/org/chromium/chrome/browser/app/feed/NavigationRecorder.java",
        "java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java",
 diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
-index c0bd35fecabfd237e8dea8d889d403101aa24f4b..508b91df6733bc5b08eb6011a585c323258683c5 100644
+index c4151fe1099292cb61bc305f64b7227f5e52e8f0..d9cc65582f75276c2fe2da71d1d3372d5bb408c1 100644
 --- a/chrome/android/chrome_java_resources.gni
 +++ b/chrome/android/chrome_java_resources.gni
-@@ -413,6 +413,8 @@ chrome_java_resources = [
+@@ -415,6 +415,8 @@ chrome_java_resources = [
    "java/res/layout/account_chooser_dialog_item.xml",
    "java/res/layout/account_chooser_dialog_title.xml",
    "java/res/layout/account_management_account_row.xml",
@@ -31,10 +31,10 @@ index c0bd35fecabfd237e8dea8d889d403101aa24f4b..508b91df6733bc5b08eb6011a585c323
    "java/res/layout/auto_sign_in_first_run_dialog.xml",
    "java/res/layout/autofill_ai_loading_dialog.xml",
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
-index 9943d245dd1ffabab3d730070caa3f3e60d7bd9a..6c7345209b0baa341d02ab6903b61fcd1ca23625 100644
+index 21b0b69ba1b23156944085f767603c6ec30b0d62..1f809f4c6b96b169953ff402de2284a4bf86306c 100644
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -79,6 +79,8 @@ chrome_java_sources = [
+@@ -75,6 +75,8 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/actor/BackgroundTabRestorationHelper.java",
    "java/src/org/chromium/chrome/browser/actor/ColdBackgroundTab.java",
    "java/src/org/chromium/chrome/browser/actor/LiveBackgroundTab.java",
@@ -266,10 +266,10 @@ index da618ee95148c74e6c487e5f810c058cedf3e812..456f1b40fe47055c6c9b4a4e44036763
      <ViewStub
          android:id="@+id/mv_tiles_layout_stub"
 diff --git a/chrome/android/java/res/values/ids.xml b/chrome/android/java/res/values/ids.xml
-index e2e9f9525508b88aa832ebbb5df678e0d3ad0cc8..fb07ae3865c96a7f690eef4be579a24deb4d4df8 100644
+index 665fd2008095912d15d0e6acbe5d415cd0d7c8fa..e598fbdaf6772fd854d692a25c0dac62018112ea 100644
 --- a/chrome/android/java/res/values/ids.xml
 +++ b/chrome/android/java/res/values/ids.xml
-@@ -311,6 +311,8 @@ found in the LICENSE file.
+@@ -312,6 +312,8 @@ found in the LICENSE file.
      <item type="id" name="tab_groups_header_menu_id" />
      <item type="id" name="tab_groups_parent_menu_id" />
      <item type="id" name="toggle_bookmarks_bar_menu_id" />
@@ -279,18 +279,18 @@ index e2e9f9525508b88aa832ebbb5df678e0d3ad0cc8..fb07ae3865c96a7f690eef4be579a24d
      <item type="id" name="translate_id" />
      <item type="id" name="ttc_menu_id" />
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 10fca9f85ad296ad836e55f5a420667d32c50181..7d38e74ac1fbf43a9d84c8c5bc320361e490cbda 100644
+index eb3e5785daad6ea265e0497a8c918af330c398c9..7e29dce62007db08488e33d89fbf0fff5ef0c73c 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 @@ -94,6 +94,7 @@ import org.chromium.chrome.browser.accessibility.settings.CaretBrowsingDialog;
- import org.chromium.chrome.browser.actor.ActorForegroundServiceController;
- import org.chromium.chrome.browser.actor.ActorNotificationService;
- import org.chromium.chrome.browser.actor.ActorTabStateHelper;
+ import org.chromium.chrome.browser.actor.background_tabs.ActorTabStateHelper;
+ import org.chromium.chrome.browser.actor.foreground_service.ActorForegroundServiceController;
+ import org.chromium.chrome.browser.actor.notifications.ActorNotificationService;
 +import org.chromium.chrome.browser.aegis.AegisAgentBottomSheetCoordinator;
  import org.chromium.chrome.browser.app.ChromeActivity;
  import org.chromium.chrome.browser.app.appmenu.AppMenuPropertiesDelegateImpl;
  import org.chromium.chrome.browser.app.metrics.LaunchCauseMetrics;
-@@ -4419,6 +4420,24 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4488,6 +4489,24 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
                  .closeTabs(TabClosureParams.closeAllTabs().build(), /* allowDialog= */ false);
      }
  
@@ -315,7 +315,7 @@ index 10fca9f85ad296ad836e55f5a420667d32c50181..7d38e74ac1fbf43a9d84c8c5bc320361
      @Override
      public boolean onMenuOrKeyboardAction(
              final int id,
-@@ -4440,6 +4459,14 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4509,6 +4528,14 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
              TabCreatorUtil.launchNtp(getTabCreator(/* incognito= */ false));
  
              mLocaleManager.showSearchEnginePromoIfNeeded(this, null);
@@ -571,7 +571,7 @@ index 0000000000000000000000000000000000000000..4bbfdad2064dabaafb06594116705cd1
 +    private AegisAgentNotificationBridge() {}
 +}
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
-index ce184206971cad39d624ca5176c7f393c65a8bde..b27fb357a47fd8f7e8cc36f7767e0dc52da8f6e5 100644
+index a08c5880ba6c2239406650444cc78de868940477..cf8f794963b21c966e91a4bf49761bbfd3d1761e 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
 @@ -13,6 +13,7 @@ import android.graphics.Canvas;
@@ -622,10 +622,10 @@ index ce184206971cad39d624ca5176c7f393c65a8bde..b27fb357a47fd8f7e8cc36f7767e0dc5
                  new NewTabPageCoordinator(
                          mNewTabPageManager,
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index 6d2f9de7c5418cc5e779efa826952b8e8f8c33a4..b193217a4d22955b8c88bc4f86e41593eaf5277c 100644
+index 2b49c0e5b72039195c1ed85fc5730b27bddebc00..ce54a471fd7f7d093d6f2ff92938dae90c93e66b 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-@@ -548,6 +548,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -549,6 +549,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -639,7 +639,7 @@ index 6d2f9de7c5418cc5e779efa826952b8e8f8c33a4..b193217a4d22955b8c88bc4f86e41593
          // Settings
          modelList.add(buildSettingsItem());
  
-@@ -744,6 +751,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -745,6 +752,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -653,7 +653,7 @@ index 6d2f9de7c5418cc5e779efa826952b8e8f8c33a4..b193217a4d22955b8c88bc4f86e41593
          // Settings
          modelList.add(buildSettingsItem());
  
-@@ -806,6 +820,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -807,6 +821,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          modelList.add(buildCloseAllTabsItem());
          if (shouldShowSelectTabsItem()) modelList.add(buildSelectTabsItem());
          if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
@@ -661,7 +661,7 @@ index 6d2f9de7c5418cc5e779efa826952b8e8f8c33a4..b193217a4d22955b8c88bc4f86e41593
          modelList.add(buildSettingsItem());
      }
  
-@@ -821,6 +836,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -822,6 +837,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          } else {
              modelList.add(buildNewIncognitoTabItem());
          }
@@ -669,7 +669,7 @@ index 6d2f9de7c5418cc5e779efa826952b8e8f8c33a4..b193217a4d22955b8c88bc4f86e41593
          modelList.add(buildSettingsItem());
          if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
      }
-@@ -1375,6 +1391,34 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -1376,6 +1392,34 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
                          isMenuIconAtStart()));
      }
  
@@ -705,10 +705,10 @@ index 6d2f9de7c5418cc5e779efa826952b8e8f8c33a4..b193217a4d22955b8c88bc4f86e41593
      private boolean shouldShowListenToFeedItem(@Nullable Tab currentTab) {
          if (currentTab == null
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
-index 0643b115efafdf30d1e52b6309d6a862fcd10aae..d316176853ef86a5d6d3f966438349681cf848e2 100644
+index b9d0f6001413194c749cef4655bbb0fab63e4980..c4db874053e35cb7fd949747a2389cc50c106590 100644
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -1898,6 +1898,9 @@ are declared in tools/grit/grit_args.gni.
+@@ -1899,6 +1899,9 @@ are declared in tools/grit/grit_args.gni.
        <message name="IDS_IMPORT_SETTINGS_MENU_LABEL" desc="The app menu label to import bookmarks and settings.">
          Import bookmarks and settings...
        </message>
@@ -719,10 +719,10 @@ index 0643b115efafdf30d1e52b6309d6a862fcd10aae..d316176853ef86a5d6d3f96643834968
  
          <message name="IDS_PROFILING_ENABLED" desc="The toggle to turn profiling on / off">
 diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
-index 0f34f7d39520e1b75be6268a901dd17c7e2e6ad0..690d923a50815bc90bfb8bb361d23f75333b1315 100644
+index 7446e28e48c1156a806188b4454e44843a26c0b1..ec5f5f35d83ea43ce0a7c76373e99570d1cbdfdf 100644
 --- a/chrome/app/resources/generated_resources_zh-CN.xtb
 +++ b/chrome/app/resources/generated_resources_zh-CN.xtb
-@@ -7466,6 +7466,7 @@
+@@ -7448,6 +7448,7 @@
  <translation id="6701535245008341853">无法获取个人资料。</translation>
  <translation id="6702639462873609204">修改(&amp;E)...</translation>
  <translation id="6702859741546259407">若要使用“<ph name="FEATURE_NAME" />”功能，请开启蓝牙和 Wi-Fi</translation>
@@ -731,10 +731,10 @@ index 0f34f7d39520e1b75be6268a901dd17c7e2e6ad0..690d923a50815bc90bfb8bb361d23f75
  <translation id="670431355064244920">小焦点</translation>
  <translation id="6706210727756204531">范围</translation>
 diff --git a/chrome/app/resources/generated_resources_zh-HK.xtb b/chrome/app/resources/generated_resources_zh-HK.xtb
-index 972ff54411eee4454d46ccb2ba54477c69879f3a..ef7822eee5286bc44fdded509740eb68fddb06dd 100644
+index 818d364bf8f160b46806c3bf98eefe74c42bc1fb..4b3d8bd64513bbc4fa49c31f590dede518d48061 100644
 --- a/chrome/app/resources/generated_resources_zh-HK.xtb
 +++ b/chrome/app/resources/generated_resources_zh-HK.xtb
-@@ -7479,6 +7479,7 @@
+@@ -7461,6 +7461,7 @@
  <translation id="6701535245008341853">無法取得設定檔。</translation>
  <translation id="6702639462873609204">編輯(&amp;E)…</translation>
  <translation id="6702859741546259407">如要使用「<ph name="FEATURE_NAME" />」，請開啟藍牙和 Wi-Fi</translation>
@@ -743,10 +743,10 @@ index 972ff54411eee4454d46ccb2ba54477c69879f3a..ef7822eee5286bc44fdded509740eb68
  <translation id="670431355064244920">小焦點</translation>
  <translation id="6706210727756204531">範圍</translation>
 diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
-index dfeab744965b3369424e1eae28ded5d59536dfae..0d95c91b6f5bf791d5fae4cdabd8ef8ae26b881a 100644
+index 9fc81e7ee3914d1aceb66247e963511467226ef4..f331041a4c7645d2da805014036d7f0311ac6392 100644
 --- a/chrome/app/resources/generated_resources_zh-TW.xtb
 +++ b/chrome/app/resources/generated_resources_zh-TW.xtb
-@@ -7462,6 +7462,7 @@
+@@ -7444,6 +7444,7 @@
  <translation id="6701535245008341853">無法取得設定檔。</translation>
  <translation id="6702639462873609204">編輯(&amp;E)...</translation>
  <translation id="6702859741546259407">如要使用<ph name="FEATURE_NAME" />功能，請開啟藍牙和 Wi-Fi</translation>
@@ -755,10 +755,18 @@ index dfeab744965b3369424e1eae28ded5d59536dfae..0d95c91b6f5bf791d5fae4cdabd8ef8a
  <translation id="670431355064244920">聚焦範圍：小</translation>
  <translation id="6706210727756204531">範圍</translation>
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 213edee9ba90435cd0fe7debfc53f4f0d612f8c2..a5320523509414ec000d9964a3af8a4bd7ddf720 100644
+index d4cd0578a43a68b3f45b5da420f9aa50d8c62bca..4ee8a071bd7bdc0c1340ee57ddff73aa7f45176d 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -3816,6 +3816,7 @@ source_set("browser") {
+@@ -2214,6 +2214,7 @@ source_set("core") {
+ source_set("browser") {
+   libs = []
+   public_deps = [
++    "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+     ":browser_features",
+     ":buildflags",
+     "//chrome/browser/accessibility/accessibility_prefs",
+@@ -2913,6 +2914,7 @@ source_set("browser") {
        "//chrome/browser/ui/exclusive_access",
        "//chrome/browser/ui/side_panel/internal/android",
        "//chrome/browser/ui/side_panel/internal/android:dev",
@@ -766,22 +774,14 @@ index 213edee9ba90435cd0fe7debfc53f4f0d612f8c2..a5320523509414ec000d9964a3af8a4b
        "//chrome/browser/ui/webui/notifications_internals",
        "//chrome/browser/ui/webui/notifications_internals:impl",
        "//components/android_autofill/browser:android",
-@@ -5437,6 +5438,7 @@ group("browser_generated_files") {
-     "//chrome/browser/predictors/lcp_critical_path_predictor:lcp_critical_path_predictor_proto",
-     "//chrome/browser/regional_capabilities",
-     "//chrome/browser/resource_coordinator:mojo_bindings",
-+    "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
-     "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
-     "//chrome/browser/ui/webui/content_settings:mojo_bindings",
-     "//chrome/browser/ui/webui/context_hub:mojo_bindings",
-@@ -5478,7 +5480,6 @@ group("browser_generated_files") {
-       "//chrome/browser/ui:webui_name_variants",
-       "//chrome/browser/ui/views/drive_picker_host:mojo_bindings",
-       "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
--      "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
-       "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
-       "//chrome/browser/ui/webui/data_sharing:mojo_bindings",
-       "//chrome/browser/ui/webui/downloads:mojo_bindings",
+@@ -4657,6 +4659,7 @@ source_set("browser") {
+     public_deps += [ "//chrome/browser/signin:bound_session_credentials_proto" ]
+   }
+ 
++
+   # This target intentionally has no sources of its own; it only aggregates
+   # dependencies. Do NOT add sources here -- new code belongs in a dedicated,
+   # properly-scoped target. Kept last so an accidental `sources += [...]`
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index dec8d061b6adba1a58c4fcb0b0ea155a2eb5f270..63762bc835dddaeed2006992fda3d02dedebf25b 100644
 --- a/chrome/browser/aegis/BUILD.gn
@@ -2498,7 +2498,7 @@ index fab61c7c3edfb9f123f9175d78fd4c5c7b9d13b5..49d4205fc8be8fd751eecfe0b34f2106
      AgentToolRegistry registry;
      base::flat_set<std::string> browser_only_tools;
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index 45bf0e437973ecf5cd5d1b73c07d0438bd4b9c90..2748006e081bd6c95063166ab27b5927fbce4dc2 100644
+index 73b20f7642480d5c02cbbe840885e71346c49046..951dde0a22348d986bb5dbbde46134d3e88026ed 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
 @@ -20,6 +20,7 @@ assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
@@ -2509,7 +2509,7 @@ index 45bf0e437973ecf5cd5d1b73c07d0438bd4b9c90..2748006e081bd6c95063166ab27b5927
      "contextual_tasks:resources",
      "glic:resources",
      "glic/experimental_opt_in:resources",
-@@ -61,7 +62,6 @@ group("resources") {
+@@ -64,7 +65,6 @@ group("resources") {
        "about_sys:resources",
        "access_code_cast:resources",
        "actor_overlay:resources",
@@ -2635,10 +2635,10 @@ index 6fd3b3f5c71b1831bf78257b0e9c3b069e42d14c..c2d08b4231e093d2120ae0abbae3fa4d
 +  }
  });
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index 44fd34b19468d2465c2a2f7290227b883e50787c..e5524adca20a9ce2537683da05ae4b84f244c7dd 100644
+index 147bfb57ce389bf0ab0fde28b935f4c4c5c91652..dab6ea5722fb8b92ecf46ecf06251e0823d4017f 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -4479,6 +4479,81 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -4509,6 +4509,81 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
        <message name="IDS_MENU_SETTINGS" desc="Menu item for opening browser settings. [CHAR_LIMIT=27]">
          Settings
        </message>
@@ -2721,10 +2721,10 @@ index 44fd34b19468d2465c2a2f7290227b883e50787c..e5524adca20a9ce2537683da05ae4b84
          Customize new tab page
        </message>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index 1a67a8e97b0e291f276d61013f03a20fd0cf9e85..87d2937b3b86fe124367ea04d53e3879806b4046 100644
+index 9c616a05cf0525bb3d5e7ccbcead178de5cdbba5..6713bbc71f166126967831287bcb5847ff0bbf76 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -2146,4 +2146,28 @@
+@@ -2165,4 +2165,28 @@
  <translation id="992745192656291733"><ph name="TAB_COUNT" /> 个标签页</translation>
  <translation id="996149300115483134">动态卡片上的菜单已关闭</translation>
  <translation id="99907655649633293"><ph name="TAB_TITLE" />，无痕式标签页</translation>
@@ -2756,10 +2756,10 @@ index 1a67a8e97b0e291f276d61013f03a20fd0cf9e85..87d2937b3b86fe124367ea04d53e3879
 +<translation id="9106704778223749968">说出你想要的结果。Aegis 会先理解、制定计划、执行并检查结果。</translation>
 +</translationbundle>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-index 2da0df6c916327c34f70be687458dc96aa7050dd..9dc7294441ce30ca4e6154e1f0472772b979de6e 100644
+index eb000efc28b87d2e1f349e3578c28bb12ba1bdce..af8d96d1cba122038cb50aca6edb243eb6c02f12 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -2148,4 +2148,28 @@
+@@ -2167,4 +2167,28 @@
  <translation id="992745192656291733"><ph name="TAB_COUNT" /> 個分頁</translation>
  <translation id="996149300115483134">已關閉動態消息資訊卡選單</translation>
  <translation id="99907655649633293"><ph name="TAB_TITLE" />，無痕分頁</translation>
@@ -2791,7 +2791,7 @@ index 2da0df6c916327c34f70be687458dc96aa7050dd..9dc7294441ce30ca4e6154e1f0472772
 +<translation id="9106704778223749968">說出你想要的結果。Aegis 會先理解、制定計畫、執行並檢查結果。</translation>
 +</translationbundle>
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index 11e5b695e4c92f410c46dd8afc1307feae80dba4..7353ce0a682e72b4441241f47c8bb565fad427b6 100644
+index b8097a8adbb15b6f30591d7dc2072c78e39bb76b..a91f5f99560544e3211cbebd6bc69b96a5d20d5e 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
 @@ -12,6 +12,7 @@
@@ -2802,7 +2802,7 @@ index 11e5b695e4c92f410c46dd8afc1307feae80dba4..7353ce0a682e72b4441241f47c8bb565
  #include "base/functional/bind.h"
  #include "base/i18n/number_formatting.h"
  #include "base/i18n/rtl.h"
-@@ -109,6 +110,7 @@
+@@ -110,6 +111,7 @@
  #include "chrome/browser/web_applications/web_app_registrar.h"
  #include "chrome/browser/web_applications/web_app_tab_helper.h"
  #include "chrome/common/channel_info.h"
@@ -2810,7 +2810,7 @@ index 11e5b695e4c92f410c46dd8afc1307feae80dba4..7353ce0a682e72b4441241f47c8bb565
  #include "chrome/common/chrome_features.h"
  #include "chrome/common/chrome_paths.h"
  #include "chrome/common/chrome_switches.h"
-@@ -175,10 +177,6 @@
+@@ -177,10 +179,6 @@
  #include "ui/gfx/text_elider.h"
  #include "ui/menus/simple_menu_model.h"
  
@@ -2821,7 +2821,7 @@ index 11e5b695e4c92f410c46dd8afc1307feae80dba4..7353ce0a682e72b4441241f47c8bb565
  #if BUILDFLAG(IS_CHROMEOS)
  #include "chrome/browser/policy/system_features_disable_list_policy_handler.h"
  #include "components/policy/core/common/policy_pref_names.h"
-@@ -2191,6 +2189,13 @@ void AppMenuModel::Build() {
+@@ -2208,6 +2206,13 @@ void AppMenuModel::Build() {
    AddSeparator(ui::SPACING_SEPARATOR);
  #endif
  
@@ -2836,7 +2836,7 @@ index 11e5b695e4c92f410c46dd8afc1307feae80dba4..7353ce0a682e72b4441241f47c8bb565
      sub_menus_.push_back(
          std::make_unique<PasswordsAndAutofillSubMenuModel>(this));
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index ca361b74886eb912fee4b6838fbacf168a84ba42..4b7580ed2be5d3b56354b733b81964f7454c1610 100644
+index ace3253a16c57aa26e4b446c9db4f5e807a2b457..cb48c97579b391008d1c8304dffa0827365b7dc3 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
 @@ -54,6 +54,7 @@ source_set("configs") {
@@ -3285,10 +3285,10 @@ index 42455c44b0b1eac8300d55b1176c93a7bf7f94ec..82a2510a7e520106768d9353ce54d5f0
        std::make_unique<lens::LensOverlayUntrustedUIConfig>());
    map.AddUntrustedWebUIConfig(
 diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
-index 56f940aaa840c0d640b1584c2552ea9ae90303a4..3b6a9d75dae61ba18a6964b1c71e2f8d015e85d9 100644
+index 7358f30cd6ca415e2748382b899fe8506f8437ac..8fb0a2502e4cf5b89315901735a45e56140deb06 100644
 --- a/chrome/chrome_paks.gni
 +++ b/chrome/chrome_paks.gni
-@@ -122,6 +122,7 @@ template("chrome_extra_paks") {
+@@ -138,6 +138,7 @@ template("chrome_extra_paks") {
      output = "${invoker.output_dir}/resources.pak"
      sources = [
        "$root_gen_dir/base/tracing/protos/tracing_proto_resources.pak",
@@ -3296,7 +3296,7 @@ index 56f940aaa840c0d640b1584c2552ea9ae90303a4..3b6a9d75dae61ba18a6964b1c71e2f8d
        "$root_gen_dir/chrome/browser/glic/resources/glic_browser_resources.pak",
        "$root_gen_dir/chrome/browser_resources.pak",
        "$root_gen_dir/chrome/chrome_unscaled_resources.pak",
-@@ -222,7 +223,6 @@ template("chrome_extra_paks") {
+@@ -238,7 +239,6 @@ template("chrome_extra_paks") {
          "$root_gen_dir/chrome/about_sys_resources.pak",
          "$root_gen_dir/chrome/access_code_cast_resources.pak",
          "$root_gen_dir/chrome/actor_overlay_resources.pak",

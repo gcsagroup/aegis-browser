@@ -2,6 +2,7 @@ From 6f8b87d70678ac8fb41705b90bb472a9ef0a08cd Mon Sep 17 00:00:00 2001
 From: GCSA Tools Team <tools@gcsa.org>
 Date: Wed, 14 Oct 2026 17:25:00 +0800
 Subject: [PATCH] 兼容安全扫描器并保留本机 AI 资源清理
+
 ---
 
 diff --git a/chrome/browser/resources/aegis_agent/local_ai/research.js b/chrome/browser/resources/aegis_agent/local_ai/research.js

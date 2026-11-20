@@ -2,6 +2,7 @@ From b67e2aa90a7663fbdee9bdc0572c34d320e4fcae Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Fri, 13 Nov 2026 18:01:07 +0800
 Subject: [PATCH] fix(access-log): bound severity tag indexing with array
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_core_log.h b/chrome/browser/aegis/access/access_core_log.h

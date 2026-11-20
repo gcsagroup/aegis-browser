@@ -2,6 +2,7 @@ From 3c80cc41f0d12a0a632e5aa73bbebdb347317205 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 03:14:51 +0800
 Subject: [PATCH] fix(access): explain reconnection without internal terms
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc

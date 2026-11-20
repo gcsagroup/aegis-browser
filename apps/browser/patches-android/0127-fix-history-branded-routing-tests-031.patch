@@ -28,10 +28,10 @@ index a537285c47aa7e69abf0df22ab8b7f9d77e1a3d2..5041b16867fad1d40d9bac5228b06441
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
-index 5461ec4695023c2d1ac64655f8f1913ade5fe89f..51d5a50a101b7ebdd09556e09ae274220aa79263 100644
+index 1a9bc4ffadddfe0bb1884783c47ec6047426728e..634c25b44a99acac757acec87276b1606bacdf68 100644
 --- a/chrome/test/data/webui/history/history_routing_test.ts
 +++ b/chrome/test/data/webui/history/history_routing_test.ts
-@@ -111,6 +111,8 @@ import {navigateTo} from './test_util.js';
+@@ -109,6 +109,8 @@ import {navigateTo} from './test_util.js';
            sidebar.$.history.getAttribute('path'));
      });
  
@@ -40,7 +40,7 @@ index 5461ec4695023c2d1ac64655f8f1913ade5fe89f..51d5a50a101b7ebdd09556e09ae27422
      test('route updates from tabs and sidebar menu items', async function() {
        assertEquals('history', sidebar.$.menu.selected);
        assertEquals('chrome://history/', window.location.href);
-@@ -158,6 +160,8 @@ import {navigateTo} from './test_util.js';
+@@ -156,6 +158,8 @@ import {navigateTo} from './test_util.js';
        }
      });
  
@@ -49,7 +49,7 @@ index 5461ec4695023c2d1ac64655f8f1913ade5fe89f..51d5a50a101b7ebdd09556e09ae27422
      test('search updates from route', async function() {
        assertEquals('chrome://history/', window.location.href);
        const searchTerm = 'Mei';
-@@ -175,6 +179,7 @@ import {navigateTo} from './test_util.js';
+@@ -173,6 +177,7 @@ import {navigateTo} from './test_util.js';
        assertEquals('chrome://history/?q=' + searchTerm, window.location.href);
      });
  
@@ -57,7 +57,7 @@ index 5461ec4695023c2d1ac64655f8f1913ade5fe89f..51d5a50a101b7ebdd09556e09ae27422
      test(
          'search is preserved across tabs and sidebar menu items',
          async function() {
-@@ -212,6 +217,15 @@ import {navigateTo} from './test_util.js';
+@@ -210,6 +215,15 @@ import {navigateTo} from './test_util.js';
            }
          });
  

@@ -6,6 +6,7 @@ Subject: [PATCH] Aegis: probe Canvas, WebGL, Audio, and WebGPU on
 
 One button reads all four Fingerprint Guard surfaces so a user can
 see Aegis-stable WebGL/WebGPU strings when the guard is on.
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css

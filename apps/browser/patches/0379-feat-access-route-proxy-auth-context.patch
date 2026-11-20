@@ -2,6 +2,7 @@ From 14ffca33ab65626dfe729acec974849a963a1bdd Mon Sep 17 00:00:00 2001
 From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 06:26:31 +0800
 Subject: [PATCH] feat(access): isolate route proxy authentication state
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -181,10 +182,10 @@ index 0000000000000000000000000000000000000000..7e6fb39847d3fe86b043e4fb8cacc350
 +}  // namespace
 +}  // namespace aegis_access
 diff --git a/net/BUILD.gn b/net/BUILD.gn
-index 6922402768377be606b9a3eebe19835904d4f727..0d4ccdaa0aa133f90201b6c2217766f8db56b7b1 100644
+index 12f11c82cab11d2553f43632da579c8cec098095..7949a602de53cd2d4dec86f93902dc90d81d9662 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -637,6 +637,8 @@ component("net") {
+@@ -642,6 +642,8 @@ component("net") {
      "http/cache_body_decompressor.h",
      "http/http_auth.cc",
      "http/http_auth.h",

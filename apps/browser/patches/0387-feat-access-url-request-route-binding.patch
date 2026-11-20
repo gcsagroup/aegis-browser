@@ -3,6 +3,7 @@ From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 11:20:19 +0800
 Subject: [PATCH] feat(access): bind URLRequest route and revalidate redirects
  before cache
+
 ---
 
 diff --git a/components/aegis_access/access_http_route_execution_unittest.cc b/components/aegis_access/access_http_route_execution_unittest.cc

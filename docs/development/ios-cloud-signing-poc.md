@@ -125,12 +125,11 @@ packaging runs only on the admitted self-hosted macOS runner; the isolated-keych
 automatic retry after a cloud failure.
 
 The hosted proof must use Xcode 27.2 (build 27B52) at `/Applications/Xcode.app`, a clean runner without installed profiles or
-Distribution identities, and a newly created archive. Archive signing defaults to
-Apple Development (via ASC API key + `-allowProvisioningUpdates`), then export
-performs Apple cloud Distribution signing. Ad-hoc archive signing stays opt-in
-only (`--archive-signing=ad-hoc`) and is not the CI default. Development-signed
-archives are still not distributable packages; the exported IPA must pass the
-full Apple-trusted distribution signature/profile/entitlement checks.
+Distribution identities, and a newly created archive. Archive signing accepts
+Apple Development, ad-hoc, or unsigned. The default is Apple Development.
+Export then performs Apple cloud Distribution signing. Development, ad-hoc,
+and unsigned archives are not distributable packages; the exported IPA must pass
+the full Apple-trusted distribution signature/profile/entitlement checks.
 
 Each package contains a source-bound receipt, IPA, dSYM ZIP and independent
 signature/dSYM checks. Every target's dSYM UUID must match its archived binary.

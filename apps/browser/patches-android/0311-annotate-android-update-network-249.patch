@@ -5,6 +5,7 @@ Subject: [PATCH] 补齐 Android 更新请求说明并递增候选版本
 
 使用 Chromium 网络适配接口记录手动检查及下载请求，保留原超时、跳转和安装校验。
 修复当前 Error Prone 网络规则报错，不关闭检查或压制告警。候选递增至 Ver 6.0 (249)。
+
 ---
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java

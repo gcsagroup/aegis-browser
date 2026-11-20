@@ -29,10 +29,10 @@ index 89f68e35de5fa9c1359acea7b6c0b879f1b8ea13..a537285c47aa7e69abf0df22ab8b7f9d
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 0e272369525735eeecd3b2384a0f803fde1ffc6e..d38c913b90e91ca6643dd99a395402e433f32e00 100644
+index 8e5c893df217897e56e2b4eb18e6768ce3e85ff1..daa912681326d2fa393e280a8306b892b665defa 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -646,7 +646,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -658,7 +658,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
         base::FeatureList::IsEnabled(contextual_cueing::kContextualCueingV2)},
        {"showInlineCueMenuControl",
         base::FeatureList::IsEnabled(features::kGlicSelectionPrompt) &&

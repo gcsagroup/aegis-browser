@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Mon, 26 Oct 2026 16:35:02 +0800
 Subject: [PATCH] test(mac): cover WebUI trial consent across native async
  saves
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

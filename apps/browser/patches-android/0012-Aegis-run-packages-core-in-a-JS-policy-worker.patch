@@ -6,6 +6,7 @@ Subject: [PATCH] Aegis: run packages/core in a JS policy worker
 Bundle core TypeScript into a jitless gin isolate so Privacy AI can
 summarize the current tab locally, with an optional loopback Ollama
 sidecar and a C++ heuristic fallback if the worker is not ready.
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

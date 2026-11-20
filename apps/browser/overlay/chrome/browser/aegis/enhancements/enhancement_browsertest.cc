@@ -408,13 +408,13 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
   ASSERT_FALSE(original_document.empty());
   ASSERT_FALSE(original_tab.empty());
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
-                browser(), b_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                browser(), b_url, WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   auto* b = contents();
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
                 browser(), GURL("chrome://aegis/enhancements.html"),
-                WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   auto* page = contents();

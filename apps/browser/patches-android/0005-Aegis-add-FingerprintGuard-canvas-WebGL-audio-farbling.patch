@@ -5,6 +5,7 @@ Subject: [PATCH] Aegis: add FingerprintGuard canvas/WebGL/audio farbling
 
 Seed farbling from session salt + host, sync the toggle via
 DynamicParams, and apply Chromium NoisePixels on canvas readbacks.
+
 ---
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
@@ -36,10 +37,10 @@ index dbb575ae3e2469f195b5b6d75edfbbe9355dbbad..aaad1710ca1ad3929a29b88e875f3133
    return prefs_->GetBoolean(prefs::kFingerprintGuardEnabled);
  }
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 34f4a782c7cfc5c08ba2645bf77467941077b502..6ae67c026f3bf2c1dfb11854346e75188d12bf1d 100644
+index 2deb39317b8dca9aec9e0aa5bb1285dead95a453..f95cc75318123191c8d73e043ab922a228172f4f 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -6148,7 +6148,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6202,7 +6202,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
                policy::policy_prefs::kForceYouTubeRestrict),
            profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
            profile->GetPrefs()->GetBoolean(
@@ -51,7 +52,7 @@ index 34f4a782c7cfc5c08ba2645bf77467941077b502..6ae67c026f3bf2c1dfb11854346e7518
                ,
            // Only the copy pushed to renderers carries this; the throttle
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index 7abfca3883e36229bcd8e95795ca2f8f5b2373e4..c7a791e6320ca75a27b1785f2c93768b93189984 100644
+index 3f4cffc1b18716658ec9b4562fc16603638ef071..6819b51a953de98a10bd681a748781c30ac5eea9 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
 @@ -85,6 +85,8 @@ RendererUpdater::RendererUpdater(Profile* profile)
@@ -74,7 +75,7 @@ index 7abfca3883e36229bcd8e95795ca2f8f5b2373e4..c7a791e6320ca75a27b1785f2c93768b
  
  #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
    if (auto* platform_runtime_host =
-@@ -257,7 +263,8 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+@@ -259,7 +265,8 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
  #endif
        force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
        allowed_domains_for_apps_.GetValue(),
@@ -143,7 +144,7 @@ index e8a78b8b848dd0548f564af82e69c6a92187574c..58b73bee1686d57a47f1b92a72fedca7
  }
  
 diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
-index cea2f37dd04474b7b8e94a7dfbbc9bc2a703073e..6bd84267cd9b61f2d8875ea0411d0f480776b071 100644
+index 14ec735277f75a8b023c7438d5536231d823013f..8a4b0bf672b6bcaa210ebc60aec0711a6de95c7a 100644
 --- a/third_party/blink/common/BUILD.gn
 +++ b/third_party/blink/common/BUILD.gn
 @@ -135,6 +135,7 @@ source_set("common") {
@@ -210,7 +211,7 @@ index 0000000000000000000000000000000000000000..f35769ddd398187a7c3c5f2ee0c773b2
 +
 +}  // namespace blink::aegis
 diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
-index 4bfe6acbca1174ae35aaa8e8a1074436a940ba44..ae51d445bb9bfc5c792f36f7ea607dcc61104c84 100644
+index cada4d794bc822c3cf83e8c0b719f0d6da490f54..7baef4adc0b2438797a550b0dbaaad63ba33edef 100644
 --- a/third_party/blink/public/common/BUILD.gn
 +++ b/third_party/blink/public/common/BUILD.gn
 @@ -151,6 +151,7 @@ source_set("headers") {
@@ -252,7 +253,7 @@ index 0000000000000000000000000000000000000000..5fb108a04a82a79a0d85f34138ad0b5e
 +
 +#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index e5fe811ee0c302fdc22eb7d6678d48b5dd5ccc34..e3840cddf8569c9cfcb5f116e01a17b93e951d7c 100644
+index a96e9c9df209abba41bccf9d348eee89058b5f83..af030a1789fc2163310b52bd284af0fb6ddd09d0 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -24,6 +24,7 @@ import("//third_party/blink/renderer/core/animation/build.gni")
@@ -490,7 +491,7 @@ index 0000000000000000000000000000000000000000..b50851081fa1094717b12265b3ad8703
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 3da40c38fa91005b63703adac413497d43c0c66c..dfa78756a9343bf87d01a1d6030c6edd55fede53 100644
+index 5d9d963d79a9457b85372bfa38701b5c75b6eda6..51c152432f55e5888ee1f4c7f15c5b8fe1c5a524 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -26,6 +26,7 @@
@@ -501,7 +502,7 @@ index 3da40c38fa91005b63703adac413497d43c0c66c..dfa78756a9343bf87d01a1d6030c6edd
  
  #include <math.h>
  
-@@ -1434,6 +1435,8 @@ String HTMLCanvasElement::ToDataURLInternal(
+@@ -1437,6 +1438,8 @@ String HTMLCanvasElement::ToDataURLInternal(
        ImageEncoderUtils::ToEncodingMimeType(mime_type);
  
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
@@ -510,7 +511,7 @@ index 3da40c38fa91005b63703adac413497d43c0c66c..dfa78756a9343bf87d01a1d6030c6edd
    if (image_bitmap) {
      std::unique_ptr<ImageDataBuffer> data_buffer =
          ImageDataBuffer::Create(image_bitmap);
-@@ -1538,6 +1541,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+@@ -1541,6 +1544,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
  
    CanvasAsyncBlobCreator* async_creator = nullptr;
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
@@ -520,7 +521,7 @@ index 3da40c38fa91005b63703adac413497d43c0c66c..dfa78756a9343bf87d01a1d6030c6edd
      auto* options = ImageEncodeOptions::Create();
      options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index ba2dcc2f2f0e46309034d6966fc0579ee9f4a731..3a63ac4cdb331eeb3dda5727b2dadb03ac416388 100644
+index eaa71b910d565e940e69b4ef9f203097f92bc0a1..b2d1006a9334f429d2ca36f246faf99e00fe7e3f 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -3,6 +3,7 @@
@@ -531,7 +532,7 @@ index ba2dcc2f2f0e46309034d6966fc0579ee9f4a731..3a63ac4cdb331eeb3dda5727b2dadb03
  
  #include <inttypes.h>
  
-@@ -875,6 +876,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -937,6 +938,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
      }
    }
  
@@ -540,7 +541,7 @@ index ba2dcc2f2f0e46309034d6966fc0579ee9f4a731..3a63ac4cdb331eeb3dda5727b2dadb03
  }
  
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-index 7a899b0d8cf249d1a01bbc08be8e83e23e6735d9..425d9442acf164c1f4742b23802a9a5f1a700488 100644
+index 9a66186d8e6c2a4a164ecb9289f66d3e994d30af..4cbacd0aa20505a07d16641b15fe59af4c227fa3 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 @@ -27,6 +27,7 @@
@@ -551,7 +552,7 @@ index 7a899b0d8cf249d1a01bbc08be8e83e23e6735d9..425d9442acf164c1f4742b23802a9a5f
  
  #include <memory>
  
-@@ -222,7 +223,13 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
+@@ -220,7 +221,13 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
      return NotShared<DOMFloat32Array>(nullptr);
    }
  
@@ -567,7 +568,7 @@ index 7a899b0d8cf249d1a01bbc08be8e83e23e6735d9..425d9442acf164c1f4742b23802a9a5f
  
  void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index e72f6f7ca604d3be3929aad489d5c3095c69c2ae..8f1daec7eb84bffaeb24fa2eaf1ea2c6e7baf707 100644
+index 1a00418d114d8fee6401328e446d2c61212647a3..3b29e9074275d73acfbf9509b7d47c201f67f97e 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -24,6 +24,8 @@
@@ -579,7 +580,7 @@ index e72f6f7ca604d3be3929aad489d5c3095c69c2ae..8f1daec7eb84bffaeb24fa2eaf1ea2c6
  
  #include <inttypes.h>
  
-@@ -4219,6 +4221,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4295,6 +4297,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -590,7 +591,7 @@ index e72f6f7ca604d3be3929aad489d5c3095c69c2ae..8f1daec7eb84bffaeb24fa2eaf1ea2c6
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4228,6 +4234,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4304,6 +4310,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {

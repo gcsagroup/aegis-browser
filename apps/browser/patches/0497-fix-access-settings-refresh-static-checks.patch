@@ -10,9 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../aegis_page/access_account_usage.ts        | 24 ++++++++++++-------
- .../settings/aegis_page/aegis_page.ts         |  4 +++-
- 2 files changed, 19 insertions(+), 9 deletions(-)
 
 diff --git a/chrome/browser/resources/settings/aegis_page/access_account_usage.ts b/chrome/browser/resources/settings/aegis_page/access_account_usage.ts
 index 638eacfe2581f2e196e14714589cdaa102de8ef0..c8714f9de7302ab0f9459b8697308eba140d6621 100644
@@ -96,6 +93,3 @@ index 153d5e1242ad597cd9a5d37929ddc08091c72526..d0b5c054744a5b2477abc89f15a21b09
      });
    }
    override disconnectedCallback() {
--- 
-2.52.0
-

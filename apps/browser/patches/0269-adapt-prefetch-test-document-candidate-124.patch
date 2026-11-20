@@ -26,10 +26,10 @@ index f2243cbcc17c749ac567d023ff31233cf0f565e3..e0bdc6a8c06fb263b69771a08cded2a4
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
-index 6fb391cdc48a9316a54edfd74c5ea2ee9f9ba457..433fe2cabf70d191feca2fd0319f06c56fc230bb 100644
+index 423ce6806e78316f7e613bdb5cc582e5609064c1..574c9c99662d49df443564198115e6ad445361fd 100644
 --- a/content/browser/loader/prefetch_browsertest.cc
 +++ b/content/browser/loader/prefetch_browsertest.cc
-@@ -1674,10 +1674,23 @@ class PrefetchLoadFlagsBrowserTest : public PrefetchBrowserTestBase {
+@@ -1677,10 +1677,23 @@ class PrefetchLoadFlagsBrowserTest : public PrefetchBrowserTestBase {
      StoragePartitionImpl* partition =
          static_cast<StoragePartitionImpl*>(rfh->GetStoragePartition());
      mojo::Remote<network::mojom::URLLoaderFactory> remote;
@@ -55,7 +55,7 @@ index 6fb391cdc48a9316a54edfd74c5ea2ee9f9ba457..433fe2cabf70d191feca2fd0319f06c5
      return remote;
    }
  
-@@ -1818,7 +1831,20 @@ class PrefetchRecursiveBrowserTest : public PrefetchBrowserTestBase {
+@@ -1821,7 +1834,20 @@ class PrefetchRecursiveBrowserTest : public PrefetchBrowserTestBase {
          partition->GetSubresourceProxyingURLLoaderService()->GetFactory(
              remote.BindNewPipeAndPassReceiver(), rfh->GetFrameTreeNodeId(),
              proxied_factory_.GetSafeWeakWrapper(), rfh->GetWeakPtr(),

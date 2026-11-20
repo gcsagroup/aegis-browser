@@ -2,6 +2,7 @@ From 702cb7952485452e930a6e28f881a2396887c2ea Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 12:31:18 +0800
 Subject: [PATCH] feat(access): retain private route through CORS and preflight
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -213,10 +214,10 @@ index 548a9f8539560e2160f277c17e217d1cb9af7d4a..cbc47b3e663a304ace5e35561e58e2dc
   private:
    friend class base::RefCounted<AccessRequestRouteState>;
 diff --git a/services/network/cors/cors_url_loader.cc b/services/network/cors/cors_url_loader.cc
-index 237985a6c1563facaa22fa58f60c4e75408cbb3b..cdec50cfbc85b6d9d230cff1635cad0a60a763b1 100644
+index 2e3b7bbc1c9819fbbaa62ba1630dabf077223a42..6ee5607375dd85d9a6fdb84b52a188f2b9829018 100644
 --- a/services/network/cors/cors_url_loader.cc
 +++ b/services/network/cors/cors_url_loader.cc
-@@ -432,13 +432,19 @@ CorsURLLoader::CorsURLLoader(
+@@ -427,13 +427,19 @@ CorsURLLoader::CorsURLLoader(
      NetworkContext* context,
      std::optional<base::UnguessableToken> network_restrictions_id,
      net::CookieSettingOverrides factory_cookie_setting_overrides,
@@ -238,7 +239,7 @@ index 237985a6c1563facaa22fa58f60c4e75408cbb3b..cdec50cfbc85b6d9d230cff1635cad0a
        sync_network_loader_factory_(sync_network_loader_factory),
        request_(std::move(resource_request)),
        forwarding_client_(std::move(client)),
-@@ -1303,10 +1309,16 @@ bool CorsURLLoader::CheckPreflightRequired() {
+@@ -1300,11 +1306,17 @@ bool CorsURLLoader::CheckPreflightRequired() {
  void CorsURLLoader::StartPreflightCheck() {
    mojo::PendingRemote<mojom::URLLoaderNetworkServiceObserver> remote_observer;
  
@@ -248,19 +249,20 @@ index 237985a6c1563facaa22fa58f60c4e75408cbb3b..cdec50cfbc85b6d9d230cff1635cad0a
 +  if (access_route_state_ && access_route_state_->uses_managed_route()) {
 +    preflight_request.load_flags |= net::LOAD_DISABLE_CACHE;
 +  }
-   context_->cors_preflight_controller()->PerformPreflightCheck(
-       base::BindOnce(&CorsURLLoader::OnPreflightRequestComplete,
-                      weak_factory_.GetWeakPtr()),
--      request_id_, request_,
-+      request_id_, preflight_request,
-       PreflightController::WithTrustedHeaderClient(
-           options_ & mojom::kURLLoadOptionUseHeaderClient),
-       context_->cors_non_wildcard_request_headers_support(), tainted_,
+   std::unique_ptr<PreflightController::PreflightCheckHandle> handle =
+       context_->cors_preflight_controller()->PerformPreflightCheck(
+           base::BindOnce(&CorsURLLoader::OnPreflightRequestComplete,
+                          weak_factory_.GetWeakPtr()),
+-          request_id_, request_,
++          request_id_, preflight_request,
+           PreflightController::WithTrustedHeaderClient(
+               options_ & mojom::kURLLoadOptionUseHeaderClient),
+           context_->cors_non_wildcard_request_headers_support(), tainted_,
 diff --git a/services/network/cors/cors_url_loader.h b/services/network/cors/cors_url_loader.h
-index 32d81eb6014973e0df533c7af47851e3d5475b87..e7ec3b57cbe743dff7f066246976a64adb371240 100644
+index 5451d0f6f7c77f71e733bc93be7cf40b38813b9c..46945eb13af7784813662fd8ad3aeb43ae7f1ff9 100644
 --- a/services/network/cors/cors_url_loader.h
 +++ b/services/network/cors/cors_url_loader.h
-@@ -22,6 +22,7 @@
+@@ -23,6 +23,7 @@
  #include "net/traffic_annotation/network_traffic_annotation.h"
  #include "net/url_request/redirect_info.h"
  #include "services/network/cors/preflight_controller.h"
@@ -268,7 +270,7 @@ index 32d81eb6014973e0df533c7af47851e3d5475b87..e7ec3b57cbe743dff7f066246976a64a
  #include "services/network/public/cpp/cors/cors_error_status.h"
  #include "services/network/public/cpp/cross_origin_embedder_policy.h"
  #include "services/network/public/cpp/http_request_headers_update_params.h"
-@@ -97,7 +98,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
+@@ -98,7 +99,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
        NetworkContext* context,
        std::optional<base::UnguessableToken> network_restrictions_id,
        net::CookieSettingOverrides factory_cookie_setting_overrides,
@@ -279,7 +281,7 @@ index 32d81eb6014973e0df533c7af47851e3d5475b87..e7ec3b57cbe743dff7f066246976a64a
  
    CorsURLLoader(const CorsURLLoader&) = delete;
    CorsURLLoader& operator=(const CorsURLLoader&) = delete;
-@@ -255,6 +258,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
+@@ -256,6 +259,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
  
    // This raw URLLoaderFactory pointer is shared with the CorsURLLoaderFactory
    // that created and owns this object.
@@ -291,7 +293,7 @@ index 32d81eb6014973e0df533c7af47851e3d5475b87..e7ec3b57cbe743dff7f066246976a64a
    // This has the same lifetime as `network_loader_factory_`, and should be used
    // when non-null to create optimized URLLoaders which can call URLLoaderClient
 diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
-index fe4202638d8e048ee2a12b4d4350fd395f40d3a9..86942c34ebbe87b67e24557e50dc3b38844fef39 100644
+index 977beefb1da303875f6ddf46b233316b11d17425..d53b43c293ea007932f37008ed180e8bb2d7f591 100644
 --- a/services/network/cors/cors_url_loader_factory.cc
 +++ b/services/network/cors/cors_url_loader_factory.cc
 @@ -3,6 +3,8 @@

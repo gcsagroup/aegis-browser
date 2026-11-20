@@ -2,13 +2,14 @@ From ae8b3c7a70caf621b554112f56fb551508a22cfb Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 16:53:23 +0800
 Subject: [PATCH] fix(access): define test NetworkContext callbacks out of line
+
 ---
 
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index 75ab1b321df4d4bdc97ad8a42e0e907762930e40..7f4aeb7b6f957ffbe67f337e182a4aaf35201758 100644
+index 04b2ae706a1381492f3a9b40e0b4afa42b883ef3..e844c2e338d7ad54bf06174301e77ebf9b363584 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
-@@ -718,6 +718,7 @@ source_set("test_support") {
+@@ -723,6 +723,7 @@ source_set("test_support") {
      "test/test_dns_util.h",
      "test/test_network_connection_tracker.cc",
      "test/test_network_connection_tracker.h",
@@ -48,10 +49,10 @@ index 0000000000000000000000000000000000000000..92d7d59007c27baff7985404c0c59256
 +  }
 +}  // namespace network
 diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
-index 4d0540aa3a5ddbabb2c6401772b0ac889b523057..fc973e078e04c9b08005ba6b7291f10f7fb401a9 100644
+index 425e2598ba6140b446c66288b769ca35128e5e97..d5dc134b5f55483dcdc41b9c1567becaab402c31 100644
 --- a/services/network/test/test_network_context.h
 +++ b/services/network/test/test_network_context.h
-@@ -335,25 +335,13 @@ class TestNetworkContext : public mojom::NetworkContext {
+@@ -340,25 +340,13 @@ class TestNetworkContext : public mojom::NetworkContext {
        mojo::PendingReceiver<mojom::MdnsResponder> responder_receiver) override {
    }
    void InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,

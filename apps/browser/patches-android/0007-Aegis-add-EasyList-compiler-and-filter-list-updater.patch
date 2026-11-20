@@ -5,6 +5,7 @@ Subject: [PATCH] Aegis: add EasyList compiler and runtime filter-list updater
 
 Compile EasyList/EasyPrivacy into host tables, persist per profile, and
 push the snapshot to renderer throttles. chrome://aegis can update now.
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
@@ -492,7 +493,7 @@ index 0000000000000000000000000000000000000000..e40894e24e8ec3225153f2c4257b1217
 +
 +#endif  // CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index c7a791e6320ca75a27b1785f2c93768b93189984..0653cda24f8f51db8b5fc0ba22c4208e5b666816 100644
+index 6819b51a953de98a10bd681a748781c30ac5eea9..a166906322693f0eac1d3132c7a1d17f31cc57ca 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
 @@ -17,6 +17,8 @@
@@ -515,7 +516,7 @@ index c7a791e6320ca75a27b1785f2c93768b93189984..0653cda24f8f51db8b5fc0ba22c4208e
  
  #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
    if (auto* platform_runtime_host =
-@@ -179,6 +185,7 @@ void RendererUpdater::InitializeRenderer(
+@@ -181,6 +187,7 @@ void RendererUpdater::InitializeRenderer(
        std::move(bound_session_request_throttled_handler));
  
    renderer_configuration->SetConfiguration(CreateRendererDynamicParams());
@@ -523,7 +524,7 @@ index c7a791e6320ca75a27b1785f2c93768b93189984..0653cda24f8f51db8b5fc0ba22c4208e
  }
  
  RendererUpdater::RendererConfigurations
-@@ -255,6 +262,30 @@ void RendererUpdater::UpdateAllRenderers() {
+@@ -257,6 +264,30 @@ void RendererUpdater::UpdateAllRenderers() {
    }
  }
  

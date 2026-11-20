@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 20:18:31 +0800
 Subject: [PATCH] feat(access): connect Browser private request routing and
  exact ready gates
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

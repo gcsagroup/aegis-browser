@@ -6,10 +6,10 @@ Subject: [PATCH] feat(aegis): enforce scoped Actor execution
 ---
 
 diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
-index 8d819481842a492703d248054960d2f96359c5e2..ae10cffa70e68dcc1e514e416a8079ac7ab0e015 100644
+index af54b7c214c1e3c2ebf4407efb432b14cd8cb2cc..8ac709de7dcb71f0155f7cc13e31bf19a929b523 100644
 --- a/chrome/browser/actor/BUILD.gn
 +++ b/chrome/browser/actor/BUILD.gn
-@@ -264,6 +264,7 @@ source_set("impl") {
+@@ -293,6 +293,7 @@ source_set("impl") {
      "//chrome/browser/ui/navigator",
      "//chrome/browser/ui/tabs:tabs_public",
      "//chrome/common",
@@ -18,10 +18,10 @@ index 8d819481842a492703d248054960d2f96359c5e2..ae10cffa70e68dcc1e514e416a8079ac
      "//components/actor/core:logging",
      "//components/affiliations/core/browser:affiliations",
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
-index 09e3602a95fe4dbb52c426541d9610de7bb3fd02..066012b3080c2199923d5688dfc00b2400227148 100644
+index f73da1f0aeb0d5e1a8229793566c2734e26f56bc..082f8ce161b03f2930c3bdf2219ed3be20188cc8 100644
 --- a/chrome/browser/actor/actor_keyed_service.cc
 +++ b/chrome/browser/actor/actor_keyed_service.cc
-@@ -49,6 +49,8 @@
+@@ -52,6 +52,8 @@
  #include "chrome/browser/ui/navigator/browser_navigator_params.h"
  #include "chrome/common/actor.mojom.h"
  #include "chrome/common/actor/action_result.h"
@@ -30,7 +30,7 @@ index 09e3602a95fe4dbb52c426541d9610de7bb3fd02..066012b3080c2199923d5688dfc00b24
  #include "components/actor/core/actor_features.h"
  #include "components/actor/core/actor_switches.h"
  #include "components/actor/core/aggregated_journal.h"
-@@ -159,7 +161,9 @@ ActorKeyedService::ActorKeyedService(Profile* profile) : profile_(profile) {
+@@ -168,7 +170,9 @@ ActorKeyedService::ActorKeyedService(Profile* profile) : profile_(profile) {
    surface_registry_ = std::make_unique<ActorSurfaceRegistry>(
        headless_web_contents_manager_.get());
    profile_observation_.Observe(profile_);
@@ -41,7 +41,7 @@ index 09e3602a95fe4dbb52c426541d9610de7bb3fd02..066012b3080c2199923d5688dfc00b24
  
    base::FilePath trace_path =
        base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
-@@ -514,9 +518,25 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
+@@ -546,9 +550,25 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
      AllowedSchemes allowed_schemes) {
    CHECK(ui_state_manager);
    return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager), source_info,
@@ -70,7 +70,7 @@ index 09e3602a95fe4dbb52c426541d9610de7bb3fd02..066012b3080c2199923d5688dfc00b24
  }
  
  TaskId ActorKeyedService::CreateTaskForTesting(
-@@ -528,8 +548,8 @@ TaskId ActorKeyedService::CreateTaskForTesting(
+@@ -560,8 +580,8 @@ TaskId ActorKeyedService::CreateTaskForTesting(
      std::optional<glic::mojom::InvocationSource> initial_invocation_source,
      AllowedSchemes allowed_schemes) {
    return CreateTaskImpl(std::move(ui_event_dispatcher), source_info,
@@ -81,7 +81,7 @@ index 09e3602a95fe4dbb52c426541d9610de7bb3fd02..066012b3080c2199923d5688dfc00b24
                          initial_invocation_source, allowed_schemes);
  }
  
-@@ -537,6 +557,7 @@ TaskId ActorKeyedService::CreateTaskImpl(
+@@ -569,6 +589,7 @@ TaskId ActorKeyedService::CreateTaskImpl(
      std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
      const TaskSourceInfo& source_info,
      const EnterprisePolicyChecker* policy_checker,
@@ -89,7 +89,7 @@ index 09e3602a95fe4dbb52c426541d9610de7bb3fd02..066012b3080c2199923d5688dfc00b24
      webui::mojom::TaskOptionsPtr options,
      base::WeakPtr<ActorTaskDelegate> delegate,
      actor::ui::ActorUiStateManagerInterface* ui_state_manager,
-@@ -555,8 +576,8 @@ TaskId ActorKeyedService::CreateTaskImpl(
+@@ -587,8 +608,8 @@ TaskId ActorKeyedService::CreateTaskImpl(
    auto actor_task = std::make_unique<ActorTask>(
        base::PassKey<ActorKeyedService>(), *this, task_id,
        std::move(ui_event_dispatcher), std::move(options), source_info,
@@ -101,10 +101,10 @@ index 09e3602a95fe4dbb52c426541d9610de7bb3fd02..066012b3080c2199923d5688dfc00b24
    if (initial_tab_handle != tabs::TabHandle::Null()) {
      actor_task->AddActorSurface(ActorSurfaceHandle::From(initial_tab_handle),
 diff --git a/chrome/browser/actor/actor_keyed_service.h b/chrome/browser/actor/actor_keyed_service.h
-index e03cbaa3e352a7bc3fa8681285b911fe7e374bb9..81c316309a180a529b42c7844ece907e9946ba23 100644
+index 4dbf335692527867c57e4a7b47c5850b34b83e4c..b18d349f7255f7231a42316fcf6a6bdddf74a69d 100644
 --- a/chrome/browser/actor/actor_keyed_service.h
 +++ b/chrome/browser/actor/actor_keyed_service.h
-@@ -104,6 +104,15 @@ class ActorKeyedService : public KeyedService,
+@@ -110,6 +110,15 @@ class ActorKeyedService : public KeyedService,
        std::optional<glic::mojom::InvocationSource> initial_invocation_source =
            std::nullopt,
        AllowedSchemes allowed_schemes = AllowedSchemes::kRequireHttpsOrHttp);
@@ -120,7 +120,7 @@ index e03cbaa3e352a7bc3fa8681285b911fe7e374bb9..81c316309a180a529b42c7844ece907e
    TaskId CreateTaskForTesting(
        std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
        const TaskSourceInfo& source_info,
-@@ -303,6 +312,7 @@ class ActorKeyedService : public KeyedService,
+@@ -339,6 +348,7 @@ class ActorKeyedService : public KeyedService,
        std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
        const TaskSourceInfo& source_info,
        const EnterprisePolicyChecker* policy_checker,
@@ -129,10 +129,10 @@ index e03cbaa3e352a7bc3fa8681285b911fe7e374bb9..81c316309a180a529b42c7844ece907e
        base::WeakPtr<ActorTaskDelegate> delegate,
        actor::ui::ActorUiStateManagerInterface* ui_state_manager,
 diff --git a/chrome/browser/actor/actor_keyed_service_factory.cc b/chrome/browser/actor/actor_keyed_service_factory.cc
-index c550b9eebb2c1178b0a29cac4247c537c2f464a9..85038c2515e916f4f413f8f2b3678271a4b57375 100644
+index 25bbc098f7821943bbb033036d9eef85760c35d1..2d4f7af71457dc52e0e51b78321d0ea7728a3b75 100644
 --- a/chrome/browser/actor/actor_keyed_service_factory.cc
 +++ b/chrome/browser/actor/actor_keyed_service_factory.cc
-@@ -7,6 +7,7 @@
+@@ -8,6 +8,7 @@
  #include "chrome/browser/origin_gating/origin_gating_service_factory.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/signin/identity_manager_factory.h"
@@ -140,7 +140,7 @@ index c550b9eebb2c1178b0a29cac4247c537c2f464a9..85038c2515e916f4f413f8f2b3678271
  #include "chrome/common/chrome_features.h"
  #include "content/public/browser/browser_context.h"
  
-@@ -44,7 +45,8 @@ bool ActorKeyedServiceFactory::ServiceIsCreatedWithBrowserContext() const {
+@@ -47,7 +48,8 @@ bool ActorKeyedServiceFactory::ServiceIsCreatedWithBrowserContext() const {
  std::unique_ptr<KeyedService>
  ActorKeyedServiceFactory::BuildServiceInstanceForBrowserContext(
      content::BrowserContext* context) const {
@@ -151,7 +151,7 @@ index c550b9eebb2c1178b0a29cac4247c537c2f464a9..85038c2515e916f4f413f8f2b3678271
    }
    Profile* profile = Profile::FromBrowserContext(context);
 diff --git a/chrome/browser/actor/actor_keyed_service_unittest.cc b/chrome/browser/actor/actor_keyed_service_unittest.cc
-index fc5cb45208f0515eec351694605378af7c386f84..9851654337217b31ee81d6753cfd9cc54e3177f0 100644
+index b6f88bf2c680fea813973719df9654c3400d510e..69f9685e4efb0612b9eb36fe7e309e6f0b2d8bf8 100644
 --- a/chrome/browser/actor/actor_keyed_service_unittest.cc
 +++ b/chrome/browser/actor/actor_keyed_service_unittest.cc
 @@ -15,10 +15,13 @@
@@ -195,7 +195,7 @@ index fc5cb45208f0515eec351694605378af7c386f84..9851654337217b31ee81d6753cfd9cc5
  std::unique_ptr<ui::ActorUiStateManagerInterface> BuildUiStateManagerMock() {
    std::unique_ptr<ui::MockActorUiStateManager> ui_state_manager =
        std::make_unique<ui::MockActorUiStateManager>();
-@@ -97,6 +120,48 @@ class ActorKeyedServiceTest : public testing::Test {
+@@ -100,6 +123,48 @@ class ActorKeyedServiceTest : public testing::Test {
    raw_ptr<TestingProfile> profile_;
  };
  
@@ -244,7 +244,7 @@ index fc5cb45208f0515eec351694605378af7c386f84..9851654337217b31ee81d6753cfd9cc5
  // Adds a task to ActorKeyedService
  TEST_F(ActorKeyedServiceTest, AddActiveTask) {
    auto* actor_service = ActorKeyedService::Get(profile());
-@@ -142,6 +207,20 @@ TEST_F(ActorKeyedServiceTest, StopActiveTask) {
+@@ -145,6 +210,20 @@ TEST_F(ActorKeyedServiceTest, StopActiveTask) {
    ASSERT_FALSE(task);
  }
  
@@ -266,10 +266,10 @@ index fc5cb45208f0515eec351694605378af7c386f84..9851654337217b31ee81d6753cfd9cc5
    auto* actor_service = ActorKeyedService::Get(profile());
    actor_service->CreateTaskWithOptions(
 diff --git a/chrome/browser/actor/actor_navigation_throttle.cc b/chrome/browser/actor/actor_navigation_throttle.cc
-index a1fbec9eef8bc94dcf95a7ca791cea7509e6d7b8..051b87f0b7c863f97ab4f407581b5ece2729a9e7 100644
+index 3e03d11ffe04b590fad25a31d93dbfc3ef8047fd..171d3e0715d205f333b147b0e62c774ef86f7c65 100644
 --- a/chrome/browser/actor/actor_navigation_throttle.cc
 +++ b/chrome/browser/actor/actor_navigation_throttle.cc
-@@ -27,6 +27,7 @@
+@@ -28,6 +28,7 @@
  
  namespace actor {
  
@@ -278,10 +278,10 @@ index a1fbec9eef8bc94dcf95a7ca791cea7509e6d7b8..051b87f0b7c863f97ab4f407581b5ece
  void ActorNavigationThrottle::MaybeCreateAndAdd(
      content::NavigationThrottleRegistry& registry) {
 diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
-index 112cecc160c172d9366af9e57ed02a44bd9da79d..a766aa532bae39edf9df652468edb435f1019d18 100644
+index 0b3c3febb0696f87ef326641eb708d0043bfc3f8..79b96e16e092a5487a68e6085621b80aa42d79a9 100644
 --- a/chrome/browser/actor/actor_task.cc
 +++ b/chrome/browser/actor/actor_task.cc
-@@ -165,6 +165,7 @@ ActorTask::ActorTask(
+@@ -166,6 +166,7 @@ ActorTask::ActorTask(
      webui::mojom::TaskOptionsPtr options,
      const TaskSourceInfo& source_info,
      const EnterprisePolicyChecker* policy_checker,
@@ -289,7 +289,7 @@ index 112cecc160c172d9366af9e57ed02a44bd9da79d..a766aa532bae39edf9df652468edb435
      base::WeakPtr<ActorTaskDelegate> delegate,
      std::optional<glic::mojom::InvocationSource> initial_invocation_source,
      AllowedSchemes allowed_schemes)
-@@ -186,7 +187,9 @@ ActorTask::ActorTask(
+@@ -187,7 +188,9 @@ ActorTask::ActorTask(
                          ? options->feature_mode.value()
                          : glic::mojom::FeatureMode::kUnspecified),
        initial_invocation_source_(initial_invocation_source),
@@ -300,7 +300,7 @@ index 112cecc160c172d9366af9e57ed02a44bd9da79d..a766aa532bae39edf9df652468edb435
        delegate_(std::move(delegate)),
        ui_weak_ptr_factory_(ui_event_dispatcher_.get()) {
    CHECK(policy_checker);
-@@ -214,8 +217,8 @@ std::unique_ptr<ActorTask> ActorTask::CreateForTesting(
+@@ -215,8 +218,8 @@ std::unique_ptr<ActorTask> ActorTask::CreateForTesting(
      AllowedSchemes allowed_schemes) {
    return std::make_unique<ActorTask>(
        base::PassKey<ActorTask>(), service, id, std::move(ui_event_dispatcher),
@@ -312,7 +312,7 @@ index 112cecc160c172d9366af9e57ed02a44bd9da79d..a766aa532bae39edf9df652468edb435
  
  ExecutionEngine& ActorTask::GetExecutionEngine() const {
 diff --git a/chrome/browser/actor/actor_task.h b/chrome/browser/actor/actor_task.h
-index 3d2972881473bc612012c9653c9fbf6213501411..b79b661a7736694eaf57e47aa34586465ff1193d 100644
+index 748a19cedd0619291fbbf6ce37863bc732183a1a..f4094c303140bd65baddde64bbb67e169cb7c131 100644
 --- a/chrome/browser/actor/actor_task.h
 +++ b/chrome/browser/actor/actor_task.h
 @@ -87,6 +87,7 @@ class ActorTask : public base::SupportsUserData {
@@ -323,7 +323,7 @@ index 3d2972881473bc612012c9653c9fbf6213501411..b79b661a7736694eaf57e47aa3458646
        base::WeakPtr<ActorTaskDelegate> delegate = nullptr,
        std::optional<glic::mojom::InvocationSource> initial_invocation_source =
            std::nullopt,
-@@ -534,7 +535,10 @@ class ActorTask : public base::SupportsUserData {
+@@ -532,7 +533,10 @@ class ActorTask : public base::SupportsUserData {
  
    std::optional<InterruptReason> interrupt_reason_;
  
@@ -336,7 +336,7 @@ index 3d2972881473bc612012c9653c9fbf6213501411..b79b661a7736694eaf57e47aa3458646
  
    // Delegate for task-related events.
 diff --git a/chrome/browser/actor/actor_util.cc b/chrome/browser/actor/actor_util.cc
-index c911f26bed8b088793a260bc9a34a313b51fdfee..b592092117db4fc1e4d5195e29ebc80eb3fd73aa 100644
+index cfe21d92eaa9b2dc5401096a355cadbd16adffa3..e7f319db79e54da990f1392cf525bd4c0e67e8a6 100644
 --- a/chrome/browser/actor/actor_util.cc
 +++ b/chrome/browser/actor/actor_util.cc
 @@ -7,6 +7,7 @@
@@ -345,9 +345,9 @@ index c911f26bed8b088793a260bc9a34a313b51fdfee..b592092117db4fc1e4d5195e29ebc80e
  
 +#include "base/feature_list.h"
  #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_surface_handle.h"
  #include "chrome/browser/actor/actor_task.h"
- #include "chrome/browser/actor/execution_engine.h"
-@@ -15,6 +16,8 @@
+@@ -16,6 +17,8 @@
  #include "chrome/browser/glic/public/service/glic_instance_coordinator.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -356,7 +356,7 @@ index c911f26bed8b088793a260bc9a34a313b51fdfee..b592092117db4fc1e4d5195e29ebc80e
  #include "components/actor/core/task_source_info.h"
  #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
  #include "components/tabs/public/tab_interface.h"
-@@ -58,6 +61,11 @@ bool HasGlicInstanceForTask(const ActorTask& task) {
+@@ -59,6 +62,11 @@ bool HasGlicInstanceForTask(const ActorTask& task) {
    return GetGlicInstanceForTask(task) != nullptr;
  }
  
@@ -385,18 +385,18 @@ index dc7537bb9676f6b0ee002135b5d920bf76834c76..3dcc9ba41438a180bea3aa63519f9567
  bool HaveActiveTaskForContents(content::WebContents* source_contents);
  
 diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
-index eb0113f7d37e314bd3689fe36067c91cbf88e033..e0296b8dfb18ffab8fbe872e62255985ca044a1a 100644
+index 4f9192f03d80c03d2134e2fff9420e445a4a39cc..788224edc8bbb441b39d815c866af7fce523b4ce 100644
 --- a/chrome/browser/actor/execution_engine.cc
 +++ b/chrome/browser/actor/execution_engine.cc
-@@ -41,6 +41,7 @@
+@@ -45,6 +45,7 @@
  #include "chrome/browser/actor/actor_proto_conversion.h"
  #include "chrome/browser/actor/actor_surface.h"
  #include "chrome/browser/actor/actor_task.h"
 +#include "chrome/browser/actor/actor_util.h"
  #include "chrome/browser/actor/enterprise_policy_checker.h"
  #include "chrome/browser/actor/site_policy.h"
- #include "chrome/browser/actor/tools/attempt_login_tool.h"
-@@ -465,11 +466,12 @@ void BlockSensitiveUrl(
+ #include "chrome/browser/actor/tools/password_manager/attempt_login/attempt_login_tool.h"
+@@ -480,11 +481,12 @@ void BlockSensitiveUrl(
  }
  
  void BlockSensitiveUrlWhenNavigationGatingDisabled(
@@ -410,7 +410,7 @@ index eb0113f7d37e314bd3689fe36067c91cbf88e033..e0296b8dfb18ffab8fbe872e62255985
      std::move(callback).Run(origin_gating::Decision::kNoDecision);
      return;
    }
-@@ -840,8 +842,10 @@ std::vector<origin_gating::PredicateConfiguration> CreateOriginGatingPredicates(
+@@ -892,8 +894,10 @@ std::vector<origin_gating::PredicateConfiguration> CreateOriginGatingPredicates(
        {DecisionSource::kCacheWithUserConfirmation, GateableEventSet::All()},
        {DecisionSource::kAllowSameOrigin, {GateableEvent::kNavigationResponse}},
        {CustomPredicate(
@@ -423,7 +423,7 @@ index eb0113f7d37e314bd3689fe36067c91cbf88e033..e0296b8dfb18ffab8fbe872e62255985
             ActorCustomPredicate::kSensitiveUrl),
         {GateableEvent::kNavigationRequest}},
        {DecisionSource::kAllowByTaskPolicyConfig,
-@@ -1082,7 +1086,8 @@ void ExecutionEngine::DoesOriginRequireUserConfirmation(
+@@ -1134,7 +1138,8 @@ void ExecutionEngine::DoesOriginRequireUserConfirmation(
      const GateableEvent& event,
      DoesOriginRequireUserConfirmationCallback callback) const {
    // Navigation requests never prompt the user.
@@ -433,7 +433,7 @@ index eb0113f7d37e314bd3689fe36067c91cbf88e033..e0296b8dfb18ffab8fbe872e62255985
      std::move(callback).Run(/*requires_user_confirmation=*/false);
      return;
    }
-@@ -1373,7 +1378,7 @@ void ExecutionEngine::FailCurrentTool(mojom::ActionResultCode reason) {
+@@ -1434,7 +1439,7 @@ void ExecutionEngine::FailCurrentTool(mojom::ActionResultCode reason) {
  void ExecutionEngine::Act(std::vector<std::unique_ptr<ToolRequest>>&& actions,
                            ActorTask::ActCallback callback) {
    TRACE_EVENT0("actor", "ExecutionEngine::Act");
@@ -443,10 +443,10 @@ index eb0113f7d37e314bd3689fe36067c91cbf88e033..e0296b8dfb18ffab8fbe872e62255985
    CHECK(deferred_finish_tool_invoke_.is_null());
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index b72efe631e1ce7f522cc165acf6067aa60092d9c..e7647f49fa533e5e54c814800e7386ba6a777faa 100644
+index 86d3914f831f0a2b278b203acb49ddd4bb4b9764..3111adc8dd63bcebd67218f008fc56b11bff0c38 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -1174,6 +1174,8 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+@@ -1175,6 +1175,8 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
    }
  
   protected:
@@ -455,7 +455,7 @@ index b72efe631e1ce7f522cc165acf6067aa60092d9c..e7647f49fa533e5e54c814800e7386ba
    void SetExpectedOptimizationGuideCall(
        const GURL& url,
        optimization_guide::OptimizationGuideDecision result) {
-@@ -1252,7 +1254,7 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+@@ -1253,7 +1255,7 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
        task_ = ActorTask::CreateForTesting(
            *ActorKeyedService::Get(profile()), TaskId(1),
            std::move(task_dispatcher),
@@ -464,7 +464,7 @@ index b72efe631e1ce7f522cc165acf6067aa60092d9c..e7647f49fa533e5e54c814800e7386ba
            mock_actor_task_delegate_.GetWeakPtr(),
            /*initial_invocation_source=*/std::nullopt, allowed_schemes);
      }
-@@ -1278,6 +1280,30 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+@@ -1279,6 +1281,30 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
    base::ScopedTempDir temp_dir_;
  };
  

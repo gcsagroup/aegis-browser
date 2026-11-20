@@ -2,6 +2,7 @@ From 9387afaacc8b1150ebbfc1c83171a99323b83aeb Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 07:33:27 +0800
 Subject: [PATCH] test(access): cover canonical IPv6 site normalization
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_site_intent_unittest.cc b/chrome/browser/aegis/access/access_site_intent_unittest.cc

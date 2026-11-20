@@ -2,6 +2,7 @@ From 1caaf820c62dadd7eb8a609743e08a8784dbc9a5 Mon Sep 17 00:00:00 2001
 From: Aegis <aegis@invalid>
 Date: Tue, 10 Nov 2026 03:59:36 +0800
 Subject: [PATCH] feat: publish macOS site-proxy bubble session to local proxy
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

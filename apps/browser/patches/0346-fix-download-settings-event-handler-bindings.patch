@@ -2,6 +2,7 @@ From 1afdd45bb1076f57ace4f15654539c1d0247bf63 Mon Sep 17 00:00:00 2001
 From: Aegis Patch Export <aegis-patch-export@localhost>
 Date: Wed, 28 Oct 2026 02:42:09 +0800
 Subject: [PATCH] fix(settings): use stable download event handlers
+
 ---
 
 diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts

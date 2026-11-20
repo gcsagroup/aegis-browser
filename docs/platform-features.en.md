@@ -60,6 +60,8 @@ Source: supported by source or the product contract. Partial: defined difference
 | Windows uninstall prompt localization | Not ported | Source | Not ported | Not ported |
 | Full-page capture and image OCR | Source | Source | Source | Source |
 | DevTools and MCP connection isolation | Source | Source | Source | Partial |
+| Windows account, local core and diagnostic sharing | Not ported | Source | Not ported | Not ported |
+| Mac internal Access Options | Source | Not ported | Not ported | Not ported |
 
 ## iOS scope and evidence
 
@@ -476,6 +478,22 @@ Runtime acceptance not completed for this item in this work。
 `devtools-mcp-isolation` — iOS uses WebKit and a separate app adapter. Chromium DevTools target filtering does not apply, and no current iOS MCP device acceptance is claimed.
 
 Source：[prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs](../prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs) · [apps/ios/AegisApp/MobileDevToolsView.swift](../apps/ios/AegisApp/MobileDevToolsView.swift)
+
+Runtime acceptance not completed for this item in this work。
+
+### Windows account, local core and diagnostic sharing
+
+`windows-access-desktop` — This item describes the Windows implementation. It is not ported to this platform and does not describe other account or proxy capabilities.
+
+Source：[apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc) · [apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc)
+
+Runtime acceptance not completed for this item in this work。
+
+### Mac internal Access Options
+
+`mac-access-options` — This item describes the macOS implementation. It is not ported to this platform and does not describe other account or proxy capabilities.
+
+Source：[apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc) · [apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc)
 
 Runtime acceptance not completed for this item in this work。
 

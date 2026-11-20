@@ -6,10 +6,10 @@ Subject: [PATCH] feat(aegis): add bounded phishing and local threat feeds
 ---
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 58b4715b33a5dd660e5160e8977f552fa4bc2dea..b72efe631e1ce7f522cc165acf6067aa60092d9c 100644
+index 0f40a78180576f234001f540183f6d76e53052ee..86d3914f831f0a2b278b203acb49ddd4bb4b9764 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -167,9 +167,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+@@ -168,9 +168,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
        RequestImageForContextNodeCallback callback) override {}
    void ExecuteWebUIJavaScript(const std::u16string& javascript) override {}
    void GetMediaFeedURL(GetMediaFeedURLCallback callback) override {}
@@ -745,23 +745,10 @@ index 0000000000000000000000000000000000000000..bb5f1b354ed66b1b06f67b97208d08ed
 +
 +#endif  // CHROME_BROWSER_AEGIS_THREAT_FEED_UPDATER_H_
 diff --git a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
-index 5bc84f0f6aea3e8d3c5a947d275e9025a972f38c..6c50c6d4d537a85382e8b098609f97f43b24762d 100644
+index 7e2d071d781ad2ca6778596b697adb5a05e65d38..5eb05cf1942e01ceeb2b92400d2b26c9a8da06a5 100644
 --- a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
 +++ b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
-@@ -112,7 +112,7 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
-   MOCK_METHOD(void, GetMediaFeedURL, (GetMediaFeedURLCallback), (override));
-   MOCK_METHOD(void,
-               CollectAegisPageSignals,
--              (CollectAegisPageSignalsCallback),
-+              (bool, CollectAegisPageSignalsCallback),
-               (override));
-   MOCK_METHOD(void, LoadBlockedPlugins, (const std::string&), (override));
-   MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
-diff --git a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
-index 8c540d59a562ff567cceb020888374dfda98d43b..4d7b59bda7d7dccb69ccf29c7a70741e433a2fc3 100644
---- a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
-+++ b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
-@@ -101,7 +101,7 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+@@ -113,7 +113,7 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
    MOCK_METHOD(void, GetMediaFeedURL, (GetMediaFeedURLCallback), (override));
    MOCK_METHOD(void,
                CollectAegisPageSignals,
@@ -1680,10 +1667,10 @@ index 0000000000000000000000000000000000000000..b4b94e76aeaac963fda9a7d57f9c1679
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/common/chrome_render_frame.mojom b/chrome/common/chrome_render_frame.mojom
-index efaa533860e755f5ae9e2fc8900cb834dea6163e..a5139225cf26af5ba220f3a7446f19d633a44c98 100644
+index 4fb69fabf754ed504a363553cb1d0e7de7daf12f..8f13ba9da50c8f4d172ce264bb3c17ead0f2d6c6 100644
 --- a/chrome/common/chrome_render_frame.mojom
 +++ b/chrome/common/chrome_render_frame.mojom
-@@ -91,10 +91,12 @@ interface ChromeRenderFrame {
+@@ -92,10 +92,12 @@ interface ChromeRenderFrame {
    // Requests the Media Feed Url from the renderer (if the page has one).
    GetMediaFeedURL() => (url.mojom.Url? url);
  
@@ -1701,7 +1688,7 @@ index efaa533860e755f5ae9e2fc8900cb834dea6163e..a5139225cf26af5ba220f3a7446f19d6
    // Tells the render frame to load any blocked plugins matching the given
    // identifier (empty string matches all).
 diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
-index a0dc63589a1ac7efdfbb014fcbf1bbffff8a61e5..c8604af7d5c4c5f2e522a53d88f8215fc647b794 100644
+index db6ffb9669cb1cb795bad5aa572469bfb1871670..df4d5d449c75d133137f7b30018d2a5c86d00d29 100644
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
 @@ -72,6 +72,7 @@
@@ -1898,7 +1885,7 @@ index a0dc63589a1ac7efdfbb014fcbf1bbffff8a61e5..c8604af7d5c4c5f2e522a53d88f8215f
    gfx::SizeF scaled_size = gfx::SizeF(image_size);
  
 diff --git a/chrome/renderer/chrome_render_frame_observer.h b/chrome/renderer/chrome_render_frame_observer.h
-index a829805460502bf5b7ca423d9123aab76c245d1f..e443af3bb45f76affabc21624892c0d080c27048 100644
+index 0b0380e63baeb711fa0a812870eb68505e3de2e6..87098b8e35b3773dae8cfc5cd357edb52fa95ce3 100644
 --- a/chrome/renderer/chrome_render_frame_observer.h
 +++ b/chrome/renderer/chrome_render_frame_observer.h
 @@ -131,8 +131,9 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,

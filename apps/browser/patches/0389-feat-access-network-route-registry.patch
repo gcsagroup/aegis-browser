@@ -3,6 +3,7 @@ From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 11:43:06 +0800
 Subject: [PATCH] feat(access): validate immutable Network route registry and
  restoration fence
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn

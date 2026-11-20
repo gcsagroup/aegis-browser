@@ -5,6 +5,7 @@ Subject: [PATCH] Aegis: strip tracking query params and reject tracker cookies
 
 Rewrite main-frame navigations to drop known tracking decorations, and
 delete analytics/advertising cookies as they are written.
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
@@ -488,7 +489,7 @@ index ca83ce18824cf67b3bceb7662628a0b13d7cadb1..bcc72edff8768622556baaa0b4ac1797
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index 79c042a12d3e25a0607f51f0ece1a030766fc5e3..0b136c7e20bf1f75485b61ed7657fda60948af48 100644
+index 44d9e15932af277a5522aed4c92847b5418ca66a..96b634dcf670f46b7cf86099f780ee9744c29259 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 @@ -24,6 +24,7 @@
@@ -499,7 +500,7 @@ index 79c042a12d3e25a0607f51f0ece1a030766fc5e3..0b136c7e20bf1f75485b61ed7657fda6
  #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
  #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
  #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
-@@ -413,6 +414,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -414,6 +415,7 @@ void CreateAndAddChromeThrottlesForNavigation(
  
    LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);
    aegis::AegisPhishNavigationThrottle::MaybeCreateAndAdd(registry);

@@ -7,6 +7,7 @@ Classify cookies by exact names so login cookies stay, block first-party
 GA/GTM collect copies, and strip more click-id query params.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ---
 
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc

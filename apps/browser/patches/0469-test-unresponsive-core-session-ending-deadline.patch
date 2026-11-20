@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 22:58:04 +0800
 Subject: [PATCH] test(access): reproduce unresponsive core session-ending
  deadline
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc

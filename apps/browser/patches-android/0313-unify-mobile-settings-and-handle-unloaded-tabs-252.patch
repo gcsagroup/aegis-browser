@@ -2,10 +2,11 @@ From de17103a6520599454a4148796960e4e5ef7c04c Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 17:55:00 +0800
 Subject: [PATCH] 统一移动设置入口并修复休眠标签阅读崩溃
+
 ---
 
 diff --git a/chrome/android/java/res/xml/main_preferences.xml b/chrome/android/java/res/xml/main_preferences.xml
-index 67228cb0ac09589f6ee362c7c5fa2ac8667014c5..5c633fe8a0b9c7d258a531c81562d8d5eb9d19cb 100644
+index 17f7871f0f53950cea021a4e859314d62d33d383..ee047cee0c2069d1a2dd97d1c00d075cc04d3a28 100644
 --- a/chrome/android/java/res/xml/main_preferences.xml
 +++ b/chrome/android/java/res/xml/main_preferences.xml
 @@ -8,6 +8,10 @@ found in the LICENSE file.
@@ -20,7 +21,7 @@ index 67228cb0ac09589f6ee362c7c5fa2ac8667014c5..5c633fe8a0b9c7d258a531c81562d8d5
          android:key="settings_promo_card"
          android:order="0" />
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
-index c52e633f062aa87228621060b2c604e066c378ec..40ecbe9d2164983dd9b60a7887e4a053c7521dca 100644
+index e8d7dccac1c614a36f9271d4005f83bbfe5cb084..45f8b4c4d87c02a6ed24c7b0135113e80d5f5471 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 @@ -12,6 +12,7 @@ import android.content.Intent;
@@ -38,8 +39,8 @@ index c52e633f062aa87228621060b2c604e066c378ec..40ecbe9d2164983dd9b60a7887e4a053
 +import org.chromium.chrome.browser.IntentHandler;
  import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;
  import org.chromium.chrome.browser.autofill.settings.SettingsNavigationHelper;
- import org.chromium.chrome.browser.autofill.settings.options.AutofillOptionsFragment;
-@@ -385,6 +387,24 @@ public class MainSettings extends ChromeBaseSettingsFragment
+ import org.chromium.chrome.browser.device_lock.DeviceLockActivityLauncherImpl;
+@@ -376,6 +378,24 @@ public class MainSettings extends ChromeBaseSettingsFragment
          mManagedPreferenceDelegate = createManagedPreferenceDelegate();
  
          SettingsUtils.addPreferencesFromResource(this, R.xml.main_preferences);

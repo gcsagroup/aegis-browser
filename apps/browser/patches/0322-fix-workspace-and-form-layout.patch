@@ -2,6 +2,7 @@ From 43174a75baa94bb69057e47d1742591adb7f1831 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Thu, 22 Oct 2026 16:00:00 +0800
 Subject: [PATCH] 统一移动设置导航与三端表单布局
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn

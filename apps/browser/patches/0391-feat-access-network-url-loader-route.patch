@@ -2,6 +2,7 @@ From be3f43abde98396c2706b66badfef14bfa6d69f6 Mon Sep 17 00:00:00 2001
 From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 12:06:54 +0800
 Subject: [PATCH] feat(access): gate Network URLLoader sends and redirect hops
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -205,10 +206,10 @@ index 0000000000000000000000000000000000000000..0f86bd685b130141677bc0328432c502
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index cdee37560eeff975afb2dd1798fbc93418e5cab6..10f20ef701c61428d2960939cda34716ad05763a 100644
+index ebc6e1788b7a39f75e91842042778a6de4f87965..df09f8fcbab3f5d7081d66d5d56339d048f3f8c0 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
-@@ -407,7 +407,10 @@ component("network_service") {
+@@ -412,7 +412,10 @@ component("network_service") {
      ]
    }
  
@@ -221,7 +222,7 @@ index cdee37560eeff975afb2dd1798fbc93418e5cab6..10f20ef701c61428d2960939cda34716
    if (is_ct_supported) {
      sources += [
 diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
-index 747330be85fa8cc714e3c3c495c9a447dc1e084a..56431a52b32aa5d0e650b37c690b4c93311649bd 100644
+index 8cff0e93d7b9cd615e67cdf5c428075ae8f30051..105a673839c19871f7301268591c34f2d2ca3000 100644
 --- a/services/network/url_loader.cc
 +++ b/services/network/url_loader.cc
 @@ -3,6 +3,7 @@
@@ -232,7 +233,7 @@ index 747330be85fa8cc714e3c3c495c9a447dc1e084a..56431a52b32aa5d0e650b37c690b4c93
  
  #include <algorithm>
  #include <limits>
-@@ -345,8 +346,10 @@ URLLoader::URLLoader(
+@@ -344,8 +345,10 @@ URLLoader::URLLoader(
      mojo::PendingRemote<mojom::AcceptCHFrameObserver> accept_ch_frame_observer,
      SharedResourceChecker& shared_resource_checker,
      std::unique_ptr<DevtoolsDurableMessageWriter> maybe_durable_message_writer,
@@ -245,7 +246,7 @@ index 747330be85fa8cc714e3c3c495c9a447dc1e084a..56431a52b32aa5d0e650b37c690b4c93
        network_context_client_(context.GetNetworkContextClient()),
        delete_callback_(std::move(delete_callback)),
        resource_type_(request.resource_type),
-@@ -753,10 +756,30 @@ void URLLoader::ScheduleStart() {
+@@ -752,10 +755,30 @@ void URLLoader::ScheduleStart() {
    }
    if (defer)
      url_request_->LogBlockedBy("ResourceScheduler");
@@ -277,7 +278,7 @@ index 747330be85fa8cc714e3c3c495c9a447dc1e084a..56431a52b32aa5d0e650b37c690b4c93
  URLLoader::~URLLoader() {
    TRACE_EVENT("loading", "URLLoader::~URLLoader",
                net::NetLogWithSourceToFlow(url_request_->net_log()));
-@@ -783,6 +806,12 @@ void URLLoader::FollowRedirect(
+@@ -782,6 +805,12 @@ void URLLoader::FollowRedirect(
      NOTREACHED();
    }
  
@@ -290,7 +291,7 @@ index 747330be85fa8cc714e3c3c495c9a447dc1e084a..56431a52b32aa5d0e650b37c690b4c93
    // Note: There are some ordering dependencies here.
    // `CalculateStorageAccessStatus` depends on
    // `url_request->cookie_setting_overrides()`. `SetFetchMetadataHeaders`
-@@ -977,6 +1006,18 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
+@@ -976,6 +1005,18 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
    // Send the redirect response to the client, allowing them to inspect it and
    // optionally follow the redirect.
    *defer_redirect = true;
@@ -309,7 +310,7 @@ index 747330be85fa8cc714e3c3c495c9a447dc1e084a..56431a52b32aa5d0e650b37c690b4c93
  
    mojom::URLResponseHeadPtr response = BuildResponseHead();
    DispatchOnRawResponse();
-@@ -2380,7 +2421,9 @@ bool URLLoader::HasDataPipe() const {
+@@ -2357,7 +2398,9 @@ bool URLLoader::HasDataPipe() const {
  
  void URLLoader::ResumeStart() {
    url_request_->LogUnblocked();

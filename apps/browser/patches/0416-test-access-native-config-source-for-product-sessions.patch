@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 20:44:16 +0800
 Subject: [PATCH] test(access): use real native config monitor for product
  sessions
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

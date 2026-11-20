@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 13:26:07 +0800
 Subject: [PATCH] fix(access-account): use server evaluation time for queued
  expiry
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_account_mac.mm b/chrome/browser/aegis/access/access_account_mac.mm

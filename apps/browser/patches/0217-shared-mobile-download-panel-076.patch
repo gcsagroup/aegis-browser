@@ -97,7 +97,7 @@ index b8bd13809e04c113d7ccd5313240f8972d5855ac..9450110275a684b95d81de133fc7a628
      "//ui/webui/resources/cr_components/color_change_listener:build_ts",
      "//ui/webui/resources/cr_components/managed_footnote:build_ts",
 diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
-index f1d280d1bf3bc2a635657c8a6aeb6916b70aff48..5870a5b463e18ba32fb9bd4322cf6166469d275f 100644
+index 5f51d370321e58018462acab21dbd3302a8e710b..a45b53b5ee98264cd0710590cba77fde1c696d64 100644
 --- a/chrome/browser/resources/downloads/manager.ts
 +++ b/chrome/browser/resources/downloads/manager.ts
 @@ -3,7 +3,7 @@

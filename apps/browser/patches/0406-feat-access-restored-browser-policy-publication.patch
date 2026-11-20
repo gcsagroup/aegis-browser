@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 17:29:04 +0800
 Subject: [PATCH] feat(access): publish freshly versioned restored policy and
  capture native common tuple
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_published_request_runtime.cc b/chrome/browser/aegis/access/access_published_request_runtime.cc

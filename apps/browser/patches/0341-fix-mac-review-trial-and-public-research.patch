@@ -5,6 +5,7 @@ Subject: [PATCH] fix: bind trial consent and validate public research
  unavailability
 
 Keep the desktop patch payload aligned with the overlay.
+
 ---
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc

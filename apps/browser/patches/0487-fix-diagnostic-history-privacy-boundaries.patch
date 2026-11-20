@@ -2,6 +2,7 @@ From 490d95305a50e87d844232073720072b07ba92cb Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Fri, 13 Nov 2026 18:51:22 +0800
 Subject: [PATCH] fix(access-log): enforce clear and credential boundaries
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

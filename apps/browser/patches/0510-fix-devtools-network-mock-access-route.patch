@@ -23,7 +23,7 @@ index b694791450b088d1c57c983361ac4c1de807bd69..5026ca9baa6236bf6ed827f94daf8f05
    receivers_.set_disconnect_handler(base::BindRepeating(
        &AccessPrivateURLLoaderFactory::OnDisconnect, base::Unretained(this)));
 diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
-index 4b66f272e9e645f60787e2215c1e8df9d0e2d3c7..a79f4a596804d295bd63022be5c8db78aa9cf0bd 100644
+index aceed1cb3f01373e3fa5ed1e91c48c620501567b..e504f64cf1036039c2955e40fc0eb95bc72b4a9f 100644
 --- a/services/network/cors/cors_url_loader_factory.cc
 +++ b/services/network/cors/cors_url_loader_factory.cc
 @@ -6,8 +6,10 @@

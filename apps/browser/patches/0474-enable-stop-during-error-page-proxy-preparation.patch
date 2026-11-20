@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 02:34:49 +0800
 Subject: [PATCH] fix(access): expose Stop while the active error tab prepares
  its proxy
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
@@ -137,10 +138,10 @@ index 7c1d346bf55d3d4e63446da81183b70f269c3b07..2daaa96d4afe199bed0bc2deddb6baea
    Fail(GURL("https://failed.example/path"));
    auto ready = helper()->CaptureRouteReadyCallback();
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 399a05355fce3ee42ed177e2de5775e52e51e200..a3ea9d7145e8ac1a9f887c7c091c011f433022d0 100644
+index 5a6e29a6fdb70386ba3666d56bb4e30e9167abe8..4f72558fcde246e0f0eca805c2fc990ad2ac9bfd 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -788,7 +788,10 @@ if (!is_android) {
+@@ -795,7 +795,10 @@ if (!is_android) {
        ]
      }
      if (is_mac) {
@@ -153,10 +154,10 @@ index 399a05355fce3ee42ed177e2de5775e52e51e200..a3ea9d7145e8ac1a9f887c7c091c011f
      if (use_ozone) {
        deps += [ "//ui/ozone" ]
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 99bc06383791cf2dbe7a8aecc600745867cbc960..b718e8a6a5e2574b3898ce0ae4a6e42df6ffbc08 100644
+index d492b8ec11275addb142ad8efbf6803579c556d4..c2dec04fb2d6538488947442b97096950a28981c 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -163,6 +163,7 @@
+@@ -165,6 +165,7 @@
  #endif
  
  #if BUILDFLAG(IS_MAC)
@@ -164,7 +165,7 @@ index 99bc06383791cf2dbe7a8aecc600745867cbc960..b718e8a6a5e2574b3898ce0ae4a6e42d
  #include "chrome/browser/ui/browser_commands_mac.h"
  #endif
  
-@@ -2748,8 +2749,18 @@ void BrowserCommandController::UpdateReloadStopState(bool is_loading,
+@@ -2785,8 +2786,18 @@ void BrowserCommandController::UpdateReloadStopState(bool is_loading,
      return;
    }
  

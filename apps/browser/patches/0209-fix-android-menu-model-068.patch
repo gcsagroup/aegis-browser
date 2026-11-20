@@ -11,10 +11,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index b193217a4d22955b8c88bc4f86e41593eaf5277c..d89a16f51c8cead0b6b0563326eac63d0fa2cee5 100644
+index ce54a471fd7f7d093d6f2ff92938dae90c93e66b..c0256a6f79377e7c38fc1729c09316ba8ed53db7 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-@@ -1394,23 +1394,29 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -1395,23 +1395,29 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
      private ListItem buildAegisAgentItem() {
          return new ListItem(
                  AppMenuHandler.AppMenuItemType.STANDARD,

@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 17:09:28 +0800
 Subject: [PATCH] fix(access): bind TestFuture to the generated string callback
  signature
+
 ---
 
 diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc

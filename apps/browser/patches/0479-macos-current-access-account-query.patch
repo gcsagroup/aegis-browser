@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 12:49:05 +0800
 Subject: [PATCH] feat(access-account): retain the macOS account query on the
  integrated Access tree
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

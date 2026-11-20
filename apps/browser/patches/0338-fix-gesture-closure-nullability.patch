@@ -8,6 +8,7 @@ Subject: [PATCH] =?UTF-8?q?fix:=20=E4=BF=9D=E7=95=99=E6=89=8B=E5=8A=BF?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts

@@ -377,14 +377,14 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   void OpenDetails() {
     if (!source_) return;
     source_->OpenURL(content::OpenURLParams(GURL("chrome://aegis/?workspace=protection"),
-        content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        content::Referrer(), WindowOpenDisposition::kNewForegroundTab,
         ui::PAGE_TRANSITION_LINK, false), {});
     if (GetWidget()) GetWidget()->Close();
   }
   void OpenReading() {
     if (!Valid()) return;
     content::OpenURLParams params(GURL("chrome://aegis/markdown.html#tab=" + tab_),
-        content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        content::Referrer(), WindowOpenDisposition::kNewForegroundTab,
         ui::PAGE_TRANSITION_LINK, false);
     source_->OpenURL(params, {});
     if (GetWidget()) GetWidget()->Close();
@@ -393,7 +393,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (!Valid()) return;
     content::OpenURLParams params(
         GURL((script.empty() ? "chrome://settings/aegisEnhancements#tab=" : "chrome://aegis/enhancements.html#tab=") + tab_ + "&script=" + script),
-        content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        content::Referrer(), WindowOpenDisposition::kNewForegroundTab,
         ui::PAGE_TRANSITION_LINK, false);
     source_->OpenURL(params, {});
     if (GetWidget()) GetWidget()->Close();
@@ -401,7 +401,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   void Reload() {
     if (!Valid()) return;
     if (GetWidget()) GetWidget()->Close();
-    chrome::Reload(browser_, WindowOpenDisposition::CURRENT_TAB);
+    chrome::Reload(browser_, WindowOpenDisposition::kCurrentTab);
   }
   void Pause() {
     if (!Valid()) return;

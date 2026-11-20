@@ -7,6 +7,7 @@ Subject: [PATCH] Aegis: fix startup DCHECKs and run policy worker in
 Skip gin V8 init in the browser process (no snapshot_blob.bin) and
 evaluate packages/core in the WebUI renderer instead. Move filter-list
 disk IO off the UI thread and cap EasyList downloads at 5 MiB.
+
 ---
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc

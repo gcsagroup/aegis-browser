@@ -9,14 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../enhancements/enhancement_browsertest.cc    | 15 ++++++++++++---
- .../enhancements/enhancement_tab_helper.cc     | 18 ++++++++++++++----
- .../aegis/enhancements_shared/core.js          |  2 +-
- .../aegis/enhancements_shared/i18n.js          | 12 ++++++------
- .../aegis/enhancements_shared/viewer.html      |  1 +
- .../aegis/enhancements_shared/viewer.js        | 12 ++++++++----
- chrome/browser/resources/aegis/markdown.js     | 10 +++++++---
- 7 files changed, 49 insertions(+), 21 deletions(-)
 
 diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
 index a2e8c3258d5c74f5b3e611e47434ff2b8a2cb152..99bf072d645c0cef75498dbbd24594b3412df366 100644
@@ -251,6 +243,3 @@ index 0069380e6c906cb25e62e43a438c5644e092722d..5686a736dd0edd6c93d665ee9e6014eb
    if (!payload?.text) throw Error(uiText("页面没有可读取的文本。"));
    load(payload, false);
  });
--- 
-2.52.0
-

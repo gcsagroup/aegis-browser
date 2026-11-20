@@ -4,10 +4,11 @@ Date: Mon, 16 Nov 2026 02:40:58 +0800
 Subject: [PATCH] fix(macOS): handle ignored buttons retained by AppKit
 
 Use the AX tree leaf rules for an ignored button that AppKit can still query. Preserve unignored descendants and exercise the live Cocoa wrapper across the state change.
+
 ---
 
 diff --git a/ui/accessibility/platform/browser_accessibility_mac.mm b/ui/accessibility/platform/browser_accessibility_mac.mm
-index c69a53c42beeb3d94f141f92d94f6cddc170297e..31cecb7c32138577f00a9ffe9bef3298660f24c8 100644
+index 99abad145d0cecba5c784f44bb069599b162601e..e25b0b50ec6a8112d41b14670da512af9e81a84a 100644
 --- a/ui/accessibility/platform/browser_accessibility_mac.mm
 +++ b/ui/accessibility/platform/browser_accessibility_mac.mm
 @@ -205,6 +205,13 @@ BrowserAccessibility* BrowserAccessibilityMac::PlatformGetChild(
@@ -35,10 +36,10 @@ index c69a53c42beeb3d94f141f92d94f6cddc170297e..31cecb7c32138577f00a9ffe9bef3298
  
  BrowserAccessibility* BrowserAccessibilityMac::PlatformGetFirstChild() const {
 diff --git a/ui/accessibility/platform/browser_accessibility_mac_unittest.mm b/ui/accessibility/platform/browser_accessibility_mac_unittest.mm
-index c7c50a7f5bf24790e3cbad6448fa25d240785dea..627236d7812b51df0bec914de178dfde9efd32ec 100644
+index 3215d362fdfcf851eb465487ad16b1b5cbd03d4b..26f30c5a5ed3f757e14ef274498df211350cd33f 100644
 --- a/ui/accessibility/platform/browser_accessibility_mac_unittest.mm
 +++ b/ui/accessibility/platform/browser_accessibility_mac_unittest.mm
-@@ -331,6 +331,37 @@ class BrowserAccessibilityMacTest : public CocoaTest {
+@@ -332,6 +332,37 @@ class BrowserAccessibilityMacTest : public CocoaTest {
    const base::test::SingleThreadTaskEnvironment task_environment_;
  };
  

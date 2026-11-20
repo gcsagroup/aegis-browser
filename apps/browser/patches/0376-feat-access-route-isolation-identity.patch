@@ -3,6 +3,7 @@ From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 05:28:15 +0800
 Subject: [PATCH] feat(access): define complete request route isolation
  identity
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -148,10 +149,10 @@ index 0d01482eb6595e59ba3bb0997906c3b33d57f9d0..d331c1f82078ed564b8db28b54774203
    GtestObserver observer;
    RunSiteProxyRuleGroupContractTests(observer);
 diff --git a/net/BUILD.gn b/net/BUILD.gn
-index 228a325df98f052770cac50c4e040996f6ed14c2..6922402768377be606b9a3eebe19835904d4f727 100644
+index a7353c1507d807387bebf4c532a6afcb793ae012..12f11c82cab11d2553f43632da579c8cec098095 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -175,6 +175,7 @@ source_set("chrome_root_store_data") {
+@@ -192,6 +192,7 @@ rust_static_library("http_chunked_decoder_rust") {
  
  component("net") {
    sources = [

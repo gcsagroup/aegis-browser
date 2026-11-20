@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 06:34:34 +0800
 Subject: [PATCH] fix(access): keep private routing off legacy config and test
  pending aborts
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 08:59:55 +0800
 Subject: [PATCH] fix(access): preserve redirect routing mode and isolate DEV
  preview
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc

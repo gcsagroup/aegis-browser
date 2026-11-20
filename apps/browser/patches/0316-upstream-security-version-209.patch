@@ -2,6 +2,7 @@ From c7c294df7e9abc44e14222681c83e3d2fad2b257 Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Fri, 16 Oct 2026 15:19:00 +0800
 Subject: [PATCH] 更新安全候选产品版本至 209
+
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h

@@ -2,6 +2,7 @@ From 10a46a2f801902552d87b09efe5e0eabe559c89c Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 20:42:59 +0800
 Subject: [PATCH] 修复设置内阅读提取并区分下载平台说明
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html

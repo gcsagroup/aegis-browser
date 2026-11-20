@@ -5,12 +5,6 @@ Subject: [PATCH] fix(access): resolve the Windows ACL tool from the operating
  system
 
 ---
- .../aegis/access/access_account_win.cc        |  6 ++--
- .../aegis/access/access_options_store.cc      |  6 ++--
- .../access/prepare_alpha_access_resources.py  | 34 ++++++++++++++++---
- .../prepare_alpha_access_resources_test.py    | 21 ++++++++++++
- .../verify_access_build_identity_test.py      |  8 +++--
- 5 files changed, 61 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_account_win.cc b/chrome/browser/aegis/access/access_account_win.cc
 index 0090b28a924a9ca8656cca8008c914b829c0ec80..04be43bbdfc343b14946bfd786574299f08a4189 100644

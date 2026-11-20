@@ -6,7 +6,7 @@ Subject: [PATCH] feat(aegis): add native site protection surface
 ---
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index aa58fdf578f1cb6611d4432baaf13f5abbd7e84a..7574d0a016e9d67e3e17b8248d31097ad19c4612 100644
+index fcc7a5305173df4d0bb99357e72fdb0b9981a7d7..a4ed795d42c5ee368012a52d7c0c38da3eb89e22 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
 @@ -9,6 +9,7 @@ import("//ui/webui/webui_features.gni")
@@ -379,10 +379,10 @@ index 0000000000000000000000000000000000000000..5322188f74a9b092df1b6eae86b84698
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_AEGIS_TOOLBAR_BUTTON_H_
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-index 184ae3e5bc4e2338553fb8aee789fb2b1b75c9b1..7f432ae6ccf844514211fc34921209ccb8e07cfc 100644
+index 7f404c6864ec9434f14400daddbd571ae18c617c..c8b2ab1f7dc2c2aea9ffec431ae643359f816902 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-@@ -98,6 +98,7 @@
+@@ -99,6 +99,7 @@
  #include "chrome/browser/ui/views/tabs/glic/glic_and_actor_buttons_container.h"
  #include "chrome/browser/ui/views/tabs/tab_strip.h"
  #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
@@ -390,7 +390,7 @@ index 184ae3e5bc4e2338553fb8aee789fb2b1b75c9b1..7f432ae6ccf844514211fc34921209cc
  #include "chrome/browser/ui/views/toolbar/app_menu.h"
  #include "chrome/browser/ui/views/toolbar/app_menu_control.h"
  #include "chrome/browser/ui/views/toolbar/avatar_toolbar_button_interface.h"
-@@ -480,6 +481,8 @@ void ToolbarView::Init() {
+@@ -483,6 +484,8 @@ void ToolbarView::Init() {
      location_bar_ = toolbar_webview_->GetLocationBar();
    }
  
@@ -399,7 +399,7 @@ index 184ae3e5bc4e2338553fb8aee789fb2b1b75c9b1..7f432ae6ccf844514211fc34921209cc
    bool is_glic_left_of_profile =
        features::kGlicToolbarButtonLocationParam.Get() ==
            features::GlicToolbarButtonLocation::kLeftOfProfileChip ||
-@@ -1212,6 +1215,11 @@ void ToolbarView::Update(WebContents* tab) {
+@@ -1216,6 +1219,11 @@ void ToolbarView::Update(WebContents* tab) {
      pinned_toolbar_actions_container_->UpdateAllIcons();
    }
  
@@ -412,7 +412,7 @@ index 184ae3e5bc4e2338553fb8aee789fb2b1b75c9b1..7f432ae6ccf844514211fc34921209cc
      reload_control->SetDevToolsStatus(
          chrome::IsDebuggerAttachedToCurrentTab(browser_));
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
-index e10dc91a6710c792dfb29e669bf65262bb5bbe62..9b1ea09f3be8b43e450c839fda3f930b6b2c5fd5 100644
+index e38c93e2c6631afd002349a85ce288f72c33e453..cea4b876c3741574a55218f83b91913ba8d0b42c 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.h
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
 @@ -48,6 +48,7 @@
@@ -423,7 +423,7 @@ index e10dc91a6710c792dfb29e669bf65262bb5bbe62..9b1ea09f3be8b43e450c839fda3f930b
  class AvatarToolbarButtonInterface;
  class BatterySaverButton;
  class BrowserAppMenuButton;
-@@ -197,6 +198,7 @@ class ToolbarView : public views::AccessiblePaneView,
+@@ -200,6 +201,7 @@ class ToolbarView : public views::AccessiblePaneView,
    }
    MediaToolbarButton* media_button() const { return media_button_; }
    HomeButton* home_button() const { return home_; }
@@ -431,7 +431,7 @@ index e10dc91a6710c792dfb29e669bf65262bb5bbe62..9b1ea09f3be8b43e450c839fda3f930b
  
    // Returns the native Views Glic button, or nullptr if the Glic button is not
    // created or is rendered by the WebUI toolbar (`features::kWebUIGlicButton`).
-@@ -411,6 +413,7 @@ class ToolbarView : public views::AccessiblePaneView,
+@@ -414,6 +416,7 @@ class ToolbarView : public views::AccessiblePaneView,
    raw_ptr<ReloadButton> reload_ = nullptr;
    raw_ptr<WebUIToolbarWebView> toolbar_webview_ = nullptr;
    raw_ptr<HomeButton> home_ = nullptr;

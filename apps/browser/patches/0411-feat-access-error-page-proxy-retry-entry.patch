@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 19:01:48 +0800
 Subject: [PATCH] feat(access): route failed-page retry through Browser-owned
  navigation
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
@@ -449,7 +450,7 @@ index 8919d49d32d87d3d76c554f371a8896de234cd57..ea9a847953a4054ffdee8246db176f4b
  };
  
 diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
-index a8aa3bec8db55f63af65fe375d023c1addff1dd2..77c98d1ff535cb5343d925cb2e7a6e43df061659 100644
+index 98d725e2ee57998513273d88bf9ea22632dd8043..447e8613cedb034418affed0dc77679dedf4f6a7 100644
 --- a/chrome/browser/net/BUILD.gn
 +++ b/chrome/browser/net/BUILD.gn
 @@ -183,6 +183,7 @@ source_set("impl") {
@@ -617,7 +618,7 @@ index 49b9b32d7b908d0ae5058624be0c67056fdad92d..582a008e50a590a7316b8fe377750dd0
  };
  
 diff --git a/chrome/renderer/net/net_error_page_controller.cc b/chrome/renderer/net/net_error_page_controller.cc
-index 5a2377904dbee97d9bfcd9a3b2e82f875f140e16..ce4eb87fe0eb7661901319c35bdcdee180cbd30d 100644
+index a9ae539d7e6af15ff48c047514fdb219f4cc16e5..b494528bdb8c777bfd89f50b70cafac55493c6f4 100644
 --- a/chrome/renderer/net/net_error_page_controller.cc
 +++ b/chrome/renderer/net/net_error_page_controller.cc
 @@ -51,6 +51,10 @@ bool NetErrorPageController::DownloadButtonClick() {
@@ -631,15 +632,15 @@ index 5a2377904dbee97d9bfcd9a3b2e82f875f140e16..ce4eb87fe0eb7661901319c35bdcdee1
  
  bool NetErrorPageController::DetailsButtonClick() {
    return ButtonClick(NetErrorHelperCore::MORE_BUTTON);
-@@ -110,6 +114,8 @@ gin::ObjectTemplateBuilder NetErrorPageController::GetObjectTemplateBuilder(
-                  &NetErrorPageController::DownloadButtonClick)
-       .SetMethod("reloadButtonClick",
-                  &NetErrorPageController::ReloadButtonClick)
-+      .SetMethod("retryWithAegisProxy",
-+                 &NetErrorPageController::RetryWithAegisProxy)
-       .SetMethod("detailsButtonClick",
-                  &NetErrorPageController::DetailsButtonClick)
-       .SetMethod("diagnoseErrorsButtonClick",
+@@ -111,6 +115,8 @@ gin::ObjectTemplateBuilder NetErrorPageController::GetObjectTemplateBuilder(
+           "downloadButtonClick")
+       .SetMethod<&NetErrorPageController::ReloadButtonClick>(
+           "reloadButtonClick")
++      .SetMethod<&NetErrorPageController::RetryWithAegisProxy>(
++          "retryWithAegisProxy")
+       .SetMethod<&NetErrorPageController::DetailsButtonClick>(
+           "detailsButtonClick")
+       .SetMethod<&NetErrorPageController::DiagnoseErrorsButtonClick>(
 diff --git a/chrome/renderer/net/net_error_page_controller.h b/chrome/renderer/net/net_error_page_controller.h
 index 95beca0b0723640f62474c1229c864404c9d907e..07fb4f19a22b01fdb987ef638cf602af0a5b0b12 100644
 --- a/chrome/renderer/net/net_error_page_controller.h

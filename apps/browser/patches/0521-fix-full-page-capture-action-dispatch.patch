@@ -3,20 +3,21 @@ From: Aegis Patch Maintenance <aegis-patches@example.invalid>
 Date: Fri, 20 Nov 2026 11:51:34 +0800
 Subject: [PATCH] Fix full-page capture command dispatch on Chromium 157
 
+---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 2e4d631a9a5c635192e1bcafbe42cf635c9575eb..d81894b2661c8d998fd506731f4feebd033b5026 100644
+index 140cbb372ee7f78eacf6c2357bcb3f53ff2e31d0..bc3075a08f903cee09c0e4aa8b970a58751eae1a 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
-@@ -337,6 +337,7 @@ if (!is_android) {
+@@ -359,6 +359,7 @@ if (!is_android) {
        "agent/aegis_agent_browsertest.cc",
        "enhancements/enhancement_browsertest.cc",
        "google_service_prompt_browsertest.cc",
 +      "webpage_capture_browsertest.cc",
      ]
-     deps = [
-       ":aegis",
-@@ -370,6 +371,7 @@ if (!is_android) {
+     if (is_mac) {
+       sources += [ "access/access_options_browsertest.cc" ]
+@@ -399,6 +400,7 @@ if (!is_android) {
        "//chrome/browser/ui:browser_command_controller",
        "//chrome/browser/ui:browser_commands",
        "//chrome/browser/ui:browser_tabstrip",
@@ -142,10 +143,10 @@ index 0000000000000000000000000000000000000000..29f344c721daaeb0bc8611d09cd145cd
 +
 +}  // namespace aegis
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index a3ea9d7145e8ac1a9f887c7c091c011f433022d0..5885d64338d39ea37a222e3441ebf62606321c62 100644
+index 4f72558fcde246e0f0eca805c2fc990ad2ac9bfd..e8644aa2bdadb93606630f9443dc7c83cc299177 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -295,6 +295,7 @@ if (!is_android) {
+@@ -296,6 +296,7 @@ if (!is_android) {
      sources = [ "browser_actions.cc" ]
      public_deps = [ "//base" ]
      deps = [
@@ -154,10 +155,10 @@ index a3ea9d7145e8ac1a9f887c7c091c011f433022d0..5885d64338d39ea37a222e3441ebf626
        ":browser_command_controller",
        ":browser_commands",
 diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
-index cc5422e6bfd393739713c493cb26595ab702d01b..873ff5c6a27fb17f9c84ec2d8a9d4767ac85d88d 100644
+index e5841aaa54f816d7d6169abf2282c4a3e67733e2..8c60519ec07caedf7ad5a9a1c2b17e394bc8349c 100644
 --- a/chrome/browser/ui/actions/chrome_action_id.h
 +++ b/chrome/browser/ui/actions/chrome_action_id.h
-@@ -164,6 +164,7 @@
+@@ -163,6 +163,7 @@
    E(kActionOpenAegisAgent, IDC_SHOW_AEGIS_AGENT) \
    E(kActionAegisEnhancements, IDC_AEGIS_ENHANCEMENTS) \
    E(kActionAegisMarkdown, IDC_AEGIS_MARKDOWN) \
@@ -166,10 +167,10 @@ index cc5422e6bfd393739713c493cb26595ab702d01b..873ff5c6a27fb17f9c84ec2d8a9d4767
    E(kActionViewPasswords, IDC_VIEW_PASSWORDS) \
    E(kActionAbout, IDC_ABOUT) \
 diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
-index 16ef07b2415b300a1f8d21687464cbf1876886e3..edd087fb6dbb3abead272d67bd750472ddcc2782 100644
+index c1fbfc60357fff265b54e2ada0d2c7816a51f11f..891500ebcf2ae7417e7bd0ad3a44697abc5838b6 100644
 --- a/chrome/browser/ui/browser_actions.cc
 +++ b/chrome/browser/ui/browser_actions.cc
-@@ -22,6 +22,7 @@
+@@ -23,6 +23,7 @@
  #include "build/branding_buildflags.h"
  #include "chrome/app/chrome_command_ids.h"
  #include "chrome/app/vector_icons/vector_icons.h"
@@ -177,7 +178,7 @@ index 16ef07b2415b300a1f8d21687464cbf1876886e3..edd087fb6dbb3abead272d67bd750472
  #include "chrome/browser/browsing_data/browsing_data_important_sites_util.h"
  #include "chrome/browser/contextual_cueing/contextual_cueing_controller.h"
  #include "chrome/browser/aegis/aegis_profile_support.h"
-@@ -1928,6 +1929,18 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+@@ -2016,6 +2017,18 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
    BrowserWindowInterface* const bwi = base::to_address(bwi_);
    TabStripModel* const tab_strip_model = bwi_->GetTabStripModel();
  

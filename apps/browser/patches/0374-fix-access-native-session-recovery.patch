@@ -3,6 +3,7 @@ From: Aegis Local Validation <aegis-local@invalid>
 Date: Tue, 10 Nov 2026 04:53:21 +0800
 Subject: [PATCH] fix(access): compile native session targets and preserve
  committed recovery routes
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

@@ -7,6 +7,7 @@ Subject: [PATCH] =?UTF-8?q?=E5=B0=86=E5=AE=89=E8=A3=85=E8=A7=A3=E5=8E=8B?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
+
 ---
 
 diff --git a/chrome/installer/mini_installer/mini_installer.cc b/chrome/installer/mini_installer/mini_installer.cc

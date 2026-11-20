@@ -2,6 +2,7 @@ From 89dab8cad578d3cc0ffcc0569f3fbeb8945a5855 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 18:19:43 +0800
 Subject: [PATCH] feat(access): preserve proxy intent for unavailable groups
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_private_context_client.cc b/chrome/browser/aegis/access/access_private_context_client.cc
@@ -359,10 +360,10 @@ index 039be40b0d729ea18fa43ea80ff59edff3f8e65d..420dc3fb904850ed05469672550cdd06
    if (!validator.Install(wire.sequence, snapshot)) return std::nullopt;
    return DecodedAccessRouteSnapshot{std::move(owner), wire.incarnation,
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 58c3d18fc7802083d08fc31239aefcfbbb549630..f415ea09b665d2a90ef5e83383a926f993f47285 100644
+index 0f41aba7e11f215961ec88f7d035aa373fe5ff61..05b44fe4fd5106c1e021d8305f7aaef106541e98 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
-@@ -1189,6 +1189,9 @@ void NetworkContext::InstallAegisAccessSnapshot(
+@@ -1192,6 +1192,9 @@ void NetworkContext::InstallAegisAccessSnapshot(
          endpoint->proxy_group_id, endpoint->registration_id,
          endpoint->selection_generation));
    }

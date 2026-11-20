@@ -60,6 +60,8 @@
 | Windows解除安裝提示在地化 | 未移植 | 原始碼接入 | 未移植 | 未移植 |
 | 整頁截圖與圖片識字 | 原始碼接入 | 原始碼接入 | 原始碼接入 | 原始碼接入 |
 | DevTools 與 MCP 連線隔離 | 原始碼接入 | 原始碼接入 | 原始碼接入 | 部分 |
+| Windows帳戶、本機核心與診斷分享 | 未移植 | 原始碼接入 | 未移植 | 未移植 |
+| Mac內部Access Options | 原始碼接入 | 未移植 | 未移植 | 未移植 |
 
 ## iOS 範圍與依據
 
@@ -476,6 +478,22 @@ iOS 模擬器證據：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 `devtools-mcp-isolation` — iOS 使用獨立 WebKit 和應用程式配接器；Chromium DevTools 目標過濾不適用，尚無本輪 iOS MCP 實機驗收。
 
 原始碼：[prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs](../prototypes/browser-agent-v2/src/chrome-devtools-ios.mjs) · [apps/ios/AegisApp/MobileDevToolsView.swift](../apps/ios/AegisApp/MobileDevToolsView.swift)
+
+本項未完成本輪執行驗收。
+
+### Windows帳戶、本機核心與診斷分享
+
+`windows-access-desktop` — 本條目專指Windows實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。
+
+原始碼：[apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc) · [apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc)
+
+本項未完成本輪執行驗收。
+
+### Mac內部Access Options
+
+`mac-access-options` — 本條目專指macOS實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。
+
+原始碼：[apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc) · [apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc)
 
 本項未完成本輪執行驗收。
 

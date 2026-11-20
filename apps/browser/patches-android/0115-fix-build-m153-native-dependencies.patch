@@ -11,10 +11,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
-index d87a16643df5446c1de2cb759713c6c7ed549c1a..9336197d20fd2094f98dca1a4ee88eb30cd7156d 100644
+index ad68e765e891bd1db2a16dfaf3a17c57147f414b..c4df7e019f02f99ac23439a1afddfe92773fdb3d 100644
 --- a/chrome/browser/actor/BUILD.gn
 +++ b/chrome/browser/actor/BUILD.gn
-@@ -499,6 +499,7 @@ source_set("unit_tests") {
+@@ -527,6 +527,7 @@ source_set("unit_tests") {
      "//chrome/browser/history",
      "//chrome/browser/optimization_guide",
      "//chrome/browser/optimization_guide:test_support",
@@ -77,10 +77,10 @@ index 0a6c89102a9ca5fb0f3cb1f5db43bdca848a1b00..f870d8c2233a2f64363e277a0432fef3
      "//url",
    ]
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index bc035ac0a07eec94736b4dcdc426e2b8dabe9549..eae5ccbc4b1b0037fc0b22e3c3068d119a4d7c78 100644
+index 909d79882906d08c7f6069bd5cb88886acc80df1..18c3fb105b9af09cd1ad4e877c609db01159b388 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -700,6 +700,7 @@ if (enable_devtools_frontend) {
+@@ -703,6 +703,7 @@ if (enable_devtools_frontend) {
        "//chrome/browser/search_engines",
        "//chrome/browser/sync/test/integration:sync_integration_test_support",
        "//chrome/browser/ui/autofill",
@@ -89,7 +89,7 @@ index bc035ac0a07eec94736b4dcdc426e2b8dabe9549..eae5ccbc4b1b0037fc0b22e3c3068d11
        "//chrome/test/base:browser_test_waiters",
        "//chrome/test/base:chrome_test_utils",
 diff --git a/chrome/browser/download/BUILD.gn b/chrome/browser/download/BUILD.gn
-index d9df6c2de2daeb78eeaf21558ef8010db7105282..85d300711c11d00e167d2c16682ea78211b2e19c 100644
+index 6f9c54ba8b703bb3980db184c362004fcfd7ee49..8d381ee06d3ddc6423d20144e214483aba477fe8 100644
 --- a/chrome/browser/download/BUILD.gn
 +++ b/chrome/browser/download/BUILD.gn
 @@ -187,6 +187,7 @@ source_set("impl") {
@@ -101,7 +101,7 @@ index d9df6c2de2daeb78eeaf21558ef8010db7105282..85d300711c11d00e167d2c16682ea782
      "//chrome/browser/content_settings:content_settings_factory",
      "//chrome/browser/content_settings:content_settings_util",
 diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
-index 05f27b26a855ede7dfb764f66cb460b9c6ef1b3c..e6e31f96f95cf92ab30dc3c00e43b77c36f26ec4 100644
+index c751e061e68d2da00870bb3c96542a6056a8c9dc..be4d6fe5f31772872425b884a7fcc18a6dceb111 100644
 --- a/chrome/browser/download/download_ui_model.cc
 +++ b/chrome/browser/download/download_ui_model.cc
 @@ -31,7 +31,7 @@
@@ -114,10 +114,10 @@ index 05f27b26a855ede7dfb764f66cb460b9c6ef1b3c..e6e31f96f95cf92ab30dc3c00e43b77c
  #include "components/enterprise/common/proto/connectors.pb.h"
  #include "components/google/core/common/google_util.h"
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index cb75fa966685e348abea1ffa00588dadbac22b2d..bc96564c17ab58a883386eae648046c4bfb0c708 100644
+index 0cccae20d6c63a797a8aa7d6b2ccf267fea0eef2..5ff20f872948b2c1e013ca34fe30226dceadf451 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
-@@ -855,6 +855,7 @@ source_set("unit_tests") {
+@@ -854,6 +854,7 @@ source_set("unit_tests") {
    deps = [
      ":impl",
      ":test_support",
@@ -126,7 +126,7 @@ index cb75fa966685e348abea1ffa00588dadbac22b2d..bc96564c17ab58a883386eae648046c4
      "//chrome/browser/prefs",
      "//chrome/browser/ui:enterprise_startup_dialog",
 diff --git a/chrome/browser/prefs/BUILD.gn b/chrome/browser/prefs/BUILD.gn
-index 66f9c0d285f331355dd808c821307c0467933a4f..3038686d37878fa3e60b312e7294b935506611f0 100644
+index f73a22f47658fc998b277c3297e3163c34743884..33bb61b484f1d268052202934302c6fdcfb2a6b7 100644
 --- a/chrome/browser/prefs/BUILD.gn
 +++ b/chrome/browser/prefs/BUILD.gn
 @@ -67,6 +67,7 @@ source_set("impl") {
@@ -151,10 +151,10 @@ index 37190d277854082681196c59b7ed5b01d4a71d7b..30350b6e0beda5b7ac800bf7dd59f83b
  #include "net/base/load_flags.h"
  #include "net/http/http_response_headers.h"
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index c2eeddb646d05c82875548848dcca2bf930f7edd..b920f8a8e9218497384ceeab9829a065348424d4 100644
+index e5ea009179efb17dcb7bc94f18ecc297d46486bc..bc04439340d2a32ce6b472e771d7e909da39f37f 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -367,6 +367,7 @@ source_set("renderer_updater") {
+@@ -390,6 +390,7 @@ source_set("renderer_updater") {
      "//chrome/browser/content_settings:content_settings_factory",
      "//chrome/browser/signin",
      "//chrome/common:constants",
@@ -162,7 +162,7 @@ index c2eeddb646d05c82875548848dcca2bf930f7edd..b920f8a8e9218497384ceeab9829a065
      "//chrome/common/request_header_integrity:buildflags",
      "//components/content_settings/common:mojom",
      "//components/content_settings/core/common",
-@@ -733,6 +734,7 @@ source_set("profiles_extra_parts_impl") {
+@@ -756,6 +757,7 @@ source_set("profiles_extra_parts_impl") {
      "//chrome/browser:font_pref",
      "//chrome/browser/accessibility",
      "//chrome/browser/account_settings",
@@ -170,7 +170,7 @@ index c2eeddb646d05c82875548848dcca2bf930f7edd..b920f8a8e9218497384ceeab9829a065
      "//chrome/browser/affiliations",
      "//chrome/browser/ai",
      "//chrome/browser/autocomplete",
-@@ -1148,6 +1150,7 @@ source_set("unit_tests") {
+@@ -1174,6 +1176,7 @@ source_set("unit_tests") {
      ":profile_downloader",
      ":profile_manager",
      ":profile_util",
@@ -179,7 +179,7 @@ index c2eeddb646d05c82875548848dcca2bf930f7edd..b920f8a8e9218497384ceeab9829a065
      "//base",
      "//base/test:test_support",
 diff --git a/chrome/browser/ui/toolbar/BUILD.gn b/chrome/browser/ui/toolbar/BUILD.gn
-index fc788132eb6e0b49f60587188a6dfed9e82ba53f..b2af8762738cb5d5e34315e03376907f5a7e8824 100644
+index d49e0ebc96a66f01f04272d0a56365246475ef06..e2800acb61d9dafdb0bd581dc0dae9d5b491fa8c 100644
 --- a/chrome/browser/ui/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/toolbar/BUILD.gn
 @@ -24,6 +24,7 @@ source_set("toolbar") {
@@ -191,17 +191,17 @@ index fc788132eb6e0b49f60587188a6dfed9e82ba53f..b2af8762738cb5d5e34315e03376907f
      "//components/google/core/common",
      "//components/offline_pages/buildflags",
 diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
-index d30dfabc7f18f27e60d27abbe4c3aa4001dab3cd..b87cf9badefee3be5ae0693fc64db2d68afe3157 100644
+index 5e84c2fa588c9856be06569a8b35b9c51fae502e..7711eeb5856a38dc57e5eefaa55899de5f9db89d 100644
 --- a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
 +++ b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
-@@ -51,6 +51,7 @@ source_set("impl") {
+@@ -50,6 +50,7 @@ source_set("impl") {
        "//chrome/browser/ui/views/contextual_tasks",
        "//chrome/browser/ui/views/page_action",
        "//chrome/browser/ui/views/toolbar",
 +      "//chrome/common/aegis",
      ]
-     public_deps = [ "//chrome/browser:browser_public_dependencies" ]
    }
+ }
 diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
 index 64781b003b0ef834284cb5a4f6bb998b4f4c2106..b7c19fea5964c163f1baf7f335f6d1e790071ec1 100644
 --- a/chrome/browser/ui/webui/aegis/BUILD.gn
@@ -215,7 +215,7 @@ index 64781b003b0ef834284cb5a4f6bb998b4f4c2106..b7c19fea5964c163f1baf7f335f6d1e7
      "//chrome/common/aegis",
      "//chrome/services/aegis_torrent/public/mojom",
 diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
-index 9cfbe2310ece25435827fce8b35c66a344585ca2..96ae80e76b6cd964b4589c08e4cb3e1aa4f96844 100644
+index 6c4979269ff8e4999147d8ad962b6068a0b4c5a7..fc06ce8ccf2416dd966c651fb3bf4c4b2fd104fd 100644
 --- a/chrome/browser/ui/webui/downloads/BUILD.gn
 +++ b/chrome/browser/ui/webui/downloads/BUILD.gn
 @@ -32,6 +32,7 @@ source_set("downloads") {
@@ -235,7 +235,7 @@ index 9cfbe2310ece25435827fce8b35c66a344585ca2..96ae80e76b6cd964b4589c08e4cb3e1a
      "//chrome/browser/download:impl",
      "//chrome/browser/ui/hats:test_support",
 diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
-index c9f2ccc0af8426007177de959a208a92abca43b3..260465b662a9b73106a30ebd04badcf87534ecb2 100644
+index 36daae000da990f29d1794d36ac88df20731fa18..ed3e144db587103d0cdacd747c1f17099729466d 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
 @@ -35,7 +35,7 @@
@@ -248,10 +248,10 @@ index c9f2ccc0af8426007177de959a208a92abca43b3..260465b662a9b73106a30ebd04badcf8
  #include "components/download/public/common/download_item.h"
  #include "components/download/public/common/download_item_rename_handler.h"
 diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
-index d2cf914fe4cd924de737c0575ff5fdb82fcd8c52..8ee09a646a6ed966744941bae2e5d51a1cd9145b 100644
+index 8991b89160a3cee4c8f688a7943ef40c939eb21c..6c6ba67a93b754051f9b3eeb6c05dff132c2c070 100644
 --- a/chrome/browser/ui/webui/help/BUILD.gn
 +++ b/chrome/browser/ui/webui/help/BUILD.gn
-@@ -159,7 +159,6 @@ if (!is_android && !is_chromeos) {
+@@ -163,7 +163,6 @@ if (!is_android && !is_chromeos) {
      # 只链接 HTTP 夹具，避免更新模块测试引入整个
      # network_service。
      sources = [
@@ -259,7 +259,7 @@ index d2cf914fe4cd924de737c0575ff5fdb82fcd8c52..8ee09a646a6ed966744941bae2e5d51a
        "//chrome/browser/profile_resetter/reset_report_uploader.cc",
        "//chrome/browser/profile_resetter/reset_report_uploader.h",
        "//services/network/test/test_url_loader_factory.cc",
-@@ -167,15 +166,17 @@ if (!is_android && !is_chromeos) {
+@@ -171,15 +170,17 @@ if (!is_android && !is_chromeos) {
        "//services/network/test/test_utils.cc",
        "//services/network/test/test_utils.h",
        "aegis_github_update_unittest.cc",
@@ -298,10 +298,10 @@ index d28415e7be0b16c452da64a4a7d584a80f7687d4..1ae65720cd7b5b186b3945b8cba8d0e0
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/BUILD.gn b/chrome/browser/ui/webui/settings/BUILD.gn
-index eb78b2acbb75a3aaace7e9fb79f70fadbd9fe0db..b97079bc6a6b98bc4cbebbdf807c4d43b3f02478 100644
+index a669b28f1b5fd7fc6ad6fc34473d75c2d6a61ca1..cf8e5e70d8d137bf024a1d2ff47b3f744e684424 100644
 --- a/chrome/browser/ui/webui/settings/BUILD.gn
 +++ b/chrome/browser/ui/webui/settings/BUILD.gn
-@@ -200,6 +200,7 @@ source_set("impl") {
+@@ -201,6 +201,7 @@ source_set("impl") {
      "//chrome/browser:primitives",
      "//chrome/browser/accessibility",
      "//chrome/browser/actor",
@@ -309,7 +309,7 @@ index eb78b2acbb75a3aaace7e9fb79f70fadbd9fe0db..b97079bc6a6b98bc4cbebbdf807c4d43
      "//chrome/browser/affiliations",
      "//chrome/browser/apps/app_service",
      "//chrome/browser/autocomplete:aim_eligibility_service",
-@@ -560,6 +561,7 @@ if (!is_android) {
+@@ -567,6 +568,7 @@ if (!is_android) {
        "//base/test:test_support",
        "//chrome/browser:defaults",
        "//chrome/browser:global_features",

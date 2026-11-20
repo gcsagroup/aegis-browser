@@ -7,10 +7,10 @@ Subject: [PATCH] fix(aegis): migrate WebUI browser selection for Chromium 153
 ---
 
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 2d6a161f12988dc0b736bb908da8df7feaef7b36..bae259ec1fadc89849a51b963250f3b1e5e3ae19 100644
+index 991b30321f46ac79dc6d3d6c2972fe499a8abfdb..e4baa4107a4267e391e959eec18e2e5b1ffc2b77 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1342,7 +1342,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1364,7 +1364,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
        break;
      case IDC_SHOW_AEGIS:
        if (IsAegisProfileSupported(profile())) {

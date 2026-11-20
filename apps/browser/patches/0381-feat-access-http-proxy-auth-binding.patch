@@ -3,6 +3,7 @@ From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 07:20:14 +0800
 Subject: [PATCH] feat(access): bind HTTP proxy authentication to route
  endpoint
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -121,7 +122,7 @@ index 0000000000000000000000000000000000000000..21261736e82400a7b2e8fe89d0ac881c
 +}  // namespace
 +}  // namespace aegis_access
 diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
-index 21e8bcf3e738801f968ff066a596e53ac7750199..56d895a424fe04e4aee5bdf4fae61317f852476c 100644
+index 8e2b2c72be3376ab8109140e353c0ace359679d5..bf1acbf7f822b69522f28df5e82c7de99b542d8a 100644
 --- a/net/http/http_network_transaction.cc
 +++ b/net/http/http_network_transaction.cc
 @@ -4,6 +4,8 @@
@@ -166,7 +167,7 @@ index 21e8bcf3e738801f968ff066a596e53ac7750199..56d895a424fe04e4aee5bdf4fae61317
    }
    // This is only reached for GET proxies (see ShouldApplyProxyAuth()); CONNECT
 diff --git a/net/http/http_network_transaction.h b/net/http/http_network_transaction.h
-index a4752b0761fc5928859475abd271aeaaf86ab890..f7e24590e024fb742373aa62b0d6de995ad21749 100644
+index 1c53f0b72cc45599370a590f03c795d6afb5231c..e607a4f8513b2ff1526142ffb2a732664cd7f7ea 100644
 --- a/net/http/http_network_transaction.h
 +++ b/net/http/http_network_transaction.h
 @@ -43,6 +43,7 @@
@@ -177,7 +178,7 @@ index a4752b0761fc5928859475abd271aeaaf86ab890..f7e24590e024fb742373aa62b0d6de99
  class BidirectionalStreamImpl;
  class HttpAuthController;
  class HttpNetworkSession;
-@@ -410,6 +411,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
+@@ -418,6 +419,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
    static void SetProxyInfoInResponse(const ProxyInfo& proxy_info,
                                       HttpResponseInfo* response_info);
  

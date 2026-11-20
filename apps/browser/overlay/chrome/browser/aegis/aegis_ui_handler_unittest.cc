@@ -100,7 +100,7 @@ class AegisUIHandlerTest : public BrowserWithTestWindowTest {
     // 保留旧辅助方法的真实导航和索引语义，不用模拟列表替代工作区。
     NavigateParams params(target, url, ui::PAGE_TRANSITION_TYPED);
     params.tabstrip_index = 0;
-    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+    params.disposition = WindowOpenDisposition::kNewForegroundTab;
     Navigate(&params);
     CommitPendingLoad(&params.navigated_or_inserted_contents->GetController());
   }

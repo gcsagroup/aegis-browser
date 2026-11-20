@@ -8,6 +8,7 @@ summaries stayed on-device, and list stripped params and deleted
 cookies in chrome://aegis so the privacy claims can be checked.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ---
 
 diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc

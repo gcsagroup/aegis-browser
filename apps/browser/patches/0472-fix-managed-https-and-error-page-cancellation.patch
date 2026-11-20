@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 00:59:12 +0800
 Subject: [PATCH] fix(access): retain managed HTTPS policy and settle cancelled
  proxy retries
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
@@ -283,10 +284,10 @@ index fb765d4193016de40977adb76c243ab84d899375..341e35f81efd00f4df4a498f4f7b52ec
    std::atomic<int> origin_hits{0};
    net::EmbeddedTestServer origin;
 diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
-index 76555b3a8c0caac3b7d8f06c035264c358b83d88..7dc19b412d5c1ae57503fa837c8bd6f7181ed0a8 100644
+index a5c29dc0518f15bd4323863df99981cf02b1c961..8c998ada1f9abd5ae2cbc10b8412260acd783c9e 100644
 --- a/net/http/http_network_transaction.cc
 +++ b/net/http/http_network_transaction.cc
-@@ -2692,14 +2692,11 @@ void HttpNetworkTransaction::RecordStreamRequestResult(int result) {
+@@ -2702,14 +2702,11 @@ void HttpNetworkTransaction::RecordStreamRequestResult(int result) {
  }
  
  void HttpNetworkTransaction::ProcessAltSvcHeader() {

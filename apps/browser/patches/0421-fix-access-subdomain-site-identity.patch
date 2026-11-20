@@ -3,6 +3,7 @@ From: Codex <codex@localhost>
 Date: Tue, 10 Nov 2026 22:09:37 +0800
 Subject: [PATCH] fix(access): canonicalize top-level sites for exact subdomain
  rules
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

@@ -40,10 +40,10 @@ index da6f74662902498e22e1aa34187b5a6619ece20a..c79bee6d936acb493e49a9b9c1c4cd49
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/test/data/webui/settings/people_page_test.ts b/chrome/test/data/webui/settings/people_page_test.ts
-index f7fceaafb645919f55fd7bd02e3e908bd5fd970d..16e8000188a7ad494179e67d0662dd1efec48de4 100644
+index 8b0b665d42e6ff3ea2727dcd4d3dcfa7583cfc90..fb042dbaeac34010faa7ac3ce366ae2b73815541 100644
 --- a/chrome/test/data/webui/settings/people_page_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_test.ts
-@@ -518,7 +518,7 @@ suite('AegisLocalProfileOnly', function() {
+@@ -514,7 +514,7 @@ suite('AegisLocalProfileOnly', function() {
  
      await syncBrowserProxy.whenCalled('getSyncStatus');
      await profileInfoBrowserProxy.whenCalled('getProfileInfo');
@@ -52,7 +52,7 @@ index f7fceaafb645919f55fd7bd02e3e908bd5fd970d..16e8000188a7ad494179e67d0662dd1e
    });
  
    teardown(function() {
-@@ -537,6 +537,25 @@ suite('AegisLocalProfileOnly', function() {
+@@ -533,6 +533,25 @@ suite('AegisLocalProfileOnly', function() {
        assertFalse(!!peoplePage.shadowRoot!.querySelector(selector), selector);
      }
    });

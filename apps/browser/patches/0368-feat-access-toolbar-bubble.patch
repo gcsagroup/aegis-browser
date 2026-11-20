@@ -6,6 +6,7 @@ Subject: [PATCH] feat: add macOS toolbar bubble for per-site proxy
 Show current host, site-proxy toggle, and short status with switch
 state distinct from connectivity. Sync overlay with the Chromium
 patch series.
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

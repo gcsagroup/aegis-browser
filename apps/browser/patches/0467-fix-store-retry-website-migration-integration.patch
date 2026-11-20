@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 22:23:11 +0800
 Subject: [PATCH] fix(access): reconcile store Open retry with Website
  migration
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc

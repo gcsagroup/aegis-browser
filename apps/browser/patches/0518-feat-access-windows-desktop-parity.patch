@@ -4,108 +4,26 @@ Date: Wed, 18 Nov 2026 17:27:39 +0800
 Subject: [PATCH] feat(access): align Windows with macOS Access
 
 ---
- chrome/browser/BUILD.gn                       |   9 +-
- chrome/browser/aegis/BUILD.gn                 |  45 +-
- chrome/browser/aegis/access/BUILD.gn          | 112 +++-
- .../aegis/access/access_account_win.cc        | 533 ++++++++++++++++++
- .../browser/aegis/access/access_account_win.h |  41 ++
- .../access/access_account_win_unittest.cc     | 148 +++++
- .../aegis/access/access_core_log_disk_win.cc  |  98 ++++
- .../access_core_log_disk_win_unittest.cc      |  81 +++
- .../aegis/access/access_core_log_share.cc     |  71 ++-
- .../aegis/access/access_core_log_share.h      |   6 +
- .../aegis/access/access_core_log_store.cc     |  46 +-
- .../aegis/access/access_core_log_store.h      |  12 +-
- .../aegis/access/access_local_core_manager.cc |  96 +++-
- .../aegis/access/access_local_core_manager.h  |   2 +-
- .../aegis/access/access_local_core_win.cc     | 148 +++++
- .../aegis/access/access_local_core_win.h      |  31 +
- .../access_local_core_win_test_child.cc       |  71 +++
- .../access/access_local_core_win_unittest.cc  | 209 +++++++
- .../access/access_log_export_dialog_win.cc    |  69 +++
- .../access/access_log_export_dialog_win.h     |  20 +
- .../access_log_export_dialog_win_unittest.cc  |  88 +++
- .../aegis/access/access_log_export_win.cc     | 128 +++++
- .../aegis/access/access_log_export_win.h      |  17 +
- .../access_network_context_transport.cc       |  10 +-
- .../access/access_network_context_transport.h |   6 +-
- .../aegis/access/access_paid_site_win.cc      | 279 +++++++++
- .../aegis/access/access_private_files_win.cc  |  98 ++++
- .../aegis/access/access_private_files_win.h   |  19 +
- .../access_private_publication_unittest.cc    |   2 +-
- .../access_proxying_url_loader_factory.cc     |   2 +-
- .../access_site_proxy_bubble_controller.cc    |  33 +-
- .../access_site_proxy_bubble_controller.h     |   6 +-
- .../access_site_proxy_product_unittest.cc     |   2 +-
- chrome/browser/aegis/access/alpha_access.gni  |   4 +-
- .../prepare_access_installer_release.py       |  40 ++
- .../access/prepare_alpha_access_resources.py  |  73 ++-
- .../prepare_alpha_access_resources_test.py    | 100 +++-
- chrome/browser/aegis/aegis_service.cc         |   4 +-
- chrome/browser/aegis/aegis_service.h          |  12 +-
- .../aegis/aegis_service_access_account.cc     | 165 ++++++
- .../aegis/aegis_service_access_account_mac.mm | 146 +----
- .../aegis/aegis_service_access_account_win.cc |  49 ++
- chrome/browser/aegis/aegis_service_factory.cc |   4 +-
- .../aegis/aegis_ui_handler_unittest.cc        |  26 +-
- chrome/browser/browser_process_impl.cc        |   7 +-
- .../settings/aegis_page/aegis_page.html       |   2 +-
- .../settings/aegis_page/aegis_page.ts         |  10 +-
- .../ui/views/toolbar/aegis_toolbar_button.cc  |  51 +-
- .../ui/webui/aegis/aegis_ui_handler.cc        |   6 +-
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   6 +-
- chrome/installer/mini_installer/BUILD.gn      |  36 ++
- content/browser/browser_context.cc            |   2 +-
- .../websockets/websocket_connector_impl.cc    |   2 +-
- .../web_transport_connector_impl.cc           |   2 +-
- content/public/browser/browser_context.h      |   4 +-
- 55 files changed, 2988 insertions(+), 301 deletions(-)
- create mode 100644 chrome/browser/aegis/access/access_account_win.cc
- create mode 100644 chrome/browser/aegis/access/access_account_win.h
- create mode 100644 chrome/browser/aegis/access/access_account_win_unittest.cc
- create mode 100644 chrome/browser/aegis/access/access_core_log_disk_win.cc
- create mode 100644 chrome/browser/aegis/access/access_core_log_disk_win_unittest.cc
- create mode 100644 chrome/browser/aegis/access/access_local_core_win.cc
- create mode 100644 chrome/browser/aegis/access/access_local_core_win.h
- create mode 100644 chrome/browser/aegis/access/access_local_core_win_test_child.cc
- create mode 100644 chrome/browser/aegis/access/access_local_core_win_unittest.cc
- create mode 100644 chrome/browser/aegis/access/access_log_export_dialog_win.cc
- create mode 100644 chrome/browser/aegis/access/access_log_export_dialog_win.h
- create mode 100644 chrome/browser/aegis/access/access_log_export_dialog_win_unittest.cc
- create mode 100644 chrome/browser/aegis/access/access_log_export_win.cc
- create mode 100644 chrome/browser/aegis/access/access_log_export_win.h
- create mode 100644 chrome/browser/aegis/access/access_paid_site_win.cc
- create mode 100644 chrome/browser/aegis/access/access_private_files_win.cc
- create mode 100644 chrome/browser/aegis/access/access_private_files_win.h
- create mode 100644 chrome/browser/aegis/access/prepare_access_installer_release.py
- create mode 100644 chrome/browser/aegis/aegis_service_access_account.cc
- create mode 100644 chrome/browser/aegis/aegis_service_access_account_win.cc
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index fa2bb8fb26df3e8d053a655ccb189461a79c3664..4e9ce4e4ca947dc3d43c0a0165b3ecd47bb1797c 100644
+index cc999c47b7a9e0443061f3c4a2297839a99b40c5..514fdfb11e32cd26755b511bbade2859eb0eb634 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1974,10 +1974,11 @@ source_set("core") {
+@@ -2192,6 +2192,9 @@ source_set("core") {
+     ]
    }
  
-   if (is_mac) {
--    deps += [
--      ":chrome_browser_main_mac",
--      "//chrome/browser/aegis/access:access_local_core_manager",
--    ]
-+    deps += [ ":chrome_browser_main_mac" ]
-+  }
-+
 +  if (is_mac || is_win) {
 +    deps += [ "//chrome/browser/aegis/access:access_local_core_manager" ]
-   }
++  }
  
    if (is_chrome_for_testing) {
+     deps += [ "//chrome/browser/chrome_for_testing:browser" ]
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 4b303325d37f4524f334b970eea7a9d79e03a4f5..c02d6a94423b2e41b959365af8c2a75234e59de9 100644
+index 2e4d631a9a5c635192e1bcafbe42cf635c9575eb..710b6c635f6533df3f5af51b7171c554b3ba4656 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
-@@ -279,23 +279,45 @@ source_set("aegis") {
+@@ -287,23 +287,45 @@ source_set("aegis") {
    } else {
      deps += [ "//chrome/android:chrome_jni_headers" ]
    }
@@ -157,7 +75,7 @@ index 4b303325d37f4524f334b970eea7a9d79e03a4f5..c02d6a94423b2e41b959365af8c2a752
        "//services/network/public/mojom",
        "//chrome/services/aegis_torrent/public/mojom",
        "//sandbox/mac:seatbelt_extension",
-@@ -553,6 +575,16 @@ test("aegis_browser_unittests") {
+@@ -575,6 +597,16 @@ test("aegis_browser_unittests") {
      # 测试进程中的媒体路由也需要安装器本地化资源。
      deps += [ "//chrome/installer/util:strings" ]
    }
@@ -174,16 +92,16 @@ index 4b303325d37f4524f334b970eea7a9d79e03a4f5..c02d6a94423b2e41b959365af8c2a752
    if (is_mac) {
      deps += [
        "//chrome/browser/aegis/access:access_network_context_transport",
-@@ -562,7 +594,6 @@ test("aegis_browser_unittests") {
+@@ -584,7 +616,6 @@ test("aegis_browser_unittests") {
        "//services/network:network_service",
      ]
      sources += [
 -      "access/access_account_refresh_unittest.cc",
        "access/access_paid_site_mac_unittest.mm",
-       "aegis_torrent_client_unittest.cc",
        "aegis_mac_signing_unittest.cc",
+       "aegis_torrent_client_unittest.cc",
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index f64f175fabdd36b0039bf817ed187bdb6f7c3b8f..7f4f2e9ab941d1655cbf77baaa51695311cfa811 100644
+index fc683729ecb155038230a78046f5be8f3e1b53aa..501bb7f25a8a007a1aa983f30c33be8ed37ea55e 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -16,12 +16,17 @@ buildflag_header("access_buildflags") {
@@ -4004,7 +3922,7 @@ index 06dce7d6c4e961cc910370f733af7b908a5509c8..d2442e1227ac7b1b2fc166e7e0c9e2a5
  base::DictValue ResolveAccountReply(AegisAccountReply resolve) {
    NSData* json = [NSJSONSerialization dataWithJSONObject:resolve()
                                                  options:0
-@@ -33,7 +29,7 @@
+@@ -33,7 +29,7 @@ base::DictValue ResolveAccountReply(AegisAccountReply resolve) {
    auto parsed = json ? base::JSONReader::ReadDict(
        std::string_view(static_cast<const char*>(json.bytes), json.length),
        base::JSON_PARSE_RFC) : std::nullopt;
@@ -4013,7 +3931,7 @@ index 06dce7d6c4e961cc910370f733af7b908a5509c8..d2442e1227ac7b1b2fc166e7e0c9e2a5
  }
  
  GlobalBrowserCollection* Browsers() {
-@@ -88,116 +84,13 @@ void OnBrowserClosed(BrowserWindowInterface* browser) override {
+@@ -88,116 +84,13 @@ void AegisService::InitializeAccessAccountRefresh() {
    AccessAccountApplicationStateChanged();
  }
  
@@ -4132,7 +4050,7 @@ index 06dce7d6c4e961cc910370f733af7b908a5509c8..d2442e1227ac7b1b2fc166e7e0c9e2a5
    __block auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
        [](base::WeakPtr<AegisService> service, AegisAccountReply resolve) {
          if (service && service->IsInitializedForProfile(service->profile())) {
-@@ -209,37 +102,4 @@ void OnBrowserClosed(BrowserWindowInterface* browser) override {
+@@ -209,37 +102,4 @@ void AegisService::StartAccessAccountRefresh(bool manual) {
        ^(AegisAccountReply resolve) { std::move(reply).Run(resolve); });
  }
  
@@ -4248,10 +4166,10 @@ index fa7f091dfe19d17dcc82068d145d74a2ea3df26c..475737643ec08a5fcb6b520e2b299384
      access::CoreLogShareSession::RecoverAtStartup(profile->GetPath());
  #endif
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-index c9ab001ef3f841380f367add929cc1a9eba866d5..d8de2523d9c01f80a4873f33748ec1270ba32185 100644
+index 9be4a12bd76a3f788905a85a763c64708e43018c..e51d7e7c16019e928044e5d2bb646cab66f9097c 100644
 --- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-@@ -18,6 +18,10 @@
+@@ -19,6 +19,10 @@
  #include "base/uuid.h"
  #include "base/values.h"
  #include "build/build_config.h"
@@ -4262,7 +4180,7 @@ index c9ab001ef3f841380f367add929cc1a9eba866d5..d8de2523d9c01f80a4873f33748ec127
  #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
  #include "chrome/browser/aegis/aegis_service_factory.h"
  #include "chrome/browser/aegis/metalink_download_verifier.h"
-@@ -44,7 +48,7 @@
+@@ -47,7 +51,7 @@
  #include "url/origin.h"
  
  namespace aegis {
@@ -4271,7 +4189,7 @@ index c9ab001ef3f841380f367add929cc1a9eba866d5..d8de2523d9c01f80a4873f33748ec127
  class AccessAccountRefreshTestPeer {
   public:
    static void ActivateWithoutPlatformNotifications(AegisService& service) {
-@@ -123,7 +127,21 @@ TEST_F(AegisUIHandlerTest, KeepsCnamePreferenceSeparateFromRuntimeDependency) {
+@@ -159,7 +163,21 @@ TEST_F(AegisUIHandlerTest, KeepsCnamePreferenceSeparateFromRuntimeDependency) {
    EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kCnameUncloakEnabled));
  }
  
@@ -4294,7 +4212,7 @@ index c9ab001ef3f841380f367add929cc1a9eba866d5..d8de2523d9c01f80a4873f33748ec127
  class HeldAccountReplyRunner : public base::TestSimpleTaskRunner {
   public:
    bool PostDelayedTask(const base::Location& from, base::OnceClosure task,
-@@ -164,7 +182,7 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
+@@ -200,7 +218,7 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
        .Set("generation", "d8b4c46f-c1da-4b62-bf87-2d5376f00826");
    const auto file = profile()->GetPath().AppendASCII("AegisAccessAccount.json");
    ASSERT_TRUE(base::WriteFile(file, base::WriteJson(binding).value()));
@@ -4303,7 +4221,7 @@ index c9ab001ef3f841380f367add929cc1a9eba866d5..d8de2523d9c01f80a4873f33748ec127
    auto* service = AegisServiceFactory::GetForProfile(profile());
    ASSERT_TRUE(service);
    AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(*service);
-@@ -203,7 +221,7 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
+@@ -239,7 +257,7 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
      next.Set("generation", base::Uuid::GenerateRandomV4().AsLowercaseString());
      auto temp = file.AddExtensionASCII("new");
      return base::WriteFile(temp, base::WriteJson(next).value()) &&
@@ -4313,10 +4231,10 @@ index c9ab001ef3f841380f367add929cc1a9eba866d5..d8de2523d9c01f80a4873f33748ec127
    for (auto action : {"switch", "switch_back", "sign_out"}) {
      SCOPED_TRACE(action);
 diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
-index e48a86e5ca2759303ebcc405ef5bda65916ab0f6..edd8e24f454d9e3e6af5626e0dae9f20dde4eb45 100644
+index cd642b34471bbfed5b9af3c272bad83b67410749..edcba27addb09edfca2c5bbcb89522b708fe26a6 100644
 --- a/chrome/browser/browser_process_impl.cc
 +++ b/chrome/browser/browser_process_impl.cc
-@@ -40,6 +40,10 @@
+@@ -41,6 +41,10 @@
  #include "base/time/time.h"
  #include "base/trace_event/trace_event.h"
  #include "build/build_config.h"
@@ -4327,7 +4245,7 @@ index e48a86e5ca2759303ebcc405ef5bda65916ab0f6..edd8e24f454d9e3e6af5626e0dae9f20
  #include "build/chromeos_buildflags.h"
  #include "build/config/linux/dbus/buildflags.h"
  #include "chrome/browser/accessibility/soda_installer_impl.h"
-@@ -170,7 +174,6 @@
+@@ -171,7 +175,6 @@
  #include "chrome/installer/util/install_util.h"
  #include "components/os_crypt/async/browser/dpapi_key_provider.h"
  #elif BUILDFLAG(IS_MAC)
@@ -4335,7 +4253,7 @@ index e48a86e5ca2759303ebcc405ef5bda65916ab0f6..edd8e24f454d9e3e6af5626e0dae9f20
  #include "chrome/browser/chrome_browser_main_mac.h"
  #include "chrome/browser/shutdown_watchdog_mac.h"
  #endif
-@@ -875,7 +878,7 @@ void BrowserProcessImpl::EndSession() {
+@@ -909,7 +912,7 @@ void BrowserProcessImpl::EndSession() {
    ProfileManager* pm = profile_manager();
    scoped_refptr<RundownTaskCounter> rundown_counter =
        base::MakeRefCounted<RundownTaskCounter>();
@@ -4658,7 +4576,7 @@ index b41b71efbda4fea2a521d455f5b3985c461fad8b..55c16415ce684dcb8add5f5d29e0c8ca
    base::WeakPtrFactory<AegisUIHandler> account_weak_factory_{this};
  #endif
 diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
-index 1b3638ada8b6b558bdce130cb6f89ec9b7bfa6b7..86958a2f5e34cd0e0f5a8a1ef79a905b7f84f2a6 100644
+index af3c5bc5917691abd2cc6a471793d0cef7beebcf..40ddbe0bcc1bc02db19c57e9a4b9128339ebf64e 100644
 --- a/chrome/installer/mini_installer/BUILD.gn
 +++ b/chrome/installer/mini_installer/BUILD.gn
 @@ -6,6 +6,7 @@ import("//build/config/compiler/compiler.gni")
@@ -4723,7 +4641,7 @@ index 1b3638ada8b6b558bdce130cb6f89ec9b7bfa6b7..86958a2f5e34cd0e0f5a8a1ef79a905b
      args += [ "--enable_hidpi=1" ]
    }
 diff --git a/content/browser/browser_context.cc b/content/browser/browser_context.cc
-index 6fa36fc9e58ec269f48fee6b8097ed8f1d97eb4f..bcfface8ec63a89b8d83fd3de9f2dace4c88e863 100644
+index de9d47d6f84b3d91fc8ef7e90cd4d7ed21bbf20a..a439b8b423034bf7875d27ce3b43b0c775e33993 100644
 --- a/content/browser/browser_context.cc
 +++ b/content/browser/browser_context.cc
 @@ -191,7 +191,7 @@ void BrowserContext::GarbageCollectStoragePartitions(
@@ -4736,10 +4654,10 @@ index 6fa36fc9e58ec269f48fee6b8097ed8f1d97eb4f..bcfface8ec63a89b8d83fd3de9f2dace
  const char kAccountProxyDispatchGate[] = "account-proxy-dispatch-gate";
  struct AccountProxyGate : base::SupportsUserData::Data {
 diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
-index 85f5606e6d86909c3978a3153e0aa81257276c62..0c6490d7af2793825f4d1089159d36dd41df82d2 100644
+index 4dcd831d382ac5f14405607cf4f92f0034ec07bb..1aea1830549881cac420c57248f57df4ceb6c88e 100644
 --- a/content/browser/websockets/websocket_connector_impl.cc
 +++ b/content/browser/websockets/websocket_connector_impl.cc
-@@ -202,7 +202,7 @@ void WebSocketConnectorImpl::ConnectCalledByContentBrowserClient(
+@@ -213,7 +213,7 @@ void WebSocketConnectorImpl::ConnectCalledByContentBrowserClient(
    }
  
    content::StoragePartition* storage_partition = process->GetStoragePartition();
@@ -4762,10 +4680,10 @@ index 0370e84e9e0334e6d21d74104c0b74c908d6db72..baf9a77efdf4bc74852488b0c5071e5a
        process->GetBrowserContext()->IsAccountProxyDispatchBlocked(url)) {
      mojo::Remote<WebTransportHandshakeClient>(std::move(handshake_client))->OnHandshakeFailed(
 diff --git a/content/public/browser/browser_context.h b/content/public/browser/browser_context.h
-index 2f35b78943c84431719866570afbd468eecfcd2e..9bd1c2bd7fe788f909ca9a751d7074ebd9c7f71d 100644
+index 2e30b491e93b9c5600a32d1302b0fc2a821bad2b..36fde8729d737d557f13eb6ff4b54e1378d645dd 100644
 --- a/content/public/browser/browser_context.h
 +++ b/content/public/browser/browser_context.h
-@@ -208,8 +208,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
+@@ -210,8 +210,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
  
    StoragePartition* GetDefaultStoragePartition();
  
@@ -4776,6 +4694,3 @@ index 2f35b78943c84431719866570afbd468eecfcd2e..9bd1c2bd7fe788f909ca9a751d7074eb
    // account proxy configuration is moving across an independent Mojo pipe.
    void SetAccountProxyDispatchGate(base::RepeatingCallback<bool(const GURL&)> gate);
    bool IsAccountProxyDispatchBlocked(const GURL& url) const;
--- 
-2.54.0 (Apple Git-157)
-

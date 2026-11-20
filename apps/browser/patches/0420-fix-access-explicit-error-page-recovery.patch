@@ -2,6 +2,7 @@ From 9e0e010c776a814f2d9ddb1ecd184a42afb3e9cd Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Tue, 10 Nov 2026 21:54:52 +0800
 Subject: [PATCH] fix(access): keep explicit error-page recovery stable
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
@@ -120,10 +121,10 @@ index b55a781808494b0d814330a1e2095a8f5cd6ba05..c77869c0cd439a756f8e1ec875802901
    Fail(GURL("https://failed.example/path"));
    auto ready = helper()->CaptureRouteReadyCallback();
 diff --git a/components/error_page/content/browser/net_error_auto_reloader.cc b/components/error_page/content/browser/net_error_auto_reloader.cc
-index 8f2bc61a1b5aa5bd3da1fe32b98ff0bc3dd9f377..7ef13c78ca0ff324fc5b0001142045ce50d15773 100644
+index b8b855ca7811f41af0ed79c5b2c40eeafdce4ee4..46180735b62a194fff4a0efbacbf1e3ffe7cc679 100644
 --- a/components/error_page/content/browser/net_error_auto_reloader.cc
 +++ b/components/error_page/content/browser/net_error_auto_reloader.cc
-@@ -282,6 +282,12 @@ void NetErrorAutoReloader::DisableConnectionChangeObservationForTesting() {
+@@ -289,6 +289,12 @@ void NetErrorAutoReloader::DisableConnectionChangeObservationForTesting() {
    }
  }
  
@@ -136,7 +137,7 @@ index 8f2bc61a1b5aa5bd3da1fe32b98ff0bc3dd9f377..7ef13c78ca0ff324fc5b0001142045ce
  void NetErrorAutoReloader::SetInitialConnectionType(
      net::NetworkChangeNotifier::ConnectionType type) {
    // NOTE: Tests may call `DisableConnectionChangeObservationForTesting` to null
-@@ -314,7 +320,9 @@ void NetErrorAutoReloader::ResumeAutoReloadIfPaused() {
+@@ -321,7 +327,9 @@ void NetErrorAutoReloader::ResumeAutoReloadIfPaused() {
  
  void NetErrorAutoReloader::ScheduleNextAutoReload() {
    DCHECK(current_reloadable_error_page_info_);
@@ -147,7 +148,7 @@ index 8f2bc61a1b5aa5bd3da1fe32b98ff0bc3dd9f377..7ef13c78ca0ff324fc5b0001142045ce
      return;
    }
  
-@@ -329,7 +337,9 @@ void NetErrorAutoReloader::ScheduleNextAutoReload() {
+@@ -336,7 +344,9 @@ void NetErrorAutoReloader::ScheduleNextAutoReload() {
  
  void NetErrorAutoReloader::ReloadMainFrame() {
    DCHECK(current_reloadable_error_page_info_);

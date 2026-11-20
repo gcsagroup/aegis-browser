@@ -3,13 +3,14 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 20:25:12 +0800
 Subject: [PATCH] fix(access): restrict private terminals to network factories
  and preserve unavailable errors
+
 ---
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 8a6ff5b786319bee87fe3a9e2ced08f2effc7874..a040b4bf2d9f1020be0db40ec8f34481a279fdca 100644
+index 0c775a2c231a1c31c732357565bb46ad2327d92f..ce14e3eacaf7f4833b3acfab771c8a2432ed3946 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -6988,46 +6988,50 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -7048,46 +7048,50 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
        frame, type == URLLoaderFactoryType::kNavigation, request_initiator,
        isolation_info, factory_builder);
  

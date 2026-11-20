@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 20:49:46 +0800
 Subject: [PATCH] fix(access): track native requests without a proxy selection
  generation
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc

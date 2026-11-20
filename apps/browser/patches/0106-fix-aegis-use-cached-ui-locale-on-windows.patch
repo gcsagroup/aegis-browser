@@ -70,7 +70,7 @@ index e07da689cd30e6781dea1a472354dab2a9dc5221..5eeab81bfe17236ab55aed42f14f3956
                         NoCrashWhenAllBrowsersClosedBeforeDisconnect) {
    ChromeDevToolsManagerDelegate* delegate =
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
-index c496409d0aa8b4061c22d72a586eeb82a45ece11..475be99fd03080e0481bb1a501c879bebe1ffe0b 100644
+index e7c764ce2e7aa6c67a443257853286c16ea76dcd..5f9a497ae7575eb6008490a7f544751472815153 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
 @@ -14,6 +14,7 @@
@@ -170,10 +170,10 @@ index b7c2900fe376ded75e0f772353219be58c2d3ef6..333d5473c4f27c4505d80d049d07c247
      aegis::SummarizeResult result;
      result.error = "model request already in progress";
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index b0b52261e48bd6e41241f4f57e27b10d8497418f..14e50dcb8c0e38fda34c4fe24a207a490ddd5eed 100644
+index 8a2c64ac0983e6dfa0507cefe9134966833b3f9a..2d7fb046f6610c751097f71b76815475850da58c 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -2923,8 +2923,7 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+@@ -2858,8 +2858,7 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
    html_source->AddLocalizedString("aegisSettingsRowLabel",
                                    IDS_AEGIS_SETTINGS_ROW_LABEL);
    {

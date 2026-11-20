@@ -90,7 +90,7 @@ index 6b0a72f221d2c2a359acb819e48f82bef2dbf73b..99754f9402c1b044ec515f308ec3c346
    void init();
  });
 diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
-index 5870a5b463e18ba32fb9bd4322cf6166469d275f..3b79c2985771d1a9f14f0d5b4c185e1860afb7de 100644
+index a45b53b5ee98264cd0710590cba77fde1c696d64..8db7f6b30a71f5c666b12ad1a555d8e5c93e6717 100644
 --- a/chrome/browser/resources/downloads/manager.ts
 +++ b/chrome/browser/resources/downloads/manager.ts
 @@ -16,6 +16,8 @@ import {getInstance as getAnnouncerInstance} from 'chrome://resources/cr_element
@@ -102,7 +102,7 @@ index 5870a5b463e18ba32fb9bd4322cf6166469d275f..3b79c2985771d1a9f14f0d5b4c185e18
  import {assert} from 'chrome://resources/js/assert.js';
  import {EventTracker} from 'chrome://resources/js/event_tracker.js';
  import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
-@@ -184,6 +186,8 @@ export class DownloadsManagerElement extends DownloadsManagerElementBase {
+@@ -183,6 +185,8 @@ export class DownloadsManagerElement extends DownloadsManagerElementBase {
  
    override firstUpdated(changedProperties: PropertyValues<this>) {
      super.firstUpdated(changedProperties);
@@ -127,10 +127,10 @@ index 8868dbcbd5f590d4c92d91bb036603dd45243c9e..7b324111c4e83fe41689e9e813556a8d
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/third_party/lit/v3_0/BUILD.gn b/third_party/lit/v3_0/BUILD.gn
-index 7b494253a6bf90875c846127153ef51d08003aea..b030fe5d843806182429d47edde042e0e0959901 100644
+index ad8763a119436b3555dd24e592dec033c91bad54..b7048d9e10a08c13e7bdea05c7a171a6b1027470 100644
 --- a/third_party/lit/v3_0/BUILD.gn
 +++ b/third_party/lit/v3_0/BUILD.gn
-@@ -168,6 +168,7 @@ ts_library("build_ts") {
+@@ -173,6 +173,7 @@ ts_library("build_ts") {
      "//content/browser/resources/service_worker:build_ts",
      "//content/browser/resources/traces_internals:build_ts",
      "//ios/chrome/app/resources/profile_internals:build_ts",

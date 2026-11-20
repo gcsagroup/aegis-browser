@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 12:51:29 +0800
 Subject: [PATCH] feat(access): bind private Mojo requests and redirect
  authority to CORS
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -346,7 +347,7 @@ index 0000000000000000000000000000000000000000..fe037aad0b88a401723efe84cc5a619d
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index 49edcf6f18fc86620f15624b5868971b5ed80fca..5f6e8b126da9963b0fbd46a7dfc7b7afb3bce68a 100644
+index 9799f4c616a99fa077714c84aa72d42e22dfdf91..294e9340338713feb42d53c2e31d4617ecf6fa1b 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
 @@ -13,6 +13,8 @@ component("network_service") {

@@ -2,6 +2,7 @@ From cc9b76c1622ca521bb3f32d9953ec46fb948a483 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Mon, 26 Oct 2026 16:56:24 +0800
 Subject: [PATCH] test(mac): guard native evidence and draft teardown
+
 ---
 
 diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc

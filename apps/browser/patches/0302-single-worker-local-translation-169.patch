@@ -7,6 +7,7 @@ Subject: [PATCH] =?UTF-8?q?fix:=20=E5=9C=A8=E5=8D=95=E4=B8=AA=E5=90=8E?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
+
 ---
 
 diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn

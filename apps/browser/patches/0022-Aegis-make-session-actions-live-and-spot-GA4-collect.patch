@@ -8,6 +8,7 @@ Canvas probe, show PII redaction counts, and block first-party GA4
 collect copies that use custom paths or v=2+tid=G- query artifacts.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ---
 
 diff --git a/chrome/browser/aegis/aegis_bounce_observer.cc b/chrome/browser/aegis/aegis_bounce_observer.cc

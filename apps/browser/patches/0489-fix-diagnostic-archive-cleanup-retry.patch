@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Fri, 13 Nov 2026 20:24:01 +0800
 Subject: [PATCH] fix(access-log): recover failed archive deletion before
  sharing again
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_core_log_share.cc b/chrome/browser/aegis/access/access_core_log_share.cc

@@ -27,10 +27,10 @@ index 0e504ed62f2f5f97e23c25d8efbda8bac729c80a..bcec3390f53e8bdbb2520b337fedc014
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/test/data/webui/settings/people_page_test.ts b/chrome/test/data/webui/settings/people_page_test.ts
-index 16e8000188a7ad494179e67d0662dd1efec48de4..60e9730e3aa5effaa8f07d0c1f55a4a432cb2f9d 100644
+index fb042dbaeac34010faa7ac3ce366ae2b73815541..2778c5beeb1e34bee9b6774f03e560a6655dd2c2 100644
 --- a/chrome/test/data/webui/settings/people_page_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_test.ts
-@@ -534,7 +534,7 @@ suite('AegisLocalProfileOnly', function() {
+@@ -530,7 +530,7 @@ suite('AegisLocalProfileOnly', function() {
             'settings-sync-account-control', '#account-subpage-row',
             '#sync-setup', '#google-services', '#manage-google-account',
           ]) {

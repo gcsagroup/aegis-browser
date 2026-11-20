@@ -7,6 +7,7 @@ Private packaging proposal sourced from frozen product H c8f4bbaeafe6622f8d41072
 Append-only transport of exact overlay bytes; no native execution or acceptance.
 Keep the bounded option default off and require Darwin when enabled.
 Both process controls remain REQUIRED/BLOCKED pending a loss-safe executor.
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn

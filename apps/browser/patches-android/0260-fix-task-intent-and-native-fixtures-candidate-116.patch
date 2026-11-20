@@ -432,10 +432,10 @@ index 8d4900b319fcc2ea2bb02fd767d8c70d10e92e16..a8ff29911ae7e97bc02f9ed26e8f73ae
    for (const char* goal : {"其他尚未关闭的条件", "列出尚未关闭的标签页", "关闭标签页了吗？",
         "不要关闭标签页", "把未关闭的标签页列出", "如何关闭标签页", "如果有重复就关闭标签页",
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 90364080a9bce9bd383f6b5fe660043e8c43336b..ff266401d298037270ff91e57a615c755bf4e43b 100644
+index e066d80f2748f29475301935c7e6eb0154ba482e..4b3c266b83c33d05656f803a1b82e6eaf481f36a 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -620,9 +620,10 @@ IN_PROC_BROWSER_TEST_F(
+@@ -625,9 +625,10 @@ IN_PROC_BROWSER_TEST_F(
                                    base::DictValue().Set("enable", true),
                                    session_id, true));
    ASSERT_TRUE(error());

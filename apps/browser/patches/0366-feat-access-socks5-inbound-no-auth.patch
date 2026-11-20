@@ -5,6 +5,7 @@ Subject: [PATCH] feat: admit no-auth SOCKS5 inbound on access overlay
 
 Keep the ordered Chromium patch series synchronized with the expected overlay.
 Username/password SOCKS5 remains fail-closed.
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn

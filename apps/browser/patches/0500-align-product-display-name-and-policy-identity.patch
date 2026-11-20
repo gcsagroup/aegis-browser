@@ -7,7 +7,7 @@ Subject: [PATCH] fix(branding): align visible product names and preserve
 ---
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
-index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e533087c69a 100644
+index cacf8acbeb61ec5eda92fa39bd1f079cc194845f..c65559b2c74135c47518124f47c06241edf0ed59 100644
 --- a/chrome/app/chromium_strings.grd
 +++ b/chrome/app/chromium_strings.grd
 @@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
@@ -104,7 +104,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
            </message>
          </else>
        </if>
-@@ -576,18 +576,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -581,18 +581,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
          </message>
        </if>
        <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu." translateable="false">
@@ -126,7 +126,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
        <!-- Sharing messages -->
-@@ -597,13 +597,13 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -602,13 +602,13 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
        <!-- Windows 卸载文案由 GRIT 展开品牌占位符，译文只决定其位置。 -->
        <if expr="is_win">
          <message name="IDS_UNINSTALL_CLOSE_APP" desc="Message to user when uninstall detects other app instance running">
@@ -143,7 +143,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
        <!-- Default Browser messages -->
-@@ -684,10 +684,10 @@ Chromium is unable to recover your settings.
+@@ -689,10 +689,10 @@ Chromium is unable to recover your settings.
  
        <!-- Password manager onboarding strings -->
        <message name="IDS_PASSWORD_MANAGER_ONBOARDING_DETAILS_C" desc="The explanation text that is shown below the title in the password manager onboarding dialog.">
@@ -156,7 +156,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
        </message>
        <message name="IDS_PASSWORD_MANAGER_BRAND_NAME" desc="This string is used both as a standalone label and injected into sentences. Please translate this as a standalone noun in the Nominative case to ensure it looks correct in titles. Sentence structures surrounding it may read slightly awkwardly.">
          Password Manager
-@@ -766,10 +766,10 @@ Chromium is unable to recover your settings.
+@@ -771,10 +771,10 @@ Chromium is unable to recover your settings.
        </if>
        <if expr="not is_android">
          <message name="IDS_PASSWORD_MANAGER_IMPORT_DIALOG_TITLE" desc="The title of the file selection dialog for importing passwords">
@@ -169,7 +169,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
        <!-- Options Dialog -->
-@@ -1093,7 +1093,7 @@ Chromium is unable to recover your settings.
+@@ -1098,7 +1098,7 @@ Chromium is unable to recover your settings.
          Allow extension to show access requests in the Chromium toolbar
        </message>
        <message name="IDS_EXTENSIONS_INCOGNITO_WARNING" desc="Warns the user that Chromium cannot prevent extensions from recording history in Incognito mode. Displayed in extensions management UI after an extension is selected to be run in Incognito mode.">
@@ -178,7 +178,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
        </message>
        <message name="IDS_EXTENSIONS_UNINSTALL" desc="The label for a control that triggers an extension uninstall.">
          Remove from Chromium
-@@ -1121,19 +1121,19 @@ Chromium is unable to recover your settings.
+@@ -1126,19 +1126,19 @@ Chromium is unable to recover your settings.
  
        <!-- Main Chrome menu -->
        <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
@@ -202,7 +202,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
        </message>
  
        <if expr="use_titlecase and not is_chromeos">
-@@ -1145,12 +1145,12 @@ Chromium is unable to recover your settings.
+@@ -1150,12 +1150,12 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
@@ -217,7 +217,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
        <if expr="not use_titlecase and not is_chromeos">
-@@ -1162,12 +1162,12 @@ Chromium is unable to recover your settings.
+@@ -1167,12 +1167,12 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
@@ -232,7 +232,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
        <if expr="is_chromeos">
-@@ -1181,13 +1181,13 @@ Chromium is unable to recover your settings.
+@@ -1186,13 +1186,13 @@ Chromium is unable to recover your settings.
  
        <if expr="is_macosx">
          <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome." translateable="false">
@@ -249,7 +249,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
  
-@@ -1316,7 +1316,7 @@ Chromium is unable to recover your settings.
+@@ -1321,7 +1321,7 @@ Chromium is unable to recover your settings.
  
        <!-- NTP strings -->
        <message name="IDS_NTP_CUSTOMIZE_TOOLBAR_CATEGORY_YOUR_CHROME" desc="The label for the category of actions that involve your Chrome data, such as opening the password manager or clearing browsing data.">
@@ -258,7 +258,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
        </message>
        <if expr="_is_chrome_for_testing_branded">
          <then>
-@@ -1331,22 +1331,22 @@ Chromium is unable to recover your settings.
+@@ -1336,22 +1336,22 @@ Chromium is unable to recover your settings.
          </else>
        </if>
        <message name="IDS_NTP_MODULES_SETUP_LIST_TITLE" desc="Title shown at the top of the Setup List card.">
@@ -286,7 +286,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
  
-@@ -1486,7 +1486,7 @@ Chromium is unable to recover your settings.
+@@ -1491,7 +1491,7 @@ Chromium is unable to recover your settings.
            To get your passwords and more on all your devices, sign in to Chromium
          </message>
          <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE_WITH_BOOKMARKS" desc="Subtitle of the Chromium Signin Bubble intercept that is shown when a signed out user signs in on the web with it's first account.">
@@ -295,7 +295,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
          <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE_SUPERVISED" desc="This string is the body of a promotion about signing in to Chromium with the user's Google Account. It explains the overarching user benefit of signing in: Kids of a certain age are motivated to get their parents’ help staying safer online, so the tone should be motivating. We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account.">
            To stay safer online with your parent’s choices, sign in to Chromium
-@@ -1596,45 +1596,45 @@ Chromium is unable to recover your settings.
+@@ -1601,45 +1601,45 @@ Chromium is unable to recover your settings.
  
        <!-- Profile Menu -->
        <message name="IDS_PROFILE_MENU_SIGNIN_PROMO_BUTTON" meaning="Button" desc="Text for the button in the sign-in promo in the profile menu when the used is signed out.">
@@ -353,7 +353,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
        </if>
  
-@@ -1751,7 +1751,7 @@ Chromium is unable to recover your settings.
+@@ -1756,7 +1756,7 @@ Chromium is unable to recover your settings.
        <if expr="not is_android">
          <!-- Password Manager Tutorial Strings -->
          <message name="IDS_TUTORIAL_PASSWORD_MANAGER_OPEN_APP_MENU" desc="The description of the 'open add menu' step in password manager tutorial">
@@ -362,7 +362,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
          <message name="IDS_TUTORIAL_PASSWORD_MANAGER_CLICK_PASSWORD_MANAGER" desc="The description of the 'click password manager' step in password manager tutorial">
            Click “Password Manager”
-@@ -2736,7 +2736,7 @@ Chromium is unable to recover your settings.
+@@ -2886,7 +2886,7 @@ Chromium is unable to recover your settings.
            <ph name="SHORTCUT">$1<ex>CTRL+SHIFT+M</ex></ph> can switch between Chromium profiles
          </message>
          <message name="IDS_PASSWORD_MANAGER_IPH_BODY_WEB_APP_PROFILE_SWITCH" desc="Body of the in Product Help for profile switching shown in the password manager web app.">
@@ -371,7 +371,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
  
          <!-- Web Signout Intercept IPH -->
-@@ -2752,7 +2752,7 @@ Chromium is unable to recover your settings.
+@@ -2902,7 +2902,7 @@ Chromium is unable to recover your settings.
            Stay safe with Password Manager
          </message>
          <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_SUBTITLE" desc="Description for the Password Manager page in the Feature Showcase.">
@@ -380,7 +380,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </message>
  
          <!-- Feature Showcase - Lens -->
-@@ -3376,10 +3376,10 @@ Chromium is unable to recover your settings.
+@@ -3526,10 +3526,10 @@ Chromium is unable to recover your settings.
  
        <!-- UNO Promo strings for bookmarks -->
        <message name="IDS_BOOKMARK_INSTALLED_PROMO_EXPLICIT_SIGNIN_MESSAGE" desc="Text of the promo displayed at the bottom of the bookmark bubble asking the user to enable UNO.">
@@ -393,7 +393,7 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
        </message>
  
        <!-- Dice Migration strings -->
-@@ -3394,12 +3394,12 @@ Chromium is unable to recover your settings.
+@@ -3544,12 +3544,12 @@ Chromium is unable to recover your settings.
        <if expr="not is_android">
          <if expr="use_titlecase">
            <message name="IDS_PROFILE_MENU_ACCOUNT_SETTINGS_BUTTON" desc="Button in the avatar menu bubble view for opening Chrome account settings.">
@@ -409,10 +409,10 @@ index 786f6314d15d3a9a48058ff066f80d866d11c337..19d60f8e4eaa58f22048428f47852e53
          </if>
        </if>
 diff --git a/chrome/app/resources/chromium_strings_zh-CN.xtb b/chrome/app/resources/chromium_strings_zh-CN.xtb
-index ad594483eab199bf55ce897da335091ec5bf9293..167f1de2092fe78db0f2e89b21e2e3fe1baed75d 100644
+index 0b4d9728bfab1b15c7c5efe400d193b9890ee8a8..9fc1b17169ef3c82a4ddc381f2afeadb2433182b 100644
 --- a/chrome/app/resources/chromium_strings_zh-CN.xtb
 +++ b/chrome/app/resources/chromium_strings_zh-CN.xtb
-@@ -883,8 +883,8 @@ Chromium 无法恢复您的设置。</translation>
+@@ -934,8 +934,8 @@ Chromium 无法恢复您的设置。</translation>
  <translation id="1273676263378423705">请为您的 GCSA Aegis 个人资料命名</translation>
  <translation id="4947969558597508598">在您的所有设备上同步并个性化设置 GCSA Aegis</translation>
  <translation id="376268286201517390">如需获取您所有设备上的密码等信息，请登录 GCSA Aegis</translation>
@@ -423,7 +423,7 @@ index ad594483eab199bf55ce897da335091ec5bf9293..167f1de2092fe78db0f2e89b21e2e3fe
  <translation id="3571577451134989054">您可以管理您已登录的 Google 账号。您可通过登录自己的 Google 账号使用 GCSA Aegis 浏览器、Play 商店、Gmail 等产品。如果您想添加他人（比如某个家庭成员）的账号，请改为将这个新人添加到您的 <ph name="DEVICE_TYPE" />。<ph name="LINK_BEGIN" />了解详情<ph name="LINK_END" /></translation>
  <translation id="2644359269163420729">登录其他 Google 服务时登录 GCSA Aegis</translation>
  <translation id="8666434687248025202">使用 <ph name="USER_EMAIL" /> 登录 Gmail 或 YouTube 等 Google 服务时，您可以使用同一账号自动登录 GCSA Aegis</translation>
-@@ -901,7 +901,7 @@ Chromium 无法恢复您的设置。</translation>
+@@ -952,7 +952,7 @@ Chromium 无法恢复您的设置。</translation>
  <translation id="2196843714665080753">如要将 GCSA Aegis 数据保存在 Google 账号中并使用这些数据，请更新 GCSA Aegis</translation>
  <translation id="7356852554938902829">请验证您的身份，以便将 GCSA Aegis 数据保存在您的账号 <ph name="ACCOUNT_EMAIL" /> 中并使用这些数据</translation>
  <translation id="8397001135444558636">请输入您的口令，以便将 GCSA Aegis 数据保存在您的账号 <ph name="USER_EMAIL" /> 中并使用这些数据</translation>
@@ -432,7 +432,7 @@ index ad594483eab199bf55ce897da335091ec5bf9293..167f1de2092fe78db0f2e89b21e2e3fe
  <translation id="7046761828983396776">您账号中的 GCSA Aegis 数据</translation>
  <translation id="7998187907924671208">使用您<ph name="BEGIN_LINK" />自己的口令<ph name="END_LINK" />加密您 Google 账号中的所有 GCSA Aegis 数据。系统不会加密 Google Pay 中的支付方式和地址，也不会同步 GCSA Aegis 中的浏览记录。</translation>
  <translation id="3391188764257654123">只有知道您口令的人能读取您的加密数据。该口令不会被发送给 Google，也不会被 Google 存储。如果您忘记了口令或想更改此设置，将需要<ph name="BEGIN_LINK" />删除您账号中的 GCSA Aegis 数据<ph name="END_LINK" />。</translation>
-@@ -944,35 +944,35 @@ Chromium 无法恢复您的设置。</translation>
+@@ -995,35 +995,35 @@ Chromium 无法恢复您的设置。</translation>
  <translation id="5814730399427704686">在 GCSA Aegis 中启用技能</translation>
  <translation id="7113817370779115166">技能等 AI 创新功能会保存到您的 Google 账号，并与 GCSA Aegis 同步功能分开管理</translation>
  <translation id="7945978999618441706">在 GCSA Aegis 中与其他 Gemini 功能搭配使用</translation>
@@ -496,10 +496,10 @@ index ad594483eab199bf55ce897da335091ec5bf9293..167f1de2092fe78db0f2e89b21e2e3fe
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/resources/chromium_strings_zh-HK.xtb b/chrome/app/resources/chromium_strings_zh-HK.xtb
-index 6cc98769766b284a71450dee534c74724d1bc6ce..686d64890738d329a5d4837dde2f80bc076219aa 100644
+index 7866d98ef39a1150772c9a339c9146c13a63addf..6ad2116e63884370d80a726c24039e2ca7512602 100644
 --- a/chrome/app/resources/chromium_strings_zh-HK.xtb
 +++ b/chrome/app/resources/chromium_strings_zh-HK.xtb
-@@ -884,8 +884,8 @@ Chromium 無法復原您的設定。</translation>
+@@ -935,8 +935,8 @@ Chromium 無法復原您的設定。</translation>
  <translation id="1273676263378423705">為 GCSA Aegis 設定檔命名</translation>
  <translation id="4947969558597508598">在不同裝置上同步和設定個人化的 GCSA Aegis</translation>
  <translation id="376268286201517390">如要在你的所有裝置上存取密碼和其他資料，請登入 GCSA Aegis</translation>
@@ -510,7 +510,7 @@ index 6cc98769766b284a71450dee534c74724d1bc6ce..686d64890738d329a5d4837dde2f80bc
  <translation id="3571577451134989054">您可管理已登入的 Google 帳戶。Google 帳戶可用於 GCSA Aegis 瀏覽器、Play 商店和 Gmail 等服務。如要新增其他人 (例如家庭成員) 的帳戶，請改為將使用者新增至您的 <ph name="DEVICE_TYPE" />。<ph name="LINK_BEGIN" />瞭解詳情<ph name="LINK_END" /></translation>
  <translation id="2644359269163420729">在登入其他 Google 服務時登入 GCSA Aegis</translation>
  <translation id="8666434687248025202">使用 <ph name="USER_EMAIL" /> 登入 Gmail 或 YouTube 等 Google 服務時，你可使用同一個帳戶自動登入 GCSA Aegis</translation>
-@@ -902,7 +902,7 @@ Chromium 無法復原您的設定。</translation>
+@@ -953,7 +953,7 @@ Chromium 無法復原您的設定。</translation>
  <translation id="2196843714665080753">如要將 GCSA Aegis 的資料儲存至 Google 帳戶及使用這類資料，請更新 GCSA Aegis</translation>
  <translation id="7356852554938902829">請驗證你的身分，以在帳戶 <ph name="ACCOUNT_EMAIL" /> 中使用及儲存 GCSA Aegis 資料</translation>
  <translation id="8397001135444558636">輸入用於在帳戶 <ph name="USER_EMAIL" /> 中使用及儲存 GCSA Aegis 資料的密碼短語</translation>
@@ -519,7 +519,7 @@ index 6cc98769766b284a71450dee534c74724d1bc6ce..686d64890738d329a5d4837dde2f80bc
  <translation id="7046761828983396776">帳戶中的 GCSA Aegis 資料</translation>
  <translation id="7998187907924671208">使用<ph name="BEGIN_LINK" />密碼短語<ph name="END_LINK" />加密 Google 帳戶中的所有 GCSA Aegis 資料。系統將不會加密你在 Google Pay 中的付款方法和地址，GCSA Aegis 上的瀏覽記錄將不會同步。</translation>
  <translation id="3391188764257654123">只有知道密碼短語的使用者，才能讀取已加密的資料。系統不會將密碼短語傳送給 Google，Google 亦不會儲存密碼短語。如果忘記密碼短語或想變更此設定，你需要<ph name="BEGIN_LINK" />刪除帳戶中的 GCSA Aegis 資料<ph name="END_LINK" /></translation>
-@@ -945,35 +945,35 @@ Chromium 無法復原您的設定。</translation>
+@@ -996,35 +996,35 @@ Chromium 無法復原您的設定。</translation>
  <translation id="5814730399427704686">在 GCSA Aegis 中啟用「技能」</translation>
  <translation id="7113817370779115166">AI 創新功能 (例如技能) 會儲存至 Google 帳戶，並與 GCSA Aegis 同步功能分開管理</translation>
  <translation id="7945978999618441706">在 GCSA Aegis 中與其他 Gemini 功能一併使用</translation>
@@ -583,10 +583,10 @@ index 6cc98769766b284a71450dee534c74724d1bc6ce..686d64890738d329a5d4837dde2f80bc
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/resources/chromium_strings_zh-TW.xtb b/chrome/app/resources/chromium_strings_zh-TW.xtb
-index 6137d77ca2de298789013812f1f92bc40ff75e02..8f1658b3f0a7f5d329c1f2c6bd94db160613f6a0 100644
+index ca91feadc725b5e933b2bdb7cd5e5c6caa60555b..320be40b1bfafcd5e3a37aefee7a256c6bc32b17 100644
 --- a/chrome/app/resources/chromium_strings_zh-TW.xtb
 +++ b/chrome/app/resources/chromium_strings_zh-TW.xtb
-@@ -880,8 +880,8 @@ Chromium 無法復原你的設定。</translation>
+@@ -931,8 +931,8 @@ Chromium 無法復原你的設定。</translation>
  <translation id="1273676263378423705">為 GCSA Aegis 設定檔命名</translation>
  <translation id="4947969558597508598">進行同步處理即可在你的所有裝置上享有個人化的 GCSA Aegis 體驗</translation>
  <translation id="376268286201517390">如要在裝置上使用你的密碼和其他資料，請登入 GCSA Aegis</translation>
@@ -597,7 +597,7 @@ index 6137d77ca2de298789013812f1f92bc40ff75e02..8f1658b3f0a7f5d329c1f2c6bd94db16
  <translation id="3571577451134989054">你可以管理已登入的 Google 帳戶。Google 帳戶可用於 GCSA Aegis 瀏覽器、Play 商店和 Gmail 等服務。如要添加他人 (例如家庭成員) 的帳戶，請改為將使用者新增至你的 <ph name="DEVICE_TYPE" />。<ph name="LINK_BEGIN" />瞭解詳情<ph name="LINK_END" /></translation>
  <translation id="2644359269163420729">登入其他 Google 服務時一併登入 GCSA Aegis</translation>
  <translation id="8666434687248025202">使用 <ph name="USER_EMAIL" /> 登入 Gmail 或 YouTube 等 Google 服務時，可以用同一個帳戶自動登入 GCSA Aegis</translation>
-@@ -898,7 +898,7 @@ Chromium 無法復原你的設定。</translation>
+@@ -949,7 +949,7 @@ Chromium 無法復原你的設定。</translation>
  <translation id="2196843714665080753">如要將 GCSA Aegis 資料儲存到 Google 帳戶，或使用帳戶中的 GCSA Aegis 資料，請更新 GCSA Aegis</translation>
  <translation id="7356852554938902829">請驗證身分，才能將 GCSA Aegis 資料儲存到帳戶 (<ph name="ACCOUNT_EMAIL" />)，或使用帳戶中的 GCSA Aegis 資料</translation>
  <translation id="8397001135444558636">請輸入通關密語，才能將 GCSA Aegis 資料儲存到帳戶 (<ph name="USER_EMAIL" />)，或使用帳戶中的 GCSA Aegis 資料</translation>
@@ -606,7 +606,7 @@ index 6137d77ca2de298789013812f1f92bc40ff75e02..8f1658b3f0a7f5d329c1f2c6bd94db16
  <translation id="7046761828983396776">帳戶中的 GCSA Aegis 資料</translation>
  <translation id="7998187907924671208">使用<ph name="BEGIN_LINK" />通關密語<ph name="END_LINK" />加密 Google 帳戶中的所有 GCSA Aegis 資料。系統將不會加密你在 Google Pay 中的付款方式和地址，也不會同步 GCSA Aegis 中的瀏覽記錄。</translation>
  <translation id="3391188764257654123">只有知道通關密語的人才能讀取你的加密資料。通關密語不會傳送給 Google，Google 也不會儲存通關密語。如果忘記通關密語或想變更這項設定，請<ph name="BEGIN_LINK" />刪除帳戶中的 GCSA Aegis 資料<ph name="END_LINK" />。</translation>
-@@ -941,35 +941,35 @@ Chromium 無法復原你的設定。</translation>
+@@ -992,35 +992,35 @@ Chromium 無法復原你的設定。</translation>
  <translation id="5814730399427704686">啟用 GCSA Aegis 中的技能</translation>
  <translation id="7113817370779115166">AI 創新功能 (例如技能) 會儲存到 Google 帳戶，並與 GCSA Aegis 同步功能分開管理</translation>
  <translation id="7945978999618441706">搭配 GCSA Aegis 中的其他 Gemini 功能一起使用</translation>
@@ -670,10 +670,10 @@ index 6137d77ca2de298789013812f1f92bc40ff75e02..8f1658b3f0a7f5d329c1f2c6bd94db16
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index 37a6adf36d80d89506e9f06c2b087caf4ff84652..875b7341aeea486b5e77f271b1bedcaf8bf65841 100644
+index 7a12340823f6430053a330cd88e76a8c57fd6bbc..58ae8c07fd5ed7e9864258e1926b0632973309d5 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -1375,8 +1375,8 @@
+@@ -1434,8 +1434,8 @@
      </message>
  
      <!-- Privacy Page -->
@@ -895,10 +895,10 @@ index 4bb68d7322f63c4e274ca3dd8833663f51121a73..1c09caeb55feb9c8c519dffb837c8e37
    <defs>
      <linearGradient id="brand-gradient" gradientUnits="userSpaceOnUse" x1="179" y1="512" x2="857" y2="512">
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index a364934f5f670b9b4940ef38e1c04dfbc5f133b6..b3e4f2896a9b62b754d9dede4bb5ee797d843768 100644
+index bad77053c03e449bf19c8bc9b8059e97adbdd2c0..a6a56b8c78c0bb8ac4473a9cc5fa51fc3c6e7715 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2483,8 +2483,8 @@ void AppMenuModel::Build() {
+@@ -2512,8 +2512,8 @@ void AppMenuModel::Build() {
    if (const auto about = GetIndexOfCommandId(IDC_ABOUT)) {
      const std::string locale = g_browser_process->GetApplicationLocale();
      SetLabel(*about, locale.starts_with("zh")

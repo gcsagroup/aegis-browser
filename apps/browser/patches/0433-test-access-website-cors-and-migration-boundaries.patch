@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 02:32:44 +0800
 Subject: [PATCH] test(access): validate website CORS and legacy migration
  boundaries
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc

@@ -5,6 +5,7 @@ Subject: [PATCH] Aegis: add phishing interstitial for built-in seed hosts
 
 Show a Lookalike/Insecure-Form style warning on main-frame navigations
 that match the Aegis phishing seed list, gated by module prefs.
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
@@ -586,7 +587,7 @@ index 5d2e3d6bc1608e66041def4266079802b691899e..33028ff5323d4655a87331a7a441dff1
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index ce3cc119e6c3cd99cc797039ac14d3a4d39b827c..79c042a12d3e25a0607f51f0ece1a030766fc5e3 100644
+index 1dc3fdf54fb9acdbba0450b349e3de3eb0ed3225..44d9e15932af277a5522aed4c92847b5418ca66a 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 @@ -23,6 +23,7 @@
@@ -597,7 +598,7 @@ index ce3cc119e6c3cd99cc797039ac14d3a4d39b827c..79c042a12d3e25a0607f51f0ece1a030
  #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
  #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
  #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
-@@ -411,6 +412,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -412,6 +413,7 @@ void CreateAndAddChromeThrottlesForNavigation(
    }
  
    LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);

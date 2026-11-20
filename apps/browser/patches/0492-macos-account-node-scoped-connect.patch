@@ -3,6 +3,7 @@ From: Aegis Browser <devnull@localhost>
 Date: Fri, 13 Nov 2026 21:08:00 +0800
 Subject: [PATCH] feat(access): retain account-bound nodes after diagnostic
  privacy repairs
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
@@ -1326,7 +1327,7 @@ index 84f92128d5109d28868b4208a3cc359c1a760943..a0b8f35099c7917c61968866f5d78f20
    uint64_t access_revision_ = 0;
    std::optional<aegis::access::AccessSiteProxyBubbleSnapshot> access_snapshot_;
 diff --git a/content/browser/browser_context.cc b/content/browser/browser_context.cc
-index 56abcbd42337a0d9d537131438407e787e7c50f6..86c5a408439b3feca8edc3ae521924e068b53d76 100644
+index 13e83a92e2a228ebc649e6c3d3a35934ce613436..de9d47d6f84b3d91fc8ef7e90cd4d7ed21bbf20a 100644
 --- a/content/browser/browser_context.cc
 +++ b/content/browser/browser_context.cc
 @@ -191,6 +191,27 @@ void BrowserContext::GarbageCollectStoragePartitions(
@@ -1358,7 +1359,7 @@ index 56abcbd42337a0d9d537131438407e787e7c50f6..86c5a408439b3feca8edc3ae521924e0
    return GetStoragePartition(StoragePartitionConfig::CreateDefault(this));
  }
 diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
-index 62535d387d046df1b388160683e782003b04a2c6..84dd98abec4f77579cd2da231b8359a061cfd975 100644
+index e45956bcea4a60f501c6b330b941b158bd9832ce..4dcd831d382ac5f14405607cf4f92f0034ec07bb 100644
 --- a/content/browser/websockets/websocket_connector_impl.cc
 +++ b/content/browser/websockets/websocket_connector_impl.cc
 @@ -4,6 +4,10 @@
@@ -1423,10 +1424,10 @@ index 91b2cc9864b48b63a04eed3f1159dfefe1f08b24..0370e84e9e0334e6d21d74104c0b74c9
        application_protocols, congestion_control,
        anticipated_concurrent_incoming_unidirectional_streams,
 diff --git a/content/public/browser/browser_context.h b/content/public/browser/browser_context.h
-index 180b33dd027129e24598e31b183284d3e71fc440..83867d8f1326f0aa56aa9c372457f9de3f329eed 100644
+index fa36ef7444db2805503767dbd9e50ec9352cd285..2e30b491e93b9c5600a32d1302b0fc2a821bad2b 100644
 --- a/content/public/browser/browser_context.h
 +++ b/content/public/browser/browser_context.h
-@@ -208,6 +208,13 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
+@@ -210,6 +210,13 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
  
    StoragePartition* GetDefaultStoragePartition();
  
@@ -1455,10 +1456,10 @@ index 3f3d20a68fb7bdf4f071a5f8889a16f5a756fda7..6c65779998a6f106fbc03fa404033b8a
  
    friend bool operator==(const ProxyChain&, const ProxyChain&) = default;
 diff --git a/net/http/http_stream_factory_job_controller.cc b/net/http/http_stream_factory_job_controller.cc
-index 4be94f4f2dc86195f9837d32b0eff0dd23f24c0b..a7587102370087e2388cae81e24396461b51d00d 100644
+index f74e25cffe6c2d100d34cabd5328f9a751ec21c3..83ad98c07d2d54fd7c8fa084c057f6163b0d601e 100644
 --- a/net/http/http_stream_factory_job_controller.cc
 +++ b/net/http/http_stream_factory_job_controller.cc
-@@ -841,6 +841,20 @@ int HttpStreamFactory::JobController::DoResolveProxy() {
+@@ -843,6 +843,20 @@ int HttpStreamFactory::JobController::DoResolveProxy() {
  
    next_state_ = STATE_RESOLVE_PROXY_COMPLETE;
  
@@ -1480,10 +1481,10 @@ index 4be94f4f2dc86195f9837d32b0eff0dd23f24c0b..a7587102370087e2388cae81e2439646
      const auto& chain = request_info_.access_proxy_route->proxy_chain();
      if (!chain.GetProxyServer(0).is_http()) {
 diff --git a/net/proxy_resolution/proxy_host_matching_rules.cc b/net/proxy_resolution/proxy_host_matching_rules.cc
-index 512b249860803957d2b5e6885a07213e85c0e142..ffb0c3082ac3be479d24610b0d156e43f8378a4e 100644
+index 569a1f231eeaede9ad4fc3bc0895b520c09a5ea5..edb360f489812b47adf837145d354a81fd7c96b9 100644
 --- a/net/proxy_resolution/proxy_host_matching_rules.cc
 +++ b/net/proxy_resolution/proxy_host_matching_rules.cc
-@@ -69,6 +69,29 @@ bool IsIPv4MappedLoopback(const GURL& url) {
+@@ -70,6 +70,29 @@ bool IsIPv4MappedLoopback(const GURL& url) {
    return ip_address.bytes()[12] == 127;
  }
  
@@ -1513,7 +1514,7 @@ index 512b249860803957d2b5e6885a07213e85c0e142..ffb0c3082ac3be479d24610b0d156e43
  class BypassSimpleHostnamesRule : public SchemeHostPortMatcherRule {
   public:
    BypassSimpleHostnamesRule() = default;
-@@ -118,6 +141,12 @@ std::unique_ptr<SchemeHostPortMatcherRule> ParseRule(
+@@ -119,6 +142,12 @@ std::unique_ptr<SchemeHostPortMatcherRule> ParseRule(
      return std::make_unique<SubtractImplicitBypassesRule>();
    }
  
@@ -1526,7 +1527,7 @@ index 512b249860803957d2b5e6885a07213e85c0e142..ffb0c3082ac3be479d24610b0d156e43
    return SchemeHostPortMatcherRule::FromUntrimmedRawString(raw_untrimmed);
  }
  
-@@ -214,6 +243,10 @@ bool ProxyHostMatchingRules::AddRuleFromString(std::string_view raw_untrimmed) {
+@@ -215,6 +244,10 @@ bool ProxyHostMatchingRules::AddRuleFromString(std::string_view raw_untrimmed) {
    return false;
  }
  
@@ -1538,10 +1539,10 @@ index 512b249860803957d2b5e6885a07213e85c0e142..ffb0c3082ac3be479d24610b0d156e43
    matcher_.AddAsLastRule(std::make_unique<SubtractImplicitBypassesRule>());
  }
 diff --git a/net/proxy_resolution/proxy_host_matching_rules.h b/net/proxy_resolution/proxy_host_matching_rules.h
-index 1d7f3339c7df3ec68383fb40891f83febea84cea..dfa015c4a08e7e54caf69c5c6935c1f5f29db26e 100644
+index 50ae59619c21bafa5ef120d972b05ecfc60fd311..3b3f114f42ee83033dbd0d47991daa3125a60ba3 100644
 --- a/net/proxy_resolution/proxy_host_matching_rules.h
 +++ b/net/proxy_resolution/proxy_host_matching_rules.h
-@@ -87,6 +87,10 @@ class NET_EXPORT ProxyHostMatchingRules {
+@@ -88,6 +88,10 @@ class NET_EXPORT ProxyHostMatchingRules {
    // For the supported format of bypass rules see //net/docs/proxy.md.
    bool AddRuleFromString(std::string_view raw);
  
@@ -1570,10 +1571,10 @@ index 7a82ebb711263c95b58ff2052a4567031cfa7e08..58dfa0b4d9e58db47ee1d39014dfb4da
                    proxy_server_ssl_config,
                    /*renego_allowed=*/false);
 diff --git a/net/socket/ssl_client_socket_impl.cc b/net/socket/ssl_client_socket_impl.cc
-index f586acfe0f086bda8db1244fb5c054d8d90b732e..5e8d8c71aca3fd1d3bfaf6beafdc3c55b6254723 100644
+index 84c03f84e7bd267379cebe3e1c4d1b1befbecd1b..b483b5b931bb4689da718e87b38060ebab30a193 100644
 --- a/net/socket/ssl_client_socket_impl.cc
 +++ b/net/socket/ssl_client_socket_impl.cc
-@@ -302,7 +302,13 @@ SSLClientSocketImpl::SSLClientSocketImpl(
+@@ -299,7 +299,13 @@ SSLClientSocketImpl::SSLClientSocketImpl(
        host_and_port_(host_and_port),
        ssl_config_(ssl_config),
        signature_result_(kSSLClientSocketNoPendingResult),
@@ -1589,10 +1590,10 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..5e8d8c71aca3fd1d3bfaf6beafdc3c55
  }
  
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index f415ea09b665d2a90ef5e83383a926f993f47285..12bb61a2187bbbc9cfb773bf8c4d82c0a5b51639 100644
+index 05b44fe4fd5106c1e021d8305f7aaef106541e98..3383090391b578713e410a583453c16122187ffb 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
-@@ -116,6 +116,7 @@
+@@ -118,6 +118,7 @@
  #include "net/traffic_annotation/network_traffic_annotation.h"
  #include "net/url_request/static_http_user_agent_settings.h"
  #include "net/url_request/url_request.h"
@@ -1600,7 +1601,7 @@ index f415ea09b665d2a90ef5e83383a926f993f47285..12bb61a2187bbbc9cfb773bf8c4d82c0
  #include "net/url_request/url_request_context.h"
  #include "net/url_request/url_request_context_builder.h"
  #include "services/network/brokered_client_socket_factory.h"
-@@ -2281,6 +2282,18 @@ void NetworkContext::CreateWebTransport(
+@@ -2335,6 +2336,18 @@ void NetworkContext::CreateWebTransport(
          net::WebTransportError(net::ERR_NETWORK_ACCESS_REVOKED));
      return;
    }
@@ -1619,7 +1620,7 @@ index f415ea09b665d2a90ef5e83383a926f993f47285..12bb61a2187bbbc9cfb773bf8c4d82c0
    web_transports_.insert(std::make_unique<WebTransport>(
        url, origin, key, fingerprints, application_protocols, congestion_control,
        anticipated_concurrent_incoming_unidirectional_streams,
-@@ -3010,7 +3023,34 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3063,7 +3076,34 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
      builder.set_proxy_delegate(std::make_unique<NetworkServiceProxyDelegate>(
          std::move(params_->initial_custom_proxy_config),
          std::move(params_->custom_proxy_config_client_receiver),
@@ -1914,10 +1915,10 @@ index b9567323881c927e652c1c1fa88112321f595465..bc1301aa71e7a75be786eacb089ab2cc
    auto config = mojom::CustomProxyConfig::New();
    config->rules.ParseFromString("https://proxy");
 diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
-index 87c2f92a58cc4f41a9ce530dbb479be953cbab12..63c8b00bf058d92ecacb185ef60216211cbfc591 100644
+index d9b84f4627b3c590c7f601cb0feecf1360f77df7..559e33258319d4a8b0a1d7f780b255f0d30ccb31 100644
 --- a/services/network/url_loader.cc
 +++ b/services/network/url_loader.cc
-@@ -2026,6 +2026,11 @@ void URLLoader::ContinueWithoutCertificate() {
+@@ -2003,6 +2003,11 @@ void URLLoader::ContinueWithoutCertificate() {
    url_request_->ContinueWithCertificate(nullptr, nullptr);
  }
  
@@ -1944,7 +1945,7 @@ index a3a1e7eb85c72b7086f503439fca7597953fda16..b4af937f5b487d70072b436233a23455
  
    static const void* const kUserDataKey;
 diff --git a/services/network/web_transport.h b/services/network/web_transport.h
-index 1f095715ac25fd8f0c7a89ab5c62c7a88685217d..af603e3e823b3a1ed5ce91d1d9c8fd96c9ffb0e6 100644
+index 13b5d0a7dab158403ad0ea6ada1d911c823ae6c8..c4dc34f10e6b10f77bed954dfcf61c3e4dd69f82 100644
 --- a/services/network/web_transport.h
 +++ b/services/network/web_transport.h
 @@ -79,6 +79,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebTransport final
@@ -1956,10 +1957,10 @@ index 1f095715ac25fd8f0c7a89ab5c62c7a88685217d..af603e3e823b3a1ed5ce91d1d9c8fd96
    // mojom::WebTransport implementation:
    void SendDatagram(base::span<const uint8_t> data,
 diff --git a/services/network/web_transport_unittest.cc b/services/network/web_transport_unittest.cc
-index 9199f3096a223a7497be3dc8af5f339b17273dfd..f6ba6d22eb91f409610950218ff5278ccc335d89 100644
+index d772fc73dc6fe86416c38712e3eebd6ac908beb7..b8c5ab64a8f0e8f69e8913c0a065a32fe79d6bf7 100644
 --- a/services/network/web_transport_unittest.cc
 +++ b/services/network/web_transport_unittest.cc
-@@ -512,7 +512,8 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+@@ -520,7 +520,8 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
    WebTransportTest()
        : WebTransportTest(
              quic::test::crypto_test_utils::ProofSourceForTesting()) {}
@@ -1969,7 +1970,7 @@ index 9199f3096a223a7497be3dc8af5f339b17273dfd..f6ba6d22eb91f409610950218ff5278c
        : version_(GetTestVersion()),
          origin_(url::Origin::Create(GURL("https://example.org/"))),
          task_environment_(base::test::TaskEnvironment::MainThreadType::IO),
-@@ -520,12 +521,19 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+@@ -528,12 +529,19 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
          network_context_remote_(mojo::NullRemote()) {
      auto host_resolver = std::make_unique<net::MockHostResolver>();
      host_resolver->rules()->AddRule("test.example.com", "127.0.0.1");
@@ -1990,7 +1991,7 @@ index 9199f3096a223a7497be3dc8af5f339b17273dfd..f6ba6d22eb91f409610950218ff5278c
          base::BindOnce([](net::URLRequestContextBuilder* builder) {
            auto cert_verifier = std::make_unique<net::MockCertVerifier>();
            cert_verifier->set_default_result(net::OK);
-@@ -635,6 +643,19 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+@@ -643,6 +651,19 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
          {"https://test.example.com:", base::NumberToString(port), suffix}));
    }
  
@@ -2010,7 +2011,7 @@ index 9199f3096a223a7497be3dc8af5f339b17273dfd..f6ba6d22eb91f409610950218ff5278c
    const url::Origin& origin() const { return origin_; }
    const NetworkContext& network_context() const { return *network_context_; }
    NetworkContext& mutable_network_context() { return *network_context_; }
-@@ -691,6 +712,7 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+@@ -699,6 +720,7 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
    net::RecordingNetLogObserver net_log_observer_;
  
    std::unique_ptr<NetworkContext> network_context_;
@@ -2018,7 +2019,7 @@ index 9199f3096a223a7497be3dc8af5f339b17273dfd..f6ba6d22eb91f409610950218ff5278c
  
    quic::test::QuicTestBackend backend_;
    std::unique_ptr<net::QuicSimpleServer> http_server_;
-@@ -796,6 +818,68 @@ class LNAPermissionURLLoaderNetworkObserver
+@@ -804,6 +826,68 @@ class LNAPermissionURLLoaderNetworkObserver
    bool lna_permission_granted = false;
  };
  

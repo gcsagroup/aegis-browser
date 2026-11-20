@@ -6,10 +6,10 @@ Subject: [PATCH] fix(aegis): migrate profile access in menu and toolbar (029)
 ---
 
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index f31a3faa3ed3dc899f1ee6db0d2486727f76f502..a140c3de4d96de0b9ccdce07032c3e043be7fdf3 100644
+index dd294d971333b1dd29603a02140944b6d785ec83..826b1b2147ca6b7bad42324fa082bc3fde9a48be 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2483,7 +2483,7 @@ void AppMenuModel::Build() {
+@@ -2512,7 +2512,7 @@ void AppMenuModel::Build() {
    AddItemWithStringIdAndVectorIcon(
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);

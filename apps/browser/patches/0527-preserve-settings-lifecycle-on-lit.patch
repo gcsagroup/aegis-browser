@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000342 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@local>
+Date: Fri, 20 Nov 2026 16:10:00 +0800
+Subject: [PATCH] Preserve Aegis settings lifecycle on Lit
+
+---
+
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
+index 5688f74523129068e47e5a493024e7c68c6feb77..1756c7d0bc9fa674c9927900cbafc1a5fc76212c 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.html
++++ b/chrome/browser/resources/settings/settings_main/settings_main.html
+@@ -13,52 +13,52 @@ ${this.showResetProfileBanner_ ? html`
+ 
+ <cr-view-manager id="switcher" ?show-all="${this.shouldShowAll_()}">
+   <div slot="view" id="aegis">
+-    ${this.renderPlugin_(this.routes_.AEGIS) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS) ? html`
+       <settings-aegis-page mode="home"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisAi">
+-    ${this.renderPlugin_(this.routes_.AEGIS_AI) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_AI) ? html`
+       <settings-aegis-page mode="ai"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisExperiments">
+-    ${this.renderPlugin_(this.routes_.AEGIS_EXPERIMENTS) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_EXPERIMENTS) ? html`
+       <settings-aegis-page mode="experiments"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisDownloads">
+-    ${this.renderPlugin_(this.routes_.AEGIS_DOWNLOADS) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_DOWNLOADS) ? html`
+       <settings-aegis-page mode="downloads"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisOcr">
+-    ${this.renderPlugin_(this.routes_.AEGIS_OCR) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_OCR) ? html`
+       <settings-aegis-page mode="ocr"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisTools">
+-    ${this.renderPlugin_(this.routes_.AEGIS_TOOLS) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_TOOLS) ? html`
+       <settings-aegis-page mode="tools"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisEnhancements">
+-    ${this.renderPlugin_(this.routes_.AEGIS_ENHANCEMENTS) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_ENHANCEMENTS) ? html`
+       <settings-aegis-page mode="enhancements"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisReading">
+-    ${this.renderPlugin_(this.routes_.AEGIS_READING) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_READING) ? html`
+       <settings-aegis-page mode="reading"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisGestures">
+-    ${this.renderPlugin_(this.routes_.AEGIS_GESTURES) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_GESTURES) ? html`
+       <settings-aegis-page mode="gestures"></settings-aegis-page>
+     ` : ''}
+   </div>
+   <div slot="view" id="aegisPrivacy">
+-    ${this.renderPlugin_(this.routes_.AEGIS_PRIVACY) ? html`
++    ${this.renderAegisPlugin_(this.routes_.AEGIS_PRIVACY) ? html`
+       <settings-aegis-page mode="privacy"></settings-aegis-page>
+     ` : ''}
+   </div>
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.ts b/chrome/browser/resources/settings/settings_main/settings_main.ts
+index 81a789f8543e96bebf3d7919b25fcd6407a3b5ed..4617b17bc92b0b90380c85343a2a437bd6d33d38 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.ts
++++ b/chrome/browser/resources/settings/settings_main/settings_main.ts
+@@ -296,6 +296,12 @@ export class SettingsMainElement extends SettingsMainElementBase {
+     return this.hasSearched_ || this.renderedRoutes_.has(route);
+   }
+ 
++  protected renderAegisPlugin_(route: Route): boolean {
++    // 保留原有离开页面即卸载的行为，避免隐藏的 Aegis 页面继续运行。
++    return this.inSearchMode_ ||
++        (!!this.lastRoute_ && route.contains(this.lastRoute_));
++  }
++
+   protected showPage_(
+       visibility?: boolean|AppearancePageVisibility|
+       PrivacyPageVisibility): boolean {

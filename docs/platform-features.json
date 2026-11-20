@@ -3412,6 +3412,138 @@
           "evidence": []
         }
       }
+    },
+    {
+      "id": "windows-access-desktop",
+      "name": {
+        "zh-CN": "Windows账户、本地核心与诊断分享",
+        "en": "Windows account, local core and diagnostic sharing",
+        "zh-TW": "Windows帳戶、本機核心與診斷分享"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目专指Windows实现；未移植到本端，不代表本端其他账户或代理功能缺失。",
+            "en": "This item describes the Windows implementation. It is not ported to this platform and does not describe other account or proxy capabilities.",
+            "zh-TW": "本條目專指Windows實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码已纳入本轮候选；平台原生测试、实际界面与隔离边界尚待本次产物验收。",
+            "en": "Source is included in this candidate; platform native tests, UI and isolation boundaries still require acceptance with the candidate artifact.",
+            "zh-TW": "原始碼已納入本輪候選；平台原生測試、實際介面與隔離邊界尚待本次產物驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目专指Windows实现；未移植到本端，不代表本端其他账户或代理功能缺失。",
+            "en": "This item describes the Windows implementation. It is not ported to this platform and does not describe other account or proxy capabilities.",
+            "zh-TW": "本條目專指Windows實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目专指Windows实现；未移植到本端，不代表本端其他账户或代理功能缺失。",
+            "en": "This item describes the Windows implementation. It is not ported to this platform and does not describe other account or proxy capabilities.",
+            "zh-TW": "本條目專指Windows實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_account_win.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_local_core_win.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "mac-access-options",
+      "name": {
+        "zh-CN": "Mac内部Access Options",
+        "en": "Mac internal Access Options",
+        "zh-TW": "Mac內部Access Options"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "源码已纳入本轮候选；平台原生测试、实际界面与隔离边界尚待本次产物验收。",
+            "en": "Source is included in this candidate; platform native tests, UI and isolation boundaries still require acceptance with the candidate artifact.",
+            "zh-TW": "原始碼已納入本輪候選；平台原生測試、實際介面與隔離邊界尚待本次產物驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目专指macOS实现；未移植到本端，不代表本端其他账户或代理功能缺失。",
+            "en": "This item describes the macOS implementation. It is not ported to this platform and does not describe other account or proxy capabilities.",
+            "zh-TW": "本條目專指macOS實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目专指macOS实现；未移植到本端，不代表本端其他账户或代理功能缺失。",
+            "en": "This item describes the macOS implementation. It is not ported to this platform and does not describe other account or proxy capabilities.",
+            "zh-TW": "本條目專指macOS實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目专指macOS实现；未移植到本端，不代表本端其他账户或代理功能缺失。",
+            "en": "This item describes the macOS implementation. It is not ported to this platform and does not describe other account or proxy capabilities.",
+            "zh-TW": "本條目專指macOS實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc",
+            "apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
     }
   ]
 }

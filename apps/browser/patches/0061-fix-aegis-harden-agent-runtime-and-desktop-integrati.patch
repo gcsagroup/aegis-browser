@@ -6,10 +6,10 @@ Subject: [PATCH] fix(aegis): harden agent runtime and desktop integration
 ---
 
 diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
-index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690553c103a 100644
+index 788224edc8bbb441b39d815c866af7fce523b4ce..92bf81d65a33dde3c40d620612c75b2a1abfdbd2 100644
 --- a/chrome/browser/actor/execution_engine.cc
 +++ b/chrome/browser/actor/execution_engine.cc
-@@ -129,6 +129,7 @@ namespace actor {
+@@ -135,6 +135,7 @@ namespace actor {
  // Individual custom predicates that the actor framework supports in addition to
  // those provided by the origin_gating framework.
  enum class ActorCustomPredicate {
@@ -17,7 +17,7 @@ index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690
    kSafetyList,
    kSensitiveUrl,
    kLookalikeUrl,
-@@ -152,6 +153,8 @@ namespace {
+@@ -158,6 +159,8 @@ namespace {
  constexpr std::string_view ActorCustomPredicateToString(
      ActorCustomPredicate predicate) {
    switch (predicate) {
@@ -26,7 +26,7 @@ index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690
      case ActorCustomPredicate::kSafetyList:
        return "actor_safety_list_check";
      case ActorCustomPredicate::kSensitiveUrl:
-@@ -518,6 +521,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
+@@ -533,6 +536,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
                                    : origin_gating::Decision::kBlocked;
  }
  
@@ -48,7 +48,7 @@ index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690
  origin_gating::Decision AllowIfSafetyChecksDisabled(
      origin_gating::GatingDecisionContext* context,
      const GateableEvent& event) {
-@@ -610,6 +628,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
+@@ -625,6 +643,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -57,7 +57,7 @@ index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690
          case ActorCustomPredicate::kSafetyList:
            return decision.is_allowed
                       ? ExecutionEngine::GatingDecision::kAllowByStaticList
-@@ -676,6 +696,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
+@@ -691,6 +711,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -66,7 +66,7 @@ index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690
          case ActorCustomPredicate::kSafetyList:
            return MayActOnUrlBlockReason::kBlockedByStaticList;
          case ActorCustomPredicate::kDangerousMimeType:
-@@ -784,6 +806,10 @@ std::vector<origin_gating::PredicateConfiguration> CreateOriginGatingPredicates(
+@@ -836,6 +858,10 @@ std::vector<origin_gating::PredicateConfiguration> CreateOriginGatingPredicates(
      ActorTask& task,
      ExecutionEngine::AllowedSchemes allowed_schemes) {
    std::vector<origin_gating::PredicateConfiguration> predicates({
@@ -78,7 +78,7 @@ index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690
                         ActorCustomPredicate::kTabErrorDocument),
         {GateableEvent::kPageAction}},
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index e7647f49fa533e5e54c814800e7386ba6a777faa..1c0e46e76ebe2c4fe8343ded13b8c7f54e6b731d 100644
+index 3111adc8dd63bcebd67218f008fc56b11bff0c38..fdedd60ae1317dab7b68e719d00d0e2eeffe0530 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
 @@ -18,6 +18,7 @@
@@ -89,7 +89,7 @@ index e7647f49fa533e5e54c814800e7386ba6a777faa..1c0e46e76ebe2c4fe8343ded13b8c7f5
  #include "base/test/test_future.h"
  #include "base/time/time.h"
  #include "chrome/browser/actor/actor_keyed_service.h"
-@@ -1174,6 +1175,10 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+@@ -1175,6 +1176,10 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
    }
  
   protected:
@@ -100,7 +100,7 @@ index e7647f49fa533e5e54c814800e7386ba6a777faa..1c0e46e76ebe2c4fe8343ded13b8c7f5
    virtual TaskSourceInfo TaskSource() const { return TestTaskSourceInfo(); }
  
    void SetExpectedOptimizationGuideCall(
-@@ -1457,6 +1462,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
+@@ -1458,6 +1463,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
             EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
  }
  
@@ -1597,7 +1597,7 @@ index 37a56296883ccd394aa3c33c94904a5f6af49177..42f248dbe325b82e2d39aafdfe606cb5
    return {};
  }
 diff --git a/chrome/browser/global_keyboard_shortcuts_mac.mm b/chrome/browser/global_keyboard_shortcuts_mac.mm
-index 1bbe4c5fab65668acadce3f60c0e6d181f83036e..87f53632fa450e9576c5d4e793f8ed8adc8f8d21 100644
+index 4e41528d09564f6b11c0d691565568c36aa25dc3..ca195e7b08325561fadc37b83f1cfbb93eddcc9e 100644
 --- a/chrome/browser/global_keyboard_shortcuts_mac.mm
 +++ b/chrome/browser/global_keyboard_shortcuts_mac.mm
 @@ -151,6 +151,7 @@ const std::vector<KeyboardShortcutData>& GetShortcutsNotPresentInMainMenu() {
@@ -1757,10 +1757,10 @@ index 6cccfc1ccc0c8b1b6ce523ebcc5f05403ce92692..7dc07d318cfc2a381076dc4c09f9a815
    const bool ok = task && task->mode() == AgentMode::kAutomate &&
                    service_->RemoveMonitor(task_id, monitor_id);
 diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
-index 150c570d3ea9756dd068bd919a57b722a4c7e056..56f940aaa840c0d640b1584c2552ea9ae90303a4 100644
+index 918f760012ed46b140791175b52cd30dde5c002b..7358f30cd6ca415e2748382b899fe8506f8437ac 100644
 --- a/chrome/chrome_paks.gni
 +++ b/chrome/chrome_paks.gni
-@@ -222,6 +222,7 @@ template("chrome_extra_paks") {
+@@ -238,6 +238,7 @@ template("chrome_extra_paks") {
          "$root_gen_dir/chrome/about_sys_resources.pak",
          "$root_gen_dir/chrome/access_code_cast_resources.pak",
          "$root_gen_dir/chrome/actor_overlay_resources.pak",

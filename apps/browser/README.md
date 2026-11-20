@@ -1,3 +1,5 @@
+> **2026-11-20 · Chromium 158 源码候选**　准备 Ver 7.5 (341)，桌面 `158.0.8127.37`、Android `158.0.8127.42`。桌面527项、Android348项补丁已从官方基线完整回放，786份覆盖文件一致。设置页适配Lit并保留离页卸载行为。完整构建、三平台原生验收、正式签名及旧客户端更新安装仍待完成。
+
 > **2026-11-15 · 主线额度功能整合候选**　准备 Ver 7.1 (314)，桌面 `157.0.8103.79`、Android `157.0.8103.78`。保留既有功能，并纳入已合入主线的额度显示、刷新和代理开启后重载。当前只完成源码准备，完整构建、原生验收及正式发行仍待完成。详见[本轮说明](../../docs/audit/upstream-quota-integration-2026-11-15.zh-CN.md)。
 
 > **2026-11-14 · 新主线整合候选**　桌面 `157.0.8103.79`、Android `157.0.8103.78`，产品准备为 Ver 7.0 (310)。已纳入主线账户、代理、诊断及Windows卸载文案，并保留既有功能；真实构建与发行尚未完成。详见[本轮说明](../../docs/audit/upstream-157-79-main-2026-11-14.zh-CN.md)。
@@ -32,7 +34,7 @@ The [2026-09-10 audit](../../docs/audit/main-consolidation-2026-09-10.md) record
 
 | File | Meaning |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `157.0.8103.79`，尚未正式发布 |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `158.0.8127.37`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | Exact Chromium commit used as the patch base |
 
 The pin is a fixed snapshot. It does not track newer Stable releases automatically.

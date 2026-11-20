@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 16:42:56 +0800
 Subject: [PATCH] feat(access): expose Browser-only NetworkContext snapshot and
  factory APIs
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -518,7 +519,7 @@ index 19d2dc827d49df97405e423ed916a74da4a56a88..86bc4f2223bf885b2163767446d0d4db
    bool EnterRestoring(const aegis_access::OwnershipKey& owner,
                        std::string_view incarnation);
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 7c2bc9f9011a5fca8fcb3340620a208fb47f81d9..00abe0b518548ea638816c944de0881193001b98 100644
+index 68d93ae1a6be2dc681d0ff51f7a3946dbb6d8269..d3f71e464be2b267e8737bb03367f2d7c0d514a9 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -2,6 +2,8 @@
@@ -530,7 +531,7 @@ index 7c2bc9f9011a5fca8fcb3340620a208fb47f81d9..00abe0b518548ea638816c944de08811
  #include "services/network/network_context.h"
  
  #include <algorithm>
-@@ -988,6 +990,7 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
+@@ -991,6 +993,7 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
  
  NetworkContext::~NetworkContext() {
    is_destructing_ = true;
@@ -538,7 +539,7 @@ index 7c2bc9f9011a5fca8fcb3340620a208fb47f81d9..00abe0b518548ea638816c944de08811
  
    // Clear pending HttpCacheDataRemovers and counters explicitly to cancel
    // any in-flight background operations and avoid callback races.
-@@ -1144,7 +1147,62 @@ void NetworkContext::CreateURLLoaderFactory(
+@@ -1147,7 +1150,62 @@ void NetworkContext::CreateURLLoaderFactory(
                           std::move(resource_scheduler_client));
  }
  
@@ -602,10 +603,10 @@ index 7c2bc9f9011a5fca8fcb3340620a208fb47f81d9..00abe0b518548ea638816c944de08811
    // invalidate the iterator if the factory gets deleted.
    std::vector<PrefetchMatchingURLLoaderFactory*> factories;
 diff --git a/services/network/network_context.h b/services/network/network_context.h
-index c2525a0ded03760c5a22e7473ccc1d552a30c1e2..4aab2dad7f97792f31403342d2d62667def32dda 100644
+index e2f460d9676199b322bde4643fda1eebb6f7718d..2eccb918f060a87c53fc4d7cd2e219703548d6eb 100644
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
-@@ -128,6 +128,7 @@ class SimpleUrlPatternMatcher;
+@@ -130,6 +130,7 @@ class SimpleUrlPatternMatcher;
  }
  
  namespace network {
@@ -613,7 +614,7 @@ index c2525a0ded03760c5a22e7473ccc1d552a30c1e2..4aab2dad7f97792f31403342d2d62667
  class CookieManager;
  class HostResolver;
  class MdnsResponderManager;
-@@ -271,6 +272,16 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -273,6 +274,16 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
    void CreateURLLoaderFactory(
        mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
        mojom::URLLoaderFactoryParamsPtr params) override;
@@ -630,7 +631,7 @@ index c2525a0ded03760c5a22e7473ccc1d552a30c1e2..4aab2dad7f97792f31403342d2d62667
    void ResetURLLoaderFactories() override;
    void GetViaObliviousHttp(
        mojom::ObliviousHttpRequestPtr request,
-@@ -1180,6 +1191,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -1208,6 +1219,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
             base::UniquePtrComparator>
        url_loader_factories_;
  
@@ -665,7 +666,7 @@ index 17c1cff75ae38753c4f7c86f9c92b8a267c95d6d..825e3fc47b7eb27877c7f6a0a8ad0c08
 +  array<AegisAccessRegistrationAck> registrations;
 +};
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 3b14b38711981bf24dd7981066fbd05354be3d84..43e0fc9c7585428ea054e3721eaaee3d6416d3d4 100644
+index b8be21cebc570e3e5b66e0c9a3694b971dec066f..03600d487d3de1a57e50178582d74af207537119 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -4,6 +4,8 @@
@@ -677,10 +678,11 @@ index 3b14b38711981bf24dd7981066fbd05354be3d84..43e0fc9c7585428ea054e3721eaaee3d
  import "components/content_settings/core/common/content_settings.mojom";
  import "components/unexportable_keys/mojom/unexportable_key_service.mojom";
  import "components/variations/variations.mojom";
-@@ -2001,4 +2003,17 @@ interface NetworkContext {
- 
-   // Updates the variations headers to be used for requests.
-   SetVariationsHeaders(variations.mojom.VariationsHeaders? variations_headers);
+@@ -2032,4 +2034,17 @@ interface NetworkContext {
+   // disconnect all clones.
+   [AllowedContext=sandbox.mojom.Context.kBrowser]
+   Clone(pending_receiver<NetworkContext> receiver);
++
 +  // Only Browser owns policy publication and the private request capability.
 +  [AllowedContext=sandbox.mojom.Context.kBrowser]
 +  InstallAegisAccessSnapshot(AegisAccessSnapshot snapshot)
@@ -693,5 +695,4 @@ index 3b14b38711981bf24dd7981066fbd05354be3d84..43e0fc9c7585428ea054e3721eaaee3d
 +      pending_receiver<AegisAccessURLLoaderFactory> receiver,
 +      URLLoaderFactoryParams params, AegisAccessFactoryBinding binding)
 +      => (bool created);
-+
  };

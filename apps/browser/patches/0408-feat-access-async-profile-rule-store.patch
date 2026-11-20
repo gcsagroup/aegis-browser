@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 17:57:38 +0800
 Subject: [PATCH] feat(access): keep Profile rule store lifecycle and recovery
  off UI sequence
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

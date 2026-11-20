@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Fri, 13 Nov 2026 21:05:15 +0800
 Subject: [PATCH] fix(access-log): use bounded Chromium file reads for
  diagnostics
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_core_log_disk_unittest.cc b/chrome/browser/aegis/access/access_core_log_disk_unittest.cc

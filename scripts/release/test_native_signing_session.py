@@ -48,17 +48,55 @@ class NativeSessionTests(unittest.TestCase):
                         self.invoke(name, root / 'output', action)
                     action.assert_not_called()
 
-    def test_both_cli_entries_refuse_an_existing_native_process(self):
+    def test_both_cli_entries_refuse_a_native_process_that_stays_active(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'Library/Caches').mkdir(parents=True)
+            cases = [
+                (b'10 501 quinn /usr/bin/xcodebuild\n', 'quinn /usr/bin/xcodebuild'),
+                (b'11 501 quinn /usr/bin/codesign\n', 'quinn /usr/bin/codesign'),
+            ]
+            for name in ['cloud', 'archive']:
+                for listing, detail in cases:
+                    action = Mock()
+                    with patch.object(Path, 'home', return_value=root), \
+                            patch.object(cloud.os, 'getuid', return_value=501), \
+                            patch.object(cloud, 'NATIVE_IDLE_TIMEOUT', 0), \
+                            patch.object(cloud, 'run', return_value=listing), \
+                            self.assertRaisesRegex(ValueError, detail):
+                        self.invoke(name, root / 'output', action)
+                    action.assert_not_called()
+
+    def test_another_accounts_native_process_does_not_block_the_session(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'Library/Caches').mkdir(parents=True)
             for name in ['cloud', 'archive']:
-                for process in [b'/usr/bin/xcodebuild', b'/usr/bin/codesign']:
-                    action = Mock()
-                    with patch.object(Path, 'home', return_value=root), \
-                            patch.object(cloud, 'run', return_value=process), self.assertRaises(ValueError):
-                        self.invoke(name, root / 'output', action)
-                    action.assert_not_called()
+                action = Mock()
+                with patch.object(Path, 'home', return_value=root), \
+                        patch.object(cloud.os, 'getuid', return_value=501), \
+                        patch.object(cloud, 'NATIVE_IDLE_TIMEOUT', 0), \
+                        patch.object(cloud, 'run', return_value=b'10 0 root /usr/bin/xcodebuild\n'):
+                    self.invoke(name, root / 'output', action)
+                action.assert_called_once()
+
+    def test_same_account_native_process_is_waited_out_after_it_exits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'Library/Caches').mkdir(parents=True)
+            for name in ['cloud', 'archive']:
+                listing = iter([b'10 501 quinn /usr/bin/xcodebuild\n', b''])
+                sleeps = []
+                action = Mock()
+                with patch.object(Path, 'home', return_value=root), \
+                        patch.object(cloud.os, 'getuid', return_value=501), \
+                        patch.object(cloud, 'NATIVE_IDLE_TIMEOUT', 100), \
+                        patch.object(cloud, 'NATIVE_IDLE_POLL', 15), \
+                        patch.object(cloud, 'run', side_effect=lambda *_args, **_kwargs: next(listing)), \
+                        patch.object(cloud.time, 'sleep', side_effect=sleeps.append):
+                    self.invoke(name, root / 'output', action)
+                self.assertEqual(sleeps, [15])
+                action.assert_called_once()
 
     def test_term_and_hup_unwind_keychain_state_and_restore_handlers_in_both_entries(self):
         # Signals target an isolated fixture process, with every native command replaced.

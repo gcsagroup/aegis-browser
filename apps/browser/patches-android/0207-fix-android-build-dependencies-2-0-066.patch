@@ -11,10 +11,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 42f7820ca4efe9be81bc8acba1e6b25f28c16b3a..85ba26ddfc29ab2332cb02bc0209808fc3013d59 100644
+index fd41844d964e47dddbe82fe9cf8eebed2504c8d4..96c8fef78b6b4c8307ead888f0bdc7a4d769bd22 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1875,6 +1875,7 @@ source_set("core") {
+@@ -1511,6 +1511,7 @@ source_set("core") {
        "//chrome/browser/prefetch/android",
        "//chrome/browser/preloading/android",
        "//chrome/browser/ui/page_info",
@@ -73,10 +73,10 @@ index 04e77a74a0b460d04fd3386f8cfa963fdb8b7710..fdc7986171fe78e49cb0cb730e03985e
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
  #endif
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index bc96564c17ab58a883386eae648046c4bfb0c708..a5728a23c28deb0e6e0dafaa746af7e0723e1324 100644
+index 5ff20f872948b2c1e013ca34fe30226dceadf451..999a6db3324d125854af452e1290a304b0604cee 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
-@@ -863,6 +863,7 @@ source_set("unit_tests") {
+@@ -862,6 +862,7 @@ source_set("unit_tests") {
      "//chrome/test/base:testing_browser_process",
      "//components/account_id:test_support",
      "//components/enterprise:test_support",

@@ -2,6 +2,7 @@ From 3e827d7c613f2dbb814e99a7a9ad8b67ace43dd3 Mon Sep 17 00:00:00 2001
 From: Aegis Upstream <aegis-upstream@example.invalid>
 Date: Sat, 24 Oct 2026 20:54:00 +0800
 Subject: [PATCH] 将独立156候选递增至300，为并行设置验收留出版本空间
+
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h

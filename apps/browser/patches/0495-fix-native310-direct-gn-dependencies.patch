@@ -9,15 +9,12 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/BUILD.gn              | 1 +
- chrome/browser/aegis/access/BUILD.gn | 1 +
- 2 files changed, 2 insertions(+)
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index f6d7314d86366b1b6fd5b464ef7cd8b0d462d0cd..cfc0aae10ad448396c7b0d774b84687daad1de65 100644
+index 2de5a53c2a67e0942de40fb75037f0803fdbe04c..cc999c47b7a9e0443061f3c4a2297839a99b40c5 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -516,6 +516,7 @@ if (!is_android) {
+@@ -515,6 +515,7 @@ if (!is_android) {
    source_set("chrome_browser_interface_binders_webui_parts_desktop") {
      sources = [ "chrome_browser_interface_binders_webui_parts_desktop.cc" ]
      deps = [
@@ -37,6 +34,3 @@ index f64f175fabdd36b0039bf817ed187bdb6f7c3b8f..fc683729ecb155038230a78046f5be8f
      "//components/prefs",
      "//components/proxy_config",
      "//content/test:test_support",
--- 
-2.52.0
-

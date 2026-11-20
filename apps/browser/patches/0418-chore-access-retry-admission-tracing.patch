@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 21:21:47 +0800
 Subject: [PATCH] chore(access): trace retry navigation admission without URLs
  or credentials
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc

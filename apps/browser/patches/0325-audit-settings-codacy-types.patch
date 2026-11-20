@@ -4,6 +4,7 @@ Date: Fri, 23 Oct 2026 21:25:00 +0800
 Subject: [PATCH] 明确设置回调与空值类型并规范选择器
 
 保留现有错误处理、界面状态和访问边界，补齐 Codacy 逐条审查中的类型与表达式约束。
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts

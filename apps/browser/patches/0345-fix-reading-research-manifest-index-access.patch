@@ -2,6 +2,7 @@ From e7af10f42cd940b3914e93a7e67855068c3654bb Mon Sep 17 00:00:00 2001
 From: Aegis Native Fix <native-fixture@localhost>
 Date: Tue, 27 Oct 2026 17:10:55 +0000
 Subject: [PATCH] fix: use index access for reading research manifest
+
 ---
 
 diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts

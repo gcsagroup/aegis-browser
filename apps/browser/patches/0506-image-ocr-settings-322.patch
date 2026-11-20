@@ -375,17 +375,21 @@ index 9a27c563dc1d221d145920525883f869b156f4b4..a6c1c7c3fe73ce1df5238c21939e10d5
    AEGIS_ENHANCEMENTS: Route;
    AEGIS_READING: Route;
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
-index 46896f64baaf0bc32ddb116b0113bd355e0b2e9e..cfbfa1805d7b98f8edf6a5ee10dc845039601307 100644
+index 0f76211efe5da6ebd225b89e5fbde430e9e4bd78..5688f74523129068e47e5a493024e7c68c6feb77 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.html
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.html
-@@ -54,6 +54,7 @@
-   <div slot="view" id="aegisAi"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_AI, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="ai"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisExperiments"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_EXPERIMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="experiments"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisDownloads"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_DOWNLOADS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="downloads"></settings-aegis-page></template></div>
-+  <div slot="view" id="aegisOcr"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_OCR, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="ocr"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisTools"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_TOOLS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="tools"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisEnhancements"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_ENHANCEMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="enhancements"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisReading"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_READING, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="reading"></settings-aegis-page></template></div>
+@@ -32,6 +32,11 @@ ${this.showResetProfileBanner_ ? html`
+       <settings-aegis-page mode="downloads"></settings-aegis-page>
+     ` : ''}
+   </div>
++  <div slot="view" id="aegisOcr">
++    ${this.renderPlugin_(this.routes_.AEGIS_OCR) ? html`
++      <settings-aegis-page mode="ocr"></settings-aegis-page>
++    ` : ''}
++  </div>
+   <div slot="view" id="aegisTools">
+     ${this.renderPlugin_(this.routes_.AEGIS_TOOLS) ? html`
+       <settings-aegis-page mode="tools"></settings-aegis-page>
 diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
 index 6cd5dc26ea2b6e5b23d4f7ebddfc69520635bcef..fc6203004a34f128eddd7c13ae0ed2b700e21053 100644
 --- a/chrome/browser/ui/webui/aegis/BUILD.gn
@@ -737,10 +741,10 @@ index 4febe4a1648f95d943097c23e8e6fb6624e58be3..b41b71efbda4fea2a521d455f5b3985c
    void HandleOpenBrowserAgent(const base::ListValue& args);
    void HandleUpdateFilterLists(const base::ListValue& args);
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 95c33a6761664c458aa03ea319c6e4048ecdab82..814a47b8a56a0ed2596d5a06402d2f5368d5ffb6 100644
+index 09a880aa77d8692b8607e5ce4a08f2cabd4950e7..5e163c8311de88403d780f4e3e6020968da81f0d 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -262,6 +262,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -284,6 +284,13 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    html_source->AddString("aegisExperimentsDescription", chinese ? (traditional ? "MINIM、PhishLang 段落分析實驗，預設關閉" : "MINIM、PhishLang 段落分析实验，默认关闭") : "MINIM and PhishLang paragraph analysis experiments, off by default");
    html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
    html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");

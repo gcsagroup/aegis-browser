@@ -5,6 +5,7 @@ Subject: [PATCH] feat: add macOS DEV allow/block debug panel
 
 DEV/Alpha debug panel for explicit-host ALLOW/BLOCK via the site intent
 API. Beta/Release do not register the panel or a general rule editor.
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

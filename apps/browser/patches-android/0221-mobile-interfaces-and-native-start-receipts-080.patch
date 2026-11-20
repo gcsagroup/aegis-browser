@@ -12,10 +12,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index ba29c5deba5c701d66fd8313e234777c4b82f6b1..337042be5bbd82d7f9695b93d52b766f24d59fdc 100644
+index b309658e43bb2220743573d6ee4a822da232e385..010bc181d7ee194e40235451fee92fed74efb1d4 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -4434,7 +4434,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4503,7 +4503,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
          if (autoStart) url.appendQueryParameter("autostart", "1");
          LoadUrlParams params =
                  new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);

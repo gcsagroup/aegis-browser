@@ -11,10 +11,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/browser/devtools/protocol/target_handler.cc b/chrome/browser/devtools/protocol/target_handler.cc
-index f1548c9399e4ca0c40e7a96e9d11a2b314ccf931..1e87ffb957ed030280f8f265c0a2fedafbda4cd0 100644
+index b0875a415123fd1e617c42813620d0fc43e70898..508797fa96e57d6ace0eba491b489d5d59be08f7 100644
 --- a/chrome/browser/devtools/protocol/target_handler.cc
 +++ b/chrome/browser/devtools/protocol/target_handler.cc
-@@ -257,6 +257,14 @@ protocol::Response TargetHandler::CreateTarget(
+@@ -262,6 +262,14 @@ protocol::Response TargetHandler::CreateTarget(
        profile, gurl, ui::PAGE_TRANSITION_AUTO_TOPLEVEL, create_new_window,
        create_in_background, target_browser_interface);
  
@@ -30,7 +30,7 @@ index f1548c9399e4ca0c40e7a96e9d11a2b314ccf931..1e87ffb957ed030280f8f265c0a2feda
    if (!params.navigated_or_inserted_contents) {
      return protocol::Response::ServerError("Failed to open a new tab");
 diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
-index 44c750d6d73f5bb5e21a2391c3820aeff8691661..245aa0807b725aab59f79e31efab410099c24e11 100644
+index 0a677b1b14cf87c5ae06eb5683206723fcef40c5..d7b5f7d4f699e5a8c6146844edd2d68eb2b80cb6 100644
 --- a/content/browser/devtools/protocol/target_handler.cc
 +++ b/content/browser/devtools/protocol/target_handler.cc
 @@ -146,11 +146,19 @@ std::unique_ptr<Target::TargetInfo> BuildTargetInfo(
@@ -58,7 +58,7 @@ index 44c750d6d73f5bb5e21a2391c3820aeff8691661..245aa0807b725aab59f79e31efab4100
    const bool can_expose_parent =
        !remote_client ||
        (!host->GetParentId().empty() &&
-@@ -1162,7 +1170,11 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
+@@ -1172,7 +1180,11 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
      policy_detaching_hosts_.erase(host);
    }
  
@@ -72,10 +72,10 @@ index 44c750d6d73f5bb5e21a2391c3820aeff8691661..245aa0807b725aab59f79e31efab4100
    }
  
 diff --git a/third_party/blink/renderer/core/inspector/inspector_page_agent.cc b/third_party/blink/renderer/core/inspector/inspector_page_agent.cc
-index c8220791450cde1640604a58b3f1fabde298d3ab..90437882f00957c8036b9e111f7837e03cbacae7 100644
+index d65c89aa6193142e24036a5225eca8cf4ba646a8..54b7e416a2df63d16b6158d75beff330bbcba72b 100644
 --- a/third_party/blink/renderer/core/inspector/inspector_page_agent.cc
 +++ b/third_party/blink/renderer/core/inspector/inspector_page_agent.cc
-@@ -1494,13 +1494,21 @@ std::unique_ptr<protocol::Page::Frame> InspectorPageAgent::BuildObjectForFrame(
+@@ -1499,13 +1499,21 @@ std::unique_ptr<protocol::Page::Frame> InspectorPageAgent::BuildObjectForFrame(
    // There are some rare cases where no DocumentLoader is set. We use an empty
    // Url and MimeType in those cases. See e.g. https://crbug.com/1270184.
    const KURL url = loader ? loader->Url() : KURL();

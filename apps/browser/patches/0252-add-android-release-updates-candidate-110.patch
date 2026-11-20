@@ -13,10 +13,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
-index 6c7345209b0baa341d02ab6903b61fcd1ca23625..49614da069b39e59a57db72b77795be95a3b5deb 100644
+index 1f809f4c6b96b169953ff402de2284a4bf86306c..9d7906264eb15386b71b998d26163e8b2ac20740 100644
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -59,6 +59,9 @@ chrome_java_sources = [
+@@ -54,6 +54,9 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/about_settings/AboutChromePreferenceOSVersion.java",
    "java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java",
    "java/src/org/chromium/chrome/browser/about_settings/AboutSettingsBridge.java",
@@ -738,17 +738,17 @@ index 0000000000000000000000000000000000000000..74bf0ea87c7f878cc1ac5b080a790571
 +    }
 +}
 diff --git a/chrome/android/junit/BUILD.gn b/chrome/android/junit/BUILD.gn
-index e68eff9dc3bd1a8bfa90220de7c0e51cd85a17c7..3c8100b240242308c22b1207ed61ae181ec5653a 100644
+index 1302fc24a260b08dec502c06960d85058cf4e475..4bd528b101d23ab195a519ae6b14861710a69bcc 100644
 --- a/chrome/android/junit/BUILD.gn
 +++ b/chrome/android/junit/BUILD.gn
-@@ -1728,6 +1728,7 @@ if (is_android) {
+@@ -1747,6 +1747,7 @@ if (is_android) {
        "//chrome/browser/commerce/subscriptions/test/android/java/src/org/chromium/chrome/browser/subscriptions/CommerceSubscriptionsServiceFactoryUnitTest.java",
        "//chrome/browser/commerce/subscriptions/test/android/java/src/org/chromium/chrome/browser/subscriptions/CommerceSubscriptionsServiceUnitTest.java",
        "src/org/chromium/chrome/browser/about_settings/AboutSettingsBridgeTest.java",
 +      "src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java",
        "src/org/chromium/chrome/browser/accessibility/AccessibilityTabHelperTest.java",
        "src/org/chromium/chrome/browser/accessibility/PageZoomIphControllerTest.java",
-       "src/org/chromium/chrome/browser/accessibility/settings/CaretBrowsingDialogTest.java",
+       "src/org/chromium/chrome/browser/accessibility/PageZoomMenuItemViewUnitTest.java",
 diff --git a/chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java b/chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java
 new file mode 100644
 index 0000000000000000000000000000000000000000..a6ab86aad1c373a5fdd827bca4b61f77a47f953c

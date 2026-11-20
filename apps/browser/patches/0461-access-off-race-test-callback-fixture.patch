@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 15:31:48 +0800
 Subject: [PATCH] test(access): use supported captured callback in OFF race
  fixture
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc

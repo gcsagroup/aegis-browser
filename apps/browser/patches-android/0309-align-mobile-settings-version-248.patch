@@ -4,6 +4,7 @@ Date: Thu, 22 Oct 2026 18:24:00 +0800
 Subject: [PATCH] 对齐 Android 设置候选的产品版本
 
 Android 设置候选使用与构建参数一致的 Ver 6.0 (248)，避免应用内版本仍显示 208。
+
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h

@@ -4,6 +4,7 @@ Date: Fri, 23 Oct 2026 23:20:00 +0800
 Subject: [PATCH] 明确设置键访问与事件绑定并保留翻译标记行为
 
 将受控字典和字段访问写为显式结构；保留现有保存队列、失败回退及消息来源检查。
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts

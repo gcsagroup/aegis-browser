@@ -3,6 +3,7 @@ From: Aegis Browser <devnull@localhost>
 Date: Thu, 12 Nov 2026 13:00:00 +0800
 Subject: [PATCH] feat(access): persist scoped diagnostics with channel
  defaults and compressed sharing
+
 ---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn

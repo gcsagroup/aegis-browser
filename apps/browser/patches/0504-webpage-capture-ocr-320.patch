@@ -12,10 +12,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
-index d940417c74f478db600b6ffd31f6323577b50450..0c287546f4631249196f509a5da6bc5549208937 100644
+index cd452e0dae9278e9e4407b3be82b409415596ba6..1322e9ca6958eaa25885a0ebcc9d866dd9431197 100644
 --- a/chrome/app/chrome_command_ids.h
 +++ b/chrome/app/chrome_command_ids.h
-@@ -297,6 +297,7 @@
+@@ -288,6 +288,7 @@
  #define IDC_SHOW_AEGIS_AGENT            40311
  #define IDC_AEGIS_ENHANCEMENTS          40312
  #define IDC_AEGIS_MARKDOWN              40313
@@ -23,7 +23,7 @@ index d940417c74f478db600b6ffd31f6323577b50450..0c287546f4631249196f509a5da6bc55
  
  // Spell-check
  #define IDC_SPELLCHECK_SUGGESTION_0     41000
-@@ -407,6 +408,7 @@
+@@ -398,6 +399,7 @@
  // Listen to this page context menu.
  #define IDC_CONTENT_CONTEXT_LISTEN_TO_THIS_PAGE 50195
  #define IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT 50196
@@ -402,10 +402,10 @@ index 0000000000000000000000000000000000000000..47ec02145c689ddfc9c695c1bc9887e2
 +
 +#endif  // CHROME_BROWSER_AEGIS_WEBPAGE_CAPTURE_H_
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-index 8d76201f69d2e1aaac1649b81d424223cdfc2a7a..c717a2fa3f3573bbbd4b7eca0df6de73655081e7 100644
+index 479acac25f60924472901764a3771a30ff5b05fa..b351a84540b2d41bf1e8e3ce067cf3c93cf94e63 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-@@ -50,6 +50,7 @@
+@@ -51,6 +51,7 @@
  #include "chrome/browser/apps/platform_apps/app_load_service.h"
  #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
  #include "chrome/browser/browser_features.h"
@@ -413,7 +413,7 @@ index 8d76201f69d2e1aaac1649b81d424223cdfc2a7a..c717a2fa3f3573bbbd4b7eca0df6de73
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/context_hub/context_hub_service.h"
  #include "chrome/browser/context_hub/context_hub_service_factory.h"
-@@ -2384,6 +2385,14 @@ void RenderViewContextMenu::AppendImageItems() {
+@@ -2398,6 +2399,14 @@ void RenderViewContextMenu::AppendImageItems() {
    menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_COPYIMAGELOCATION,
                                    IDS_CONTENT_CONTEXT_COPYIMAGELOCATION);
  
@@ -428,7 +428,7 @@ index 8d76201f69d2e1aaac1649b81d424223cdfc2a7a..c717a2fa3f3573bbbd4b7eca0df6de73
    // Don't double-add for linked images, which also add the item.
    if (params_.link_url.is_empty()) {
      AppendQRCodeGeneratorItem(/*for_image=*/true, /*draw_icon=*/false,
-@@ -3730,6 +3739,8 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
+@@ -3782,6 +3791,8 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
        return navigation_allowed && params_.src_url.is_valid() &&
               (params_.src_url.GetScheme() != content::kChromeUIScheme);
  
@@ -437,7 +437,7 @@ index 8d76201f69d2e1aaac1649b81d424223cdfc2a7a..c717a2fa3f3573bbbd4b7eca0df6de73
      case IDC_CONTENT_CONTEXT_COPYIMAGE:
        return params_.has_image_contents;
  
-@@ -4151,6 +4162,9 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
+@@ -4203,6 +4214,9 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
        WriteURLToClipboard(params_.src_url, id);
        break;
  
@@ -905,7 +905,7 @@ index 0000000000000000000000000000000000000000..9dab32a708f6461b439269c7f72084e3
 +  parent.postMessage({type: 'ready'}, parentOrigin);
 +}
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index b718e8a6a5e2574b3898ce0ae4a6e42df6ffbc08..d96926c4d868f29ac5382c8c2f5a1c2ff8177180 100644
+index c2dec04fb2d6538488947442b97096950a28981c..edf797b4d5836f8b4529b57d217e120e39b85248 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
 @@ -3,6 +3,7 @@
@@ -916,7 +916,7 @@ index b718e8a6a5e2574b3898ce0ae4a6e42df6ffbc08..d96926c4d868f29ac5382c8c2f5a1c2f
  
  #include <stddef.h>
  
-@@ -1087,6 +1088,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1105,6 +1106,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
      case IDC_SHARING_HUB:
        SharingHub(browser_);
        break;
@@ -926,7 +926,7 @@ index b718e8a6a5e2574b3898ce0ae4a6e42df6ffbc08..d96926c4d868f29ac5382c8c2f5a1c2f
      case IDC_SHARING_HUB_SCREENSHOT:
        ScreenshotCapture(browser_);
        break;
-@@ -2195,6 +2199,7 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+@@ -2217,6 +2221,7 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
                                          !forced_incognito || is_guest);
    command_updater->UpdateCommandEnabled(IDC_AEGIS_ENHANCEMENTS, IsAegisProfileSupported(profile));
    command_updater->UpdateCommandEnabled(IDC_AEGIS_MARKDOWN, IsAegisProfileSupported(profile));
@@ -935,7 +935,7 @@ index b718e8a6a5e2574b3898ce0ae4a6e42df6ffbc08..d96926c4d868f29ac5382c8c2f5a1c2f
                                          IsAegisProfileSupported(profile));
    command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index b3e4f2896a9b62b754d9dede4bb5ee797d843768..9e6cce8d3ae376c252654d4e1a17f8fb00fd586a 100644
+index a6a56b8c78c0bb8ac4473a9cc5fa51fc3c6e7715..383b98182b4e2a08fab2372b64d23977d6bab16e 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
 @@ -3,6 +3,7 @@
@@ -946,7 +946,7 @@ index b3e4f2896a9b62b754d9dede4bb5ee797d843768..9e6cce8d3ae376c252654d4e1a17f8fb
  
  #include <algorithm>
  #include <cmath>
-@@ -887,6 +888,14 @@ SaveAndShareSubMenuModel::SaveAndShareSubMenuModel(
+@@ -896,6 +897,14 @@ SaveAndShareSubMenuModel::SaveAndShareSubMenuModel(
        features::IsRoundedIconsEnabled() ? kDriveShortcutIcon
                                          : kDriveShortcutChromeRefreshOldIcon);
    SetElementIdentifierAt(GetItemCount() - 1, AppMenuModel::kCreateShortcutItem);
@@ -1468,10 +1468,10 @@ index 985530f170e99a99914bbf0d2046aa23b0754b94..033a9da15d33bda6082364335a78fc01
    map.AddUntrustedWebUIConfig(std::make_unique<AegisMarkdownUIConfig>());
  #endif
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index 923811fcd54dacf8b67cd1b20a068ff170de2641..51d55bdd06f773b2462c27bb71d66d351d13df7b 100644
+index ac0ce178f2471faeda3569f6dfdad5aa61206d8d..4e78e3a4e8f4d843c15a1529605157ddb8cff74c 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-@@ -272,6 +272,7 @@ void RegisterChromeWebUIConfigs() {
+@@ -273,6 +273,7 @@ void RegisterChromeWebUIConfigs() {
    auto& map = content::WebUIConfigMap::GetInstance();
    map.AddWebUIConfig(std::make_unique<AccessibilityUIConfig>());
    map.AddWebUIConfig(std::make_unique<AegisUIConfig>());
@@ -1480,10 +1480,10 @@ index 923811fcd54dacf8b67cd1b20a068ff170de2641..51d55bdd06f773b2462c27bb71d66d35
    map.AddWebUIConfig(std::make_unique<BluetoothInternalsUIConfig>());
    map.AddWebUIConfig(
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 9602ee88b3ec6036fa978d9bfd11458c58b2b95b..e8dd0bc1d413eb977478850290d36a151f157a63 100644
+index 87a8b17b8fb9f341bbf6c9ad0809284fa4e19b41..ecf0b28d9897817ca7e62ba5c3a416a899e1801b 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -876,7 +876,7 @@
+@@ -888,7 +888,7 @@
     "includes": [5160],
    },
    "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis/resources.grd": {

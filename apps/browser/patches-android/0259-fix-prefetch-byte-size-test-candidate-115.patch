@@ -26,7 +26,7 @@ index a426ff959efcf6b0c73b553f36a1c7de7a201467..d436f5cb736949b0d12a75336fe32acc
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
-index 925c09b3d0b9958622a3502476fb6bc2d6377294..6fb391cdc48a9316a54edfd74c5ea2ee9f9ba457 100644
+index 7dbb76f4bd886662d1d888ee118524e844c30587..423ce6806e78316f7e613bdb5cc582e5609064c1 100644
 --- a/content/browser/loader/prefetch_browsertest.cc
 +++ b/content/browser/loader/prefetch_browsertest.cc
 @@ -6,6 +6,7 @@
@@ -37,7 +37,7 @@ index 925c09b3d0b9958622a3502476fb6bc2d6377294..6fb391cdc48a9316a54edfd74c5ea2ee
  #include "base/files/file_path.h"
  #include "base/files/file_util.h"
  #include "base/files/scoped_temp_dir.h"
-@@ -142,7 +143,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+@@ -143,7 +144,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
    committed_client.RunUntilComplete();
    EXPECT_EQ(committed_client.completion_status().error_code, net::OK);
    EXPECT_TRUE(committed_client.has_received_response());

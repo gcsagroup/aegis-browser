@@ -2,13 +2,14 @@ From c08e3d90e4693bd15042d6deb0466aaf7cce6efa Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 24 Oct 2026 00:15:00 +0800
 Subject: [PATCH] 将 Android Aegis 设置接入原生页面栈并合并智能体入口
+
 ---
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
-index 49614da069b39e59a57db72b77795be95a3b5deb..52a8203d6c70ba069b97529acacee85b21983bd5 100644
+index 9d7906264eb15386b71b998d26163e8b2ac20740..b416d70493f41b491c6e8869ec94ae59b5574263 100644
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -1090,6 +1090,7 @@ chrome_java_sources = [
+@@ -1086,6 +1086,7 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundServiceImpl.java",
    "java/src/org/chromium/chrome/browser/services/gcm/GCMNativeBackgroundTask.java",
    "java/src/org/chromium/chrome/browser/services/gcm/GcmUma.java",
@@ -36,10 +37,10 @@ index e3bf574d1bb935bac3e2c75689c2d348b484f67c..04e9c7f1da0c82adb37042291d6d64f4
                  android:layout_width="match_parent"
                  android:layout_height="wrap_content"
 diff --git a/chrome/android/java/res/values/ids.xml b/chrome/android/java/res/values/ids.xml
-index fb07ae3865c96a7f690eef4be579a24deb4d4df8..c2c846aa3bc6c37476ebf1ec0e75b4ae0b70bb58 100644
+index e598fbdaf6772fd854d692a25c0dac62018112ea..5d3ff35acfed094cf623d871c3ea6964d03ce7d9 100644
 --- a/chrome/android/java/res/values/ids.xml
 +++ b/chrome/android/java/res/values/ids.xml
-@@ -312,7 +312,6 @@ found in the LICENSE file.
+@@ -313,7 +313,6 @@ found in the LICENSE file.
      <item type="id" name="tab_groups_parent_menu_id" />
      <item type="id" name="toggle_bookmarks_bar_menu_id" />
      <item type="id" name="aegis_agent_menu_id" />
@@ -48,10 +49,10 @@ index fb07ae3865c96a7f690eef4be579a24deb4d4df8..c2c846aa3bc6c37476ebf1ec0e75b4ae
      <item type="id" name="translate_id" />
      <item type="id" name="ttc_menu_id" />
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 337042be5bbd82d7f9695b93d52b766f24d59fdc..9afa7a3ce0cd85f13f29c83c216363b0e1aba3d9 100644
+index 010bc181d7ee194e40235451fee92fed74efb1d4..883df08514966af3a330bf3328807e1719d09f4d 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -4420,11 +4420,14 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4489,11 +4489,14 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
                  .closeTabs(TabClosureParams.closeAllTabs().build(), /* allowDialog= */ false);
      }
  
@@ -68,7 +69,7 @@ index 337042be5bbd82d7f9695b93d52b766f24d59fdc..9afa7a3ce0cd85f13f29c83c216363b0
                  this::openAegisAgentWorkspace);
      }
  
-@@ -4460,13 +4463,9 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4529,13 +4532,9 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
  
              mLocaleManager.showSearchEnginePromoIfNeeded(this, null);
          } else if (id == R.id.aegis_agent_menu_id) {
@@ -120,7 +121,7 @@ index 18ee2a0eebdc59722033161674d95879317ed1a6..a571072288f5c1eb2d8467abd8cf9502
          bindPreset(view, goal, R.id.aegis_agent_quick_summary, R.string.aegis_agent_goal_summary);
          bindPreset(
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
-index aa705137e531494692d2da861384fa806967da0c..05ae398d886ff8aa0de9497d6f9b71346e107ba3 100644
+index 2a573e3ba21898d68c66443ec81c2b0dea7d2d4e..d3dd3ae416f556a78a7e4cfaf0416950f0e0e74e 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
 @@ -66,6 +66,7 @@ import org.chromium.chrome.browser.pdf.PdfUtils;
@@ -142,7 +143,7 @@ index aa705137e531494692d2da861384fa806967da0c..05ae398d886ff8aa0de9497d6f9b7134
              ChromeAsyncTabLauncher delegate =
                      new ChromeAsyncTabLauncher(
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
-index b27fb357a47fd8f7e8cc36f7767e0dc52da8f6e5..49509308aafe8f11750aa65fd6f9fd1530c6db37 100644
+index cf8f794963b21c966e91a4bf49761bbfd3d1761e..4d74e61145b5ec4879551dbd3a56a05dd6953f62 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
 @@ -540,7 +540,7 @@ public class NewTabPage
@@ -351,7 +352,7 @@ index 0000000000000000000000000000000000000000..83a05a406acef5aa7d1643eb72f9e7c4
 +    }
 +}
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
-index 40ecbe9d2164983dd9b60a7887e4a053c7521dca..28f0d64ed08699bcf18ebff8843123b4033052f4 100644
+index 45f8b4c4d87c02a6ed24c7b0135113e80d5f5471..a4e1907fe2714a7a97bc151cc83ac47a1e0915bb 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 @@ -12,7 +12,6 @@ import android.content.Intent;
@@ -369,8 +370,8 @@ index 40ecbe9d2164983dd9b60a7887e4a053c7521dca..28f0d64ed08699bcf18ebff8843123b4
 -import org.chromium.chrome.browser.IntentHandler;
  import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;
  import org.chromium.chrome.browser.autofill.settings.SettingsNavigationHelper;
- import org.chromium.chrome.browser.autofill.settings.options.AutofillOptionsFragment;
-@@ -391,21 +389,25 @@ public class MainSettings extends ChromeBaseSettingsFragment
+ import org.chromium.chrome.browser.device_lock.DeviceLockActivityLauncherImpl;
+@@ -382,21 +380,25 @@ public class MainSettings extends ChromeBaseSettingsFragment
          if (aegisSettings != null) {
              java.util.Locale locale = getResources().getConfiguration().getLocales().get(0);
              boolean chinese = locale.getLanguage().equals("zh");
@@ -410,10 +411,10 @@ index 40ecbe9d2164983dd9b60a7887e4a053c7521dca..28f0d64ed08699bcf18ebff8843123b4
                  IdentityServicesProvider.get().getIdentityManager(getProfile());
          assert identityManager != null;
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index 3b9eb39e074a7016165ba45ddd366d1e131cb277..489df0a622ad6a3ba486ee944d33ae54511bc81a 100644
+index fb02ee7a188b4d84b604b682b60e3f1f2a4af738..108fc3aa8acbed99b0e8b1d131bf7a3f493556a9 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-@@ -548,9 +548,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -549,9 +549,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -423,7 +424,7 @@ index 3b9eb39e074a7016165ba45ddd366d1e131cb277..489df0a622ad6a3ba486ee944d33ae54
          modelList.add(buildAegisAgentItem());
  
          // Settings
-@@ -749,9 +746,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -750,9 +747,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -433,7 +434,7 @@ index 3b9eb39e074a7016165ba45ddd366d1e131cb277..489df0a622ad6a3ba486ee944d33ae54
          modelList.add(buildAegisAgentItem());
  
          // Settings
-@@ -1401,26 +1395,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -1402,26 +1396,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
                          isMenuIconAtStart()));
      }
  

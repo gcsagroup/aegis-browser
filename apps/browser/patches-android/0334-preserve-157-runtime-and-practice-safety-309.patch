@@ -3,6 +3,7 @@ From: Aegis Patch Maintenance <aegis-patches@example.invalid>
 Date: Fri, 20 Nov 2026 11:48:31 +0800
 Subject: [PATCH] Preserve Chromium 157 Android runtime and practice safety
 
+---
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 17efd0d17d274fe8e84dfbabeb06a02e9171c369..bf2a017348276c2dac896d8e7c8aff4e37039526 100644
@@ -390,10 +391,10 @@ index c570d7b99c53a60ede41ece4487b40c2e6369175..7c21c333b5611e81de6b90b66f7f2f51
  
   private:
 diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
-index d5375b4f34ddca30a9c4dbccea6c000d41af2ae8..cc5422e6bfd393739713c493cb26595ab702d01b 100644
+index bc8418cde0e3f0898cf896721bc378cb669de5b5..e5841aaa54f816d7d6169abf2282c4a3e67733e2 100644
 --- a/chrome/browser/ui/actions/chrome_action_id.h
 +++ b/chrome/browser/ui/actions/chrome_action_id.h
-@@ -160,6 +160,10 @@
+@@ -159,6 +159,10 @@
    E(kActionShowDownloadsPage, IDC_SHOW_DOWNLOADS) \
    E(kActionImportSettings, IDC_IMPORT_SETTINGS) \
    E(kActionOptions, IDC_OPTIONS) \
@@ -405,10 +406,10 @@ index d5375b4f34ddca30a9c4dbccea6c000d41af2ae8..cc5422e6bfd393739713c493cb26595a
    E(kActionViewPasswords, IDC_VIEW_PASSWORDS) \
    E(kActionAbout, IDC_ABOUT) \
 diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
-index c52c8003770479aedea0d3640d40a57081f28a36..16ef07b2415b300a1f8d21687464cbf1876886e3 100644
+index ad3a4c6a98a0e35ca569bd2a53d8285ee8888785..c1fbfc60357fff265b54e2ada0d2c7816a51f11f 100644
 --- a/chrome/browser/ui/browser_actions.cc
 +++ b/chrome/browser/ui/browser_actions.cc
-@@ -446,6 +446,16 @@ void BrowserActions::InitializeSidePanelActions() {
+@@ -440,6 +440,16 @@ void BrowserActions::InitializeSidePanelActions() {
  
    if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
        aegis::IsAegisProfileSupported(profile)) {
@@ -425,7 +426,7 @@ index c52c8003770479aedea0d3640d40a57081f28a36..16ef07b2415b300a1f8d21687464cbf1
      root_action_item_->AddChild(
          actions::ActionItem::Builder(
              CreateToggleSidePanelActionCallback(
-@@ -1918,6 +1928,38 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+@@ -2006,6 +2016,38 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
    BrowserWindowInterface* const bwi = base::to_address(bwi_);
    TabStripModel* const tab_strip_model = bwi_->GetTabStripModel();
  
@@ -465,10 +466,10 @@ index c52c8003770479aedea0d3640d40a57081f28a36..16ef07b2415b300a1f8d21687464cbf1
        actions::ActionItem::Builder(
            base::BindRepeating(
 diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
-index eea1761fc4c3cf61162e5d3b2001e9da710d1f87..ba531c94a9f4642f8e5166a9ab0c3772e971a605 100644
+index 7fa30cb7ebb1265a2675eae89ccacc4cd321a846..688ca5ef669d005ac590fe832bb55a2835afc6fe 100644
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
-@@ -736,7 +736,10 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
+@@ -756,7 +756,10 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
      }
    }  // IsInNormalWindow() end.
  
@@ -496,10 +497,10 @@ index 7c65aa78aa6b1c801017fcd358a7394f7c2ae1c0..60422694db8bcd5a0cae4711489fa0ca
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
-index 97ae2a692d01b69a776bab4c613507f4ee3e1b24..04d44d59592298a702adc255c1033294719af798 100644
+index 39cba8efee3f455136bb41f9c2530c11ef8fb0d6..eb5b8fa43bee6aa5165e8ce663e82bef20ad5442 100644
 --- a/chrome/test/BUILD.gn
 +++ b/chrome/test/BUILD.gn
-@@ -4359,6 +4359,10 @@ if (!is_android && !is_chromeos_device) {
+@@ -3907,6 +3907,10 @@ if (!is_android && !is_chromeos_device) {
    test("interactive_ui_tests") {
      use_xvfb = use_xvfb_in_this_config
  
@@ -507,14 +508,14 @@ index 97ae2a692d01b69a776bab4c613507f4ee3e1b24..04d44d59592298a702adc255c1033294
 +      configs += [ "//chrome:aegis_acceptance_link_limits" ]
 +    }
 +
-     sources = [ "base/interactive_ui_tests_main.cc" ]
- 
-     configs += [ "//build/config:precompiled_headers" ]
+     if ((is_linux || is_chromeos) && !is_component_build) {
+       configs += [ "//build/config/gcc:rpath_for_built_shared_libraries" ]
+     }
 diff --git a/chrome/test/data/webui/settings/autofill_page_index_test.ts b/chrome/test/data/webui/settings/autofill_page_index_test.ts
-index b0bfd0b063c4a7b615ca49d0c77d0c92efbb8269..930118681f07b22bec79352b8eaae05442ee0775 100644
+index b2fa9829d9ad2a4efa07ce517c65784f05b23191..2bac25e6097e4f1184fc265398a5b64fa25f60c7 100644
 --- a/chrome/test/data/webui/settings/autofill_page_index_test.ts
 +++ b/chrome/test/data/webui/settings/autofill_page_index_test.ts
-@@ -156,9 +156,8 @@ suite('AutofillPageIndex', function() {
+@@ -179,9 +179,8 @@ suite('AutofillPageIndex', function() {
      });
      resetRouterForTesting();
      index = document.createElement('settings-autofill-page-index');
@@ -526,10 +527,10 @@ index b0bfd0b063c4a7b615ca49d0c77d0c92efbb8269..930118681f07b22bec79352b8eaae054
      assertEquals(null, Router.getInstance().getRouteForPath('/enhancedAutofill'));
      assertFalse(!!index.$.viewManager.querySelector('#suggestionsFromGemini'));
 diff --git a/chrome/test/data/webui/settings/autofill_page_test.ts b/chrome/test/data/webui/settings/autofill_page_test.ts
-index 289017dcb1fd2ab173cf0bd1d1998d40815dd304..9bcf7a72f4138b31ad36d3076f095604208eb9e6 100644
+index a663a04863ee8b25a13c946b3adfed68d75addc4..1865373cf8eee1ff03198b2013303c1224d47f06 100644
 --- a/chrome/test/data/webui/settings/autofill_page_test.ts
 +++ b/chrome/test/data/webui/settings/autofill_page_test.ts
-@@ -306,19 +306,19 @@ suite('AutofillPage', function() {
+@@ -307,19 +307,19 @@ suite('AutofillPage', function() {
        showSuggestionsFromGeminiSettings: true,
      });
  
@@ -556,7 +557,7 @@ index 289017dcb1fd2ab173cf0bd1d1998d40815dd304..9bcf7a72f4138b31ad36d3076f095604
          '#passwordManagerCard'));
    });
  
-@@ -613,7 +613,7 @@ suite('RelatedServices', function() {
+@@ -614,7 +614,7 @@ suite('RelatedServices', function() {
      document.body.innerHTML = window.trustedTypes!.emptyHTML;
      autofillPage = document.createElement('settings-autofill-page');
      document.body.appendChild(autofillPage);
@@ -566,7 +567,7 @@ index 289017dcb1fd2ab173cf0bd1d1998d40815dd304..9bcf7a72f4138b31ad36d3076f095604
  
    async function testRowOpensUrl(selector: string, urlStringId: string) {
 diff --git a/chrome/test/data/webui/settings/identity_docs_page_test.ts b/chrome/test/data/webui/settings/identity_docs_page_test.ts
-index 4722568bbb65d7ab69940de72aa61cf4043320fb..632bb08cc23eabe2ba0a0ea93ba4f24c7df80e13 100644
+index 835d5ba59cd829abb40c4d97f0fadc8c588bad5f..c4211701b6a9c49275c5eff0c78b9d8e7cce509e 100644
 --- a/chrome/test/data/webui/settings/identity_docs_page_test.ts
 +++ b/chrome/test/data/webui/settings/identity_docs_page_test.ts
 @@ -459,7 +459,7 @@ suite('IdentityDocsPage', function() {
@@ -579,7 +580,7 @@ index 4722568bbb65d7ab69940de72aa61cf4043320fb..632bb08cc23eabe2ba0a0ea93ba4f24c
        assertFalse(!!button);
      });
 diff --git a/chrome/test/data/webui/settings/shopping_page_test.ts b/chrome/test/data/webui/settings/shopping_page_test.ts
-index d2295bb8aeeb7dd98a3fdc601a62774c6de647fd..df391563dc7ed08f7e63f9cc51b89388a83c7944 100644
+index 911ac6e055e609baf0dd56e06cbaacdea2f6b2e9..3e63d8b943c32c683f82b158e498a22363ac9c7b 100644
 --- a/chrome/test/data/webui/settings/shopping_page_test.ts
 +++ b/chrome/test/data/webui/settings/shopping_page_test.ts
 @@ -458,7 +458,7 @@ suite('ShoppingPage', function() {
@@ -592,7 +593,7 @@ index d2295bb8aeeb7dd98a3fdc601a62774c6de647fd..df391563dc7ed08f7e63f9cc51b89388
        assertFalse(!!button);
      });
 diff --git a/chrome/test/data/webui/settings/travel_page_test.ts b/chrome/test/data/webui/settings/travel_page_test.ts
-index 92a144a5a5d5541646c9c0b0173b11d8c3b7783b..0d0088adec50bb0766a3baa6498b0026ace71475 100644
+index c2a43afd5f4617d975c349cb61e731fa20332a10..b1b51c3e9916f8daa791279bc05cbbb4eedbf7ed 100644
 --- a/chrome/test/data/webui/settings/travel_page_test.ts
 +++ b/chrome/test/data/webui/settings/travel_page_test.ts
 @@ -458,7 +458,7 @@ suite('TravelPage', function() {

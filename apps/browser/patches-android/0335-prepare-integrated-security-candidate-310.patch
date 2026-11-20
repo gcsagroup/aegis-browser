@@ -7,6 +7,7 @@ Subject: [PATCH] =?UTF-8?q?=E5=87=86=E5=A4=87Ver=207.0=20(310)=E5=AE=8C?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
+
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h

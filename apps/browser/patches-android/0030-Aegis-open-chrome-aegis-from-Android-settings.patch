@@ -5,6 +5,7 @@ Subject: [PATCH] Aegis: open chrome://aegis from Android settings
 
 Add a Privacy row that launches the modules page, hide CDP/Ollama
 on Android, and keep heuristic summarize available on the phone.
+
 ---
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml

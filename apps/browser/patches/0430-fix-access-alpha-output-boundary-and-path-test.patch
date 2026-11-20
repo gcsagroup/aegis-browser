@@ -3,13 +3,14 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 01:16:11 +0800
 Subject: [PATCH] fix(access): reject stale Alpha assets in normal build
  outputs
+
 ---
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index 86a5d9c275aca47d060828b835a052eacff512b5..4dcf6f2ec73099094b4d5e364d7de35a3d245ab1 100644
+index b95636b8bc3ecb08dd90ee64f1a577359931e674..16d8da4e55ec0b18526a15ded37e8c9d5ad5b1eb 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
-@@ -1412,6 +1412,10 @@ if (is_win) {
+@@ -1427,6 +1427,10 @@ if (is_win) {
      ]
  
      public_deps = [ ":chrome_dll" ]

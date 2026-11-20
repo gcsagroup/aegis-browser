@@ -53,10 +53,10 @@ index 1d4a929ca49e3b431abfa932b6dd19fcefcedab1..ba932cbb41eea8a4f515173375295260
    SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
    ASSERT_TRUE(side_panel);
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index c414cb8ea1af196ad6a388365c42610a3e54ac98..90364080a9bce9bd383f6b5fe660043e8c43336b 100644
+index 36fc355478e0242d65739a42ad10f1c7cb95a568..e066d80f2748f29475301935c7e6eb0154ba482e 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -489,7 +489,7 @@ class AegisOtherRemoteDevToolsProtocolClient
+@@ -494,7 +494,7 @@ class AegisOtherRemoteDevToolsProtocolClient
  
  IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
                         AegisRemoteCreationCanClaimUncommittedInitialDocument) {
@@ -65,7 +65,7 @@ index c414cb8ea1af196ad6a388365c42610a3e54ac98..90364080a9bce9bd383f6b5fe660043e
    create_params.desired_renderer_state =
        content::WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
    auto created_contents_owner = content::WebContents::Create(create_params);
-@@ -548,7 +548,7 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -553,7 +553,7 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    EXPECT_TRUE(found_http_target);
    EXPECT_FALSE(found_internal_target);
  

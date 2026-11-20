@@ -2,6 +2,7 @@ From a15264935cd3747c95c5490f01f9d90899446c10 Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Tue, 10 Nov 2026 22:13:00 +0800
 Subject: [PATCH] fix(access): derive cancellation site from validated mutation
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc

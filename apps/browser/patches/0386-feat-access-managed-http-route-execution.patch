@@ -3,6 +3,7 @@ From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 11:14:01 +0800
 Subject: [PATCH] feat(access): execute exact managed HTTP route without native
  fallback
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -219,10 +220,10 @@ index 0000000000000000000000000000000000000000..bbb911db7c436f97bac0de13acdca206
 +}  // namespace
 +}  // namespace aegis_access
 diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
-index 56d895a424fe04e4aee5bdf4fae61317f852476c..76555b3a8c0caac3b7d8f06c035264c358b83d88 100644
+index bf1acbf7f822b69522f28df5e82c7de99b542d8a..a5c29dc0518f15bd4323863df99981cf02b1c961 100644
 --- a/net/http/http_network_transaction.cc
 +++ b/net/http/http_network_transaction.cc
-@@ -2692,6 +2692,11 @@ void HttpNetworkTransaction::RecordStreamRequestResult(int result) {
+@@ -2702,6 +2702,11 @@ void HttpNetworkTransaction::RecordStreamRequestResult(int result) {
  }
  
  void HttpNetworkTransaction::ProcessAltSvcHeader() {
@@ -276,7 +277,7 @@ index 273f77976652ec34ee2018d170d4fef261b79223..ef3ed18364fe91bb262c089e19268a71
    return OK;
  }
 diff --git a/net/http/http_stream_factory_job_controller.cc b/net/http/http_stream_factory_job_controller.cc
-index 29256d79c1f2a50e9cf32edec49eb7b08cb6d5e5..4be94f4f2dc86195f9837d32b0eff0dd23f24c0b 100644
+index 90159800b2d90681197d351f857a1b4a6f09ea4c..f74e25cffe6c2d100d34cabd5328f9a751ec21c3 100644
 --- a/net/http/http_stream_factory_job_controller.cc
 +++ b/net/http/http_stream_factory_job_controller.cc
 @@ -4,6 +4,8 @@
@@ -298,7 +299,7 @@ index 29256d79c1f2a50e9cf32edec49eb7b08cb6d5e5..4be94f4f2dc86195f9837d32b0eff0dd
        delay_main_job_with_available_spdy_session_(
            delay_main_job_with_available_spdy_session),
        management_config_(http_request_info.connection_management_config),
-@@ -838,6 +841,16 @@ int HttpStreamFactory::JobController::DoResolveProxy() {
+@@ -840,6 +843,16 @@ int HttpStreamFactory::JobController::DoResolveProxy() {
  
    next_state_ = STATE_RESOLVE_PROXY_COMPLETE;
  
@@ -315,7 +316,7 @@ index 29256d79c1f2a50e9cf32edec49eb7b08cb6d5e5..4be94f4f2dc86195f9837d32b0eff0dd
    if (request_info_.load_flags & LOAD_BYPASS_PROXY) {
      proxy_info_.UseDirect();
      return OK;
-@@ -1571,6 +1584,12 @@ int HttpStreamFactory::JobController::ReconsiderProxyAfterError(Job* job,
+@@ -1573,6 +1586,12 @@ int HttpStreamFactory::JobController::ReconsiderProxyAfterError(Job* job,
    DCHECK_EQ(1, GetJobCount());
    DCHECK(!proxy_resolve_request_);
  

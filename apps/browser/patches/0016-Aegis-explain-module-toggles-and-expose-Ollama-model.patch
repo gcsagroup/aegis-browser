@@ -6,6 +6,7 @@ Subject: [PATCH] Aegis: explain module toggles and expose Ollama model
 
 chrome://aegis now describes each privacy control and lets users set
 the loopback Ollama URL/model, probe installed models, and save prefs.
+
 ---
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc

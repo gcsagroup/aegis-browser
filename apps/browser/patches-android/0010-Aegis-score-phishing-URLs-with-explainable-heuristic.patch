@@ -6,6 +6,7 @@ Subject: [PATCH] Aegis: score phishing URLs with explainable heuristics
 Port packages/core scorePhishingUrl() into C++ so the interstitial
 blocks brand-spoof / suspicious-TLD / punycode hosts, not only seed
 rules, and show reason codes on the warning page.
+
 ---
 
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc

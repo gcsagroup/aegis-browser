@@ -5,6 +5,7 @@ Subject: [PATCH] Aegis: bundle packages/core policy snapshot into the tree
 
 Generate tracker/phish/query-param tables from core and ship the JSON
 snapshot under third_party/aegis_policy for a single source of truth.
+
 ---
 
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn

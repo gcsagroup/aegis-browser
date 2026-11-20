@@ -1652,7 +1652,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        PendingDocumentFactoryClosesWhenTabIsDestroyed) {
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
                 browser(), worker_page_url(),
-                WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   const size_t healthy_origin_before =

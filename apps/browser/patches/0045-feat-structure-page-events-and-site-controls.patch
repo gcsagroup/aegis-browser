@@ -1151,7 +1151,7 @@ index 0000000000000000000000000000000000000000..cf5b441dcf2357f9f342c91a7873bd4b
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a149e0d0124 100644
+index 0dad48aae7af44ea9ad5b39b31ee33ec506680f4..d10720b928130f0660c59f853b3baa137facc66a 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -3,9 +3,6 @@
@@ -1164,7 +1164,7 @@ index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a14
  
  #include <algorithm>
  #include <iterator>
-@@ -62,6 +59,8 @@
+@@ -63,6 +60,8 @@
  #include "chrome/browser/accessibility/caption_settings_dialog.h"
  #include "chrome/browser/accessibility/page_colors_controller.h"
  #include "chrome/browser/actor/actor_commit_deferring_condition.h"
@@ -1173,7 +1173,7 @@ index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a14
  #include "chrome/browser/after_startup_task_utils.h"
  #include "chrome/browser/ai/ai_manager.h"
  #include "chrome/browser/app_mode/app_mode_utils.h"
-@@ -227,6 +226,8 @@
+@@ -229,6 +228,8 @@
  #include "chrome/browser/webapps/web_app_offline.h"
  #include "chrome/browser/webauthn/chrome_web_authentication_delegate_base.h"
  #include "chrome/browser/webauthn/webauthn_pref_names.h"
@@ -1182,7 +1182,7 @@ index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a14
  #include "chrome/common/buildflags.h"
  #include "chrome/common/channel_info.h"
  #include "chrome/common/chrome_constants.h"
-@@ -240,7 +241,6 @@
+@@ -242,7 +243,6 @@
  #include "chrome/common/google_url_loader_throttle.h"
  #include "chrome/common/logging_chrome.h"
  #include "chrome/common/pref_names.h"
@@ -1190,7 +1190,7 @@ index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a14
  #include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
  #include "chrome/common/profiler/process_type.h"
  #include "chrome/common/profiler/thread_profiler_configuration.h"
-@@ -1908,7 +1908,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
+@@ -1899,7 +1899,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
      service->InitializeRenderer(host);
      mojo::PendingRemote<chrome::mojom::AegisHost> aegis_host;
      aegis::AegisService::GetInstance()->BindAegisHost(
@@ -1199,7 +1199,7 @@ index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a14
      service->SetAegisHost(host, std::move(aegis_host));
    }
  
-@@ -6158,10 +6158,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6212,10 +6212,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
                aegis::prefs::kTrackerBlockingEnabled),
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kFingerprintGuardEnabled),
@@ -1213,7 +1213,7 @@ index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a14
  #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
                ,
            // Only the copy pushed to renderers carries this; the throttle
-@@ -6341,14 +6340,21 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
+@@ -6395,14 +6394,21 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
      result.push_back(std::move(contextual_tasks_throttle));
    }
  
@@ -1237,7 +1237,7 @@ index 258f633b8b1d423d5fd25dd6d546984e222189b6..852acff030ffe05c830fadcd4e963a14
      result.push_back(std::move(aegis_throttle));
    }
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index 2aff0440a1ec6effa7074d97c55bdbe219c326c3..ecfbd7bb906af9c553cb757850032c3fa086cb1c 100644
+index b75820b60d25ab0a5bcda5ebbde0ec8b1f961cec..e0d8960ed8f5625efc7a86c8b3643a381b75c93a 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
 @@ -15,10 +15,10 @@
@@ -1272,7 +1272,7 @@ index 2aff0440a1ec6effa7074d97c55bdbe219c326c3..ecfbd7bb906af9c553cb757850032c3f
    pref_change_registrar_.Add(
        aegis::prefs::kFilterListGeneration,
        base::BindRepeating(&RendererUpdater::PushAegisFilterList,
-@@ -221,9 +226,10 @@ RendererUpdater::GetRendererConfigurations() {
+@@ -223,9 +228,10 @@ RendererUpdater::GetRendererConfigurations() {
      if (renderer_profile == profile_) {
        auto renderer_configuration =
            GetRendererConfiguration(render_process_host);
@@ -1284,7 +1284,7 @@ index 2aff0440a1ec6effa7074d97c55bdbe219c326c3..ecfbd7bb906af9c553cb757850032c3f
      }
    }
    return rc;
-@@ -233,8 +239,9 @@ mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>
+@@ -235,8 +241,9 @@ mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>
  RendererUpdater::GetRendererConfiguration(
      content::RenderProcessHost* render_process_host) {
    IPC::ChannelProxy* channel = render_process_host->GetChannel();
@@ -1295,7 +1295,7 @@ index 2aff0440a1ec6effa7074d97c55bdbe219c326c3..ecfbd7bb906af9c553cb757850032c3f
  
    mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>
        renderer_configuration;
-@@ -249,11 +256,13 @@ void RendererUpdater::OnSessionRestoreStateChanged(
+@@ -251,11 +258,13 @@ void RendererUpdater::OnSessionRestoreStateChanged(
    merge_session_running_ =
        ash::merge_session_throttling_utils::ShouldDelayRequestForProfile(
            original_profile_);
@@ -1311,7 +1311,7 @@ index 2aff0440a1ec6effa7074d97c55bdbe219c326c3..ecfbd7bb906af9c553cb757850032c3f
    chromeos_listeners_.clear();
  }
  #endif
-@@ -314,11 +323,9 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+@@ -316,11 +325,9 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
        GetBoundSessionThrottlerParams(),
  #endif
        force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),

@@ -2,6 +2,7 @@ From 1522b5ff1d3ffb5446ce1da6d375cb407596eeb3 Mon Sep 17 00:00:00 2001
 From: Aegis Packaging Proposal <aegis-proposal@invalid>
 Date: Sun, 8 Nov 2026 16:00:00 +0000
 Subject: [PATCH] feat: add macOS product phase-1 evidence pack
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

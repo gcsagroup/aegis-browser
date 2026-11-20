@@ -252,7 +252,7 @@ index be389aaf7fe6bb52eca879fbf61ed4400d7c70e2..5dce8de0eaab0c81df0a2d79a6985a6a
  }
  
 diff --git a/components/policy/tools/generate_policy_source.py b/components/policy/tools/generate_policy_source.py
-index 0f77424e42703ed966c82c246078435503f073b2..84e1daa22da6f6242e21d499ccc14e3c4cd54c6c 100755
+index bae3831eaabaf58a2cf8779bff74e581a9cd437e..27b6722d60f0c9409910e4946a8e164d10199cf5 100755
 --- a/components/policy/tools/generate_policy_source.py
 +++ b/components/policy/tools/generate_policy_source.py
 @@ -27,7 +27,7 @@ from xml.sax.saxutils import escape as xml_escape
@@ -1000,7 +1000,7 @@ index 2c37910ff82ec7948810180224970e6c3e32e13c..7cef0f3653a2122dff5b21dcd20b54ba
        '''<array>
        <dict>
 diff --git a/components/policy/tools/template_writers/writers/reg_writer_unittest.py b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
-index 3c738fad9c0c086f46ff565607acccde5ecd5c28..c6b162260449c4cd0d24acb9f75d04290d774776 100755
+index 18686d593d25e0cae1e5d0c4ee77c5cb0010bc79..5589175a22ff10db05a2be9967c9561e731a0f5c 100755
 --- a/components/policy/tools/template_writers/writers/reg_writer_unittest.py
 +++ b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
 @@ -157,7 +157,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):

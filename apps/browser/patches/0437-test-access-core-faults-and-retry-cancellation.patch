@@ -2,6 +2,7 @@ From 1d909ecccb5891c3b98a0f7c4f4a04cfa6324f81 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 04:45:59 +0800
 Subject: [PATCH] test(access): cover core faults and real retry cancellation
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

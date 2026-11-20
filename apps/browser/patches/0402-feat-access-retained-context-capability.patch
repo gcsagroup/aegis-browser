@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 17:04:38 +0800
 Subject: [PATCH] feat(access): retain exact Context capability and native
  incarnation
+
 ---
 
 diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc
@@ -134,10 +135,10 @@ index 23a46f6bfbfb80d2f31f9065abcd0735ac47ac6d..56304f53d0c350a973474f19f679c73c
    mojo::test::BadMessageObserver observer;
    Start(true);
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 00abe0b518548ea638816c944de0881193001b98..58c3d18fc7802083d08fc31239aefcfbbb549630 100644
+index d3f71e464be2b267e8737bb03367f2d7c0d514a9..0f41aba7e11f215961ec88f7d035aa373fe5ff61 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
-@@ -990,6 +990,7 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
+@@ -993,6 +993,7 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
  
  NetworkContext::~NetworkContext() {
    is_destructing_ = true;
@@ -145,7 +146,7 @@ index 00abe0b518548ea638816c944de0881193001b98..58c3d18fc7802083d08fc31239aefcfb
    aegis_access_state_.reset();
  
    // Clear pending HttpCacheDataRemovers and counters explicitly to cancel
-@@ -1147,6 +1148,28 @@ void NetworkContext::CreateURLLoaderFactory(
+@@ -1150,6 +1151,28 @@ void NetworkContext::CreateURLLoaderFactory(
                           std::move(resource_scheduler_client));
  }
  
@@ -174,7 +175,7 @@ index 00abe0b518548ea638816c944de0881193001b98..58c3d18fc7802083d08fc31239aefcfb
  void NetworkContext::InstallAegisAccessSnapshot(
      mojom::AegisAccessSnapshotPtr snapshot,
      InstallAegisAccessSnapshotCallback callback) {
-@@ -1159,7 +1182,8 @@ void NetworkContext::InstallAegisAccessSnapshot(
+@@ -1162,7 +1185,8 @@ void NetworkContext::InstallAegisAccessSnapshot(
      aegis_access_state_ = std::make_unique<AccessNetworkContextState>(
          this, &cors_origin_access_list_);
    }
@@ -185,7 +186,7 @@ index 00abe0b518548ea638816c944de0881193001b98..58c3d18fc7802083d08fc31239aefcfb
      ack->registrations.push_back(mojom::AegisAccessRegistrationAck::New(
          endpoint->proxy_group_id, endpoint->registration_id,
 diff --git a/services/network/network_context.h b/services/network/network_context.h
-index 4aab2dad7f97792f31403342d2d62667def32dda..c8d16436820e614c42f913b9ac1470abbb4def6b 100644
+index 2eccb918f060a87c53fc4d7cd2e219703548d6eb..8ff831abfbc3cb68600e51b1cbd57c3557f2f0df 100644
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
 @@ -21,6 +21,7 @@
@@ -196,7 +197,7 @@ index 4aab2dad7f97792f31403342d2d62667def32dda..c8d16436820e614c42f913b9ac1470ab
  #include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
  #include "base/sequence_checker.h"
-@@ -165,7 +166,7 @@ struct ResourceRequest;
+@@ -167,7 +168,7 @@ struct ResourceRequest;
  // and the mojo::Remote<NetworkContext> used to talk to them, and the
  // NetworkContext is destroyed when either one is torn down.
  class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
@@ -205,7 +206,7 @@ index 4aab2dad7f97792f31403342d2d62667def32dda..c8d16436820e614c42f913b9ac1470ab
  #if BUILDFLAG(ENABLE_REPORTING)
      ,
        public net::ReportingCacheObserver
-@@ -272,6 +273,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -274,6 +275,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
    void CreateURLLoaderFactory(
        mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
        mojom::URLLoaderFactoryParamsPtr params) override;
@@ -224,7 +225,7 @@ index 4aab2dad7f97792f31403342d2d62667def32dda..c8d16436820e614c42f913b9ac1470ab
    void InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
        InstallAegisAccessSnapshotCallback callback) override;
    void BeginAegisAccessRestore(mojom::AegisAccessOwnerPtr owner,
-@@ -1193,6 +1206,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -1221,6 +1234,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
  
    // Explicitly destroyed at the start of ~NetworkContext, before its loaders'
    // dependent Context services. Null until the first complete installation.
@@ -235,13 +236,14 @@ index 4aab2dad7f97792f31403342d2d62667def32dda..c8d16436820e614c42f913b9ac1470ab
  
    // Keep track of the existing `ConnectionChangeNotifiers`. These will be later
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 43e0fc9c7585428ea054e3721eaaee3d6416d3d4..e219a1a8650fc858ddef22dbba4e1bcde125663e 100644
+index 03600d487d3de1a57e50178582d74af207537119..7b985a7cd00677843550aa006269c38b7f877829 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
-@@ -2016,4 +2016,19 @@ interface NetworkContext {
+@@ -2047,4 +2047,20 @@ interface NetworkContext {
+       pending_receiver<AegisAccessURLLoaderFactory> receiver,
        URLLoaderFactoryParams params, AegisAccessFactoryBinding binding)
        => (bool created);
- 
++
 +  // Retains this exact Context for delayed Browser document binding, without
 +  // retaining a raw client-side NetworkContext proxy across service resets.
 +  [AllowedContext=sandbox.mojom.Context.kBrowser]
@@ -276,10 +278,10 @@ index 92d7d59007c27baff7985404c0c592561fd8f0ac..60fa0fa83bccf70e49874d28d8c5388e
        InstallAegisAccessSnapshotCallback callback) {
      auto ack = mojom::AegisAccessSnapshotAck::New();
 diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
-index fc973e078e04c9b08005ba6b7291f10f7fb401a9..0f5960fdbe231a20926611a9829230ce99d29b35 100644
+index d5dc134b5f55483dcdc41b9c1567becaab402c31..2292943761dd960dd027f582a19a8330acd1b02d 100644
 --- a/services/network/test/test_network_context.h
 +++ b/services/network/test/test_network_context.h
-@@ -334,6 +334,9 @@ class TestNetworkContext : public mojom::NetworkContext {
+@@ -339,6 +339,9 @@ class TestNetworkContext : public mojom::NetworkContext {
    void CreateMdnsResponder(
        mojo::PendingReceiver<mojom::MdnsResponder> responder_receiver) override {
    }

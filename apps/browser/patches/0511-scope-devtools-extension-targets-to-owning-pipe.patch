@@ -233,7 +233,7 @@ index 2c6bbd4515c0457d0383f807cd21e8a87970338c..3b6de9180d55519816cbe1de10879bd7
  
    if (!allow_target(target, operation, allow_creation_claim)) {
 diff --git a/content/browser/devtools/devtools_pipe_handler.cc b/content/browser/devtools/devtools_pipe_handler.cc
-index baf89d2badd59a2c4e07a9091ba33c04c15d9b04..12571c73da15ba1662abac9e146b8b0bb9422d60 100644
+index 29bff9caf8f3ecaf5a86f132ceb4184ac215c3cb..6dd3efa9f639643aa2a3258a6dcd7fd4ff81b3b5 100644
 --- a/content/browser/devtools/devtools_pipe_handler.cc
 +++ b/content/browser/devtools/devtools_pipe_handler.cc
 @@ -428,10 +428,26 @@ DevToolsPipeHandler::DevToolsPipeHandler(int read_fd,
@@ -264,7 +264,7 @@ index baf89d2badd59a2c4e07a9091ba33c04c15d9b04..12571c73da15ba1662abac9e146b8b0b
    // Disconnect from the target.
    CHECK(browser_target_, base::NotFatalUntil::M159);
 diff --git a/content/browser/devtools/devtools_pipe_handler.h b/content/browser/devtools/devtools_pipe_handler.h
-index 3c9a5c19257b83ca594b780a930e04774680d49b..86cf913d253f5b625e1d8ee21cdc88265101ab49 100644
+index 6f9cc5746465ade25892ed010e013f1168b4e5b1..8fc5d0ae090e46985723011e4f3e8ea2a8049431 100644
 --- a/content/browser/devtools/devtools_pipe_handler.h
 +++ b/content/browser/devtools/devtools_pipe_handler.h
 @@ -18,6 +18,7 @@
@@ -275,9 +275,9 @@ index 3c9a5c19257b83ca594b780a930e04774680d49b..86cf913d253f5b625e1d8ee21cdc8826
  class PipeReaderBase;
  class PipeWriterBase;
  
-@@ -56,6 +57,11 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
-   bool AllowUnsafeOperations() override;
+@@ -57,6 +58,11 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
    std::string GetTypeForMetrics() override;
+   PeerMetadata GetPeerMetadata() override;
  
 +  void RegisterExtension(
 +      std::string extension_id,
@@ -287,7 +287,7 @@ index 3c9a5c19257b83ca594b780a930e04774680d49b..86cf913d253f5b625e1d8ee21cdc8826
    void Shutdown();
  
   private:
-@@ -75,6 +81,8 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
+@@ -76,6 +82,8 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
    int read_fd_;
    int write_fd_;
    bool shutting_down_ = false;
@@ -297,7 +297,7 @@ index 3c9a5c19257b83ca594b780a930e04774680d49b..86cf913d253f5b625e1d8ee21cdc8826
    std::vector<std::map<std::string, WeakDocumentPtr>>
        provisional_target_document_scopes_;
 diff --git a/content/browser/devtools/protocol/page_handler.cc b/content/browser/devtools/protocol/page_handler.cc
-index 3a3a257ead419bf722c9251e3f16b625355c7e18..7fcee7a13b2bb117711ead5865add9c761fbd144 100644
+index 4db62672e04fa93aac2db10c2e8b4f0ee474dc5e..119c70b279bac16ab506275086d4b1ac6104422d 100644
 --- a/content/browser/devtools/protocol/page_handler.cc
 +++ b/content/browser/devtools/protocol/page_handler.cc
 @@ -57,6 +57,7 @@
@@ -325,7 +325,7 @@ index 3a3a257ead419bf722c9251e3f16b625355c7e18..7fcee7a13b2bb117711ead5865add9c7
  
  using BitmapEncoder =
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index ab98886ac94fd4e6e04ae3144a2a98579c53856c..0999e002552837521adc68ca5cb56baed7bdcc2a 100644
+index c635313d27d9877ee8cf39a6294542d5531df071..5db96e1d7cf87cd2646ad2a5655da14241dbaf7a 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
 @@ -71,6 +71,7 @@
@@ -336,7 +336,7 @@ index ab98886ac94fd4e6e04ae3144a2a98579c53856c..0999e002552837521adc68ca5cb56bae
  #include "content/public/browser/navigation_handle.h"
  #include "content/public/browser/network_service_instance.h"
  #include "content/public/browser/render_frame_host.h"
-@@ -420,8 +421,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
+@@ -421,8 +422,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
            policy_url = origin.GetURL();
          }
        }
@@ -347,7 +347,7 @@ index ab98886ac94fd4e6e04ae3144a2a98579c53856c..0999e002552837521adc68ca5cb56bae
                DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
                DevToolsAgentHost::kTypeFrame, policy_url)) {
          descendants_allowed = false;
-@@ -1254,7 +1255,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+@@ -1269,7 +1270,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
            agent_host->GetId(), frame_host->GetWeakDocumentPtr());
    return owns_initial_blank_target || !manager->delegate() ||
           (agent_host &&
@@ -358,7 +358,7 @@ index ab98886ac94fd4e6e04ae3144a2a98579c53856c..0999e002552837521adc68ca5cb56bae
                DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
                agent_host->GetType(), frame_host->GetLastCommittedURL()));
  }
-@@ -1273,10 +1276,11 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSessionForNavigation(
+@@ -1288,10 +1291,11 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSessionForNavigation(
        DevToolsManager::GetInstance()->delegate();
    DevToolsAgentHost* agent_host = session->GetAgentHost();
    return !delegate ||
@@ -375,7 +375,7 @@ index ab98886ac94fd4e6e04ae3144a2a98579c53856c..0999e002552837521adc68ca5cb56bae
  
  void RenderFrameDevToolsAgentHost::UpdateResourceLoaderFactories() {
 diff --git a/content/public/browser/BUILD.gn b/content/public/browser/BUILD.gn
-index 4ff52ee45512799037285e60d4d8f571c2058edf..2ddc98050a2b29b6c4812a89984ba0d2fd0b885d 100644
+index 12b5c5e209716455e9c7077ca8842ac821f1e366..71911ca209bad418bdb3b1eb42c8d907cd5e9277 100644
 --- a/content/public/browser/BUILD.gn
 +++ b/content/public/browser/BUILD.gn
 @@ -152,6 +152,7 @@ source_set("browser_sources") {

@@ -2,13 +2,14 @@ From a5e9af681d9f35c84b50dae9036b5cfe7c735165 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 01:19:22 +0800
 Subject: [PATCH] feat(access): admit private macOS Alpha and Beta test nodes
+
 ---
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index 4dcf6f2ec73099094b4d5e364d7de35a3d245ab1..0e5a988675b5144e8ec243a691d31e41f2a897fe 100644
+index 16d8da4e55ec0b18526a15ded37e8c9d5ad5b1eb..1b9e7d6b3e2586e305472f6be2096d8c17030429 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
-@@ -1412,7 +1412,7 @@ if (is_win) {
+@@ -1427,7 +1427,7 @@ if (is_win) {
      ]
  
      public_deps = [ ":chrome_dll" ]
@@ -17,7 +18,7 @@ index 4dcf6f2ec73099094b4d5e364d7de35a3d245ab1..0e5a988675b5144e8ec243a691d31e41
        public_deps +=
            [ "//chrome/browser/aegis/access:alpha_test_resource_guard" ]
      }
-@@ -1428,7 +1428,7 @@ if (is_win) {
+@@ -1443,7 +1443,7 @@ if (is_win) {
        "//chrome/browser/web_applications/isolated_web_apps/key_distribution/preload:component_bundle",
        "//components/privacy_sandbox/privacy_sandbox_attestations/preload:component_bundle",
      ]

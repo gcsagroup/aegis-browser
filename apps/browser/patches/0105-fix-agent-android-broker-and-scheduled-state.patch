@@ -436,10 +436,10 @@ index 0c2abce187a288f391f7f78033eb19a15f1194e1..bc21a7ad18e7d593b27e477442975b2e
    if (call.tool_name == "monitor.list") {
      return HasList(value, "monitors") && HasString(value, "revision")
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
-index 4ef3e944e5238050cbe364125c8ff3a26154de61..82924c61ba3d390f7122f1a5b0e187fd823e5e39 100644
+index 7962e24806b25932309ee869a35bba05b2218c3e..2e8159024a7920eaa3d4314458572db796d2c3ec 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
-@@ -490,6 +490,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
+@@ -509,6 +509,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
      content::WebUIBrowserInterfaceBrokerRegistry& registry) {
    PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(registry);
  

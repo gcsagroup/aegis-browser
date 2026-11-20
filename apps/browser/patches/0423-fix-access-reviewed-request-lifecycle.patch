@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 23:52:12 +0800
 Subject: [PATCH] fix(access): coordinate request lifecycle and private
  publication
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_async_rule_store.cc b/chrome/browser/aegis/access/access_async_rule_store.cc
@@ -595,7 +596,7 @@ index 0dada53af47cb98fed6baa37bb55ff40dd1c8b80..9f6fc2dc465d5c9543eaea16f6f2b9f7
    base::OnceCallback<void(AccessPrivateURLLoaderFactory*)> on_destroy_;
    std::unique_ptr<cors::CorsURLLoaderFactory> cors_factory_;
 diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
-index d0ea2126ce2515ba9818bb60910d16ed3f845634..4b66f272e9e645f60787e2215c1e8df9d0e2d3c7 100644
+index 854e99b530fb2882cbc0ef1ce7678460a0944abe..aceed1cb3f01373e3fa5ed1e91c48c620501567b 100644
 --- a/services/network/cors/cors_url_loader_factory.cc
 +++ b/services/network/cors/cors_url_loader_factory.cc
 @@ -542,6 +542,11 @@ void CorsURLLoaderFactory::CreateLoaderAndStartWithAccessRoute(
@@ -611,10 +612,10 @@ index d0ea2126ce2515ba9818bb60910d16ed3f845634..4b66f272e9e645f60787e2215c1e8df9
            network_loader_factory_.get(), access_route_state);
      }
 diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
-index 56431a52b32aa5d0e650b37c690b4c93311649bd..87c2f92a58cc4f41a9ce530dbb479be953cbab12 100644
+index 105a673839c19871f7301268591c34f2d2ca3000..d9b84f4627b3c590c7f601cb0feecf1360f77df7 100644
 --- a/services/network/url_loader.cc
 +++ b/services/network/url_loader.cc
-@@ -568,6 +568,10 @@ URLLoader::URLLoader(
+@@ -567,6 +567,10 @@ URLLoader::URLLoader(
  
  void URLLoader::SetUpUrlRequestCallbacks(
      SharedDictionaryManager* shared_dictionary_manager) {
@@ -625,7 +626,7 @@ index 56431a52b32aa5d0e650b37c690b4c93311649bd..87c2f92a58cc4f41a9ce530dbb479be9
    url_request_->SetRequestHeadersCallback(base::BindRepeating(
        &URLLoader::SetRawRequestHeadersAndNotify, base::Unretained(this)));
    if (shared_dictionary_checker_) {
-@@ -583,7 +587,7 @@ void URLLoader::SetUpUrlRequestCallbacks(
+@@ -582,7 +586,7 @@ void URLLoader::SetUpUrlRequestCallbacks(
    url_request_->SetEarlyResponseHeadersCallback(base::BindRepeating(
        &URLLoader::NotifyEarlyResponse, base::Unretained(this)));
  

@@ -8,6 +8,7 @@ recompile on HTTP 304, and retry failed fetches after a backoff instead
 of wiping the on-disk cache.
 
 Co-authored-by: Cursor <cursoragent@cursor.com>
+
 ---
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc

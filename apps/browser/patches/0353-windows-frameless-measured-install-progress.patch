@@ -2,6 +2,7 @@ From 999211219013e0a6c7305add33f1a44eaf3bd897 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@example.invalid>
 Date: Tue, 3 Nov 2026 15:17:25 +0800
 Subject: [PATCH] Refine frameless installer and report measured stage progress
+
 ---
 
 diff --git a/chrome/installer/BUILD.gn b/chrome/installer/BUILD.gn

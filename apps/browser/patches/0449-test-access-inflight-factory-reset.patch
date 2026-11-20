@@ -2,6 +2,7 @@ From b075157bdceeb9432c76b8cb14ab703c55a0fdb9 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 08:10:32 +0800
 Subject: [PATCH] test(access): preserve in-flight HTTP during factory reset
+
 ---
 
 diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc

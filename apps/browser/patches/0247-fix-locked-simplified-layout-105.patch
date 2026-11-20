@@ -27,7 +27,7 @@ index 0f4a4b1781ddc97e3af7d80b0413c6d7fb64f629..da6f74662902498e22e1aa34187b5a66
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc b/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
-index d4d88b974e355ac30e29ea6c924948ccb320c11b..b17313ab409d6902a2b8fa58cdcd35eaea90e5c9 100644
+index bc996ab2302b7145f5ce640d7ee293a9abeebb4c..08861fee4398db43c7b2b8a3d2a787f10ac8ec4b 100644
 --- a/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
 +++ b/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
 @@ -38,6 +38,7 @@
@@ -38,7 +38,7 @@ index d4d88b974e355ac30e29ea6c924948ccb320c11b..b17313ab409d6902a2b8fa58cdcd35ea
  #include "third_party/blink/renderer/core/paint/paint_layer.h"
  #include "third_party/blink/renderer/core/paint/timing/container_timing.h"
  #include "third_party/blink/renderer/core/paint/timing/container_timing_paint_attribution_tracker.h"
-@@ -4510,4 +4511,56 @@ TEST_F(DisplayLockContextTest,
+@@ -4535,4 +4536,56 @@ TEST_F(DisplayLockContextTest,
    EXPECT_FALSE(weak_state2);
  }
  
@@ -96,7 +96,7 @@ index d4d88b974e355ac30e29ea6c924948ccb320c11b..b17313ab409d6902a2b8fa58cdcd35ea
 +
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc b/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
-index c6e3848041a00fdac6b06ca7d5cb746505fed743..8567896723548e44c962aca5dd8faf46faa81b98 100644
+index e832ebb024331bb7faaa10eb38c73482b12f7eda..9b8b6cdb0e0fbf17584f7ed387fb74f68262ddc9 100644
 --- a/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
 +++ b/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
 @@ -4,6 +4,7 @@

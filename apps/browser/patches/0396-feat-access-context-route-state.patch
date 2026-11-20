@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Tue, 10 Nov 2026 13:06:02 +0800
 Subject: [PATCH] feat(access): own private factories and route snapshots per
  context
+
 ---
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
@@ -448,7 +449,7 @@ index 0000000000000000000000000000000000000000..0ddd2d63d96de3cef7a7166ffb6bfa08
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index 5f6e8b126da9963b0fbd46a7dfc7b7afb3bce68a..75ab1b321df4d4bdc97ad8a42e0e907762930e40 100644
+index 294e9340338713feb42d53c2e31d4617ecf6fa1b..04b2ae706a1381492f3a9b40e0b4afa42b883ef3 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
 @@ -13,6 +13,8 @@ component("network_service") {

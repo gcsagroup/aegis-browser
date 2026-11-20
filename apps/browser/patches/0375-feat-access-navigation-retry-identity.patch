@@ -3,6 +3,7 @@ From: Aegis Local Validation <aegis-local@invalid>
 Date: Tue, 10 Nov 2026 05:14:24 +0800
 Subject: [PATCH] feat(access): bind one-shot retries to the failed navigation
  identity
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

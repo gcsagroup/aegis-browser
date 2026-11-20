@@ -5,54 +5,12 @@ Subject: [PATCH] feat(mac): isolate internal Access Options capabilities and
  storage
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   7 +
- chrome/browser/aegis/access/BUILD.gn          |  48 +++-
- .../aegis/access/access_async_rule_store.cc   |   4 +
- .../aegis/access/access_async_rule_store.h    |   1 +
- .../aegis/access/access_build_channel.cc      |  27 +-
- .../aegis/access/access_build_channel.h       |   8 +-
- .../aegis/access/access_core_log_unittest.cc  |  14 +
- .../access_local_core_manager_unittest.cc     |   8 +
- .../access/access_options_browsertest.cc      | 103 +++++++
- .../aegis/access/access_options_service.cc    |  58 ++++
- .../aegis/access/access_options_service.h     |  26 ++
- .../access/access_options_service_unittest.cc |  50 ++++
- .../aegis/access/access_options_store.cc      | 253 ++++++++++++++++++
- .../aegis/access/access_options_store.h       |  48 ++++
- .../access/access_options_store_unittest.cc   | 192 +++++++++++++
- .../access/access_service_coordinator.cc      |  29 ++
- .../aegis/access/access_service_coordinator.h |   3 +
- .../access_site_proxy_bubble_controller.cc    |  22 +-
- .../access_site_proxy_product_unittest.cc     |  18 +-
- chrome/browser/aegis/access/alpha_access.gni  |  13 +
- .../access/verify_access_build_identity.py    |  55 ++++
- .../verify_access_build_identity_test.py      |  79 ++++++
- chrome/browser/ui/webui/aegis/BUILD.gn        |   6 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  22 ++
- .../ui/webui/aegis/aegis_ui_handler.cc        |  47 ++++
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   9 +
- components/aegis_access/BUILD.gn              |   5 +
- .../aegis_access/access_options_capability.h  |  87 ++++++
- .../access_options_capability_test.cc         |  70 +++++
- components/aegis_access/access_sources.json   |   3 +
- 30 files changed, 1296 insertions(+), 19 deletions(-)
- create mode 100644 chrome/browser/aegis/access/access_options_browsertest.cc
- create mode 100644 chrome/browser/aegis/access/access_options_service.cc
- create mode 100644 chrome/browser/aegis/access/access_options_service.h
- create mode 100644 chrome/browser/aegis/access/access_options_service_unittest.cc
- create mode 100644 chrome/browser/aegis/access/access_options_store.cc
- create mode 100644 chrome/browser/aegis/access/access_options_store.h
- create mode 100644 chrome/browser/aegis/access/access_options_store_unittest.cc
- create mode 100644 chrome/browser/aegis/access/verify_access_build_identity.py
- create mode 100644 chrome/browser/aegis/access/verify_access_build_identity_test.py
- create mode 100644 components/aegis_access/access_options_capability.h
- create mode 100644 components/aegis_access/access_options_capability_test.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index c02d6a94423b2e41b959365af8c2a75234e59de9..a0037e5211136b61d10247b10805f8678c42e5e7 100644
+index 710b6c635f6533df3f5af51b7171c554b3ba4656..140cbb372ee7f78eacf6c2357bcb3f53ff2e31d0 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
-@@ -352,7 +352,14 @@ if (!is_android) {
+@@ -360,7 +360,14 @@ if (!is_android) {
        "enhancements/enhancement_browsertest.cc",
        "google_service_prompt_browsertest.cc",
      ]
@@ -68,7 +26,7 @@ index c02d6a94423b2e41b959365af8c2a75234e59de9..a0037e5211136b61d10247b10805f867
        ":agent_model_transport",
        "//base",
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 7f4f2e9ab941d1655cbf77baaa51695311cfa811..53f07510d4f31d54f592c4dee7db6190a0841be1 100644
+index 501bb7f25a8a007a1aa983f30c33be8ed37ea55e..101a51d782de3188e316d0b77fd9d78f0a08873e 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -10,6 +10,8 @@ buildflag_header("access_buildflags") {
@@ -122,7 +80,7 @@ index 7f4f2e9ab941d1655cbf77baaa51695311cfa811..53f07510d4f31d54f592c4dee7db6190
      ":access_identity_generation_source",
      ":access_local_core_manager",
      ":access_network_context_transport",
-@@ -818,3 +839,28 @@ test("access_async_rule_store_unittests") {
+@@ -819,3 +840,28 @@ test("access_async_rule_store_unittests") {
      "//testing/gtest",
    ]
  }

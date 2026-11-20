@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 05:11:31 +0800
 Subject: [PATCH] test(access): drain canceled retry transactions before
  checking tabs
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc

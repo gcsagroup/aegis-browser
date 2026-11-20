@@ -2,6 +2,7 @@ From 3e85c96510cd0b3ddd6b44cf18870f43e81b6053 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Tue, 3 Nov 2026 18:24:19 +0800
 Subject: [PATCH] fix(licenses): include Aegis resource and libtorrent credits
+
 ---
 
 diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn

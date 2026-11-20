@@ -2,6 +2,7 @@ From cf48f35ba1562ff725e3663fb0eb6e2d2051e479 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Wed, 21 Oct 2026 12:00:00 +0800
 Subject: [PATCH] 移除重复设置入口并独立实验功能分类
+
 ---
 
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
@@ -208,17 +209,21 @@ index 6149fc2a7c680aa8146ce5434607815069f1560d..47a77678b560a0380495862cc88d5f90
    AEGIS_TOOLS: Route;
    AEGIS_ENHANCEMENTS: Route;
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
-index 17d30e16dc4d340e09b731c02d21fa03f13e9c9f..46896f64baaf0bc32ddb116b0113bd355e0b2e9e 100644
+index 52a6545b2ed934c3f625954093e50b3262104ad2..0f76211efe5da6ebd225b89e5fbde430e9e4bd78 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.html
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.html
-@@ -52,6 +52,7 @@
-     show-all$="[[shouldShowAll_(inSearchMode_, lastRoute_)]]">
-   <div slot="view" id="aegis"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="home"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisAi"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_AI, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="ai"></settings-aegis-page></template></div>
-+  <div slot="view" id="aegisExperiments"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_EXPERIMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="experiments"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisDownloads"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_DOWNLOADS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="downloads"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisTools"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_TOOLS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="tools"></settings-aegis-page></template></div>
-   <div slot="view" id="aegisEnhancements"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_ENHANCEMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="enhancements"></settings-aegis-page></template></div>
+@@ -22,6 +22,11 @@ ${this.showResetProfileBanner_ ? html`
+       <settings-aegis-page mode="ai"></settings-aegis-page>
+     ` : ''}
+   </div>
++  <div slot="view" id="aegisExperiments">
++    ${this.renderPlugin_(this.routes_.AEGIS_EXPERIMENTS) ? html`
++      <settings-aegis-page mode="experiments"></settings-aegis-page>
++    ` : ''}
++  </div>
+   <div slot="view" id="aegisDownloads">
+     ${this.renderPlugin_(this.routes_.AEGIS_DOWNLOADS) ? html`
+       <settings-aegis-page mode="downloads"></settings-aegis-page>
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 index 63fa22f849b08bfe2add9dea314d9e9f17700b76..84257bffc0a8c02b3ec6c952c97c3233060b040b 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
@@ -248,10 +253,10 @@ index 53173610f688ae890b8956ba5bd227db7d2b57f1..4da45792502562a389ead053a5dacefa
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index e5eec94e1ccc38876f6954139cc29e3703ad92df..7ea82132a5dcea9536dac190656e5537fc3793ad 100644
+index 2bed98f00db15723e7f3eacc78932f7639b676f5..e059e36cc27c1d2536af2ec65ef9482b720a990a 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -258,6 +258,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -280,6 +280,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    const bool traditional = locale == "zh-TW" || locale == "zh-HK";
    html_source->AddString("aegisSettingsTitle", chinese ? (traditional ? "Aegis 功能設定" : "Aegis 功能设置") : "Aegis settings");
    html_source->AddString("aegisSettingsDescription", chinese ? (traditional ? "集中管理 Aegis 的防護、網站增強、閱讀、手勢、AI 與下載功能。" : "集中管理 Aegis 的防护、网站增强、阅读、手势、AI 与下载功能。") : "Manage Aegis protection, website enhancements, reading, gestures, AI and downloads.");
@@ -260,7 +265,7 @@ index e5eec94e1ccc38876f6954139cc29e3703ad92df..7ea82132a5dcea9536dac190656e5537
    html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
    html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
    html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");
-@@ -266,7 +268,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -288,7 +290,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    html_source->AddString("aegisEnhancementsDescription", chinese ? (traditional ? "網站規則、使用者腳本與 AI 編寫" : "网站规则、用户脚本与 AI 编写") : "Site rules, user scripts and AI authoring");
    html_source->AddString("aegisReadingDescription", chinese ? (traditional ? "閱讀外觀、Markdown、圖片權限與閱讀庫" : "阅读外观、Markdown、图片权限与阅读库") : "Reading appearance, Markdown, image permissions and library");
    html_source->AddString("aegisGesturesDescription", chinese ? (traditional ? "手勢動作、軌跡、網站例外與練習" : "手势动作、轨迹、网站例外与练习") : "Actions, trails, site exceptions and practice");

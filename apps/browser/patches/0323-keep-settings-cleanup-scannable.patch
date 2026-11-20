@@ -4,6 +4,7 @@ Date: Fri, 23 Oct 2026 20:00:00 +0800
 Subject: [PATCH] 保持设置与翻译存储清理路径可完整扫描
 
 保留同步异常、异步拒绝和资源释放行为，兼容固定的静态扫描规则。
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/enhancements.js b/chrome/browser/resources/aegis/enhancements.js

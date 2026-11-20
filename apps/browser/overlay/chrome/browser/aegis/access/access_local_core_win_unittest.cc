@@ -1,4 +1,5 @@
 // Copyright 2026 GCSA
+// 验证 Windows 核心启动的摘要、环境隔离和进程树清理契约，不连接外部代理节点。
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
 #include <windows.h>
@@ -16,6 +17,7 @@
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
 #include "base/process/process.h"
+#include "base/scoped_environment_variable_override.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/synchronization/waitable_event.h"
@@ -33,6 +35,7 @@
 #include "chrome/browser/aegis/access/access_build_channel.h"
 #include "chrome/browser/aegis/access/access_buildflags.h"
 #include "chrome/browser/aegis/access/access_private_files_win.h"
+#include "chrome/browser/aegis/access/access_local_core_win.h"
 #include "crypto/hash.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -195,6 +198,23 @@ TEST_F(AccessLocalCoreWinTest, WrongPinCannotLaunchOrPublish) {
   EXPECT_FALSE(ready.Get().local_credentials);
   EXPECT_EQ(ready.Get().port, 0);
   EXPECT_TRUE(FindCoreDirectory().empty());
+}
+
+TEST_F(AccessLocalCoreWinTest, NetworkEnvironmentRejectsParentSecretsAndOverrides) {
+  // 即使父进程污染 SystemRoot 或携带凭据/代理，也只允许可信系统目录进入核心。
+  base::ScopedEnvironmentVariableOverride root("SystemRoot", "Z:\\untrusted");
+  base::ScopedEnvironmentVariableOverride secret("AEGIS_CORE_TEST_SECRET", "fixture-only");
+  base::ScopedEnvironmentVariableOverride proxy("HTTP_PROXY", "http://127.0.0.1:9");
+  base::ScopedEnvironmentVariableOverride path("PATH", "Z:\\untrusted");
+  base::CommandLine command(binary_);
+  command.AppendArg("--access-fixture-environment");
+  base::win::ScopedHandle job;
+  auto child = LaunchOwnedCore(command, root_.GetPath(), job);
+  ASSERT_TRUE(child.IsValid());
+  int exit_code = -1;
+  base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
+  ASSERT_TRUE(child.WaitForExitWithTimeout(base::Seconds(5), &exit_code));
+  EXPECT_EQ(exit_code, 0);
 }
 
 TEST_F(AccessLocalCoreWinTest, StopCleansProcessTreeAndPrivateConfig) {

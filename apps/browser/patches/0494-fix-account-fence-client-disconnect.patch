@@ -2,6 +2,7 @@ From 981218a4d40e28ae4cf7fd73226259f1e6f7919b Mon Sep 17 00:00:00 2001
 From: Aegis Browser <devnull@localhost>
 Date: Sat, 14 Nov 2026 04:35:02 +0800
 Subject: [PATCH] fix(access): republish account fences after client disconnect
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc

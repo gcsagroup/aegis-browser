@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 11:53:01 +0800
 Subject: [PATCH] fix(access): bound rollback acknowledgements and admit retry
  per tab
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
@@ -244,10 +245,10 @@ index 1035dfab77476e19475001583f4c0e32d579d109..ea643929765a40a7aa4ef0c7dcc315d2
    AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
        AccessRuleStore::FailurePointForTesting::kBuildPreparedCandidateBeforeRead);
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 3501a23a3044f91027e320627104a0719fc9a2bf..3dc85103e52795f677d9240f6d413309ea804a66 100644
+index 9312712f132469e40faabba9e7169b60fa5153fd..567f629ad3a15a9d4c33c4af24ab2a862378cc84 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -9107,8 +9107,10 @@ ChromeContentBrowserClient::GetAlternativeErrorPageOverrideInfo(
+@@ -9177,8 +9177,10 @@ ChromeContentBrowserClient::GetAlternativeErrorPageOverrideInfo(
  #if BUILDFLAG(IS_MAC)
    // The renderer builds the error document from the final request method.
    // The browser retry ticket is bound to the original navigation method.

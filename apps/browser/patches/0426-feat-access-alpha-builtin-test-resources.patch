@@ -3,10 +3,11 @@ From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 00:35:48 +0800
 Subject: [PATCH] feat(access): load pinned private test resources in explicit
  Alpha builds
+
 ---
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index 971275dbd53d74a86978d38ac2ebeb5ed6fc2c15..86a5d9c275aca47d060828b835a052eacff512b5 100644
+index d3e4003be353f7c7bac626aef95080f3c0548fe3..b95636b8bc3ecb08dd90ee64f1a577359931e674 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
 @@ -15,6 +15,7 @@ import("//build/config/win/console_app.gni")
@@ -17,7 +18,7 @@ index 971275dbd53d74a86978d38ac2ebeb5ed6fc2c15..86a5d9c275aca47d060828b835a052ea
  import("//chrome/browser/buildflags.gni")
  import("//chrome/chrome_paks.gni")
  import("//chrome/common/features.gni")
-@@ -1423,6 +1424,10 @@ if (is_win) {
+@@ -1438,6 +1439,10 @@ if (is_win) {
        "//chrome/browser/web_applications/isolated_web_apps/key_distribution/preload:component_bundle",
        "//components/privacy_sandbox/privacy_sandbox_attestations/preload:component_bundle",
      ]

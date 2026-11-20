@@ -3,6 +3,7 @@ From: Aegis Development <dev@gcsa.local>
 Date: Tue, 10 Nov 2026 10:26:31 +0800
 Subject: [PATCH] feat(access): retain route identity across socket pool
  dispatch
+
 ---
 
 diff --git a/components/aegis_access/access_route_pool_isolation_unittest.cc b/components/aegis_access/access_route_pool_isolation_unittest.cc

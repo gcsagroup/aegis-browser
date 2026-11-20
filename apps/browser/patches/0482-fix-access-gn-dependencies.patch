@@ -3,10 +3,11 @@ From: Quinn <coderquinn@gmail.com>
 Date: Fri, 13 Nov 2026 14:33:26 +0800
 Subject: [PATCH] fix(build): declare Access panel and traffic test
  dependencies
+
 ---
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index 7574d0a016e9d67e3e17b8248d31097ad19c4612..a1c77d326c7ce9be4e6121b508b96ceaad6ad183 100644
+index a4ed795d42c5ee368012a52d7c0c38da3eb89e22..c1c0645922768ef77a711231c07dd8d8da6a4df6 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
 @@ -244,6 +244,7 @@ source_set("impl") {

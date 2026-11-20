@@ -6,6 +6,7 @@ Subject: [PATCH] feat: expose macOS site allow/block/off intent API
 Add product-facing AccessSiteIntent helpers and keep Chromium patch
 series synchronized with the overlay. Block stays outside ordinary
 DIRECT publication.
+
 ---
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn

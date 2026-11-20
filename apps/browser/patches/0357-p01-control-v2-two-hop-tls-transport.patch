@@ -4,6 +4,7 @@ Date: Wed, 4 Nov 2026 09:49:03 +0800
 Subject: [PATCH] feat(proxy): package P01 control v2 and two-hop TLS transport
 
 Source-only draft. GN, compilation, fourteen test definitions and independent review await separate admission.
+
 ---
 
 diff --git a/chrome/browser/aegis/proxy/BUILD.gn b/chrome/browser/aegis/proxy/BUILD.gn

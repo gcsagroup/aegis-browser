@@ -41,7 +41,7 @@ index d7d9c0f0ac2d4a11a754696d43d9166b4d539de0..e475a88b1116110eaf7f5832949ff6e1
  
  suite('GoogleServicesPage', function() {
 diff --git a/chrome/test/data/webui/settings/people_page_sync_page_test.ts b/chrome/test/data/webui/settings/people_page_sync_page_test.ts
-index a0b77ee8022ef7f51da7310ce753b6f0d75b064f..772377a134a683c36059a2d92b24aaedab3b1f66 100644
+index 5b8e6cfb91497838374d529b6092bb54011c9e59..f1834bb11068dd1f38efde313f9723c1ddcade8c 100644
 --- a/chrome/test/data/webui/settings/people_page_sync_page_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_sync_page_test.ts
 @@ -27,11 +27,8 @@ import {simulateStoredAccounts} from './sync_test_util.js';

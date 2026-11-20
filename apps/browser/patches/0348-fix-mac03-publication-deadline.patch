@@ -3,6 +3,7 @@ From: quinn521 <287940781+quinn521@users.noreply.github.com>
 Date: Mon, 2 Nov 2026 17:36:39 +0800
 Subject: [PATCH] fix(mac): enforce MAC03 deadlines through evidence
  publication
+
 ---
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc

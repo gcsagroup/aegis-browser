@@ -12,10 +12,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/android/java/res/values/ids.xml b/chrome/android/java/res/values/ids.xml
-index c2c846aa3bc6c37476ebf1ec0e75b4ae0b70bb58..7b99276abb0419ab3806fef5bbfcdbaa6feb2d34 100644
+index 5d3ff35acfed094cf623d871c3ea6964d03ce7d9..c1db52b24f4ed268c25853c782f69cb2170bd71a 100644
 --- a/chrome/android/java/res/values/ids.xml
 +++ b/chrome/android/java/res/values/ids.xml
-@@ -312,6 +312,8 @@ found in the LICENSE file.
+@@ -313,6 +313,8 @@ found in the LICENSE file.
      <item type="id" name="tab_groups_parent_menu_id" />
      <item type="id" name="toggle_bookmarks_bar_menu_id" />
      <item type="id" name="aegis_agent_menu_id" />
@@ -25,19 +25,19 @@ index c2c846aa3bc6c37476ebf1ec0e75b4ae0b70bb58..7b99276abb0419ab3806fef5bbfcdbaa
      <item type="id" name="translate_id" />
      <item type="id" name="ttc_menu_id" />
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 9afa7a3ce0cd85f13f29c83c216363b0e1aba3d9..18b090d0f4d653cc0c83c1d64b5d0b304690e511 100644
+index 883df08514966af3a330bf3328807e1719d09f4d..94d12ae5b34b2d446dc371da3c6adfdcf5ccebdd 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -95,6 +95,8 @@ import org.chromium.chrome.browser.actor.ActorForegroundServiceController;
- import org.chromium.chrome.browser.actor.ActorNotificationService;
- import org.chromium.chrome.browser.actor.ActorTabStateHelper;
+@@ -95,6 +95,8 @@ import org.chromium.chrome.browser.actor.background_tabs.ActorTabStateHelper;
+ import org.chromium.chrome.browser.actor.foreground_service.ActorForegroundServiceController;
+ import org.chromium.chrome.browser.actor.notifications.ActorNotificationService;
  import org.chromium.chrome.browser.aegis.AegisAgentBottomSheetCoordinator;
 +import org.chromium.chrome.browser.contextmenu.ContextMenuNativeDelegateImpl;
 +import org.chromium.chrome.browser.share.long_screenshots.bitmap_generation.BitmapGenerator;
  import org.chromium.chrome.browser.app.ChromeActivity;
  import org.chromium.chrome.browser.app.appmenu.AppMenuPropertiesDelegateImpl;
  import org.chromium.chrome.browser.app.metrics.LaunchCauseMetrics;
-@@ -4462,6 +4464,32 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4531,6 +4533,32 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
              TabCreatorUtil.launchNtp(getTabCreator(/* incognito= */ false));
  
              mLocaleManager.showSearchEnginePromoIfNeeded(this, null);
@@ -111,10 +111,10 @@ index f10a5acd6b31511b415695a6437cefe7cc7ed790..f261f14e303443f89b8744c04c36e8d0
  
      /**
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java b/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java
-index 97bd52057ec0e8cc661d8175d36adc2481749c96..b82c97f0f016bfe79e379ffa7566257731753ad6 100644
+index 0a9639c6bc1359b5d9708197dcfd21f6ef391961..436e0beb9c2f49fb9e5da6fb44580214b069b8dd 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java
-@@ -790,6 +790,7 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
+@@ -818,6 +818,7 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
                  imageGroup.add(createListItem(Item.OPEN_IMAGE_IN_EPHEMERAL_TAB));
              }
              imageGroup.add(createListItem(Item.COPY_IMAGE));
@@ -122,7 +122,7 @@ index 97bd52057ec0e8cc661d8175d36adc2481749c96..b82c97f0f016bfe79e379ffa75662577
              if (shouldShowSaveImage(isSrcDownloadableScheme)) {
                  imageGroup.add(
                          createListItem(
-@@ -1074,6 +1075,11 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
+@@ -1103,6 +1104,11 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
              }
              return true;
          }
@@ -135,10 +135,10 @@ index 97bd52057ec0e8cc661d8175d36adc2481749c96..b82c97f0f016bfe79e379ffa75662577
              recordContextMenuSelection(ContextMenuUma.Action.COPY_IMAGE);
              copyImageToClipboard();
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index 489df0a622ad6a3ba486ee944d33ae54511bc81a..a93a39aa70075a649f3ac2b78dbfc0c68ddcb2c2 100644
+index 108fc3aa8acbed99b0e8b1d131bf7a3f493556a9..ed807975d1ca1764d76bec166eaa7a0013be1f6e 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-@@ -548,6 +548,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -549,6 +549,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -523,10 +523,10 @@ index 0000000000000000000000000000000000000000..47ec02145c689ddfc9c695c1bc9887e2
 +
 +#endif  // CHROME_BROWSER_AEGIS_WEBPAGE_CAPTURE_H_
 diff --git a/chrome/browser/android/BUILD.gn b/chrome/browser/android/BUILD.gn
-index 252d8fea4681f5251878d421772ef88dafe49bcb..86747758f4f7a0470d5218c741a99cef3ff2b57d 100644
+index 2680ccf698a652d54ced948f27b9ed383dfaa6b6..f6469ff50925052355ae8098d15151ccf6da9f48 100644
 --- a/chrome/browser/android/BUILD.gn
 +++ b/chrome/browser/android/BUILD.gn
-@@ -677,6 +677,7 @@ if (is_android) {
+@@ -682,6 +682,7 @@ if (is_android) {
      ]
  
      deps = [
@@ -1155,10 +1155,10 @@ index 0cf9c6474f557b42527c4d780b4a3aed838e2c95..abd375ddd836f96b22c24ea1cae6fe68
  
      /** Sets the composited rect. */
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index c562bd8227276fee1857e2463ebf6dfc8bc61ab8..640e4193890d14f7e56ce64c141506666584b074 100644
+index 24fdad3c7df6bcd118543cb8d03443651b61d7f8..7a603f53cd724c8d076a994860851b11e9d7c18d 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -4479,6 +4479,12 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -4509,6 +4509,12 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
        <message name="IDS_MENU_SETTINGS" desc="Menu item for opening browser settings. [CHAR_LIMIT=27]">
          Settings
        </message>
@@ -1670,10 +1670,10 @@ index 82a2510a7e520106768d9353ce54d5f0ffa69565..ea8280af9666154b6fe4d54826c3c76d
  
  #if defined(TOOLKIT_VIEWS)
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index 923811fcd54dacf8b67cd1b20a068ff170de2641..51d55bdd06f773b2462c27bb71d66d351d13df7b 100644
+index ac0ce178f2471faeda3569f6dfdad5aa61206d8d..4e78e3a4e8f4d843c15a1529605157ddb8cff74c 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-@@ -272,6 +272,7 @@ void RegisterChromeWebUIConfigs() {
+@@ -273,6 +273,7 @@ void RegisterChromeWebUIConfigs() {
    auto& map = content::WebUIConfigMap::GetInstance();
    map.AddWebUIConfig(std::make_unique<AccessibilityUIConfig>());
    map.AddWebUIConfig(std::make_unique<AegisUIConfig>());
@@ -1682,10 +1682,10 @@ index 923811fcd54dacf8b67cd1b20a068ff170de2641..51d55bdd06f773b2462c27bb71d66d35
    map.AddWebUIConfig(std::make_unique<BluetoothInternalsUIConfig>());
    map.AddWebUIConfig(
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index de7141bb1feaca13781c76f90a0961ac10a7e2e6..e8dd0bc1d413eb977478850290d36a151f157a63 100644
+index acc8d4900ad8c9716a2b7a2119db586f5208bbf7..ecf0b28d9897817ca7e62ba5c3a416a899e1801b 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -876,7 +876,7 @@
+@@ -888,7 +888,7 @@
     "includes": [5160],
    },
    "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis/resources.grd": {

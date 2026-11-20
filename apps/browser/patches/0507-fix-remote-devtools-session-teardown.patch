@@ -10,10 +10,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index ff266401d298037270ff91e57a615c755bf4e43b..11d098957900cc5f97b993f8c8acb72366c181ce 100644
+index 4b3c266b83c33d05656f803a1b82e6eaf481f36a..f8a4f57692dc04ff16d957fde84403b501ad513d 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -929,6 +929,45 @@ IN_PROC_BROWSER_TEST_F(
+@@ -934,6 +934,45 @@ IN_PROC_BROWSER_TEST_F(
    }
  }
  
@@ -76,10 +76,10 @@ index edda3a66f4bd71c135740c546e43de55436464b5..3dee4eef57aed401efebd87c1189cb13
    bool IsForceDetachingRemoteDebuggingSessions(
        DevToolsAgentHostClient* root_client) const;
 diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
-index ef98d068d12fe3b0aad294897285ede9dc9adcdb..1e57a508f24f78f0d27b45da491e36334c75d46e 100644
+index b7bceea64bde769d6a80c92b5f58a4ad9683066d..1f6f297a9de78a7734bf8b1ed029e4cad71a2f08 100644
 --- a/content/browser/devtools/protocol/target_handler.cc
 +++ b/content/browser/devtools/protocol/target_handler.cc
-@@ -1141,15 +1141,23 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
+@@ -1151,15 +1151,23 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
            host) &&
        !policy_detaching_hosts_.contains(host)) {
      policy_detaching_hosts_.insert(host);

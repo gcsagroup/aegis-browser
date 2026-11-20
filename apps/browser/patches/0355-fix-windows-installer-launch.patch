@@ -3,6 +3,7 @@ From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 3 Nov 2026 16:52:45 +0800
 Subject: [PATCH] Integrate safe desktop launch and existing-version outcome
  with measured installer UI
+
 ---
 
 diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc

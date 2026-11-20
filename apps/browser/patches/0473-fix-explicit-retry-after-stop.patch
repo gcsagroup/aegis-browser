@@ -3,6 +3,7 @@ From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 01:14:50 +0800
 Subject: [PATCH] fix(access): allow an explicit retry on the stopped error
  entry
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_state.cc b/chrome/browser/aegis/access/access_navigation_retry_state.cc

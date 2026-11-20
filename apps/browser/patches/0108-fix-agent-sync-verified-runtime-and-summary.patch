@@ -12,10 +12,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/chrome/browser/actor/actor_navigation_throttle.cc b/chrome/browser/actor/actor_navigation_throttle.cc
-index 051b87f0b7c863f97ab4f407581b5ece2729a9e7..37f6ef98a466a6a8c63af4cd5426191dba363ff6 100644
+index 171d3e0715d205f333b147b0e62c774ef86f7c65..5c97e7c8655b6019f2159a0307473f0d8782cd23 100644
 --- a/chrome/browser/actor/actor_navigation_throttle.cc
 +++ b/chrome/browser/actor/actor_navigation_throttle.cc
-@@ -31,11 +31,8 @@ namespace actor {
+@@ -32,11 +32,8 @@ namespace actor {
  // static
  void ActorNavigationThrottle::MaybeCreateAndAdd(
      content::NavigationThrottleRegistry& registry) {
@@ -30,10 +30,10 @@ index 051b87f0b7c863f97ab4f407581b5ece2729a9e7..37f6ef98a466a6a8c63af4cd5426191d
    content::NavigationHandle& navigation_handle = registry.GetNavigationHandle();
  
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index 80380ec931f26c522875b4c973b7aaccd836f211..97f71fbf2e74892c6f48ba494875bfa68330b0c2 100644
+index 31f6d9dbb7aa817c080b4b569b2e13787f988291..17ad5f03143ca22c3e142354730afbe6f58dc80e 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-@@ -350,6 +350,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
+@@ -351,6 +351,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
                &ActorUiTabControllerInterface::OnUiTabStateChange,
                tab_controller->GetWeakPtr(), update.ui_tab_state,
                base::BindOnce(&OnUiChangeComplete, std::move(callback))));

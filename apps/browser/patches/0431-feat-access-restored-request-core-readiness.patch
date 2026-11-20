@@ -2,6 +2,7 @@ From 78ae89174046099112c3b573a94daed0b5474a30 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Wed, 11 Nov 2026 01:55:19 +0800
 Subject: [PATCH] feat(access): restore prepared core before selected requests
+
 ---
 
 diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc

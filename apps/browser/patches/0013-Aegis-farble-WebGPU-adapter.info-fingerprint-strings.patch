@@ -6,6 +6,7 @@ Subject: [PATCH] Aegis: farble WebGPU adapter.info fingerprint strings
 Stabilize GPUAdapter vendor/architecture/device/driver per eTLD+1 so
 WebGPU cannot undo FingerprintGuard the way canvas and WebGL already
 cannot.
+
 ---
 
 diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc

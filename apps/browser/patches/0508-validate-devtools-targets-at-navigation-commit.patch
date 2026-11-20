@@ -11,10 +11,10 @@ Content-Transfer-Encoding: 8bit
 ---
 
 diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
-index 1e57a508f24f78f0d27b45da491e36334c75d46e..44c750d6d73f5bb5e21a2391c3820aeff8691661 100644
+index 1f6f297a9de78a7734bf8b1ed029e4cad71a2f08..0a677b1b14cf87c5ae06eb5683206723fcef40c5 100644
 --- a/content/browser/devtools/protocol/target_handler.cc
 +++ b/content/browser/devtools/protocol/target_handler.cc
-@@ -1762,7 +1762,14 @@ void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
+@@ -1773,7 +1773,14 @@ void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
  }
  
  void TargetHandler::DevToolsAgentHostNavigated(DevToolsAgentHost* host) {
@@ -30,13 +30,14 @@ index 1e57a508f24f78f0d27b45da491e36334c75d46e..44c750d6d73f5bb5e21a2391c3820aef
  
  void TargetHandler::DevToolsAgentHostDestroyed(DevToolsAgentHost* host) {
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index 9e32c3756242ca2ebccba9bdeb9d3b62a0f45056..ab98886ac94fd4e6e04ae3144a2a98579c53856c 100644
+index 08280b1a7c3bc5c528caa37de81c5f43c43ee1b7..c635313d27d9877ee8cf39a6294542d5531df071 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
-@@ -665,9 +665,35 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
-     return;
-   }
- 
+@@ -668,9 +668,36 @@ scoped_refptr<RenderFrameDevToolsAgentHost>
+ RenderFrameDevToolsAgentHost::RevalidateSessionAccess(
+     RenderFrameHostImpl* frame_host) {
+   scoped_refptr<RenderFrameDevToolsAgentHost> retain_this(this);
++
 +  // 渲染帧在提交前就会更换，此时新帧还没有已提交 URL。
 +  // 只对已经附加的会话检查匹配的提交请求，新的附加仍采用已提交 URL。
 +  NavigationRequest* committing_navigation = nullptr;

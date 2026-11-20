@@ -6,7 +6,7 @@ Subject: [PATCH] fix(aegis): route goals through model before browsing
 ---
 
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.cc b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
-index f58d2393ba9a602d00fb86a7638ff141f2476d7b..0f9fed9c47eda1f8302198160bd601e10f1af403 100644
+index 9173e3a7e680d9300f83e958aa2dae8189c00048..5abb2b99cd5e58b8b626d6c14c09fff6c65e64d3 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 @@ -16,12 +16,15 @@
@@ -25,7 +25,7 @@ index f58d2393ba9a602d00fb86a7638ff141f2476d7b..0f9fed9c47eda1f8302198160bd601e1
  #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
  #include "ui/views/bubble/bubble_dialog_model_host.h"
  #include "ui/views/widget/widget.h"
-@@ -254,6 +257,26 @@ void ActorUiTabController::SetActorTaskResume() {
+@@ -279,6 +282,26 @@ void ActorUiTabController::SetActorTaskResume() {
    }
  }
  
@@ -53,10 +53,10 @@ index f58d2393ba9a602d00fb86a7638ff141f2476d7b..0f9fed9c47eda1f8302198160bd601e1
  // and onto contents container, investigate removing debouncing on the tab
  // controller side and handle it on the ui component side.
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.h b/chrome/browser/actor/ui/actor_ui_tab_controller.h
-index 591a3d4c64dcfa0407166901fbf0474931889ed2..6ac11be1e620e44dfb4177b6159d3a1ca088fe70 100644
+index 56919ba32edf511ce18c589bee43bc2c795c9eb9..b63bf4d148615901625ff93f96cd1fb0db4e20d4 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.h
-@@ -49,6 +49,8 @@ class ActorUiTabController : public ActorUiTabControllerInterface {
+@@ -50,6 +50,8 @@ class ActorUiTabController : public ActorUiTabControllerInterface {
        override;
  
  #if !BUILDFLAG(IS_ANDROID)
@@ -66,10 +66,10 @@ index 591a3d4c64dcfa0407166901fbf0474931889ed2..6ac11be1e620e44dfb4177b6159d3a1c
    void CancelNavigationConfirmation(tabs::TabInterface* tab) override;
  
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
-index 4d3c2d6b3da9a61c56f8eb414e572d2a69e4217f..0a229c851270c18f8b83766d74958294f063972b 100644
+index 987db4690f705b0ca1b24b3f651ddef92cf36cef..1ad847d65a9a9bd73acbd42406b8929d95f618c6 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
-@@ -81,6 +81,10 @@ class ActorUiTabControllerInterface : public ActorNavigationThrottle::Delegate {
+@@ -82,6 +82,10 @@ class ActorUiTabControllerInterface : public ActorNavigationThrottle::Delegate {
        ActorTabIndicatorStateChangedCallback callback);
  
  #if !BUILDFLAG(IS_ANDROID)
@@ -123,10 +123,10 @@ index 9cc786427fc9ea52a7c12a0b51268a4ae2f7bef6..d510854f1908a9950fd28bb26425e477
    controller_->PressButton();
  
 diff --git a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
-index 499196cde19e4a74a11d5b173a2af6338df798e9..bfc4b4067a478bc839ea62719b51f3da59ab9362 100644
+index 0bcf2924e709cca681a3f6bf9827872bfafec425..631b1bd9ee4dd15547df4d09dce818a7799e27b2 100644
 --- a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
-@@ -55,6 +55,7 @@ class MockActorUiTabController : public ActorUiTabControllerInterface {
+@@ -57,6 +57,7 @@ class MockActorUiTabController : public ActorUiTabControllerInterface {
                (override));
  
  #if !BUILDFLAG(IS_ANDROID)

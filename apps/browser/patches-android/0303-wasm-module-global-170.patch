@@ -7,6 +7,7 @@ Subject: [PATCH] =?UTF-8?q?fix:=20=E9=80=82=E9=85=8D=20WASM=20=E8=83=B6?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
+
 ---
 
 diff --git a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt

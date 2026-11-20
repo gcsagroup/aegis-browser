@@ -6,6 +6,7 @@ Subject: [PATCH] Aegis: farble WebGPU numeric limits per site
 Lower a few enumerable adapter limits toward spec minima using the
 same host seed as adapter.info, without raising hardware or breaking
 power-of-two subgroup sizes.
+
 ---
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts

@@ -10,39 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/BUILD.gn                 |   4 +
- .../aegis/access/access_account_mac.mm        |  44 ++-
- .../aegis/access/access_account_refresh.cc    |  48 +++
- .../aegis/access/access_account_refresh.h     | 102 +++++++
- .../access/access_account_refresh_unittest.cc | 131 ++++++++
- .../aegis/access/access_local_core_manager.cc |  53 +++-
- .../aegis/access/access_local_core_manager.h  |   5 +
- .../access_local_core_manager_unittest.cc     |  15 +
- .../access_navigation_retry_tab_helper.cc     |  74 +++++
- .../access_navigation_retry_tab_helper.h      |  14 +-
- ...ss_navigation_retry_tab_helper_unittest.cc |  86 ++++++
- .../aegis/access/access_paid_site_mac.h       |   6 +-
- .../aegis/access/access_paid_site_mac.mm      |  26 +-
- .../access_site_proxy_bubble_controller.cc    |  22 +-
- .../access_site_proxy_bubble_controller.h     |   4 +-
- .../access_site_proxy_product_unittest.cc     |  12 +
- chrome/browser/aegis/aegis_service.cc         |   6 +
- chrome/browser/aegis/aegis_service.h          |  25 ++
- .../aegis/aegis_service_access_account_mac.mm | 239 ++++++++++++++-
- .../aegis/aegis_ui_handler_unittest.cc        |  89 +++++-
- chrome/browser/resources/settings/BUILD.gn    |   1 +
- .../aegis_page/access_account_usage.ts        | 283 ++++++++++++++++++
- .../settings/aegis_page/aegis_page.html       |  10 +
- .../settings/aegis_page/aegis_page.ts         |  33 +-
- chrome/browser/ui/views/toolbar/BUILD.gn      |   1 +
- .../ui/views/toolbar/aegis_toolbar_button.cc  | 239 ++++++++++++++-
- .../ui/webui/aegis/aegis_ui_handler.cc        |  34 +++
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   3 +
- 28 files changed, 1551 insertions(+), 58 deletions(-)
- create mode 100644 chrome/browser/aegis/access/access_account_refresh.cc
- create mode 100644 chrome/browser/aegis/access/access_account_refresh.h
- create mode 100644 chrome/browser/aegis/access/access_account_refresh_unittest.cc
- create mode 100644 chrome/browser/resources/settings/aegis_page/access_account_usage.ts
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index b5b2f0c934aa990040f951475589381d6873aea1..0e3c5317aa1c80fd37cb9e8ea66daeb49c92c3e8 100644
@@ -1622,7 +1589,7 @@ index cebb45d41ce9211a93fd976c72a8f0e1a3ae17ce..9be4a12bd76a3f788905a85a763c6470
  #endif
  
 diff --git a/chrome/browser/resources/settings/BUILD.gn b/chrome/browser/resources/settings/BUILD.gn
-index 442bf5d054ff38d674649e991ede265725eb5f35..5464d62ab05334fdc0c7731e613fe1f38b22b457 100644
+index 1c0c4ff2f4652cc65f2fccba029f1118d296d341..365c8225ca7bbf6a75d85154b1558ca2cf375c9f 100644
 --- a/chrome/browser/resources/settings/BUILD.gn
 +++ b/chrome/browser/resources/settings/BUILD.gn
 @@ -156,6 +156,7 @@ build_webui("build") {
@@ -2003,7 +1970,7 @@ index 5b93452f99e75249c8114f5e97a01afeaee70992..153d5e1242ad597cd9a5d37929ddc080
    private onFrameMessage_ = (event: MessageEvent) => {
      for (const frame of this.shadowRoot?.querySelectorAll<HTMLIFrameElement>('iframe') || []) {
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index a1c77d326c7ce9be4e6121b508b96ceaad6ad183..e0b396d72bfb97507d5efee33799f21c7253f0c1 100644
+index c1c0645922768ef77a711231c07dd8d8da6a4df6..795925adf97085afbb7adb6ab86cec5b672c3206 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
 @@ -244,6 +244,7 @@ source_set("impl") {
@@ -2448,6 +2415,3 @@ index f657d2e1dc0f8b4cb6fe799b4fb50a3bcd8f3fef..4febe4a1648f95d943097c23e8e6fb66
    base::WeakPtrFactory<AegisUIHandler> account_weak_factory_{this};
  #endif
    base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
--- 
-2.52.0
-
