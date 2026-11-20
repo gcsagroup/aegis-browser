@@ -3,6 +3,8 @@
 import("//build/config/chrome_build.gni")
 
 declare_args() {
+  aegis_access_product_channel = "unknown"
+  aegis_access_internal_options = false
   aegis_alpha_test_node_enabled = false
   aegis_alpha_test_resources_dir = ""
   aegis_beta_test_node_enabled = false
@@ -19,5 +21,16 @@ assert(aegis_beta_test_node_enabled == (aegis_beta_test_resources_dir != ""),
 aegis_private_test_node_enabled =
     aegis_alpha_test_node_enabled || aegis_beta_test_node_enabled
 assert(!aegis_private_test_node_enabled ||
-           (is_mac && !is_official_build && !is_chrome_branded),
-       "Private test nodes require a non-official, unbranded macOS test build.")
+           ((is_mac || is_win) && !is_official_build && !is_chrome_branded),
+       "Private test nodes require a non-official, unbranded macOS or Windows test build.")
+
+assert(aegis_access_product_channel == "unknown" ||
+           aegis_access_product_channel == "debug" ||
+           aegis_access_product_channel == "alpha" ||
+           aegis_access_product_channel == "beta" ||
+           aegis_access_product_channel == "stable",
+       "Unknown Access product channel.")
+assert(!aegis_access_internal_options ||
+           (is_mac && (aegis_access_product_channel == "debug" ||
+                       aegis_access_product_channel == "alpha")),
+       "Internal Options requires an explicit internal macOS product identity.")

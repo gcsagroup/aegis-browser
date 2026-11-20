@@ -122,6 +122,10 @@ returns null plan, usage and timing fields. `401` indicates an invalid session.
 `503` indicates an unreadable, inconsistent, manually disabled or unsupported
 source. All responses specify `Cache-Control: no-store`.
 
+Subscribed responses also include `evaluatedAt`, the UTC Unix millisecond time
+at which the service evaluated status. It is independent of `measuredAt` and
+`receivedAt`; reading an idle account does not create a new traffic measurement.
+
 3X-UI returns cumulative counters and `lastOnline` but no measurement
 watermark. In panel mode `receivedAt` is the time of the successful panel
 read, `measuredAt` and `snapshotAgeMs` are null, and `freshness` is
@@ -280,3 +284,255 @@ schedules a fresh check after two seconds and allows one second for the
 authority to respond. Revocation, exhaustion, expiry, or failure to obtain
 a current authorization closes the stream. This periodic check has bounded
 latency. Byte-exact transfer cutoff and settlement are tracked separately.
+
+## Metering a managed Xray node
+
+The metered profile uses the authenticated VLESS client on the REALITY server
+and the existing account database. Configure one distinct VLESS client for
+each panel client admitted by this node. Its server-configured user label must
+match the plan's permanent `panel_client` binding. The managed CONNECT entry
+continues to select the dedicated SOCKS listener from the verified account.
+A shared Alpha/Beta client can provide a smoke test but cannot provide two
+accounts' independent usage.
+
+Byte counts include the target's TLS handshake and encrypted application data.
+Upstream writes count the confirmed prefix accepted by the target connection.
+Downstream writes count the target bytes in confirmed Vision writes, excluding
+the protocol header and padding. In raw mode the receiver is the underlying
+client connection. These counters advance during an open connection. Direct
+traffic, local cache hits and the node's control requests do not enter these
+writers.
+
+Build the server from the pinned Xray-core v26.11.9 source with Go 1.27.3.
+The supported node profile uses VLESS Vision over REALITY/TCP and a direct
+Freedom TCP outbound. Use a dedicated process for this profile. Its paid
+connections use the instrumented writers even on hosts that support kernel
+splice. Keep mux, fragmentation, outbound chaining and address overrides
+disabled for this profile.
+The build helper reads the pinned commit from an upstream Git checkout,
+applies the writer changes in a new directory, and runs adapter tests:
+
+```sh
+services/access_account/xray_meter/build.sh /path/to/Xray-core \
+  /path/to/new-build-directory /path/to/xray-metered
+```
+
+Use a dedicated service account for the collector and metered Xray process.
+Give that account a private run directory (mode 0700). The collector creates
+a mode-0600 Unix socket and adds its meter tables to the existing account
+database. Its trusted node ID and admitted clients come from the same private
+node configuration used by the CONNECT service.
+
+```sh
+python3 -m services.access_account.metering serve \
+  --database /private/access/accounts.sqlite --config /private/access/node.json \
+  --socket /private/access/run/meter.sock
+```
+
+Start the metered server with `AEGIS_XRAY_METER_SOCKET` set to that socket's
+absolute path. Use a separate Xray process/configuration for the outbound
+client. Confirmed writes and terminal records are persisted in a private
+`<socket>.outbox` directory before reporting. The process retries unacknowledged
+records in order, including after restart, and stops a flow on reporting failure.
+Sample records preserve the writer's measurement time across delayed delivery;
+the collector's arrival time does not replace it. Preserve that directory across restarts. A process or storage failure before a
+writer can persist its result leaves the flow open with a confirmed lower bound.
+If a crash leaves the socket path behind, confirm that the owning
+collector is stopped before removing that path.
+
+Read a consistent account and node snapshot for one period with:
+
+```sh
+python3 -m services.access_account.metering usage \
+  --database /private/access/accounts.sqlite --node test-node --period billing-period
+```
+
+`uploadedBytes` and `downloadedBytes` are directional totals. `sampledAt` is
+the UTC epoch time in milliseconds of the last recorded increase and is null
+until the first increase. `openFlows` includes live connections and connections
+whose terminal record has not arrived. `incompleteFlows` records a known
+incomplete transfer. Treat the counters as confirmed lower bounds until all
+relevant writers have finished successfully. The result also includes the
+confirmed byte counts by writer path. The local reader is intended for
+operators and does not grant access to other accounts through the public API.
+
+Omit `--period` to include all recorded periods in the node total. Use the
+account and period on each row when reconciling it to a particular plan.
+
+To check the complete path on loopback, run the following from the repository
+root with a stock v26.11.9 client, the built server, Python with TLS 1.3
+support, and OpenSSL on PATH. Install the HTTP cache test dependencies in
+your test virtual environment. Choose a new receipt filename for each run.
+
+```sh
+python3 -m pip install 'requests==2.32.5' 'CacheControl==0.14.3'
+python3 -m services.access_account.tests.wire.acceptance \
+  --client /path/to/xray-stock --server /path/to/xray-metered \
+  --receipt /path/to/new-receipt.jsonl
+```
+
+The runner issues credentials to two test accounts and compares the node's
+directional counts with the independent target during concurrent transfers
+and after close. A separate plaintext TCP target exercises the unpadded Vision
+writer. A direct transfer, an HTTP cache hit and a REALITY cover probe must
+leave usage unchanged.
+
+Run the collector and Xray restart regression with the same arguments using
+`python3 -m services.access_account.tests.wire.recovery`. It interrupts the
+collector while a target accepts bytes, restarts both processes, and verifies
+that the pending confirmed prefix and terminal record are recovered.
+
+## Settle managed-node usage into an account period
+
+The operator usage command above reads one node's retained writer counters.
+To make those bytes authoritative for an account's entitlement and managed
+credentials, explicitly bind that node to the account and period. This local
+deployment shares the private account database between the collector, issuer
+and CONNECT service. There is no public report-import endpoint or independent
+remote-node settlement transport.
+
+Binding captures the existing snapshot's uploaded and downloaded bytes once
+as the period's opening baseline. Subsequent confirmed node increments are
+added to that baseline. The collector commits the durable flow update, node
+source position and confirmed settlement position in the same SQLite write
+transaction; a failed settlement rolls back the flow increment too. Entitlement
+reads use a single read transaction, and credential issuance and verification
+use the same settlement source. A bound period does not also add or query the
+panel's cumulative traffic. Snapshot quota and expiry remain the grant terms;
+same-period sandbox top-ups retain consumption and cannot apply twice.
+
+For the first cutover of each **node, account and period**:
+
+1. Stop traffic and credential issuance, drain existing writers and reconcile
+   pending outbox records before provisioning. Retain
+   the account's session, permanent panel-client binding and current plan. In
+   one operator transaction, provision a reconciled snapshot for this period,
+   including quota, expiry, opening directional totals and their real timestamps.
+   Do not reset previously consumed bytes or replace an old measurement time
+   with the time of provisioning.
+2. Use the same trusted node configuration as the collector and CONNECT service.
+   The account's dedicated client must be admitted by that configuration. Before
+   this node records its first byte for the account and period, run:
+
+   ```sh
+   python3 -m services.access_account.settlement bind \
+     --database /private/access/accounts.sqlite --config /private/access/node.json \
+     --account account-A --period billing-period-A
+   ```
+
+   The command adds its tables transactionally to the existing database and
+   returns `{"ok":true}`. Repeating an existing binding is a no-op. An unknown
+   or inconsistent plan/client binding fails. If the collector has already
+   recorded any positive usage for this node, account and period, a first bind fails with
+   `settlement unavailable`: those bytes might already be in the baseline.
+   Reconcile that cutover separately; deleting history or retrying with a zero
+   baseline cannot establish which bytes were already charged.
+3. Run the account service and CONNECT service against that same database, then
+   reopen the entry only after reading the expected account and period through
+   `GET /v1/me/entitlement` with that account's Bearer session. For a controlled
+   snapshot deployment, use `--stored-snapshots` on both processes as described
+   above. No panel read is used for this bound period, even in panel mode.
+
+Read the node source using the existing operator CLI:
+
+```sh
+python3 -m services.access_account.metering usage \
+  --database /private/access/accounts.sqlite --node test-node --period billing-period-A
+```
+
+Use the matching `accounts` row's `accountId`, `periodId`, `uploadedBytes`,
+`downloadedBytes` and `sampledAt`, rather than the node-wide totals. The account's
+HTTP entitlement includes the opening baseline plus all nodes explicitly
+admitted to that account and period. It returns exact decimal byte strings and
+retains the last confirmed measurement time during idle reads. Old display
+freshness alone does not invalidate an idle bound account's credentials: the
+local durable authority still checks its current quota, expiry and session.
+
+To retry delivery of an already retained cumulative node position, use:
+
+```sh
+python3 -m services.access_account.settlement replay \
+  --database /private/access/accounts.sqlite --config /private/access/node.json \
+  --account account-A --period billing-period-A \
+  --uploaded 1048576 --downloaded 2097152 --measured-at 1794528000000
+```
+
+The example numbers must be replaced with that account/period row's actual
+directional counters and UTC Unix millisecond sample time. This command can
+confirm only positions already retained by the configured trusted node. It
+rejects negative counters, future sample times, unknown bindings and counters
+above the retained source. Repeated, older and out-of-order positions use the
+directional maximum, never add the cumulative total again. A no-op replay does
+not change the measurement or receipt time. Retained positions survive a
+collector restart; local collection already confirms them atomically, so
+replay does not import new traffic from an external report.
+
+At rollover, transactionally replace the current plan and snapshot with the new
+period and a new, unused panel client. Keep the old `panel_bindings`, meter flows
+and settlement rows. Bind the new period before its first byte. Each existing
+flow retains its original account and period, so a late sample or replay for an
+old period changes only that old ledger. It cannot charge another account or
+the current period. This is a one-way source handoff; changing configuration or
+stopping the collector does not switch an already bound period back to panel
+counters.
+
+The loopback settlement runner exercises live A/B transfers, entitlement reads,
+duplicate and out-of-order replay, collector restart and late prior-period
+delivery against an independent target:
+
+```sh
+python3 -m services.access_account.tests.wire.settlement \
+  --client /path/to/xray-stock --server /path/to/xray-metered \
+  --receipt /path/to/new-settlement-receipt.jsonl
+```
+
+Use the dependencies and private controlled runtime described above. Each
+receipt records its checkout SHA and source/binary hashes; a passing receipt
+applies to those inputs, not a later candidate or production deployment.
+
+## Enforcing the shared account budget
+
+Bind the account and period to node settlement before enabling quota execution,
+using the settlement setup above. Run the collector with `--enforce-quota` and
+set `AEGIS_XRAY_QUOTA=enforce` on the metered Xray server process as well as
+`AEGIS_XRAY_METER_SOCKET`. Keep all of the account's paid Xray clients on admitted
+nodes sharing this authority database. Each admitted node needs its own node ID,
+collector socket, private recovery directory and permanent client bindings.
+
+The collector serializes reservations for both directions, every stream and
+every admitted node in one SQLite write transaction. A reservation is persisted
+before granting a target write. Its directional ticket is confirmed after the
+write, advancing node counters and the account settlement in the same
+transaction. Confirmed short writes release only the known unused part.
+Uncertain writes and missing confirmations retain their outstanding allocation.
+Preserve both the database and recovery directory across node restarts.
+
+The node closes active and idle streams when the account is exhausted or
+expired and refuses fresh streams. A flow's cutoff remains recorded after a
+top-up, so recovery requires a fresh authorized connection. The writer also
+applies the authority's absolute expiry as its local socket deadline. A
+reservation granted before cutoff may finish within its bounded write deadline.
+Operator receipts expose those outstanding bytes separately from confirmed
+traffic.
+
+Inspect one account's allocation history with the local operator command.
+
+```sh
+python3 -m services.access_account.quota --database /private/access/accounts.sqlite \
+  --account account-a --period billing-period
+```
+
+`confirmedBytes` is confirmed traffic under quota execution. `heldBytes`
+includes allocations whose final progress is still unknown. `releasedBytes`
+is the known unused allocation. `grantedBytes` is the historical sum of all
+three. The existing entitlement response publishes confirmed used and remaining
+bytes. Use the existing confirmed controlled-order redemption to add quota.
+
+Run the real two-direction TLS cutoff, idle-stream, restart, top-up and expiry
+regression with the normal wire arguments.
+
+```sh
+python3 -m services.access_account.tests.wire.cutoff \
+  --client /path/to/xray-stock --server /path/to/xray-quota \
+  --receipt /path/to/new-cutoff-receipt.jsonl
+```

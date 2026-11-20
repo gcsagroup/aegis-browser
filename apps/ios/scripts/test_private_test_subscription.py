@@ -8,6 +8,24 @@ from private_test_subscription import install
 
 
 class SubscriptionPackagingTests(unittest.TestCase):
+    def test_finite_dedicated_quota_and_reset_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, node, output = [root / name for name in ('input.json', 'node', 'output')]
+            node.write_text('vless://fixture@example.invalid:443\n')
+            data = dict(subscriptionInfoURL='https://example.invalid/sub/test?format=info',
+                        allowedTestClient='fixture', expectedQuotaBytes=10_000_000, trafficReset='never')
+            source.write_text(json.dumps(data))
+            install('alpha', str(source), str(node), output)
+            self.assertEqual(json.loads(output.read_text())['expectedQuotaBytes'], 10_000_000)
+            self.assertEqual(json.loads(output.read_text())['trafficReset'], 'never')
+            for quota, reset in [(0, 'never'), (-1, 'never'), (2**63, 'never'),
+                                 (True, 'never'), (10_000_000.0, 'never'), (10_000_000, 'unknown')]:
+                source.write_text(json.dumps(dict(data, expectedQuotaBytes=quota, trafficReset=reset)))
+                with self.assertRaises(ValueError):
+                    install('alpha', str(source), str(node), output)
+                self.assertFalse(output.exists(), 'A rejected descriptor must remove stale private input')
+
     def test_channel_gate_binding_and_removal(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

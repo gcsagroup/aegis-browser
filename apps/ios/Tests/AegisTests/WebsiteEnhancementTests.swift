@@ -10,16 +10,16 @@ import XCTest
 final class WebsiteEnhancementTests: XCTestCase {
   private var directory: URL!
   private var tabs: [BrowserTab] = []
-  private var tabWindows: [UIWindow] = []
+  private var windows: [UIWindow] = []
   override func setUp() async throws {
     directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   }
   override func tearDown() async throws {
     tabs.forEach { $0.stop() }
+    windows.forEach { $0.isHidden = true; $0.rootViewController = nil }
+    windows = []
     tabs = []
-    tabWindows.forEach { $0.isHidden = true }
-    tabWindows.removeAll()
     try? FileManager.default.removeItem(at: directory)
   }
   private func source(
@@ -44,17 +44,17 @@ final class WebsiteEnhancementTests: XCTestCase {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     let tab = BrowserTab(profile: .standard, configuration: configuration, enhancementStore: store)
-    // BrowserTab 将本机 HTTP 导航留到 WebView 真正挂载后开始。
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 800, height: 1000)
     let controller = UIViewController()
     window.rootViewController = controller
+    controller.loadViewIfNeeded()
+    tab.webView.frame = controller.view.bounds
+    tab.webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    controller.view.addSubview(tab.webView)
     window.makeKeyAndVisible()
-    let view = tab.webView
-    view.frame = controller.view.bounds
-    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    controller.view.addSubview(view)
-    tabWindows.append(window)
+    windows.append(window)
     tabs.append(tab)
     return tab
   }
@@ -232,7 +232,7 @@ final class WebsiteEnhancementTests: XCTestCase {
       "# 重复标题\n\n# 重复标题\n\n- [x] 任务\n\n|名称|数值|\n|---|---|\n|甲|42|\n\n```js\nconst count=42;\n```\n\n<script>window.mdUnsafe=1</script>\n\n![图片](https://invalid.local/image.png)\n"
     let rendered =
       try await web.callAsyncJavaScript(
-        "return AegisMarkdown.load({text:source,title:'验收'});", arguments: ["source": text],
+        "AegisMarkdown.configure({locale:'zh-Hans'}); return AegisMarkdown.load({text:source,title:'验收'});", arguments: ["source": text],
         in: nil, contentWorld: .page) as? Bool
     XCTAssertEqual(rendered, true)
     let result =

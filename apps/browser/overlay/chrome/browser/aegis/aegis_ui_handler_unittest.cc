@@ -19,6 +19,10 @@
 #include "base/uuid.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#if BUILDFLAG(IS_WIN)
+#include "base/win/access_token.h"
+#include "base/win/security_descriptor.h"
+#endif
 #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/metalink_download_verifier.h"
@@ -47,7 +51,7 @@
 #include "url/origin.h"
 
 namespace aegis {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 class AccessAccountRefreshTestPeer {
  public:
   static void ActivateWithoutPlatformNotifications(AegisService& service) {
@@ -159,7 +163,21 @@ TEST_F(AegisUIHandlerTest, KeepsCnamePreferenceSeparateFromRuntimeDependency) {
   EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kCnameUncloakEnabled));
 }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+bool SetAccountBindingPermissions(const base::FilePath& file) {
+#if BUILDFLAG(IS_WIN)
+  auto token = base::win::AccessToken::FromCurrentProcess();
+  if (!token) return false;
+  auto descriptor = base::win::SecurityDescriptor::CreateWithEmptyDacl();
+  descriptor.set_dacl_protected(true);
+  return descriptor.SetDaclEntry(*token, base::win::SecurityAccessMode::kGrant,
+                                 FILE_ALL_ACCESS, 0) &&
+         descriptor.WriteToFile(file, DACL_SECURITY_INFORMATION);
+#else
+  return base::SetPosixFilePermissions(file, 0600);
+#endif
+}
+
 class HeldAccountReplyRunner : public base::TestSimpleTaskRunner {
  public:
   bool PostDelayedTask(const base::Location& from, base::OnceClosure task,
@@ -200,7 +218,7 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
       .Set("generation", "d8b4c46f-c1da-4b62-bf87-2d5376f00826");
   const auto file = profile()->GetPath().AppendASCII("AegisAccessAccount.json");
   ASSERT_TRUE(base::WriteFile(file, base::WriteJson(binding).value()));
-  ASSERT_TRUE(base::SetPosixFilePermissions(file, 0600));
+  ASSERT_TRUE(SetAccountBindingPermissions(file));
   auto* service = AegisServiceFactory::GetForProfile(profile());
   ASSERT_TRUE(service);
   AccessAccountRefreshTestPeer::ActivateWithoutPlatformNotifications(*service);
@@ -239,7 +257,7 @@ TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
     next.Set("generation", base::Uuid::GenerateRandomV4().AsLowercaseString());
     auto temp = file.AddExtensionASCII("new");
     return base::WriteFile(temp, base::WriteJson(next).value()) &&
-           base::SetPosixFilePermissions(temp, 0600) && base::ReplaceFile(temp, file, nullptr);
+           SetAccountBindingPermissions(temp) && base::ReplaceFile(temp, file, nullptr);
   };
   for (auto action : {"switch", "switch_back", "sign_out"}) {
     SCOPED_TRACE(action);

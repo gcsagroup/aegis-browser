@@ -95,7 +95,7 @@ AccessNetworkContextTransport* AccessNetworkContextTransport::GetOrCreate(
   auto transport = std::unique_ptr<AccessNetworkContextTransport>(
       new AccessNetworkContextTransport());
   auto* result = transport.get();
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   profile->SetAccountProxyDispatchGate(base::BindRepeating(
       [](base::WeakPtr<AccessNetworkContextTransport> self, const GURL& url) {
         return !self || self->AccountDispatchBlocked(url);
@@ -165,7 +165,7 @@ bool AccessNetworkContextTransport::ConfigureNetworkContext(
   }
   ++state.clients_generation;
   state.clients.Add(std::move(client));
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   state.clients.set_disconnect_handler(base::BindRepeating(
       [](base::WeakPtr<AccessNetworkContextTransport> self,
          std::string partition, mojo::RemoteSetElementId) {
@@ -232,7 +232,7 @@ bool AccessNetworkContextTransport::PublishProxySelection(
   }
 
   PartitionState& state = partitions_[*key];
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (state.account_config) return false;
 #endif
   state.endpoint = std::move(candidate.endpoint);
@@ -241,7 +241,7 @@ bool AccessNetworkContextTransport::PublishProxySelection(
   return true;
 }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 const std::vector<std::string>& AccessNetworkContextTransport::AccountSites() const {
   static const base::NoDestructor<std::vector<std::string>> empty;
   const auto it = partitions_.find("<default>");
@@ -873,7 +873,7 @@ bool AccessNetworkContextTransport::IsEndpointCurrentForPartition(
 
 network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(
     const PartitionState& state) const {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (state.account_config) return state.account_config->Clone();
 #endif
   auto config = network::mojom::CustomProxyConfig::New();

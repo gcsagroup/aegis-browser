@@ -1,4 +1,5 @@
 import BrowserKit
+import Combine
 import QuickLook
 import SwiftUI
 
@@ -25,7 +26,7 @@ struct DownloadsView: View {
     @State private var confirmsRemoval = false
     @State private var confirmsEmpty = false
     @State private var previewURL: URL?
-    @State private var markdownDocument: MarkdownDocument?
+    @StateObject private var markdownPreview = MarkdownFilePreview()
     @State private var recoveringFiles = false
     @State private var privateDownloadPlan: DownloadPlan?
     @State private var confirmsPrivateDownload = false
@@ -86,6 +87,7 @@ struct DownloadsView: View {
                 newDownloadSection
                 if let plan = importedPlan { metalinkSection(plan) }
                 if let error, error.text != downloads.storageError { Text(error.text).foregroundStyle(.red) }
+                if let error = markdownPreview.error { Text(error.text).foregroundStyle(.red) }
                 if let savedMessage { Text(savedMessage.text).accessibilityIdentifier("download-export-result") }
                 storageSection
                 Section("筛选与排序") {
@@ -153,9 +155,10 @@ struct DownloadsView: View {
                 importedPlan = try DownloadPlan.metalink(Data(contentsOf: url)); error = nil
             } catch { self.error = .error(error) }
         }
-        .onAppear { address = initialURL?.absoluteString ?? ""; downloads.refreshStorageUsage() }
+        .onAppear { markdownPreview.bind(browser); address = initialURL?.absoluteString ?? ""; downloads.refreshStorageUsage() }
+        .onDisappear { markdownPreview.close() }
         .quickLookPreview($previewURL)
-        .sheet(item: $markdownDocument) { document in MarkdownReaderView(initial: document) }
+        .sheet(item: $markdownPreview.document) { document in MarkdownReaderView(initial: document) }
         .sheet(item: $exportFile) { file in
             FileExportPicker(url: file.url) { saved in
                 exportFile = nil
@@ -330,9 +333,9 @@ struct DownloadsView: View {
     }
     private func showFile(_ item: BrowserDownload, preview: Bool) {
         let url = downloads.fileURL(item)
-        guard FileManager.default.fileExists(atPath: url.path) else { error = .error(DownloadError.missingFile); return }
+        guard markdownPreview.prepareFile(url) else { return }
         if preview, MarkdownDocument.accepts(url) {
-            do { markdownDocument = try MarkdownDocument.read(url) } catch { self.error = .error(error) }
+            markdownPreview.load(url)
         } else if preview {
             previewURL = url
         } else {
@@ -373,5 +376,60 @@ struct DownloadsView: View {
         case .failed: AegisLocalization.string("下载失败")
         case .cancelled: AegisLocalization.string("已取消")
         }
+    }
+}
+
+@MainActor
+final class MarkdownFilePreview: ObservableObject {
+    @Published var document: MarkdownDocument?
+    @Published private(set) var error: AegisLocalizedMessage?
+    private let read: BrowserInputOwner.Read
+    private var generation = UUID()
+    private var closed = false
+    private var task: Task<Void, Never>?
+    private var observers: Set<AnyCancellable> = []
+    private weak var browser: BrowserSession?
+    init(read: @escaping BrowserInputOwner.Read = { try await MarkdownIO.shared.read($0) }) { self.read = read }
+    func bind(_ browser: BrowserSession) {
+        guard !closed, self.browser !== browser else { return }
+        self.browser = browser
+        browser.$profile.dropFirst().sink { [weak self] _ in self?.close() }.store(in: &observers)
+        browser.$isWindowClosed.sink { [weak self] value in if value { self?.close() } }.store(in: &observers)
+    }
+    func reset() {
+        generation = UUID(); task?.cancel(); task = nil; document = nil; error = nil
+    }
+    func prepareFile(_ url: URL) -> Bool {
+        guard !closed else { return false }
+        // A newer selection owns preflight failures too, before any early return.
+        reset()
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            error = .error(DownloadError.missingFile)
+            return false
+        }
+        return true
+    }
+    @discardableResult func load(_ url: URL) -> Task<Void, Never>? {
+        guard !closed else { return nil }
+        reset()
+        let token = generation, scope = MarkdownSecurityScope(url), read = read
+        let task = Task { [weak self] in
+            defer { withExtendedLifetime(scope) {} }
+            guard self?.closed == false, self?.generation == token, !Task.isCancelled else { return }
+            do {
+                let value = try await read(url)
+                guard let self, !self.closed, self.generation == token, !Task.isCancelled else { return }
+                self.document = value; self.task = nil
+            } catch {
+                guard let self, !self.closed, self.generation == token, !Task.isCancelled else { return }
+                self.error = .error(error); self.task = nil
+            }
+        }
+        self.task = task
+        return task
+    }
+    func close() {
+        guard !closed else { return }
+        closed = true; reset(); observers.removeAll()
     }
 }

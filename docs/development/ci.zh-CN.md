@@ -134,7 +134,7 @@ quality 汇总 job 使用中性 ID `quality-summary`，条件为 `always() && (�
 
 `.github/workflows/ios-coverage.yml` 是独立报告 workflow。仅通过 `workflow_dispatch` 手动生成报告，PR/develop/main push 不自动运行。它继续严格绑定当次 GitHub tested SHA，测试失败仍为非零；当前分支保护的必需状态检查为 `quality-gate`，因此 iOS 报告不改变 macOS 优先的合并门。
 
-`.github/workflows/android-java-coverage.yml` 也是独立报告 workflow，仅通过 `workflow_dispatch` 手动运行，PR 和 develop/main push 不再自动触发。当前仅推进 macOS，其余平台后置。它构建 normal 与 coverage 两种验收工具以证明普通 APK 不含 JaCoCo，仅在专用 emulator 运行 coverage APK 的六项 fixture，并把 JaCoCo exec/XML、原始 class 摘要与实际 GitHub tested SHA 写入 artifact。固定检查名为 `android-java-coverage`，不并入 macOS `quality-gate`；`browserTested=false` 明确保留工具覆盖率与浏览器 runtime 验收的边界。
+`.github/workflows/android-java-coverage.yml` 也是独立报告 workflow，仅通过 `workflow_dispatch` 手动运行，PR 和 develop/main push 不再自动触发。当前仅推进 macOS，其余平台后置。它构建 normal 与 coverage 两种验收工具以证明普通 APK 不含 JaCoCo，仅在专用 emulator 运行 coverage APK 的六项 fixture，并把 JaCoCo exec/XML、原始 class 摘要与实际 GitHub tested SHA 写入 artifact。该作业冷启动独立 API 36 模拟器，在同一个 ADB transport 上校验当次 AVD 名称、处理亮屏和锁屏并运行验收，保留模拟器日志。固定检查名为 `android-java-coverage`，不并入 macOS `quality-gate`；`browserTested=false` 明确保留工具覆盖率与浏览器 runtime 验收的边界。
 
 报告区分四种身份：
 
@@ -189,7 +189,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 3. main 一致后验证上游 S 的 quality push run；develop 未包含 S 时创建回流 PR并等待。
 4. develop 已包含 S 且存在实际 tree 差异时，验证 develop 精确 D 的 quality push run，再创建独立上游晋升 PR。无差异不创建空 PR。
 
-`promotion-quality.mjs` 核对精确仓库/分支/SHA、quality.yml、push 事件、最新 run/attempt 以及唯一 quality、quality-gate jobs；缺失/运行中等待，失败停止。发布候选前后重新核对远端 SHA，create-ref 冲突不改写已有分支；合法后续修复按祖先关系复用。已关闭未合并批次不自动重建。
+`promotion-quality.mjs` 核对精确仓库/分支/SHA、quality.yml、push 事件、最新 run/attempt 以及唯一 quality、quality-gate jobs。另核对同一仓库、分支和 SHA 的 `secret-scanning.yml` 实际 push，要求其最新 run/attempt 的唯一 `gitleaks` 作业成功。两项检查均读取该 attempt 的全部作业页，数量与 GitHub 报告值不一致时阻断。任一来源缺失或运行中则等待，失败或身份不匹配则停止。发布候选前后重新核对远端 SHA，create-ref 冲突不改写已有分支；合法后续修复按祖先关系复用。已关闭未合并批次不自动重建。
 
 `GITHUB_TOKEN` 仅 actions/contents read；`AEGIS_FORK_AUTOMATION_TOKEN` 负责个人 PR、候选 ref 与受保护的 upstream sync；`AEGIS_UPSTREAM_TOKEN` 负责上游 Actions/Contents 读和 PR 写。控制器只创建 Draft 候选，不请求 reviewer、不切换 Ready、不发布讨论消息或审批；这些转换由串行协调者在证据齐备后执行。任何 secret 不进入日志、PR 或源码。
 
@@ -215,3 +215,23 @@ mise exec -- node scripts/ci/run-quality.mjs \
 - C 层环境缺失：保留 `BLOCKED`，不能降级成基础门 PASS 或删除必要测试。
 
 CI 故障期间暂停自动合并。修复配置走普通 PR；产品回退走可审查 revert，不强推 develop 或 main、不删除用户文件或本地证据。
+
+## 分阶段 iOS 验证（第一批）
+
+iOS release validation 的 Ready PR 扩展到 develop。Linux 合同先执行，再按目标分支规则决定是否分配 unsigned archive。规则由目标 base 的 Git 对象提取，合并候选必须精确绑定 B/H。首次接入时目标分支尚无路由器，保守执行完整 iOS 路径。最初的轻量名单只允许 `docs/plans/access-build-portability/acceptance.md` 两端模式均为 100644 的内容修改，并运行仓库文档合同。删除、重命名、模式变化及未知路径执行完整 iOS 路径。
+
+合同失败时 archive 不分配 runner。归档及链接验收通过后上传可消费的 unsigned 制品，失败时上传独立诊断 artifact。每个 push SHA 有独立 concurrency 组。现有完整 quality、独立秘密扫描、双 Simulator 报告和真机验收继续按各自条件核验。本批交付 iOS 平台阶段依赖，quality-gate 尚未消费跨 workflow 的 iOS 结果，协调者须逐项核验适用 iOS 状态。
+
+### 纯说明白名单的受控扩展
+
+轻量路由以可信 base 的 `scripts/ci/platform-impact.mjs` 精确文件名单为准，不按标题、目录或 Markdown 后缀放行。当前包括原验收文档和 `docs/ios-webkit-protection.en.md`、`docs/ios-webkit-protection.zh-CN.md`、`docs/ios-webkit-protection.zh-TW.md`。只允许既有普通文件两端模式均为 100644 的内容修改；多个白名单文件可同时修改。新增、删除、重命名、符号链接、可执行位及混合未知路径均保留完整路径。
+
+本批三语保护说明的机器消费者为 `check-repo-contracts.mjs` 的 Markdown 链接检查，已在 Linux 文档门执行。扩展前须检查文件内容、直接引用及动态消费者；以后新增读取者时，须重审其输入是否仍适用轻量路径。HTML 预览及脚本、fixture、翻译样本、生成的功能页面、冻结规格、证据目录中的 README/correlation、CI 与交付控制规则均不因属于文档而放行。规则变更自身走旧规则完整门，合入后通过真实 Ready PR 核验新名单的零 Mac 路径；push 仍跑完整门。
+
+macOS 批次另加入 `docs/plans/macos-access-toolbar-bubble-NOTES.md` 和 `docs/plans/macos-access-bubble-session-NOTES.md`。两者仅说明既有工具栏交互与状态流；核对后未发现链接检查以外的机器消费者。相邻 NOTES、验收证据与交付指南不随之放行。iOS 与 macOS 白名单说明可混合修改，仍须全部满足相同文件身份条件；增加代码、消费者或未登记文档时取完整路径。
+
+## 分阶段 macOS 验证（第二批）
+
+macOS delivery 的自动 Ready PR 先在 Linux 校验 Git 身份和文档消费者，再根据可信 base 规则分配合同测试。规则对白名单说明文档的普通内容修改、或只涉及 `apps/ios/` 的变更省去 macOS 专用交付合同。共享接口、CI、自修改路由及未知路径保守运行；混合改动取并集。旧版规则未登记 macOS 时保守运行。Draft 不分配自动合同 runner，同 PR 更新取消旧运行，push 按实际 SHA 分组。
+
+Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS 路径继续依次通过 admission、Mac 上的 Access tests、package，只有所需前置项成功才打包。Chromium 编译、GN/GTest、桌面运行、签名和公证分别验收。基础 quality 增加 Linux 可信影响范围门。只有已配置开发 Fork 内同仓 develop PR 的已验证白名单说明文档内容修改走 Linux 文档合同，其余 PR、未知或旧规则、push 和手动事件继续完整 macOS 质量门。quality-gate 在 Linux 运行可信目标分支的汇总器，保留原检查名与 push 的 quality/quality-gate 作业身份。每个 push SHA 独立分组。全仓零 Mac 和 5 分钟有效反馈须在规则合入后的真实文档 Ready PR 实测。

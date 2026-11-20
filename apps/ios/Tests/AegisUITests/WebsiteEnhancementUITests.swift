@@ -246,6 +246,24 @@ final class WebsiteEnhancementUITests: XCTestCase {
     XCUIDevice.shared.orientation = .portrait
   }
 
+  func testMarkdownFilePickerCancellationKeepsReaderUsable() {
+    let app = launch()
+    navigate(app, "http://127.0.0.1:8768/enhancements/document.md")
+    app.buttons["page-protection"].tap(); app.buttons["site-details"].tap()
+    tapVisible(app.buttons["site-read-markdown"], app)
+    XCTAssertTrue(app.webViews.staticTexts["Markdown 验收"].firstMatch.waitForExistence(timeout: 10))
+    app.buttons["markdown-actions"].tap(); app.buttons["打开文件"].tap()
+    let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["取消", "Cancel"])).firstMatch
+    XCTAssertTrue(cancel.waitForExistence(timeout: 10)); cancel.tap()
+    XCTAssertTrue(app.buttons["markdown-actions"].waitForExistence(timeout: 10))
+    app.buttons["markdown-actions"].tap()
+    let source = app.buttons["查看源码"]
+    XCTAssertTrue(source.waitForExistence(timeout: 5))
+    XCTAssertTrue(source.isEnabled); source.tap()
+    XCTAssertTrue(app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS 'window.markdownExecuted'")).firstMatch.waitForExistence(timeout: 5))
+    capture("取消文件选择后仍可查看当前 Markdown 源码")
+  }
+
   func testScriptAndMarkdownConsentMustBeRenewedAfterBackground() {
     let app = launch()
     navigate(app, "http://127.0.0.1:8768/enhancements/page")

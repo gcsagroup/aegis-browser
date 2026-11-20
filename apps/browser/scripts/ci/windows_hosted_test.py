@@ -1,6 +1,7 @@
 """付费编排的失败边界；用真实子进程和临时 Git 仓库验证。"""
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -130,7 +131,7 @@ class HostedTrialTest(unittest.TestCase):
             self.runner.run('space', [sys.executable, '-c', 'exit(0)'], self.root)
         self.assertFalse((self.logs / 'space.log').exists())
 
-    def test_test_receipt_rejects_empty_failed_and_wrong_count(self):
+    def test_test_receipt_rejects_empty_failed_and_wrong_cases(self):
         receipt = self.root / 'tests.json'
         for data in [{}, {'per_iteration_data': [{}]},
                      {'per_iteration_data': [{'A': [{'status': 'FAILURE'}]}]},
@@ -139,9 +140,40 @@ class HostedTrialTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 hosted.check_test_summary(receipt)
         receipt.write_text(json.dumps({'per_iteration_data': [{'A': [{'status': 'SUCCESS'}]}]}))
-        self.assertEqual(hosted.check_test_summary(receipt, 1), 1)
-        with self.assertRaisesRegex(ValueError, '数量'):
-            hosted.check_test_summary(receipt, 4)
+        self.assertEqual(hosted.check_test_summary(receipt, {'A'}), 1)
+        with self.assertRaisesRegex(ValueError, '清单'):
+            hosted.check_test_summary(receipt, {'B'})
+
+    def test_windows_trial_test_names_match_native_sources(self):
+        source = hosted.BROWSER / 'overlay/chrome/browser/aegis'
+        enhancements = (source / 'enhancements/enhancement_browsertest.cc').read_text()
+        access = '\n'.join((source / 'access' / file).read_text() for file in (
+            'access_core_log_disk_win_unittest.cc',
+            'access_log_export_dialog_win_unittest.cc',
+            'access_local_core_win_unittest.cc',
+        ))
+        self.assertEqual(hosted.ENHANCEMENT_CASES, {
+            'EnhancementBrowserTest.' + name for name in re.findall(
+                r'IN_PROC_BROWSER_TEST_F\(EnhancementBrowserTest,\s*(\w+)\)', enhancements)
+        })
+        self.assertEqual(hosted.ACCESS_CORE_CASES, {
+            suite + '.' + name for suite, name in re.findall(
+                r'TEST(?:_F)?\((\w+),\s*(\w+)\)', access)
+        })
+        self.assertIn(hosted.ACCESS_CORE_TESTS, hosted.TARGETS)
+
+    def test_windows_routing_regressions_are_in_the_execution_plan(self):
+        source = hosted.BROWSER / 'overlay/chrome/browser/aegis/access'
+        files = {
+            'access_service_coordinator_unittests': 'access_site_proxy_product_unittest.cc',
+            'access_network_context_transport_unittests': 'access_private_publication_unittest.cc',
+        }
+        for target, filename in files.items():
+            case = re.search(r'#if BUILDFLAG\(IS_MAC\) \|\| BUILDFLAG\(IS_WIN\)\s+'
+                             r'TEST_F\((\w+),\s*(\w+)\)', (source / filename).read_text())
+            self.assertIsNotNone(case, filename)
+            self.assertEqual(hosted.ROUTING_CASES[target], '.'.join(case.groups()))
+            self.assertIn(target, hosted.TARGETS)
 
     def test_patch_replay_and_dirty_source_boundary(self):
         source = self.root / 'src'

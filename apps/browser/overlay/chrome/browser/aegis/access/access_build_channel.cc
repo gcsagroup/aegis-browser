@@ -35,14 +35,20 @@ aegis_access::ChannelNamespace BundledAccessTestChannel() {
 #endif
 }
 
+aegis_access::AccessBuildIdentity AccessBuildIdentityForCurrentBuild() {
+  const auto declared = aegis_access::ParseAccessProductChannel(
+      BUILDFLAG(AEGIS_ACCESS_PRODUCT_CHANNEL));
+  return aegis_access::ResolveAccessBuildIdentity(
+      declared, BrowserReleaseChannel(), BundledAccessTestChannel(),
+      BUILDFLAG(AEGIS_ACCESS_INTERNAL_OPTIONS));
+}
+
+bool CanUseAccessOptionsForCurrentBuild(aegis_access::AccessOptionsOperation operation) {
+  return aegis_access::CanUseAccessOptions(AccessBuildIdentityForCurrentBuild(), operation);
+}
+
 aegis_access::ChannelNamespace AccessChannelForCurrentBuild() {
-  const auto browser_channel = BrowserReleaseChannel();
-#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
-  // Only the unbranded UNKNOWN channel takes its identity from the build.
-  if (browser_channel == aegis_access::BrowserReleaseChannel::kUnknown)
-    return BundledAccessTestChannel();
-#endif
-  return aegis_access::MapBrowserReleaseChannel(browser_channel);
+  return AccessBuildIdentityForCurrentBuild().channel;
 }
 
 const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel) {
@@ -52,6 +58,13 @@ const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel) {
 }
 
 std::string_view DefaultCoreLogLevelForCurrentBuild() {
+  const auto identity = AccessBuildIdentityForCurrentBuild();
+  if (identity.conflict) return "warning";
+  if (identity.product != aegis_access::AccessProductChannel::kUnknown) {
+    if (identity.channel == aegis_access::ChannelNamespace::kDev) return "debug";
+    if (identity.channel == aegis_access::ChannelNamespace::kAlpha) return "info";
+    return "warning";
+  }
   return DefaultCoreLogLevelForBuild(
       BrowserReleaseChannel(), BundledAccessTestChannel(),
       BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED));

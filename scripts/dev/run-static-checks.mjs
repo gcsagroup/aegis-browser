@@ -125,7 +125,8 @@ export function staticCheckDefinitions(inventory) {
     ['if-files', 'python-syntax', 'python3', ['-c', pythonSyntaxProgram],
       inventory.python],
     ['each-file', 'shell-syntax', 'bash', ['-n'], inventory.shell],
-    ['if-files', 'actionlint', 'actionlint', [], inventory.workflows],
+    // actionlint 1.7.12 predates GitHub Actions concurrency.queue.
+    ['if-files', 'actionlint', 'actionlint', ['-ignore', '^unexpected key "queue" for "concurrency" section'], inventory.workflows],
     ['if-files', 'shellcheck-warning', 'shellcheck', ['-S', 'warning'],
       inventory.shell],
     ['command', 'eslint-static-scope', 'corepack',

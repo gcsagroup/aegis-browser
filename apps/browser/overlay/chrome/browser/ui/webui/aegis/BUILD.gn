@@ -40,6 +40,10 @@ source_set("aegis") {
     "//ui/webui",
   ]
   if (is_mac) {
+    deps += [
+      "//chrome/browser/aegis/access:access_build_channel",
+      "//chrome/browser/aegis/access:access_options_service",
+    ]
     sources += [ "aegis_capture_vision.mm" ]
     frameworks = [ "Vision.framework" ]
   }
@@ -65,3 +69,5 @@ source_set("aegis") {
 
   deps += [ "//chrome/browser:browser_process" ]
 }
+
+# The native Options bridge is exclusive to the macOS product.

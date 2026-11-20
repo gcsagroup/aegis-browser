@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 require_relative '../../fastlane/lib/ios_status'
+require 'digest'
 
 # Authorize and recheck the committed query implementation before reading credentials.
 source = AegisRelease.source
@@ -9,14 +10,25 @@ token = Spaceship::ConnectAPI::Token.create(**AegisRelease::BuildStatus.token_op
 api = AegisRelease::AscApi.new(token: token, read_only: true)
 query = AegisRelease::BuildStatus.new(version: ENV.fetch('RELEASE_VERSION'), build: ENV.fetch('RELEASE_BUILD'), api: api)
 mode = ENV.fetch('RELEASE_QUERY_MODE', 'status')
-AegisRelease.require!(%w[status wait unused].include?(mode), 'Unknown read-only query mode')
+AegisRelease.require!(%w[status wait release-wait unused].include?(mode), 'Unknown read-only query mode')
 wait_error = nil
 begin
-  value = mode == 'wait' ? query.wait : query.call
+  value = %w[wait release-wait].include?(mode) ? query.wait : query.call
 rescue AegisRelease::BuildStatus::WaitTimeout => wait_error
   value = wait_error.status
   value['waitOutcome'] = 'timed_out'
   value['waitTimeoutSeconds'] = wait_error.timeout
+rescue StandardError
+  raise unless mode == 'release-wait'
+  abort 'Apple Release Wait failed. No public receipt was written.'
+end
+if mode == 'release-wait'
+  abort 'Apple Release Wait timed out. No public receipt was written.' if wait_error
+  # Keep ASC upload records, group information and raw build identity in memory.
+  remote = value.fetch('remote')
+  value = value.slice('platform', 'applicationId', 'version', 'build', 'readOnly', 'packageProvenanceVerified')
+  value['remote'] = remote.slice('appId', 'processingState', 'uploadState', 'expired', 'observedAt')
+  value['remote']['buildIdentitySha256'] = Digest::SHA256.hexdigest(remote.fetch('buildId'))
 end
 if mode == 'unused'
   remote = value.fetch('remote')

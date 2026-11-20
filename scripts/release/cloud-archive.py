@@ -43,8 +43,10 @@ def create(output, version, build, team, profile, environment):
     native = engine()
     native.validate_identity(version, build, team)
     identity = native.source()
-    if native.run('xcodebuild', '-version').splitlines()[0] != b'Xcode 26.6':
-        raise ValueError('Fixed Xcode 26.6 is required')
+    reported = native.run('xcodebuild', '-version').splitlines()
+    got = reported[0].decode(errors='replace') if reported else ''
+    if got != 'Xcode 27.2':
+        raise ValueError(f'Fixed Xcode 27.2 is required; xcodebuild reported {got!r}')
     if any(environment.get(key) for key in environment
            if key.startswith(('AEGIS_ASC_', 'APP_STORE_CONNECT_', 'ASC_')) or 'P12' in key):
         raise ValueError('Archive job must not load ASC or distribution credentials')

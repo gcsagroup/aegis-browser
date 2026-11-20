@@ -492,7 +492,7 @@ AegisService::AegisService(Profile* profile)
     }
   }
 #endif
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   InitializeAccessAccountRefresh();
 #endif
   LOG(INFO) << "GCSA-aegis initialized for profile"
@@ -645,7 +645,7 @@ void AegisService::Shutdown() {
 }
 
 void AegisService::ShutdownForProfile() {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   StopAccessAccountRefresh();
 #endif
   profile_observation_.Reset();

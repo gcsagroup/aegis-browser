@@ -1,0 +1,2 @@
+# Unified-diff context starts with a space, including on empty lines and before Go tabs.
+xray.patch whitespace=-blank-at-eol,-space-before-tab

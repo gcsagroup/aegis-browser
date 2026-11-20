@@ -126,3 +126,11 @@
 - [Xboard 管理路由](https://github.com/cedar2025/Xboard/blob/master/app/Http/Routes/V2/AdminRoute.php)：参考账号、套餐、订单和节点管理职责，不代表已决定采用。
 - [Cloudflare challenge 排查](https://developers.cloudflare.com/cloudflare-challenges/troubleshooting/challenge-solve-issues/)：失败成因多样，提示不能承诺解决所有拦截。
 - [iOS Access 现状分析](../audit/ios-access-2026-11-16.zh-CN.md)：已有能力、差距及本次代码范围。
+
+## 8. 当前阶段：先以 3X-UI 收敛 iOS（2026-11-17）
+
+当前联调以已部署的 3X-UI 管理面板为准，后端团队的独立账号服务后续再接。保留上面的完整需求与未验收项；测试面板闭环不代表支付、正式登录或多节点账本已经交付。
+
+本切片使用独立测试入站及测试身份，避免配额/到期演练影响现有账号。内部构建描述绑定准确的订阅身份、有限字节额度、重置策略和节点文件摘要；允许每日重置及不自动重置，不能把无上限或不匹配的额度当作有效配置。release/prod 仍排除私有测试入口，管理凭据不进入应用。
+
+验收顺序：创建并核对独立入站 → 验证订阅地址指向可连源站 → iOS 读取真实用量并通过内置核心建连 → 分别验证停用、到期、耗尽拒绝新连接 → 管理端恢复/重置后重新读取并建连 → 运行回归、独立复审与最终提交 CI。Swift 网络和状态工作沿用 async/await 与 MainActor 隔离。每一步记录实际结果，不以配置成功代替实连或节点停流证据。

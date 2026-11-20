@@ -37,7 +37,8 @@ struct AegisApp: App {
     @StateObject private var settings: BrowserSettings
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
-    @StateObject private var accountSession = AccessAccountSession.product()
+    // The account-backend adapter is retained for future integration, not enabled in this product.
+    @StateObject private var accountSession = AccessAccountSession(client: nil)
     @StateObject private var subscriptionUsage: AccessSubscriptionUsageSession
     @StateObject private var readingLibrary: ReadingLibrary
     @StateObject private var accessSiteProxyRegistry: AccessSiteProxyStoreRegistry
@@ -107,16 +108,7 @@ struct AegisApp: App {
         let registry = AccessSiteProxyStoreRegistry()
         let subscription = AccessSubscriptionUsageSession.product()
         _subscriptionUsage = StateObject(wrappedValue: subscription)
-        let publisher: any AccessProxyEntryPublishing
-        if subscription.managesConnections {
-            publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(parameters: {
-                try await subscription.connectionParameters()
-            }, connectionAllowed: {
-                subscription.permitsExistingConnection
-            })
-        } else {
-            publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher()
-        }
+        let publisher = AccessThreeXUIWebEntry.makePublisher(for: subscription)
         let hostStores = AccessHostStoreCoordinator(
             publisher: publisher,
             channel: AccessProductChannel.resolve(),
@@ -153,8 +145,6 @@ struct AegisApp: App {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             subscriptionUsage.setActive(phase == .active)
-            accountSession.usageRefresh.setActive(phase == .active)
-            if phase != .active { accountSession.suspend() }
         }
     }
 

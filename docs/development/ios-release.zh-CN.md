@@ -6,7 +6,7 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 
 ## cloud 默认与显式 manual 回退
 
-CLI、Fastlane、Simple/Full Actions 和 candidate tag 创建的新 iOS 包默认使用 `cloud`。云签名在获准的 GitHub-hosted macOS runner 上使用 Xcode 26.6 和有 cloud-managed Distribution 权限的 ASC key，执行新的 archive→export，不导入分发 P12。
+CLI、Fastlane、Simple/Full Actions 和 candidate tag 创建的新 iOS 包默认使用 `cloud`。云签名在获准的自托管 macOS runner 上使用 Xcode 27.2（build 27B52，`/Applications/Xcode.app`）和有 cloud-managed Distribution 权限的 ASC key，执行新的 archive→export，不导入分发 P12。
 
 需要回退时显式选择：CLI 使用 `--signing-mode manual`，Fastlane 使用 `signing_mode:manual`，Actions 将 **Signing mode** 选为 **manual**。本机打包使用此显式回退。cloud 失败会停止当前尝试；核对回执和远端状态后，使用未占用 build 与新 run ID 发起 manual 打包，不自动重试上传。
 
@@ -44,7 +44,7 @@ python3 scripts/release/local-ios-signing.py --team "$AEGIS_APPLE_TEAM_ID" --cer
 
 默认 cloud 使用 `AEGIS_APPLE_TEAM_ID` 和受保护的 ASC key：`AEGIS_ASC_KEY_ID`、`AEGIS_ASC_ISSUER_ID`、`AEGIS_ASC_KEY_BASE64`。仅显式选择 manual 时导入分发 P12 和 profiles。
 
-显式选择 `manual` 时，打包作业使用 GitHub 托管的临时 macOS，在 `aegis-ios-signing` 环境中保留 team、证书指纹和三份 profile 名称变量，并配置五个加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二进制材料使用单行 Base64。导入前校验 profile 与现有 team、目标和证书一致；打包后清理临时钥匙串与 profiles。签名材料不得输出到日志、提交或放入上传凭据环境。
+显式选择 `manual` 时，打包作业使用获准的自托管 macOS，在 `aegis-ios-signing` 环境中保留 team、证书指纹和三份 profile 名称变量，并配置五个加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二进制材料使用单行 Base64。导入前校验 profile 与现有 team、目标和证书一致；打包后清理临时钥匙串与 profiles。签名材料不得输出到日志、提交或放入上传凭据环境。
 
 完整版显式传递 ASC 和签名凭据名称，被调用任务的 `aegis-ios-store` 和 `aegis-ios-signing` 环境值优先生效；不使用 `secrets: inherit`。两个手动入口共用一套后端，表单字段与操作使用英文，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
 

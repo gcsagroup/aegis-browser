@@ -18,7 +18,8 @@ struct AccessSubscriptionConfiguration: Decodable, Sendable {
               parts.queryItems == [URLQueryItem(name: "format", value: "info")],
               !subscriptionInfoURL.lastPathComponent.isEmpty, parts.path != "/",
               !allowedTestClient.isEmpty, allowedTestClient.utf8.count <= 256,
-              expectedQuotaBytes == 10_000_000_000, trafficReset == "daily"
+              expectedQuotaBytes > 0, expectedQuotaBytes <= UInt64(Int64.max),
+              ["daily", "never"].contains(trafficReset)
         else { throw AccessSubscriptionQueryError.invalid }
     }
 
@@ -108,12 +109,13 @@ enum AccessSubscriptionClient {
         settings.urlCredentialStorage = nil
         settings.timeoutIntervalForRequest = 10
         settings.timeoutIntervalForResource = 15
-        let session = URLSession(configuration: settings, delegate: SubscriptionRedirectGuard(), delegateQueue: nil)
+        let redirectGuard = SubscriptionRedirectGuard()
+        let session = URLSession(configuration: settings, delegate: redirectGuard, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(accept, forHTTPHeaderField: "Accept")
         request.setValue("Aegis-Alpha/1.0", forHTTPHeaderField: "User-Agent")
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await session.bytes(for: request, delegate: redirectGuard)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200,
               response.url == url,
               accept != "application/json" || response.mimeType == "application/json" else { throw AccessSubscriptionQueryError.unavailable }

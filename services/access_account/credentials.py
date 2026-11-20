@@ -16,7 +16,7 @@ import secrets
 import sqlite3
 import uuid
 
-from . import store
+from . import settlement, store
 
 Unavailable = store.Unavailable
 MAX_TTL_MS = 300_000
@@ -118,9 +118,17 @@ def _bound_to(grant, account):
     return all(grant['account_id' if k == 'id' else k] == account[k] for k in _BINDING)
 
 
-def _usage(account, observed, now, live):
+def _usage(db, account, observed, now, live, node_id):
     if account['plan_id'] is None:
         return None
+    binding = settlement.period(db, account['id'], account['period_id'])
+    if binding is not None:
+        if not settlement.admitted(db, account['id'], account['period_id'], node_id):
+            return None
+        result = store._response(account, settlement.reading(db, account, binding), now)
+        # The local writer and confirmed totals commit atomically. Idle periods can
+        # have old display watermarks while their live authorization remains accurate.
+        return result if result['status'] == 'active' else None
     result = store._response(account, observed, now)
     # Offline snapshots require a measurement watermark. A fresh direct panel
     # read has no measurement timestamp; its validated receipt bounds freshness.
@@ -136,7 +144,8 @@ def _observe(db, digest, clock_ms, panel, admitted_clients=None):
     if account is not None and account['plan_id'] is not None:
         if admitted_clients is not None and account['panel_client'] not in admitted_clients:
             raise Unavailable('managed node unavailable')
-        if panel is not None:
+        store._check_alpha_panel_scope(panel, account['panel_client'])
+        if panel is not None and settlement.period(db, account['id'], account['period_id']) is None:
             observed = panel.read(account['panel_client'], clock_ms)
     return account, observed
 
@@ -170,8 +179,8 @@ def issue(database_path, token, context_id, mode, clock_ms, *, node, panel=None,
                                    (renew_id, digest, node.node_id, context_id, mode, now)).fetchone()
                 if grant is None or not _bound_to(grant, current):
                     return {}
-            usage = _usage(current, observed if panel is not None else current, now,
-                           panel is not None)
+            usage = _usage(db, current, observed if panel is not None else current, now,
+                           panel is not None, node.node_id)
             if usage is None:
                 if renew_id is not None:
                     db.execute('UPDATE node_credentials SET revoked=1 WHERE credential_id=?', (renew_id,))
@@ -248,8 +257,8 @@ def verify_node(database_path, username, password, clock_ms, *, panel=None, node
                 return None
             if not _bound_to(latest, current):
                 return None
-            usage = _usage(current, observed if panel is not None else current, now,
-                           panel is not None)
+            usage = _usage(db, current, observed if panel is not None else current, now,
+                           panel is not None, node_id)
             if usage is None:
                 db.execute('UPDATE node_credentials SET revoked=1 WHERE credential_id=?', (username,))
                 db.commit()

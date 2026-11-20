@@ -496,3 +496,8 @@ test("access_private_context_client_unittests") {
     "//testing/gtest",
   ]
 }
+
+source_set("access_options_capability") {
+  sources = access_core_sources.access_options_capability
+  public_deps = [ ":browser_request_metadata_seed" ]
+}

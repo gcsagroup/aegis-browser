@@ -24,7 +24,7 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 #include "chrome/browser/aegis/access/access_account_refresh.h"
 #endif
 #include "chrome/browser/aegis/privacy_event_store.h"
@@ -131,7 +131,7 @@ class AegisService : public KeyedService,
   Profile* profile() const { return profile_; }
   const std::string& torrent_owner_id() const { return torrent_owner_id_; }
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   void QueryCurrentAccessAccount(base::OnceCallback<void(base::DictValue)> callback);
   // Revalidates the account capability and ages the observation at every read.
   base::DictValue CurrentAccessAccountSnapshot();
@@ -321,19 +321,25 @@ class AegisService : public KeyedService,
       base::WeakPtr<Profile> retiring_incognito,
       int retries_remaining);
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   friend class AccessAccountRefreshTestPeer;
   base::DictValue ResolveAccessAccountSnapshot(bool reschedule);
   void SetAccessAccountUsageVisible(base::UnguessableToken owner, bool visible);
   void InitializeAccessAccountRefresh();
   void StopAccessAccountRefresh();
   void AccessAccountApplicationStateChanged();
+  void UpdateAccessAccountActivity(bool foreground, bool active_profile);
+  void RequestAccessAccountSnapshot();
   void ScheduleAccessAccountRefresh();
   void StartAccessAccountRefresh(bool manual);
   void OnAccessAccountReady(base::RepeatingCallback<base::DictValue()> resolve);
   access::AccessAccountRefresh access_account_refresh_;
   base::OneShotTimer access_account_timer_;
   base::ScopedClosureRunner access_account_activation_observer_;
+#if BUILDFLAG(IS_WIN)
+  base::RepeatingTimer access_account_activity_timer_;
+  std::optional<std::pair<bool, bool>> access_account_activity_;
+#endif
   base::RepeatingCallback<base::DictValue()> access_account_reply_;
   std::string access_account_reply_state_;
   bool access_account_query_unavailable_ = false;

@@ -68,16 +68,46 @@ jobs:
         with:
           persist-credentials: false
       - name: Archive the alpha iOS app
-        run: bash scripts/release/ios-internal-archive.sh "${{ inputs.version }}" "${{ inputs.build }}" alpha
+        id: archive
+        env:
+          ALPHA_ROOT: ${{ runner.temp }}/ios-alpha-${{ github.run_id }}-${{ github.run_attempt }}
+          ALPHA_VERSION: ${{ inputs.version }}
+          ALPHA_BUILD: ${{ inputs.build }}
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          # Match the version and build limits in verify-ios-archive.py.
+          if [[ ! "$ALPHA_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ || ! "$ALPHA_BUILD" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            printf 'Alpha requires a two- or three-part numeric version and a positive build number of at most ten digits.\n' >&2
+            exit 2
+          fi
+          mkdir -m 700 "$ALPHA_ROOT"
+          printf 'root=%s\n' "$ALPHA_ROOT" >> "$GITHUB_OUTPUT"
+          export IOS_INTERNAL_ARCHIVE="$ALPHA_ROOT/Aegis-$ALPHA_VERSION-$ALPHA_BUILD.xcarchive"
+          export IOS_INTERNAL_DERIVED="$ALPHA_ROOT/DerivedData"
+          bash scripts/release/ios-internal-archive.sh "$ALPHA_VERSION" "$ALPHA_BUILD" alpha 2>&1 | tee "$ALPHA_ROOT/archive.log"
       - name: AccessKit network and session tests
-        if: ${{ always() }}
-        run: bash scripts/release/ios-access-tests.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: ${{ always() }}
+        id: access_tests
+        env:
+          ALPHA_ROOT: ${{ steps.archive.outputs.root }}
+        run: |
+          set -euo pipefail
+          bash scripts/release/ios-access-tests.sh 2>&1 | tee "$ALPHA_ROOT/access-tests.log"
+      - name: Upload verified Alpha self-test archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ success() && steps.archive.outcome == 'success' && steps.access_tests.outcome == 'success' }}
         with:
           name: ios-alpha-${{ inputs.version }}-${{ inputs.build }}
           path: |
-            ${{ runner.temp }}/Aegis-${{ inputs.version }}-${{ inputs.build }}.xcarchive
-            ${{ runner.temp }}/ios-internal-receipt.json
+            ${{ steps.archive.outputs.root }}/Aegis-${{ inputs.version }}-${{ inputs.build }}.xcarchive
+            ${{ steps.archive.outputs.root }}/ios-internal-receipt.json
           if-no-files-found: error
+          retention-days: 14
+      - name: Upload Alpha self-test diagnostics
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ failure() && steps.archive.outputs.root != '' && (steps.archive.outcome == 'failure' || steps.access_tests.outcome == 'failure') }}
+        with:
+          name: ios-alpha-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.archive.outputs.root }}/*.log
+          if-no-files-found: ignore
           retention-days: 14

@@ -48,6 +48,10 @@ TEST(AccessLocalCoreInputTest, BuildControlsPrivateInputSource) {
       "aegis-access-dev-node-config", canonical_directory.AppendASCII("dev-node"));
   const auto input = ResolveAccessLocalCoreInput();
 #if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
+  if (AccessChannelForCurrentBuild() != BundledAccessTestChannel()) {
+    EXPECT_FALSE(input);
+    return;
+  }
   ASSERT_TRUE(input);
   EXPECT_EQ(input->source, AccessLocalCoreSource::kPrivateTestBundle);
   EXPECT_EQ(AccessChannelForCurrentBuild(), BundledAccessTestChannel());
@@ -61,6 +65,10 @@ TEST(AccessLocalCoreInputTest, BuildControlsPrivateInputSource) {
   EXPECT_EQ(input->node_config, canonical_directory.AppendASCII(
       "AegisAlphaAccess/node.json"));
 #elif BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
+  if (AccessChannelForCurrentBuild() != aegis_access::ChannelNamespace::kDev) {
+    EXPECT_FALSE(input);
+    return;
+  }
   ASSERT_TRUE(input);
   EXPECT_EQ(input->source, AccessLocalCoreSource::kDevFiles);
   EXPECT_EQ(input->manifest, canonical_directory.AppendASCII("dev-manifest"));

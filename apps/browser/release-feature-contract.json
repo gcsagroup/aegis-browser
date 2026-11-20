@@ -531,6 +531,39 @@
         "prototypes/browser-agent-v2/test/android-web-app-mcp.test.mjs"
       ],
       "additionalChecks": "使用隔离资料和本次App运行MCP连接，覆盖新建页面、允许目标导航、提交导航后的权限重验、扩展目标仅所属连接可见、断开清理、网络mock与Access路线；原型适配器或单测不代表浏览器实际授权完成。"
+    },
+    {
+      "id": "windows-access-desktop",
+      "name": "Windows账户、本地核心、本站代理与诊断分享",
+      "platforms": [
+        "win-x64"
+      ],
+      "testFilters": [
+        "AccessAccountWindowsTest.*",
+        "AccessLocalCoreWinInputTest.*",
+        "AccessLocalCoreWinTest.*",
+        "AccessCoreLogWindowsTest.*",
+        "AccessLogExportDialogWindowsTest.*",
+        "AccessSiteProxyProductTest.*"
+      ],
+      "additionalChecks": "使用本次Windows产物在交互会话验证资料与隐私隔离、账户切换和退出、代理失败拒绝直连、本地进程树退出、诊断脱敏与用户确认后分享；核对原发行身份及升级安装。Mac和源代码测试不能代替Windows执行。"
+    },
+    {
+      "id": "mac-access-options",
+      "name": "Mac内部Access Options准入、配置隔离和迁移恢复",
+      "platforms": [
+        "mac-arm64"
+      ],
+      "testFilters": [
+        "AccessOptionsStoreTest.*",
+        "AccessOptionsServiceTest.*",
+        "AccessOptionsBrowserTest.*"
+      ],
+      "sourceRegressionTests": [
+        "apps/browser/overlay/chrome/browser/aegis/access/prepare_alpha_access_resources_test.py",
+        "apps/browser/overlay/chrome/browser/aegis/access/verify_access_build_identity_test.py"
+      ],
+      "additionalChecks": "真实App验证内部渠道允许、公开渠道拒绝、直接导航和消息同样受原生准入控制；验证不同资料与隐私会话隔离、旧配置迁移、写入中断恢复和私有资源暂存。不能为发行测试打开内部准入。"
     }
   ]
 }
