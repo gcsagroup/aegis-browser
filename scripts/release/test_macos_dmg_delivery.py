@@ -262,9 +262,13 @@ class TagTests(unittest.TestCase):
                 'AEGIS_MACOS_INPUT_APPROVED_SOURCE_SHA': SHA,
                 'AEGIS_MACOS_INPUT_PARENT_RUN_ID': '88',
                 'AEGIS_MACOS_INPUT_MANIFEST_SHA256': 'e' * 64,
+                'AEGIS_MACOS_INPUT_PACKAGE_KIND': 'notarized',
+                'AEGIS_MACOS_INPUT_SIGNING_MODE': 'notarized',
+                'AEGIS_MACOS_INPUT_CANDIDATE_TAG': 'candidate/macos/0.8.0-notarized.800001',
             }, destination)
             self.assertEqual(receipt['operation'], 'package')
             self.assertEqual(receipt['parentRunId'], 88)
+            self.assertEqual(receipt['candidateTag'], 'candidate/macos/0.8.0-notarized.800001')
             with self.assertRaises(delivery.DeliveryError):
                 delivery.accept_complete({
                     **{

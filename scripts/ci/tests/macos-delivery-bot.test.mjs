@@ -12,13 +12,14 @@ const sha = 'a'.repeat(40);
 const policy = {appId: 40, slug: 'aegis-delivery', actorId: 50};
 const bot = {id: 50, login: 'aegis-delivery[bot]', type: 'Bot'};
 const environment = {GITHUB_REPOSITORY: repository, GITHUB_SHA: sha, GITHUB_RUN_ID: '100',
+  GITHUB_ACTOR: bot.login, GITHUB_ACTOR_ID: String(bot.id),
   AEGIS_MACOS_DELIVERY_ENABLED: 'true', AEGIS_IOS_DELIVERY_BOT: JSON.stringify(policy),
   BOT_INPUTS: JSON.stringify({operation: 'Package', version: '0.8.0', build: '800001', package_kind: 'ad-hoc', signing_mode: 'ad-hoc'})};
 const load = () => import('../macos-delivery-bot.mjs');
 
 function childInputs(changes = {}) {
   return {operation: 'Package', version: '0.8.0', build: '800001', package_kind: 'ad-hoc', signing_mode: 'ad-hoc',
-    approved_source_sha: sha, tag_release: 'no', bot_callback: 'no', ...changes};
+    approved_source_sha: sha, tag_release: 'no', bot_callback: 'yes', ...changes};
 }
 
 function run(id = 200) {
@@ -29,10 +30,10 @@ function run(id = 200) {
 }
 
 function fixture({shaReads = 0, dispatchBody = {workflow_run_id: 200}, dispatchError = false, runBody = run(),
-  repositoryChanges = {}, transform = (_kind, value) => value} = {}) {
+  repositoryChanges = {}, initialInputs = childInputs(), transform = (_kind, value) => value} = {}) {
   const requests = [];
   let reads = 0;
-  let dispatched, evidence;
+  let dispatched = initialInputs, evidence;
   const repositoryName = repositoryChanges.full_name || repository;
   const repositoryId = repositoryChanges.id || 1348409663;
   function makeEvidence() {
@@ -45,11 +46,11 @@ function fixture({shaReads = 0, dispatchBody = {workflow_run_id: 200}, dispatchE
     const receipt = transform('receipt', {sourceSha: sha, packagingSourceSha: sha, version: '0.8.0', arch: 'arm64',
       notarized: false, signingMode: kind === 'ad-hoc' ? 'ad-hoc' : 'developer-id', notarizationSigning: kind === 'notarized',
       dmg: {name: filename, sha256: 'c'.repeat(64)}});
-    const archive = execFileSync('python3', ['-c', 'import io,json,sys,zipfile\nv=json.load(sys.stdin)\nb=io.BytesIO()\nwith zipfile.ZipFile(b,"w") as z:\n for k,x in v.items(): z.writestr(k,json.dumps(x))\nsys.stdout.buffer.write(b.getvalue())'],
+    const archive = execFileSync('python3', ['-c', 'import io,json,sys,zipfile\nv=json.load(sys.stdin)\nb=io.BytesIO()\nwith zipfile.ZipFile(b,"w") as z:\n for k,x in v.items(): z.writestr(k,json.dumps(x,separators=(",",":")))\nsys.stdout.buffer.write(b.getvalue())'],
       {input: JSON.stringify({'macos-delivery-manifest.json': manifest, 'macos-delivery-receipt.json': receipt})});
     const meta = {expired: false, size_in_bytes: archive.length, digest: 'sha256:'+createHash('sha256').update(archive).digest('hex'),
       workflow_run: {id: 200, head_sha: sha, head_branch: 'main'}};
-    return {archive, artifacts: transform('artifacts', {total_count: 2, artifacts: [
+    return {archive, manifest, artifacts: transform('artifacts', {total_count: 2, artifacts: [
       {id: 301, name: 'macos-dmg-200-1', ...meta}, {id: 302, name: 'macos-dmg-evidence-200-1', ...meta}]}),
     release: transform('release', {tag_name: `candidate/macos/0.8.0-${kind}.800001`, prerelease: true, draft: false,
       assets: [{id: 401, name: filename, state: 'uploaded', size: 100, digest: 'sha256:'+'c'.repeat(64)}]})};
@@ -81,7 +82,7 @@ function fixture({shaReads = 0, dispatchBody = {workflow_run_id: 200}, dispatchE
     }
     throw new Error('Unexpected '+path);
   };
-  return {api, requests, environment, quality: async () => true, sleep: async () => {}};
+  return {api, requests, environment, quality: async () => true, sleep: async () => {}, sealedManifest: () => makeEvidence().manifest};
 }
 
 test('Package dispatches one arm64 DMG and waits for that child', async () => {
@@ -119,7 +120,24 @@ test('a notarized package stays a DMG and is not an App Store upload', async () 
     operation: 'Package', version: '0.8.0', build: '800001', package_kind: 'notarized', signing_mode: 'notarized'})}});
   assert.equal(value.notarized, true);
   assert.equal(value.upload, false);
-  assert.equal(f.requests.find(call => call.method === 'POST').body.inputs.bot_callback, 'no');
+  assert.equal(f.requests.find(call => call.method === 'POST').body.inputs.bot_callback, 'yes');
+});
+
+test('hosted monitoring defers truthfully to the verified callback without shortening the child budget', async () => {
+  const {driveMacosDmg} = await load();
+  let elapsed = 0;
+  const recorded = [];
+  const f = fixture({runBody: {...run(), status: 'in_progress', conclusion: null}});
+  const value = await driveMacosDmg({...f, now: () => elapsed, monitorBudgetMs: 1000, pollMs: 15000,
+    sleep: async ms => { elapsed += ms; }, recordRun: receipt => recorded.push(receipt)});
+  assert.equal(elapsed, 1000);
+  assert.equal(value.pending, true);
+  assert.equal(value.notarized, false);
+  assert.equal(value.tag, undefined);
+  assert.equal(value.run.state, 'monitoring-deferred');
+  assert.deepEqual(recorded.map(receipt => receipt.state), ['dispatched', 'monitoring-deferred']);
+  assert.equal(f.requests.filter(call => call.method === 'POST').length, 1);
+  assert.equal(f.requests.find(call => call.method === 'POST').body.inputs.bot_callback, 'yes');
 });
 
 test('store operations, a mismatched pair, and a closed gate never dispatch', async () => {
@@ -219,23 +237,36 @@ test('a failed child is retained and not dispatched again', async () => {
 test('complete dispatches the bot receipt for the sealed manifest and does not package again', async () => {
   const {completeMacosDmg} = await load();
   const directory = mkdtempSync(join(tmpdir(), 'aegis-macos-complete-'));
-  const manifest = {schema: 'aegis-macos-delivery-v1', repository, sourceSha: sha, packageKind: 'host-signed',
-    version: '0.8.0', build: '800001', notarized: false,
-    artifacts: [{architecture: 'arm64', uploadable: false, sha256: 'c'.repeat(64)}]};
+  const f = fixture({dispatchBody: {workflow_run_id: 90},
+    initialInputs: childInputs({package_kind: 'host-signed', signing_mode: 'host-signed', tag_release: 'yes'})});
+  const manifest = f.sealedManifest();
   const path = join(directory, 'macos-delivery-manifest.json');
   writeFileSync(path, JSON.stringify(manifest));
   const digest = createHash('sha256').update(readFileSync(path)).digest('hex');
-  const f = fixture({dispatchBody: {workflow_run_id: 90}});
   const value = await completeMacosDmg({api: f.api, manifestPath: path, environment: {...environment,
+    GITHUB_RUN_ID: '200', AEGIS_MACOS_DELIVERY_TAG_RELEASE: 'true',
     AEGIS_MACOS_DELIVERY_VERSION: '0.8.0', AEGIS_MACOS_DELIVERY_BUILD: '800001',
     AEGIS_MACOS_DELIVERY_PACKAGE_KIND: 'host-signed', AEGIS_MACOS_DELIVERY_SIGNING_MODE: 'host-signed'}});
   assert.equal(value.workflowRunId, 90);
   assert.equal(value.operation, 'package');
   assert.equal(value.manifestSha256, digest);
+  assert.equal(value.candidateTag, 'candidate/macos/0.8.0-host-signed.800001');
   assert.equal(f.requests.filter(call => call.method === 'POST').length, 1);
-  assert.equal(f.requests[0].body.inputs.operation, 'Complete');
-  assert.equal(f.requests[0].body.inputs.completed_operation, 'package');
-  assert.equal(f.requests[0].path.endsWith('/macos-delivery-bot.yml/dispatches'), true);
+  const dispatch = f.requests.find(call => call.method === 'POST');
+  assert.equal(dispatch.body.inputs.operation, 'Complete');
+  assert.equal(dispatch.body.inputs.completed_operation, 'package');
+  assert.equal(dispatch.path.endsWith('/macos-delivery-bot.yml/dispatches'), true);
+  for (const fail of ['jobs', 'manifest', 'parent']) {
+    const denied = fixture({runBody: {...run(), ...(fail === 'parent' ? {run_attempt: 2} : {})},
+      initialInputs: childInputs({package_kind: 'host-signed', signing_mode: 'host-signed', tag_release: 'yes'}),
+      transform: (kind, data) => kind !== fail ? data : kind === 'jobs'
+        ? {...data, jobs: data.jobs.map(job => ({...job, conclusion: 'skipped'}))} : {...data, sourceSha: 'b'.repeat(40)}});
+    await assert.rejects(completeMacosDmg({api: denied.api, manifestPath: path, environment: {...environment,
+      GITHUB_RUN_ID: '200', AEGIS_MACOS_DELIVERY_TAG_RELEASE: 'true',
+      AEGIS_MACOS_DELIVERY_VERSION: '0.8.0', AEGIS_MACOS_DELIVERY_BUILD: '800001',
+      AEGIS_MACOS_DELIVERY_PACKAGE_KIND: 'host-signed', AEGIS_MACOS_DELIVERY_SIGNING_MODE: 'host-signed'}}), /DMG|parent/u);
+    assert.equal(denied.requests.filter(call => call.method === 'POST').length, 0);
+  }
 });
 
 test('the controller form packages or tags a DMG, and promotion is a separate admin job', () => {
@@ -247,7 +278,7 @@ test('the controller form packages or tags a DMG, and promotion is a separate ad
   assert.equal(doc.concurrency['cancel-in-progress'], false);
   const job = doc.jobs.controller;
   assert.equal(job.environment, 'aegis-ios-bot');
-  assert.equal(job['timeout-minutes'], 430);
+  assert.equal(job['timeout-minutes'], 355);
   for (const condition of ["github.repository == 'quinn521/aegis-browser'", "github.repository == 'gcsagroup/aegis-browser'",
     "github.ref == 'refs/heads/main'", "github.event_name == 'workflow_dispatch'", 'github.run_attempt == 1',
     "inputs.operation != 'Promote'", "vars.AEGIS_MACOS_DELIVERY_ENABLED == 'true'"]) assert(job.if.includes(condition));
@@ -274,7 +305,14 @@ test('the controller form packages or tags a DMG, and promotion is a separate ad
   assert.equal(child.jobs['package-ad-hoc']['timeout-minutes'], 360);
   assert.equal(child.jobs['package-notarized']['timeout-minutes'], 400);
   for (const kind of ['ad-hoc', 'host-signed', 'notarized']) {
-    assert(child.jobs['package-'+kind].steps.some(step => step.with?.name === 'macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}'));
+    const packageJob = child.jobs['package-'+kind];
+    assert(packageJob.steps.some(step => step.with?.name === 'macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}'));
+    assert.equal(JSON.stringify(packageJob.env || {}).includes('runner.'), false);
+    assert(packageJob.steps.some(step => step.name === 'Bind job-local DMG output' && step.run.includes('$GITHUB_ENV')));
+    if (kind !== 'ad-hoc') {
+      const setup = packageJob.steps.find(step => step.id === 'identity');
+      assert.equal(Number(setup.env.AEGIS_MACOS_SIGNING_KEYCHAIN_TIMEOUT_SECONDS), packageJob['timeout-minutes'] * 60);
+    }
   }
   const signed = child.jobs['package-notarized'].steps.find(step => step.name === 'Rebuild the Developer ID arm64 DMG');
   assert.equal(signed.env.MACOS_NOTARIZATION_SIGNING, '1');

@@ -59,7 +59,7 @@ on:
         required: false
         default: ""
       candidate_tag:
-        description: "candidate/macos/<version>-<kind>.<build>. Promote only, after admin approval."
+        description: "candidate/macos/<version>-<kind>.<build>. Promote requires admin approval; Complete records the verified candidate."
         type: string
         required: false
         default: ""
@@ -75,7 +75,7 @@ jobs:
     if: ${{ vars.AEGIS_MACOS_DELIVERY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.operation != 'Complete' && inputs.operation != 'Promote' }}
     runs-on: ubuntu-24.04
     environment: aegis-ios-bot
-    timeout-minutes: 430
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -140,6 +140,9 @@ jobs:
           AEGIS_MACOS_INPUT_VERSION: ${{ inputs.version }}
           AEGIS_MACOS_INPUT_BUILD: ${{ inputs.build }}
           AEGIS_MACOS_INPUT_APPROVED_SOURCE_SHA: ${{ inputs.approved_source_sha }}
+          AEGIS_MACOS_INPUT_PACKAGE_KIND: ${{ inputs.package_kind }}
+          AEGIS_MACOS_INPUT_SIGNING_MODE: ${{ inputs.signing_mode }}
+          AEGIS_MACOS_INPUT_CANDIDATE_TAG: ${{ inputs.candidate_tag }}
         run: python3 scripts/release/macos-dmg-delivery.py accept-complete --receipt "$RUNNER_TEMP/macos-delivery-bot-receipt.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

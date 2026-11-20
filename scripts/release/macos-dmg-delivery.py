@@ -405,10 +405,16 @@ def accept_complete(environment, destination):
     sha = environment.get('AEGIS_MACOS_INPUT_APPROVED_SOURCE_SHA', '')
     parent = environment.get('AEGIS_MACOS_INPUT_PARENT_RUN_ID', '')
     manifest = environment.get('AEGIS_MACOS_INPUT_MANIFEST_SHA256', '')
+    package_kind = environment.get('AEGIS_MACOS_INPUT_PACKAGE_KIND', '')
+    signing_mode = environment.get('AEGIS_MACOS_INPUT_SIGNING_MODE', '')
+    candidate_tag = environment.get('AEGIS_MACOS_INPUT_CANDIDATE_TAG', '')
     require(VERSION.fullmatch(version) is not None and BUILD.fullmatch(build) is not None, 'Completed coordinate is malformed')
     require(re.fullmatch(r'[0-9a-f]{40}', sha) is not None, 'Completed source is malformed')
     require(re.fullmatch(r'[1-9][0-9]*', parent) is not None, 'Completed parent run is malformed')
     require(re.fullmatch(r'[0-9a-f]{64}', manifest) is not None, 'Completed manifest is missing')
+    require(package_kind in DMG_KINDS and signing_mode == package_kind, 'Completed package kind differs')
+    require(not candidate_tag or candidate_tag == dmg_tag_name(version, build, package_kind),
+            'Completed candidate coordinate differs')
     receipt = {
         'schema': 'aegis-macos-delivery-bot-v1',
         'operation': operation,
@@ -419,6 +425,8 @@ def accept_complete(environment, destination):
         'manifestSha256': manifest,
         'repository': repository,
         'actor': policy['slug'] + '[bot]',
+        'packageKind': package_kind,
+        'candidateTag': candidate_tag,
     }
     require(not destination.exists(), 'Refusing to replace a bot receipt')
     destination.write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8')
