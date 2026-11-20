@@ -9,10 +9,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 VERSION = re.compile(r'(?:0|[1-9][0-9]{0,9})(?:\.(?:0|[1-9][0-9]{0,9})){1,3}')
 SIGNING_MODES = frozenset({'ad-hoc', 'developer-id'})
@@ -47,12 +49,16 @@ def normalize(environment):
     if signing_mode == 'temporary-ad-hoc':
         signing_mode = 'ad-hoc'
     notarize = environment.get('MACOS_NOTARIZE', '')
+    notarization_signing = environment.get('MACOS_NOTARIZATION_SIGNING', '0')
     require(repository in ALLOWED_REPOSITORIES, 'macOS delivery is limited to the fork and upstream repository')
     require(event == 'workflow_dispatch', 'macOS delivery only runs from a manual dispatch')
     require(operation in {'access', 'package'}, 'Operation must be access or package')
     require(notarize in {'', 'false', '0'}, 'Notarization is not part of this early delivery')
     require(VERSION.fullmatch(version) is not None, 'Version must be two to four numeric components, for example 6.1.0.266')
     require(signing_mode in SIGNING_MODES, 'Signing mode must be ad-hoc or developer-id')
+    require(notarization_signing in {'0', '1'} and
+            (notarization_signing == '0' or signing_mode == 'developer-id'),
+            'Notarization signing requires Developer ID')
     runner_label = resolve_runner_label(environment)
     arch = machine_arch(environment.get('MACOS_ARCH', '') or 'arm64')
     require(arch == 'arm64', 'This delivery runner/build supports arm64 only')
@@ -74,6 +80,7 @@ def normalize(environment):
         'operation': operation,
         'version': version,
         'signing_mode': signing_mode,
+        'notarization_signing': notarization_signing == '1',
         'identity': identity,
         'app': app,
         'app_root': app_root,
@@ -119,13 +126,60 @@ def admit_app(app_path, app_root):
     return app_real
 
 
-def sign_plan(app, identity, keychain=''):
+def is_macho(path):
+    if path.is_symlink() or not path.is_file():
+        return False
+    with path.open('rb') as handle:
+        header = handle.read(8)
+    if header[:4] in (b'\xfe\xed\xfa\xce', b'\xce\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xcf\xfa\xed\xfe'):
+        return True
+    # Java class files share the fat magic; a plausible architecture count
+    # distinguishes them without loading potentially large binaries.
+    byte_order = {b'\xca\xfe\xba\xbe': 'big', b'\xbe\xba\xfe\xca': 'little',
+                  b'\xca\xfe\xba\xbf': 'big', b'\xbf\xba\xfe\xca': 'little'}.get(header[:4])
+    return bool(byte_order and len(header) == 8 and 1 <= int.from_bytes(header[4:], byte_order) <= 16)
+
+
+@contextmanager
+def signing_entitlements(app, identity, output, enabled):
+    if not enabled:
+        yield {}
+        return
+    sha = identity.get('source', {}).get('chromium', {}).get('sha', '')
+    require(re.fullmatch(r'[0-9a-f]{40}', sha) is not None, 'Verified Chromium SHA required for signing entitlements')
+    source = app.parent.parent.parent
+    # Read immutable blobs from the exact Chromium source used by the app,
+    # never the packager checkout or mutable working-tree plist files.
+    with tempfile.TemporaryDirectory(prefix='.signing-', dir=output) as directory:
+        paths = {}
+        for role, filename in (('app', 'app-entitlements.plist'),
+                               ('renderer', 'helper-renderer-entitlements.plist'),
+                               ('gpu', 'helper-gpu-entitlements.plist')):
+            try:
+                data = subprocess.run(['git', '-C', str(source), 'show', sha + ':chrome/app/' + filename],
+                                      capture_output=True, check=True, timeout=30).stdout
+                value = plistlib.loads(data)
+            except (OSError, subprocess.SubprocessError, ValueError) as error:
+                raise DeliveryError('Cannot read pinned Chromium signing entitlements') from error
+            require(isinstance(value, dict) and not value.get('com.apple.security.get-task-allow'),
+                    'Distribution entitlements cannot enable debugging')
+            path = Path(directory) / filename
+            path.write_bytes(data)
+            paths[role] = str(path)
+        yield paths
+
+
+def sign_plan(app, identity, keychain='', notarization_signing=False, entitlements=None):
     require(identity == '-' or identity.startswith('Developer ID Application:'), 'Refusing an unexpected signing identity')
     if identity != '-':
         require(keychain and Path(keychain).is_absolute() and Path(keychain).is_file(),
                 'Verified job-local signing keychain is required for Developer ID')
     bundles = []
-    for dirpath, dirnames, _filenames in os.walk(app, followlinks=False):
+    binaries = []
+    if notarization_signing:
+        require(identity != '-' and entitlements and set(entitlements) == {'app', 'renderer', 'gpu'},
+                'Notarization signing requires Developer ID and pinned entitlements')
+    for dirpath, dirnames, filenames in os.walk(app, followlinks=False):
         current = Path(dirpath)
         kept = []
         for name in dirnames:
@@ -136,14 +190,25 @@ def sign_plan(app, identity, keychain=''):
             if name.endswith(BUNDLE_SUFFIXES) and path != app:
                 bundles.append(path)
         dirnames[:] = kept
-    ordered = sorted(bundles, key=lambda path: len(path.parts), reverse=True)
+        if notarization_signing:
+            binaries.extend(current / name for name in filenames if is_macho(current / name))
+    ordered = sorted(bundles + binaries, key=lambda path: (-len(path.parts), str(path)))
     ordered.append(Path(app))
     commands = []
     for path in ordered:
         command = ['/usr/bin/codesign', '--force', '--sign', identity]
         if identity != '-':
             command.extend(['--keychain', keychain])
-        commands.append(command + ['--timestamp=none', str(path)])
+        if notarization_signing:
+            command.extend(['--timestamp', '--options', 'runtime'])
+            role = ('app' if path == Path(app) else
+                    'renderer' if path.name.endswith('Helper (Renderer).app') else
+                    'gpu' if path.name.endswith('Helper (GPU).app') else None)
+            if role:
+                command.extend(['--entitlements', entitlements[role]])
+        else:
+            command.append('--timestamp=none')
+        commands.append(command + [str(path)])
     commands.append(['/usr/bin/codesign', '--verify', '--strict', str(app)])
     for command in commands:
         require(NOTARIZE_TOOLS.isdisjoint(Path(part).name for part in command), 'Notarization commands are refused')
@@ -294,8 +359,10 @@ def package_locked(environment, runner, plan):
         f'Version: {plan["version"]}\n'
         f'Signing: {plan["signing_mode"]}\n'
         'Notarization: not performed. Gatekeeper may refuse this disk image.\n')
-    for command in sign_plan(staged_app, plan['identity'], plan['keychain']):
-        runner(command)
+    with signing_entitlements(app, identity, output, plan['notarization_signing']) as entitlements:
+        for command in sign_plan(staged_app, plan['identity'], plan['keychain'],
+                                 plan['notarization_signing'], entitlements):
+            runner(command)
     dmg = output / plan['dmg_name']
     runner(dmg_plan(stage, dmg))
     require(dmg.is_file() and not dmg.is_symlink(), 'DMG was not created')
@@ -308,6 +375,7 @@ def package_locked(environment, runner, plan):
         'packagingSourceSha': environment.get('GITHUB_SHA', ''),
         'appBuildIdentity': identity,
         'signingMode': plan['signing_mode'],
+        'notarizationSigning': plan['notarization_signing'],
         'notarized': False,
         'notarization': 'skipped',
         'arch': plan['arch'],
@@ -315,6 +383,9 @@ def package_locked(environment, runner, plan):
     }
     require(re.fullmatch(r'[0-9a-f]{40}', receipt['sourceSha']) is not None, 'Full source SHA required')
     (output / 'macos-delivery-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    # Only this invocation's copied app and generated staging files are removed.
+    # Failed packaging retains its staging directory for diagnosis.
+    shutil.rmtree(stage)
     return receipt
 
 

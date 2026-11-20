@@ -62,6 +62,7 @@ export default tseslint.config(
       "scripts/ci/ios-delivery-bot.mjs",
       "scripts/ci/ios-operator.mjs",
       "scripts/ci/macos-delivery-bot.mjs",
+      "scripts/ci/macos-delivery-evidence.mjs",
       "scripts/ci/macos-operator.mjs",
       "scripts/ci/platform-impact.mjs",
       "apps/browser/scripts/ios-access-phase1-evidence.mjs",

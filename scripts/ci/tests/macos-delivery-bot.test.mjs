@@ -28,19 +28,55 @@ function run(id = 200) {
     actor: bot, triggering_actor: bot};
 }
 
-function fixture({shaReads = 0, dispatchBody = {workflow_run_id: 200}, dispatchError = false, runBody = run(), repositoryChanges = {}} = {}) {
+function fixture({shaReads = 0, dispatchBody = {workflow_run_id: 200}, dispatchError = false, runBody = run(),
+  repositoryChanges = {}, transform = (_kind, value) => value} = {}) {
   const requests = [];
   let reads = 0;
+  let dispatched, evidence;
+  const repositoryName = repositoryChanges.full_name || repository;
+  const repositoryId = repositoryChanges.id || 1348409663;
+  function makeEvidence() {
+    const kind = dispatched.package_kind;
+    const filename = 'GCSA-aegis-0.8.0-mac-arm64.dmg';
+    const manifest = transform('manifest', {schema: 'aegis-macos-delivery-v1', repository: repositoryName,
+      sourceSha: sha, version: '0.8.0', build: '800001', packageKind: kind, notarized: kind === 'notarized',
+      architectures: ['arm64'], artifacts: [{filename, architecture: 'arm64', role: 'package', uploadable: false,
+        sha256: 'c'.repeat(64), sizeBytes: 100}]});
+    const receipt = transform('receipt', {sourceSha: sha, packagingSourceSha: sha, version: '0.8.0', arch: 'arm64',
+      notarized: false, signingMode: kind === 'ad-hoc' ? 'ad-hoc' : 'developer-id', notarizationSigning: kind === 'notarized',
+      dmg: {name: filename, sha256: 'c'.repeat(64)}});
+    const archive = execFileSync('python3', ['-c', 'import io,json,sys,zipfile\nv=json.load(sys.stdin)\nb=io.BytesIO()\nwith zipfile.ZipFile(b,"w") as z:\n for k,x in v.items(): z.writestr(k,json.dumps(x))\nsys.stdout.buffer.write(b.getvalue())'],
+      {input: JSON.stringify({'macos-delivery-manifest.json': manifest, 'macos-delivery-receipt.json': receipt})});
+    const meta = {expired: false, size_in_bytes: archive.length, digest: 'sha256:'+createHash('sha256').update(archive).digest('hex'),
+      workflow_run: {id: 200, head_sha: sha, head_branch: 'main'}};
+    return {archive, artifacts: transform('artifacts', {total_count: 2, artifacts: [
+      {id: 301, name: 'macos-dmg-200-1', ...meta}, {id: 302, name: 'macos-dmg-evidence-200-1', ...meta}]}),
+    release: transform('release', {tag_name: `candidate/macos/0.8.0-${kind}.800001`, prerelease: true, draft: false,
+      assets: [{id: 401, name: filename, state: 'uploaded', size: 100, digest: 'sha256:'+'c'.repeat(64)}]})};
+  }
   const api = async (path, options = {}) => {
     requests.push({path, body: options.body, method: options.method || 'GET'});
-    if (path === '/repos/'+repository) return {id: 1348409663, full_name: repository, default_branch: 'main', ...repositoryChanges};
+    if (path === '/repos/'+repositoryName) return {id: repositoryId, full_name: repositoryName, default_branch: 'main', ...repositoryChanges};
     if (path.endsWith('/git/ref/heads/main')) {
       reads += 1;
       return {object: {sha: reads > shaReads && shaReads > 0 ? 'b'.repeat(40) : sha}};
     }
-    if (path === '/repos/'+repository+'/actions/runs/200') return runBody;
+    if (path === '/repos/'+repositoryName+'/actions/runs/200') return {...runBody,
+      repository: {id: repositoryId, full_name: repositoryName}, head_repository: {id: repositoryId, full_name: repositoryName}};
+    if (path.endsWith('/attempts/1/jobs?per_page=100')) {
+      const names = ['admission', 'package-'+dispatched.package_kind, ...(dispatched.tag_release === 'yes' ? ['candidate'] : [])];
+      return transform('jobs', {total_count: names.length, jobs: names.map((name, index) => ({id: index+1,
+        run_id: 200, run_attempt: 1, head_sha: sha, status: 'completed', conclusion: 'success', name}))});
+    }
+    if (path.endsWith('/artifacts?per_page=100')) {
+      evidence = makeEvidence();
+      return evidence.artifacts;
+    }
+    if (path.endsWith('/actions/artifacts/302/zip')) return transform('archive', evidence.archive);
+    if (path.includes('/releases/tags/')) return evidence.release;
     if (options.method === 'POST' && path.endsWith('/dispatches')) {
       if (dispatchError) throw Object.assign(new Error('secret response'), {status: 500});
+      dispatched = options.body.inputs;
       return dispatchBody;
     }
     throw new Error('Unexpected '+path);
@@ -108,25 +144,50 @@ test('store operations, a mismatched pair, and a closed gate never dispatch', as
 test('the fork runs the same Package matrix before upstream promotion', async () => {
   const {driveMacosDmg} = await load();
   const fork = 'quinn521/aegis-browser';
-  const requests = [];
-  const api = async (path, options = {}) => {
-    requests.push({path, body: options.body, method: options.method || 'GET'});
-    if (path === '/repos/'+fork) return {id: 1363949860, full_name: fork, default_branch: 'main'};
-    if (path.endsWith('/git/ref/heads/main')) return {object: {sha}};
-    if (path === '/repos/'+fork+'/actions/runs/200') {
-      return {id: 200, run_attempt: 1, status: 'completed', conclusion: 'success', head_sha: sha, head_branch: 'main',
-        path: '.github/workflows/macos-dmg.yml', event: 'workflow_dispatch',
-        repository: {id: 1363949860, full_name: fork}, head_repository: {id: 1363949860, full_name: fork},
-        actor: bot, triggering_actor: bot};
-    }
-    if (options.method === 'POST') return {workflow_run_id: 200};
-    throw new Error(path);
-  };
-  const value = await driveMacosDmg({api, quality: async () => true, sleep: async () => {},
+  const f = fixture({repositoryChanges: {id: 1363949860, full_name: fork, default_branch: 'develop'}});
+  const value = await driveMacosDmg({...f,
     environment: {...environment, GITHUB_REPOSITORY: fork}});
   assert.equal(value.repository, fork);
   assert.equal(value.packageKind, 'ad-hoc');
-  assert.equal(requests.some(call => call.path.includes('/macos-dmg.yml/dispatches')), true);
+  assert.equal(f.requests.some(call => call.path.includes('/macos-dmg.yml/dispatches')), true);
+});
+
+test('overall success cannot replace exact-attempt jobs and sealed artifact evidence', async () => {
+  const {driveMacosDmg} = await load();
+  const cases = [
+    ['jobs', value => ({...value, jobs: value.jobs.map(job => ({...job, conclusion: 'skipped'}))})],
+    ['jobs', value => ({...value, jobs: value.jobs.map(job => ({...job, run_attempt: 2}))})],
+    ['jobs', value => ({...value, total_count: 1000})],
+    ['artifacts', value => ({...value, artifacts: value.artifacts.map(item => ({...item, expired: true}))})],
+    ['artifacts', value => ({...value, total_count: 0, artifacts: []})],
+    ['artifacts', value => ({...value, total_count: 1000})],
+    ['artifacts', value => ({...value, artifacts: value.artifacts.map(item => ({...item, digest: 'sha256:'+'0'.repeat(64)}))})],
+    ['manifest', value => ({...value, sourceSha: 'b'.repeat(40)})],
+    ['manifest', value => ({...value, packageKind: 'notarized', notarized: true})],
+    ['receipt', value => ({...value, sourceSha: 'b'.repeat(40)})],
+    ['archive', () => Buffer.from('unsealed')],
+  ];
+  for (const [kind, change] of cases) {
+    const recorded = [];
+    const f = fixture({transform: (part, value) => part === kind ? change(value) : value});
+    await assert.rejects(driveMacosDmg({...f, recordRun: value => recorded.push(value)}), /DMG|inventory/u);
+    assert.deepEqual(recorded.map(value => value.state), ['dispatched']);
+    assert.equal(recorded[0].notarized, false);
+    assert.equal(f.requests.filter(call => call.method === 'POST').length, 1);
+  }
+});
+
+test('Tag release also requires a successful candidate job and the published DMG asset', async () => {
+  const {driveMacosDmg} = await load();
+  for (const kind of ['jobs', 'release']) {
+    const f = fixture({transform: (part, value) => {
+      if (part !== kind) return value;
+      if (part === 'jobs') return {...value, jobs: value.jobs.map(job => job.name === 'candidate' ? {...job, conclusion: 'skipped'} : job)};
+      return {...value, assets: []};
+    }});
+    await assert.rejects(driveMacosDmg({...f, environment: {...environment, BOT_INPUTS: JSON.stringify({
+      operation: 'Tag release', version: '0.8.0', build: '800001', package_kind: 'ad-hoc', signing_mode: 'ad-hoc'})}}), /DMG/u);
+  }
 });
 
 test('red quality and a main move after the first read do not dispatch', async () => {
@@ -212,6 +273,12 @@ test('the controller form packages or tags a DMG, and promotion is a separate ad
   assert.deepEqual(child.on.workflow_dispatch.inputs.operation.options, ['Package']);
   assert.equal(child.jobs['package-ad-hoc']['timeout-minutes'], 360);
   assert.equal(child.jobs['package-notarized']['timeout-minutes'], 400);
+  for (const kind of ['ad-hoc', 'host-signed', 'notarized']) {
+    assert(child.jobs['package-'+kind].steps.some(step => step.with?.name === 'macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}'));
+  }
+  const signed = child.jobs['package-notarized'].steps.find(step => step.name === 'Rebuild the Developer ID arm64 DMG');
+  assert.equal(signed.env.MACOS_NOTARIZATION_SIGNING, '1');
+  assert(child.jobs['package-notarized'].steps.some(step => step.run?.includes('xcrun stapler validate')));
   assert.match(child.jobs['call-bot'].steps.at(-1).run, /complete/u);
 });
 

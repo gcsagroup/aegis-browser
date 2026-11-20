@@ -117,6 +117,16 @@ jobs:
             ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
           if-no-files-found: error
           retention-days: 14
+      - name: Upload sealed DMG evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success()
+        with:
+          name: macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
+            ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14
 
   package-host-signed:
     name: package-host-signed
@@ -162,6 +172,16 @@ jobs:
             ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
           if-no-files-found: error
           retention-days: 14
+      - name: Upload sealed DMG evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success()
+        with:
+          name: macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
+            ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14
 
   package-notarized:
     name: package-notarized
@@ -185,6 +205,7 @@ jobs:
       - name: Rebuild the Developer ID arm64 DMG
         env:
           MACOS_SIGNING_MODE: developer-id
+          MACOS_NOTARIZATION_SIGNING: '1'
           AEGIS_MACOS_DEVELOPER_ID: ${{ steps.identity.outputs.identity }}
           AEGIS_MACOS_SIGNING_KEYCHAIN: ${{ steps.identity.outputs.keychain }}
         run: bash scripts/release/macos-rebuild-dmg.sh "${{ needs.admission.outputs.version }}" arm64
@@ -201,6 +222,7 @@ jobs:
             --password "$AEGIS_MACOS_NOTARY_PASSWORD" \
             --wait
           xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
           python3 scripts/release/macos-dmg-delivery.py seal \
             --directory "$MACOS_OUTPUT_DIR" \
             --package-kind notarized \
@@ -215,6 +237,16 @@ jobs:
           name: macos-dmg-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/macos-dmg/*.dmg
+            ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
+            ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload sealed DMG evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success()
+        with:
+          name: macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
             ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
             ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
           if-no-files-found: error

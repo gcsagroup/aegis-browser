@@ -4,6 +4,7 @@ import {basename} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {githubRequest} from './ios-delivery-bot.mjs';
 import {requireGreenQuality} from './promotion-quality.mjs';
+import {downloadEvidenceArchive, requireDmgEvidence} from './macos-delivery-evidence.mjs';
 
 const UPSTREAM = 'gcsagroup/aegis-browser';
 const FORK = 'quinn521/aegis-browser';
@@ -43,7 +44,7 @@ export function installationClient({appId, installationId, privateKey, repositor
       token = value.token;
       expires = nextExpiry;
     }
-    return request(path, {...options, token});
+    return options.archive ? downloadEvidenceArchive(path, token) : request(path, {...options, token});
   };
 }
 
@@ -97,7 +98,7 @@ export async function driveMacosDmg({environment = process.env, api, quality, re
     typeof policy.slug === 'string' && /^[a-z0-9][a-z0-9-]{0,98}$/u.test(policy.slug),
   'Pinned App configuration required');
   const repository = await api(admitted.prefix);
-  requireValue(repository?.id === admitted.id && repository.full_name === admitted.name && repository.default_branch === 'main',
+  requireValue(repository?.id === admitted.id && repository.full_name === admitted.name,
     'Repository identity differs');
   const assertSource = async () => {
     const tip = await api(admitted.prefix+'/git/ref/heads/main');
@@ -118,7 +119,7 @@ export async function driveMacosDmg({environment = process.env, api, quality, re
   const id = receipt.workflow_run_id;
   const url = 'https://github.com/'+admitted.name+'/actions/runs/'+id;
   const retained = {id, attempt: 1, operation: inputs.operation, packageKind: inputs.packageKind,
-    signingMode: inputs.signingMode, notarized: inputs.packageKind === 'notarized', upload: false,
+    signingMode: inputs.signingMode, notarized: false, upload: false,
     url, approvedSourceSha: environment.GITHUB_SHA, version: inputs.version, build: inputs.build,
     repository: admitted.name};
   recordRun({...retained, state: 'dispatched'});
@@ -142,10 +143,11 @@ export async function driveMacosDmg({environment = process.env, api, quality, re
     'Child run identity/source/context differs: '+url);
     if (run.status === 'completed') {
       requireValue(run.conclusion === 'success', 'Child DMG delivery failed; reconcile '+url);
-      const completed = {...retained, state: 'completed', conclusion: 'success'};
+      const evidence = await requireDmgEvidence({api, repository: admitted.name, sha: environment.GITHUB_SHA, id, inputs});
+      const completed = {...retained, ...evidence, state: 'completed', conclusion: 'success'};
       recordRun(completed);
       const result = {sourceSha: environment.GITHUB_SHA, version: inputs.version, build: inputs.build,
-        packageKind: inputs.packageKind, notarized: inputs.packageKind === 'notarized', upload: false,
+        packageKind: inputs.packageKind, notarized: evidence.notarized, upload: false,
         repository: admitted.name, run: completed};
       if (inputs.operation === 'Tag release') result.tag = `candidate/macos/${inputs.version}-${inputs.packageKind}.${inputs.build}`;
       return result;

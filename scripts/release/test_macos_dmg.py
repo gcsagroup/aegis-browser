@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import plistlib
 import re
 import shutil
 import subprocess
@@ -37,6 +38,73 @@ def environment(**extra):
 
 
 class MacosDmgTests(unittest.TestCase):
+    def test_distribution_signing_covers_nested_code_with_pinned_entitlements(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            app, env, report, calls, runner = self.package_fixture(root)
+            src = app.parent.parent.parent
+            for filename in ('app-entitlements.plist', 'helper-renderer-entitlements.plist', 'helper-gpu-entitlements.plist'):
+                path = src / 'chrome/app' / filename
+                path.parent.mkdir(exist_ok=True)
+                path.write_bytes(plistlib.dumps({'com.apple.security.cs.allow-jit': True}))
+            subprocess.run(['git', 'init', '-q', str(src)], check=True)
+            subprocess.run(['git', '-C', str(src), 'add', 'chrome/app'], check=True)
+            subprocess.run(['git', '-C', str(src), '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                            'commit', '-qm', 'pinned entitlements'], check=True)
+            chromium_sha = subprocess.check_output(['git', '-C', str(src), 'rev-parse', 'HEAD'], text=True).strip()
+            report['source']['chromium'] = {'sha': chromium_sha}
+            # A changed checkout plist must not influence the admitted app's signing.
+            (src / 'chrome/app/app-entitlements.plist').write_bytes(plistlib.dumps({'com.apple.security.get-task-allow': True}))
+            binaries = []
+            for relative in ('Contents/MacOS/Browser', 'Contents/Frameworks/libcodec.dylib',
+                             'Contents/Frameworks/GCSA Aegis Helper (Renderer).app/Contents/MacOS/Renderer',
+                             'Contents/Frameworks/GCSA Aegis Helper (GPU).app/Contents/MacOS/GPU',
+                             'Contents/Helpers/crashpad_handler'):
+                path = app / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'\xcf\xfa\xed\xfe' + bytes(28))
+                binaries.append(relative)
+            keychain = root / 'job.keychain-db'
+            keychain.touch()
+            env.update(MACOS_SIGNING_MODE='developer-id', MACOS_NOTARIZATION_SIGNING='1',
+                       AEGIS_MACOS_DEVELOPER_ID='Developer ID Application: Example (ABCDE12345)',
+                       AEGIS_MACOS_SIGNING_KEYCHAIN=str(keychain))
+            roles = []
+
+            def inspect(command):
+                runner(command)
+                if '--entitlements' in command:
+                    path = Path(command[command.index('--entitlements') + 1])
+                    self.assertEqual(plistlib.loads(path.read_bytes()), {'com.apple.security.cs.allow-jit': True})
+                    roles.append(path.name)
+
+            with patch.object(dmg, 'verify_app_identity', return_value=report):
+                receipt = dmg.package(env, inspect)
+            signing = [command for command in calls if '--force' in command]
+            self.assertTrue(all('--timestamp' in command and '--timestamp=none' not in command and
+                                command[command.index('--options') + 1] == 'runtime' for command in signing))
+            self.assertEqual(set(roles), {'app-entitlements.plist', 'helper-renderer-entitlements.plist', 'helper-gpu-entitlements.plist'})
+            signed = [command[-1] for command in signing]
+            for relative in binaries:
+                self.assertTrue(any(path.endswith('/' + relative) for path in signed))
+            self.assertTrue(signed[-1].endswith('/' + app.name))
+            self.assertTrue(receipt['notarizationSigning'])
+            self.assertFalse(receipt['notarized'])
+            self.assertEqual(len(list((root / 'output').iterdir())), 2)
+
+    def test_failed_packaging_retains_only_its_own_staging_for_diagnosis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app, env, report, _, _ = self.package_fixture(Path(directory).resolve())
+            with patch.object(dmg, 'verify_app_identity', return_value=report):
+                with self.assertRaisesRegex(RuntimeError, 'fixture failure'):
+                    dmg.package(env, lambda _command: (_ for _ in ()).throw(RuntimeError('fixture failure')))
+            self.assertTrue((Path(env['MACOS_OUTPUT_DIR']) / 'stage' / app.name).is_dir())
+            self.assertTrue(app.is_dir())
+
+    def test_notarization_signing_cannot_use_ad_hoc_identity(self):
+        with self.assertRaisesRegex(dmg.DeliveryError, 'Developer ID'):
+            dmg.normalize(environment(MACOS_NOTARIZATION_SIGNING='1'))
+
     def package_fixture(self, root):
         src = root / 'chromium/src'
         (src / 'chrome').mkdir(parents=True)
