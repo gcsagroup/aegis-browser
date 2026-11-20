@@ -3,13 +3,15 @@
 import os
 from pathlib import Path
 import shutil
-import subprocess
+# 夹具进程通过共用参数校验器执行，测试不接受外部命令文本。
+import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import windows_browser as launcher
+from chromium_access_gtests import command_argv, run_process, tool
 from windows_browser_sync import checked_path, git
 
 
@@ -25,7 +27,8 @@ class WindowsBrowserTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name).resolve()
         self.project = self.root / "product"
-        self.checkout = self.root / "build space"
+        # 空格和 shell 元字符必须作为本地路径原样传递，不能被当成额外命令。
+        self.checkout = self.root / "build space & literal"
         self.src = self.checkout / "src"
         self.browser = self.project / "apps/browser"
         self.overlay = self.browser / "overlay"
@@ -143,14 +146,14 @@ class WindowsBrowserTests(unittest.TestCase):
             tool.parent.mkdir(parents=True, exist_ok=True)
             tool.touch()
         with patch.object(launcher, "synchronize", return_value=True), patch.dict(os.environ, LOCALAPPDATA=str(self.root)):
-            with patch("windows_browser.subprocess.run") as command, patch("windows_browser.subprocess.Popen") as start:
+            with patch.object(launcher, "run_process") as command, patch("windows_browser.subprocess.Popen") as start:
                 # GN 发现非法依赖时应立即退出，不能使用旧构建图继续编译或启动。
                 command.side_effect = subprocess.CalledProcessError(1, "gn")
                 with self.assertRaises(subprocess.CalledProcessError):
                     launcher.run(self.project, self.checkout, 2, False)
                 command.assert_called_once_with(
-                    [self.src / "buildtools/win/gn.exe", "gen", "out/AegisRelease", "--check"],
-                    cwd=self.src, check=True)
+                    [str(self.src / "buildtools/win/gn.exe"), "gen", "out/AegisRelease", "--check"],
+                    cwd=self.src, output=None)
                 start.assert_not_called()
                 command.side_effect = [None, subprocess.CalledProcessError(1, "ninja")]
                 with self.assertRaises(subprocess.CalledProcessError):
@@ -158,6 +161,14 @@ class WindowsBrowserTests(unittest.TestCase):
                 start.assert_not_called()
                 self.assertFalse((self.checkout / ".aegis-ci-lock").exists())
                 command.side_effect = None
+                # 工具返回成功也不能启动不存在的浏览器；先报告失败并释放源码锁。
+                with self.assertRaises(FileNotFoundError):
+                    launcher.run(self.project, self.checkout, 2, False)
+                start.assert_not_called()
+                self.assertFalse((self.checkout / ".aegis-ci-lock").exists())
+                binary = self.src / "out/AegisRelease/chrome.exe"
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.touch()
                 launcher.run(self.project, self.checkout, 2, False)
                 self.assertEqual(command.call_args.args[0][-3:], ["-j", "2", "chrome"])
                 self.assertIn("--user-data-dir=" + str(self.root / "Aegis-Dev"), start.call_args.args[0])
@@ -192,7 +203,7 @@ class Tool {
 }""", encoding="utf-8")
         executable = self.root / "tool.exe"
         csc = Path(os.environ["SystemRoot"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
-        subprocess.run([csc, "/nologo", "/out:" + str(executable), source], check=True)
+        run_process([str(csc), "/nologo", "/out:" + str(executable), str(source)], output=None)
         for name in ("buildtools/win/gn.exe", "third_party/ninja/ninja.exe", "out/AegisRelease/chrome.exe"):
             target = self.src / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -200,16 +211,23 @@ class Tool {
         trace = self.root / "trace"
         env = dict(os.environ, AEGIS_TEST_TRACE=str(trace), LOCALAPPDATA=str(self.root),
                    CHROMIUM_ROOT="", PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"])
-        command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", str(entry)]
-        started = subprocess.run(command, cwd=self.project, env=env, capture_output=True, timeout=90)
+        command = command_argv([
+            tool("powershell.exe", env), "-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", str(entry),
+        ])
+        # 只执行本测试生成的入口，绝对路径及参数已经校验；保持超时以防夹具意外挂起。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        started = subprocess.run(command, cwd=self.project, env=env, capture_output=True,  # nosec B603
+                                 timeout=90, shell=False)
         self.assertEqual(started.returncode, 0, (started.stdout + started.stderr).decode(errors="replace"))
         self.assertEqual(trace.read_text().splitlines(), [
             "gn gen|out/AegisRelease|--check", "ninja -C|out/AegisRelease|-j|4|chrome",
             "chrome --user-data-dir=" + str(self.root / "Aegis-Dev")])
         self.assertEqual((self.src / "native").read_bytes(), b"tracked\n")
         trace.unlink()
-        failed = subprocess.run(command, cwd=self.project, env=dict(env, AEGIS_TEST_FAIL="1"),
-                                capture_output=True, timeout=90)
+        # 沿用相同受控入口，仅切换夹具失败标记，确认构建失败不会启动浏览器。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        failed = subprocess.run(command, cwd=self.project, env=dict(env, AEGIS_TEST_FAIL="1"),  # nosec B603
+                                capture_output=True, timeout=90, shell=False)
         self.assertNotEqual(failed.returncode, 0)
         self.assertNotIn("chrome --user-data-dir", trace.read_text())
 

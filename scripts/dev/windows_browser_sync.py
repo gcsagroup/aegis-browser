@@ -6,10 +6,11 @@ import os
 from pathlib import Path, PureWindowsPath
 import re
 import stat
-import subprocess
+# 同步使用本机 Git 的二进制输入输出，不拼接 shell 命令。
+import subprocess  # nosec B404
 import tempfile
 
-from chromium_access_gtests import series, write_json
+from chromium_access_gtests import command_argv, series, tool, write_json
 
 # 只识别同一路径、完整 blob ID 的 Git 补丁头；缩写、改名和 hunk 内容不作为旧版本凭据。
 PATCH_VERSION = re.compile(
@@ -19,9 +20,13 @@ PATCH_VERSION = re.compile(
 
 def git(repo, *args, data=None, env=None):
     """以独立参数传递 Git 路径和二进制输入，保留 NUL 分隔的文件名及 blob 原始字节。"""
-    return subprocess.check_output(
-        ["git", "--literal-pathspecs", "-c", "core.autocrlf=false", "-C", str(repo), *args],
-        input=data, env=env,
+    command = command_argv([
+        tool("git", env), "--literal-pathspecs", "-c", "core.autocrlf=false", "-C", str(repo), *args,
+    ])
+    # Git 从开发者工具链解析为绝对路径；路径参数按字面传递，补丁字节只进入标准输入。
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    return subprocess.check_output(  # nosec B603
+        command, input=data, env=env, shell=False,
     )
 
 
@@ -52,7 +57,10 @@ def checked_path(root, name):
 
 def blob(data):
     """Git blob ID 只用于开发文件相等性比较，写入时始终保留原始字节。"""
-    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+    # 与现有 Git 对象格式兼容，不用于签名、凭据或远程来源认证。
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data,
+                        usedforsecurity=False).hexdigest()
 
 
 def identities(path):
@@ -208,7 +216,10 @@ def publish(target, old, data):
 
 def apply_changes(tree, changes):
     """通过同一个只读 Git 进程取回补丁 blob，overlay 按预检时读取的原始字节发布。"""
-    with subprocess.Popen(["git", "-C", str(tree.src), "cat-file", "--batch"], env=tree.env,
+    command = command_argv([tool("git", tree.env), "-C", str(tree.src), "cat-file", "--batch"])
+    # 可执行文件来自本地工具链，参数固定为只读 cat-file；对象标识不进入命令行或 shell。
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    with subprocess.Popen(command, env=tree.env, shell=False,  # nosec B603
                           stdin=subprocess.PIPE, stdout=subprocess.PIPE) as batch:
         try:
             for target, old, wanted, data in changes:

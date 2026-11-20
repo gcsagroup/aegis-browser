@@ -4,11 +4,12 @@ import argparse
 import json
 import os
 from pathlib import Path
-import subprocess
+# 本地开发工具仅通过参数数组调用，浏览器启动另行校验绝对可执行路径。
+import subprocess  # nosec B404
 import sys
 import tempfile
 
-from chromium_access_gtests import acquire_lock, read_pin, write_json
+from chromium_access_gtests import acquire_lock, command_argv, read_pin, run_process, write_json
 from windows_browser_sync import (
     PatchTree, apply_changes, git, identities, overlay_files, overlay_id, plan, publish,
 )
@@ -89,11 +90,15 @@ def run(project, checkout, jobs, check_only):
         args_changed = synchronize(project, src, cache, state, False)
         if args_changed or not (out / "build.ninja").is_file():
             # 首次生成和参数变更也执行头文件依赖检查，使后续 Ninja 自动重生成沿用同一契约。
-            subprocess.run([gn, "gen", "out/AegisRelease", "--check"], cwd=src, check=True)
-        subprocess.run([ninja, "-C", "out/AegisRelease", "-j", str(jobs), "chrome"], cwd=src, check=True)
+            run_process([str(gn), "gen", "out/AegisRelease", "--check"], cwd=src, output=None)
+        run_process([str(ninja), "-C", "out/AegisRelease", "-j", str(jobs), "chrome"], cwd=src, output=None)
         binary = out / "chrome.exe"
         profile = Path(os.environ["LOCALAPPDATA"]) / "Aegis-Dev"
-        subprocess.Popen([binary, "--user-data-dir=" + str(profile)], cwd=out)
+        command = command_argv([str(binary), "--user-data-dir=" + str(profile)])
+        # 路径来自开发者明确选择的本地源码树；校验绝对可执行文件和无 NUL 参数，
+        # 禁用 shell，使资料目录中的空格及元字符保持字面值，不接受网页或远程工具选择。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        subprocess.Popen(command, cwd=out, shell=False)  # nosec B603
         print(f"已启动 {binary}", flush=True)
     finally:
         lock.rmdir()
