@@ -45,9 +45,8 @@ function readEvidence(bytes, artifact) {
   /* eslint-enable security/detect-non-literal-fs-filename */
 }
 
-function completeInventory(value, key) {
-  const rows = value?.[key];
-  requireValue(Array.isArray(rows) && value.total_count === rows.length && rows.length <= 100,
+function completeInventory(rows, totalCount, key) {
+  requireValue(Array.isArray(rows) && totalCount === rows.length && rows.length <= 100,
     'Incomplete DMG '+key+' inventory');
   requireValue(rows.every(row => positiveId(row?.id)) && new Set(rows.map(row => row.id)).size === rows.length,
     'Invalid DMG '+key+' inventory');
@@ -75,7 +74,8 @@ function verifyManifest(evidence, repository, sha, inputs) {
 
 export async function requireDmgEvidence({api, repository, sha, id, inputs}) {
   const prefix = '/repos/'+repository;
-  const jobs = completeInventory(await api(`${prefix}/actions/runs/${id}/attempts/1/jobs?per_page=100`), 'jobs');
+  const jobInventory = await api(`${prefix}/actions/runs/${id}/attempts/1/jobs?per_page=100`);
+  const jobs = completeInventory(jobInventory?.jobs, jobInventory?.total_count, 'jobs');
   const selected = 'package-'+inputs.packageKind;
   const required = ['admission', selected, ...(inputs.operation === 'Tag release' ? ['candidate'] : [])];
   for (const name of required) {
@@ -86,7 +86,8 @@ export async function requireDmgEvidence({api, repository, sha, id, inputs}) {
   }
   requireValue(jobs.filter(job => job.name?.startsWith('package-') && job.name !== selected)
     .every(job => job.status === 'completed' && job.conclusion === 'skipped'), 'Unexpected DMG package job ran');
-  const artifacts = completeInventory(await api(`${prefix}/actions/runs/${id}/artifacts?per_page=100`), 'artifacts');
+  const artifactInventory = await api(`${prefix}/actions/runs/${id}/artifacts?per_page=100`);
+  const artifacts = completeInventory(artifactInventory?.artifacts, artifactInventory?.total_count, 'artifacts');
   const admitted = name => {
     const matches = artifacts.filter(artifact => artifact.name === name);
     requireValue(matches.length === 1, 'Missing or duplicate sealed DMG artifact: '+name);
