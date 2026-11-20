@@ -255,6 +255,8 @@ if (is_win) {
     testonly = true
     sources = [ "access_local_core_win_test_child.cc" ]
     deps = [ "//base" ]
+    # 夹具通过真实 Winsock 套接字验证最小环境可用，不进行外部网络访问。
+    libs = [ "ws2_32.lib" ]
   }
 }
 

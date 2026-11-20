@@ -16,8 +16,8 @@ namespace aegis::access {
 
 bool CreatePrivateCoreDirectory(base::ScopedTempDir& directory);
 
-// The browser owns the only job handle. Windows assigns the child to the job
-// at creation and terminates its processes if the browser exits unexpectedly.
+// 浏览器独占作业句柄，创建时即绑定子进程，浏览器异常退出也会终止整个进程树。
+// 子进程仅获得 Windows API 返回的 SystemRoot，不继承调用者的其他环境变量。
 base::Process LaunchOwnedCore(const base::CommandLine& command,
                               const base::FilePath& directory,
                               base::win::ScopedHandle& job,

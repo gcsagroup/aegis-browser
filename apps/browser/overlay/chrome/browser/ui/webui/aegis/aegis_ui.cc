@@ -9,7 +9,8 @@
 #if BUILDFLAG(IS_MAC)
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
-#include "chrome/browser/aegis/access/access_build_channel.h"
+// 对应 BUILD.gn 的 is_mac 依赖；GN 的头文件扫描不会求值 BUILDFLAG。
+#include "chrome/browser/aegis/access/access_build_channel.h"  // nogncheck
 #endif
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
