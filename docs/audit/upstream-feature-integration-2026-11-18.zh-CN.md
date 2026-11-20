@@ -18,3 +18,14 @@ GitHub CLI 的既有身份已具备仓库写权限，可读取 runner；连接�
 未创建正式 tag、三平台资产或 Release，未执行旧客户端更新安装验收。已利用漏洞的实际产物验证仍未解除；源码、脚本测试及补丁回放不替代真实平台收据。原工作区未提交现场和固定 Chromium 源码未被覆盖。
 
 本轮本地证据：`.artifacts/chromium-upstream/heartbeat-20261118/`。
+
+## 2026-11-20：PR #174 审查修复
+
+以候选 `f2b391b37e73ef8f158cfddbc227cf3112566073` 为基线修复两项问题；本次未更新 Chromium pin、版本号或晋升基线。
+
+- Android #0334 原文件是没有邮件头的裸 diff，`git apply --stat` 成功不能证明生产入口 `git am --3way` 可用。使用固定 Android Chromium 源码及前序补丁重建涉及的 17 个文件，从真实的定向提交导出邮件头；原 diff 的 SHA-256 保持 `4c228dedf59c7c0c03acba75ffbacc7cecb41588c298403364d644e8117a0832`，未改变 hunk 或 blob identity。邮件头的提交身份属于此次定向重建，不代表完整 Chromium 提交树。
+- 新增桌面 #0515，将整页截图的 IDC 接入 Chromium 157 默认启用的 Action 映射和回调，并声明对应 GN 依赖。调用时读取当前活动标签页，由既有 `CaptureFullWebpage` 重新校验 URL 和禁止截图策略；保留旧命令分发路径。桌面序列现为 515 项，Android 仍为 346 项。
+- `patch-series-format_test.sh` 默认覆盖桌面、Android 及两套 V8 序列，检查 format-patch commit header 和 Git 实际解析出的作者、邮箱、日期、主题及 diff。回归夹具使用真实 `git format-patch` / `git am`，并拒绝裸 diff、缺失字段和空作者。
+- 新增 `ActionsAndLegacy/WebpageCaptureCommandBrowserTest.*`，在两种命令分发模式下验证菜单截图生成真实 PNG、菜单创建后禁止截图策略生效，以及内部页面不可截图；纳入 `//chrome/browser/aegis:browser_tests`。
+
+两份修复补丁已在精确文件前序上通过 `git am --3way` 及 ordered exact lineage v2 检查；这是定向源码回放，不是完整 Chromium 回放或构建。四套补丁格式和邮件回归检查、仓库合同及 ShellCheck 通过。新增原生浏览器测试尚未编译、运行，完整 Chromium 157 GN/构建、平台设备、签名和发行验收继续保持未完成；不得以脚本结果替代这些门槛。

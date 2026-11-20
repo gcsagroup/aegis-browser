@@ -1,5 +1,8 @@
+From ecc4b57f5e4804b26535ae4e5a271b39c75a3661 Mon Sep 17 00:00:00 2001
+From: Aegis Patch Maintenance <aegis-patches@example.invalid>
+Date: Fri, 20 Nov 2026 11:48:31 +0800
+Subject: [PATCH] Preserve Chromium 157 Android runtime and practice safety
 
----
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 17efd0d17d274fe8e84dfbabeb06a02e9171c369..bf2a017348276c2dac896d8e7c8aff4e37039526 100644

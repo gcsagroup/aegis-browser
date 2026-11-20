@@ -518,3 +518,4 @@
 0518-feat-access-windows-desktop-parity.patch
 0519-feat-macos-access-options-admission-store.patch
 0520-fix-access-private-staging-tool-and-review-findings.patch
+0521-fix-full-page-capture-action-dispatch.patch

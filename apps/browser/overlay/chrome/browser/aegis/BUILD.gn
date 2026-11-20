@@ -359,6 +359,7 @@ if (!is_android) {
       "agent/aegis_agent_browsertest.cc",
       "enhancements/enhancement_browsertest.cc",
       "google_service_prompt_browsertest.cc",
+      "webpage_capture_browsertest.cc",
     ]
     if (is_mac) {
       sources += [ "access/access_options_browsertest.cc" ]
@@ -399,6 +400,7 @@ if (!is_android) {
       "//chrome/browser/ui:browser_command_controller",
       "//chrome/browser/ui:browser_commands",
       "//chrome/browser/ui:browser_tabstrip",
+      "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/side_panel",
       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
