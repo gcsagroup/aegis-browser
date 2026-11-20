@@ -526,3 +526,4 @@
 0526-adapt-chromium158-api-and-candidate341.patch
 0527-preserve-settings-lifecycle-on-lit.patch
 0528-fix-chromium158-gn-targets.patch
+0529-prepare-resource-recovery-build342.patch
