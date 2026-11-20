@@ -46,6 +46,22 @@ mise exec -- pnpm run quality:fast
 
 这组命令执行共享 workspace 检查，不获取 Chromium，也不构建两端原生 App。
 
+### 从源码启动 Windows 浏览器
+
+在已配置 Chromium Windows x64 源码和工具链的机器上，从项目根目录运行以下命令。
+
+```powershell
+.\Start-Aegis.ps1
+```
+
+脚本从 `CHROMIUM_ROOT` 或 `apps/browser/.chromium-root` 定位包含 `src` 的目录，也可用 `-ChromiumRoot` 指定。它同步桌面 Chromium 和 V8 补丁、当前工作区的 `apps/browser/overlay` 和 Windows GN 参数，复用 `out/AegisRelease` 增量编译。成功后以 `%LOCALAPPDATA%\Aegis-Dev` 作为独立开发资料目录启动。再次编译前请关闭从该输出目录运行的浏览器。
+
+运行 `.\Start-Aegis.ps1 -CheckOnly` 可预览同步数量并定位编译树中的本地修改冲突。默认使用 4 个编译任务，可通过 `-Jobs` 调整。
+
+Chromium 基线由 `apps/browser/CHROMIUM_COMMIT` 固定。即使源码版本相同，Visual Studio 工具集更新也会改变编译命令，Ninja 会重新编译受影响的目标。
+
+Windows Access 的本地核心只接收 Windows API 返回的 `SystemRoot`，用于初始化 Winsock；不会继承父进程中的 `PATH`、代理变量或密钥。完全清空环境会导致核心报 `The requested service provider could not be loaded or initialized`。本地核心回归测试目标为 `access_local_core_manager_unittests`，其中环境隔离用例会实际创建套接字。节点连通性仍需单独验证，并在浏览器中比较关闭、开启、再关闭本站代理后的出口 IP。
+
 ### 从源码构建 macOS 浏览器
 
 [Browser 指南](apps/browser/README.zh-CN.md)包含主机依赖、`depot_tools`、独立 Chromium 源码、补丁重放、构建与验证步骤。

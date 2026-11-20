@@ -1,0 +1,60 @@
+From f0bd23abc80a0431dbf6c22e28d82b930be4faf5 Mon Sep 17 00:00:00 2001
+From: Aegis Development <development@example.invalid>
+Date: Thu, 19 Nov 2026 22:46:12 +0800
+Subject: [PATCH] fix(access): explicitly construct empty Windows process
+
+---
+ chrome/browser/aegis/access/access_local_core_win.cc | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_local_core_win.cc b/chrome/browser/aegis/access/access_local_core_win.cc
+index 832dd3cee3ff024658580b7de9b2ce70c2f74198..464f122180b9ef4a4781602d486593de9bfb6ac3 100644
+--- a/chrome/browser/aegis/access/access_local_core_win.cc
++++ b/chrome/browser/aegis/access/access_local_core_win.cc
+@@ -1,4 +1,5 @@
+ // Copyright 2026 GCSA
++// 管理 Windows Access 核心的私有目录和进程。只有子进程成功加入作业后，调用方才接管句柄。
+ #include "chrome/browser/aegis/access/access_local_core_win.h"
+ 
+ #include <windows.h>
+@@ -44,7 +45,7 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
+   if (!owned_job.is_valid() ||
+       !base::SetJobObjectLimitFlags(owned_job.get(),
+                                   JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)) {
+-    return {};
++    return base::Process();
+   }
+   SECURITY_ATTRIBUTES inherited{sizeof(inherited), nullptr, TRUE};
+   base::win::ScopedHandle input(::CreateFileW(L"NUL", GENERIC_READ,
+@@ -67,7 +68,9 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
+     output.Set(::CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ |
+         FILE_SHARE_WRITE, &inherited, OPEN_EXISTING, 0, nullptr));
+   }
+-  if (!input.is_valid() || !output.is_valid()) return {};
++  if (!input.is_valid() || !output.is_valid()) {
++    return base::Process();
++  }
+   HANDLE stdio[] = {input.get(), output.get()};
+   HANDLE job_handle = owned_job.get();
+   base::win::StartupInformation startup;
+@@ -76,7 +79,7 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
+                                          &job_handle, sizeof(job_handle)) ||
+       !startup.UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                          stdio, sizeof(stdio))) {
+-    return {};
++    return base::Process();
+   }
+ 
+   startup.startup_info()->dwFlags |= STARTF_USESTDHANDLES;
+@@ -92,7 +95,7 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
+                             CREATE_NO_WINDOW,
+                         empty_environment, directory.value().c_str(),
+                         startup.startup_info(), &child)) {
+-    return {};
++    return base::Process();
+   }
+   base::win::ScopedProcessInformation child_handles(child);
+   job = std::move(owned_job);
+-- 
+2.56.0.windows.4
+

@@ -40,6 +40,12 @@ class MergedMainPatchTests(unittest.TestCase):
             'chrome/browser/aegis/access/access_account_mac.h',
             'chrome/browser/aegis/access/access_account_mac.mm',
             'chrome/browser/aegis/aegis_service_access_account_mac.mm',
+            # Windows 启动及网络环境修复必须随补丁交付，不能只在本机 overlay 生效。
+            'chrome/browser/aegis/access/BUILD.gn',
+            'chrome/browser/aegis/access/access_local_core_win.cc',
+            'chrome/browser/aegis/access/access_local_core_win.h',
+            'chrome/browser/aegis/access/access_local_core_win_test_child.cc',
+            'chrome/browser/aegis/access/access_local_core_win_unittest.cc',
         ]
         with tempfile.TemporaryDirectory(prefix='aegis-controller-patches-') as root:
             # Fixed local test program and fixture arguments; shell execution is disabled.
