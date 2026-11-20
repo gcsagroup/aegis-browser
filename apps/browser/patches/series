@@ -512,3 +512,4 @@
 0512-prepare-integrated-candidate-339.patch
 0513-align-mobile-settings-overlay.patch
 0514-handle-ocr-lookup-and-errors.patch
+0515-fix-full-page-capture-action-dispatch.patch
