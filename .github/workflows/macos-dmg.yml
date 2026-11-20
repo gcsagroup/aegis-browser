@@ -36,7 +36,7 @@ on:
         options: [yes, no]
         default: no
       bot_callback:
-        description: "Ask the delivery bot to record this run. The bot controller passes no."
+        description: "Record verified completion, including after the controller monitoring budget expires."
         type: choice
         options: [yes, no]
         default: yes
@@ -95,11 +95,12 @@ jobs:
     timeout-minutes: 360
     env:
       MACOS_SIGNING_MODE: ad-hoc
-      MACOS_OUTPUT_DIR: ${{ runner.temp }}/macos-dmg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Bind job-local DMG output
+        run: printf 'MACOS_OUTPUT_DIR=%s/macos-dmg\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Rebuild and seal the ad-hoc arm64 DMG
         run: |
           bash scripts/release/macos-rebuild-dmg.sh "${{ needs.admission.outputs.version }}" arm64
@@ -117,6 +118,16 @@ jobs:
             ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
           if-no-files-found: error
           retention-days: 14
+      - name: Upload sealed DMG evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success()
+        with:
+          name: macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
+            ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14
 
   package-host-signed:
     name: package-host-signed
@@ -124,18 +135,19 @@ jobs:
     if: ${{ needs.admission.outputs.package_kind == 'host-signed' }}
     runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
     timeout-minutes: 360
-    env:
-      MACOS_OUTPUT_DIR: ${{ runner.temp }}/macos-dmg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Bind job-local DMG output
+        run: printf 'MACOS_OUTPUT_DIR=%s/macos-dmg\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - id: identity
         name: Import Developer ID into a job-local keychain
         env:
           AEGIS_MACOS_DEVELOPER_ID_P12_BASE64: ${{ secrets.AEGIS_MACOS_DEVELOPER_ID_P12_BASE64 }}
           AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD }}
           AEGIS_APPLE_TEAM_ID: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+          AEGIS_MACOS_SIGNING_KEYCHAIN_TIMEOUT_SECONDS: '21600'
         run: python3 scripts/release/macos-developer-id.py setup
       - name: Rebuild and seal the host-signed arm64 DMG
         env:
@@ -162,6 +174,16 @@ jobs:
             ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
           if-no-files-found: error
           retention-days: 14
+      - name: Upload sealed DMG evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success()
+        with:
+          name: macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
+            ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14
 
   package-notarized:
     name: package-notarized
@@ -169,22 +191,24 @@ jobs:
     if: ${{ needs.admission.outputs.package_kind == 'notarized' }}
     runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
     timeout-minutes: 400
-    env:
-      MACOS_OUTPUT_DIR: ${{ runner.temp }}/macos-dmg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Bind job-local DMG output
+        run: printf 'MACOS_OUTPUT_DIR=%s/macos-dmg\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - id: identity
         name: Import Developer ID into a job-local keychain
         env:
           AEGIS_MACOS_DEVELOPER_ID_P12_BASE64: ${{ secrets.AEGIS_MACOS_DEVELOPER_ID_P12_BASE64 }}
           AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD }}
           AEGIS_APPLE_TEAM_ID: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+          AEGIS_MACOS_SIGNING_KEYCHAIN_TIMEOUT_SECONDS: '24000'
         run: python3 scripts/release/macos-developer-id.py setup
       - name: Rebuild the Developer ID arm64 DMG
         env:
           MACOS_SIGNING_MODE: developer-id
+          MACOS_NOTARIZATION_SIGNING: '1'
           AEGIS_MACOS_DEVELOPER_ID: ${{ steps.identity.outputs.identity }}
           AEGIS_MACOS_SIGNING_KEYCHAIN: ${{ steps.identity.outputs.keychain }}
         run: bash scripts/release/macos-rebuild-dmg.sh "${{ needs.admission.outputs.version }}" arm64
@@ -201,6 +225,7 @@ jobs:
             --password "$AEGIS_MACOS_NOTARY_PASSWORD" \
             --wait
           xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
           python3 scripts/release/macos-dmg-delivery.py seal \
             --directory "$MACOS_OUTPUT_DIR" \
             --package-kind notarized \
@@ -215,6 +240,16 @@ jobs:
           name: macos-dmg-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/macos-dmg/*.dmg
+            ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
+            ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload sealed DMG evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success()
+        with:
+          name: macos-dmg-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
             ${{ runner.temp }}/macos-dmg/macos-delivery-manifest.json
             ${{ runner.temp }}/macos-dmg/macos-delivery-receipt.json
           if-no-files-found: error
@@ -271,4 +306,5 @@ jobs:
           AEGIS_MACOS_DELIVERY_BUILD: ${{ needs.admission.outputs.build }}
           AEGIS_MACOS_DELIVERY_PACKAGE_KIND: ${{ needs.admission.outputs.package_kind }}
           AEGIS_MACOS_DELIVERY_SIGNING_MODE: ${{ needs.admission.outputs.signing_mode }}
+          AEGIS_MACOS_DELIVERY_TAG_RELEASE: ${{ needs.admission.outputs.tag_release }}
         run: node scripts/ci/macos-delivery-bot.mjs complete "$RUNNER_TEMP/macos-dmg/macos-delivery-manifest.json"

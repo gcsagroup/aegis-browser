@@ -59,6 +59,9 @@ def setup(environment=None, runner=_run):
     material = decode_p12(environment.get('AEGIS_MACOS_DEVELOPER_ID_P12_BASE64', ''))
     password = environment.get('AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD', '')
     require(password and '\n' not in password and '\x00' not in password, 'Missing Developer ID P12 password')
+    lifetime = environment.get('AEGIS_MACOS_SIGNING_KEYCHAIN_TIMEOUT_SECONDS', '3600')
+    require(re.fullmatch(r'[1-9][0-9]{3,4}', lifetime) is not None and 3600 <= int(lifetime) <= 24000,
+            'Keychain timeout must fit the admitted 60 to 400 minute signing job')
     root = Path(environment.get('RUNNER_TEMP', '')) / 'aegis-macos-developer-id'
     require(root.is_absolute() and not root.exists(), 'RUNNER_TEMP already contains a Developer ID directory')
     root.mkdir(mode=0o700)
@@ -69,7 +72,7 @@ def setup(environment=None, runner=_run):
         p12.write_bytes(material)
         os.chmod(p12, 0o600)
         runner(['security', 'create-keychain', '-p', keychain_password, str(keychain)])
-        runner(['security', 'set-keychain-settings', '-lut', '3600', str(keychain)])
+        runner(['security', 'set-keychain-settings', '-lut', lifetime, str(keychain)])
         runner(['security', 'unlock-keychain', '-p', keychain_password, str(keychain)])
         runner(['security', 'import', str(p12), '-k', str(keychain), '-P', password, '-T', '/usr/bin/codesign'])
         p12.unlink()

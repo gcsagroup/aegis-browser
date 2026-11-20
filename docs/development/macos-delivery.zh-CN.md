@@ -55,11 +55,15 @@ macOS 沿用 fork 变量 `AEGIS_MACOS_BRANCH_REHEARSAL=true` 和 `AEGIS_MACOS_RE
 | Promote | **仅上游**。仓库管理员在 Environment `aegis-macos-dmg-stable` 批准后，把一张 **notarized** 候选升成稳定 tag `v<version>`。fork 上不开放 |
 | Complete | 只给 Bot 回写收据。人不要选 |
 
-控制器复用 iOS 已有的 `aegis-ios-bot` Environment 和同一套 Delivery App 变量名（`AEGIS_IOS_DELIVERY_BOT`、`AEGIS_IOS_BOT_INSTALLATION_ID`、`AEGIS_IOS_BOT_PRIVATE_KEY`）。fork 上要装同一套 App，并用 fork 自己的 installation id。它先确认当前 `main` 的 quality 与 secret-scanning 已通过，再调度 `macos-dmg.yml`，并等到那次运行结束。调度响应里必须有 `workflow_run_id`；空响应不会重试。控制器传入 `bot_callback=no`。人直接跑 `macos-dmg.yml` 时默认 `bot_callback=yes`。
+控制器复用 iOS 已有的 `aegis-ios-bot` Environment 和同一套 Delivery App 变量名（`AEGIS_IOS_DELIVERY_BOT`、`AEGIS_IOS_BOT_INSTALLATION_ID`、`AEGIS_IOS_BOT_PRIVATE_KEY`）。fork 上要装同一套 App，并用 fork 自己的 installation id。fork 的默认分支可以保持 `develop`；交付仍严格绑定该仓库当前 `main` 的完整 SHA。它先确认当前 `main` 的 quality 与 secret-scanning 已通过，再调度 `macos-dmg.yml`，并等到那次运行结束。调度响应里必须有 `workflow_run_id`；空响应不会重试。控制器与人工入口均启用 `bot_callback=yes`。控制器最多同步等待 5 小时，托管作业上限为 355 分钟；超过等待预算只记录 `monitoring-deferred` / `pending=true`，不报告完成、公证成功或候选 tag，也不重复调度。子运行保留原 360/400 分钟构建预算，成功后由既有 `call-bot` 路径继续核验并记录完成。回调会重新核对父运行、attempt、所选作业、封存摘要和可选候选资产；失败或证据缺失不能回写完成收据。
 
-`host-signed` 和 `notarized` 都走 `macos-developer-id.py`。`notarized` 在 DMG 生成后直接 `notarytool submit --apple-id --team-id --password --wait`，再 `stapler staple`，然后才封 manifest。不执行 `notarytool store-credentials`。密钥是 `AEGIS_MACOS_NOTARY_APPLE_ID`、`AEGIS_MACOS_NOTARY_PASSWORD`，Team ID 用 `AEGIS_APPLE_TEAM_ID`。旧的 `macos-delivery-receipt.json` 仍是 `notarized=false`；包种类以 `macos-delivery-manifest.json` 为准。
+`host-signed` 和 `notarized` 都走 `macos-developer-id.py`。两者的作业专用钥匙串分别按 360/400 分钟预算设置锁定时间，保留 `always()` 清理；旧短流程默认仍为 1 小时。只有 `notarized` 作业启用 `MACOS_NOTARIZATION_SIGNING=1`：对嵌套 Mach-O、辅助 App、framework 和主 App 由内向外签名，使用安全时间戳及 Hardened Runtime。主 App、Renderer 和 GPU 的 entitlements 读取自已验证构建身份中的 Chromium commit，不读取包装工作树中的可变文件，也不启用调试权限。参数依据 [Apple 公证要求](https://developer.apple.com/documentation/security/resolving-common-notarization-issues) 和 [Chromium 签名角色](https://chromium.googlesource.com/chromium/src/+/main/chrome/installer/mac/signing/parts.py)。
 
-稳定发布只在上游，还要 Environment `aegis-macos-dmg-stable`。fork 矩阵未同步前不要 Promote。
+DMG 生成后执行 `notarytool submit --apple-id --team-id --password --wait`，再 `stapler staple` 与 `stapler validate`，然后才封 manifest。不执行 `notarytool store-credentials`。密钥是 `AEGIS_MACOS_NOTARY_APPLE_ID`、`AEGIS_MACOS_NOTARY_PASSWORD`，Team ID 用 `AEGIS_APPLE_TEAM_ID`。低层 `macos-delivery-receipt.json` 仍是 `notarized=false`，另记 `notarizationSigning`；最终包种类以封存的 `macos-delivery-manifest.json` 为准。低层打包成功后只清理本次复制的 staging，源 App 保留；失败 staging 保留用于诊断。封存仍拒绝意外文件或目录。
+
+控制器不能仅凭整个工作流的绿色状态报告完成：必须验证同一次 attempt 的 admission 和所选 package 作业成功；候选操作还要求 candidate 作业成功。它核验完整产物清单，并下载大小受限的 `macos-dmg-evidence-<run>-<attempt>`，校验归档摘要、manifest、包装回执、源码和包坐标。主 DMG 归档也必须存在；候选 Release 上的 DMG 摘要和大小必须匹配。跳过作业、缺失或过期产物、来源不符均保持失败，不再次调度。
+
+稳定发布只在上游，还要 Environment `aegis-macos-dmg-stable`。Promote 先检查候选 Release 上已上传 DMG 的身份和摘要，再创建指向候选源码的稳定 tag，并将同一 Release 改为稳定版及 Latest，保留同一 DMG asset ID。原 annotated candidate tag 保留为来源证据；不会创建没有 DMG 的新 Release，也不会重新上传二进制。稳定 tag 已存在或写入结果不明时须先核对，不重复发布。fork 矩阵未同步前不要 Promote。
 
 人类直接跑原来的 `macos-delivery.yml` 时，把 Bot 的四个字段留空。那条旧工作流仍然不做公证。
 
