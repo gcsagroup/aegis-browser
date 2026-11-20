@@ -352,3 +352,4 @@
 0352-preserve-reading-split-default344.patch
 0353-fix-chromium158-native-runtime-regressions.patch
 0354-fix-preserve-aegis-context-menu-uma.patch
+0355-test-access-private-routing-fixtures.patch

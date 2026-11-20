@@ -1,0 +1,440 @@
+From 411fc3c2166d04169763f07e4c71109ff4fed343 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 07:42:44 +0800
+Subject: [PATCH] fix(browser): reconcile native fixtures and Markdown startup
+
+---
+ ...proxying_url_loader_factory_browsertest.cc | 203 +++++++++++++-----
+ .../aegis/enhancements_shared/viewer.js       |   1 +
+ chrome/browser/resources/aegis/markdown.js    |   3 +
+ .../omnibox_popup_visibility_browsertest.cc   |  11 +-
+ 4 files changed, 162 insertions(+), 56 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 8d28bfb754bcc7278b5ee2d324cdef9752b38ef2..80de126c541dc76236c1036425a7b70a070b997f 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -12,6 +12,7 @@
+ #include <vector>
+ 
+ #include "base/base64.h"
++#include "base/check.h"
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
+ #include "base/functional/bind.h"
+@@ -29,6 +30,7 @@
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "chrome/browser/aegis/access/access_identity_generation_source.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/browser/aegis/access/access_private_context_client.h"
+ #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+@@ -62,7 +64,10 @@
+ #include "content/public/test/back_forward_cache_util.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
++#include "content/public/test/test_navigation_observer.h"
++#include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "mojo/public/cpp/bindings/remote.h"
++#include "net/base/auth.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+ #include "net/dns/mock_host_resolver.h"
+@@ -73,6 +78,8 @@
+ #include "net/test/embedded_test_server/http_response.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
++#include "services/network/public/mojom/aegis_access_route.mojom.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+@@ -459,6 +466,84 @@ class DataNavigationOutcomeObserver : public content::WebContentsObserver {
+   bool is_error_page_ = false;
+ };
+ 
++// Only the downstream relay is controlled here. The real Browser factory still
++// publishes its private policy and builds the ownership record and envelope.
++// End-to-end proxy tests below independently exercise the Network registry.
++class PrivateRelayTestFactory final
++    : public network::mojom::AegisAccessURLLoaderFactory,
++      public network::mojom::AegisAccessURLLoaderControl {
++ public:
++  PrivateRelayTestFactory(Profile* profile,
++                         content::RenderFrameHost* frame,
++                         const aegis_access::OwnershipKey& owner,
++                         AccessNetworkContextTransport* transport,
++                         network::TestURLLoaderFactory* terminal)
++      : terminal_(terminal) {
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport->BindPrivateContext(
++        owner, frame->GetStoragePartition()->GetNetworkContext(),
++        bound.GetCallback());
++    auto context = bound.Get();
++    CHECK(context);
++    auto metadata = BuildBrowserOwnedRequestMetadata(
++        profile,
++        base::BindRepeating(&content::WebContents::FromFrameTreeNodeId,
++                            frame->GetFrameTreeNodeId()),
++        frame->GetFrameTreeNodeId(), std::nullopt);
++    CHECK(metadata.metadata);
++    mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> target;
++    receivers_.Add(this, target.InitWithNewPipeAndPassReceiver());
++    mojo::PendingRemote<network::mojom::URLLoaderFactory> client;
++    proxy_ = std::make_unique<AccessProxyingURLLoaderFactory>(
++        profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
++        nullptr, owner, std::move(metadata.metadata),
++        client.InitWithNewPipeAndPassReceiver(),
++        mojo::PendingRemote<network::mojom::URLLoaderFactory>(),
++        frame->GetWeakDocumentPtr(),
++        base::BindOnce([](AccessProxyingURLLoaderFactory*) {}),
++        std::move(target), std::move(context));
++    factory_ = base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
++        std::move(client));
++  }
++
++  scoped_refptr<network::SharedURLLoaderFactory> factory() { return factory_; }
++
++  void CreateLoaderAndStartWithRoute(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader,
++      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl> control,
++      int32_t request_id, uint32_t options,
++      network::mojom::AegisAccessRoutedRequestPtr request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag& annotation) override {
++    ASSERT_TRUE(request);
++    ASSERT_TRUE(request->envelope);
++    EXPECT_FALSE(request->envelope->registration_id.empty());
++    EXPECT_EQ(request->envelope->target, request->request.url);
++    controls_.Add(this, std::move(control));
++    terminal_->CreateLoaderAndStart(std::move(loader), request_id, options,
++                                   request->request, std::move(client), annotation);
++  }
++
++  void Clone(mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderFactory>
++                 receiver) override {
++    receivers_.Add(this, std::move(receiver));
++  }
++
++  void FollowRedirectWithRoute(
++      network::HttpRequestHeadersUpdateParams,
++      const std::optional<GURL>&,
++      network::mojom::AegisAccessRequestEnvelopePtr) override {
++    ADD_FAILURE() << "Relay lifetime fixtures do not issue redirects";
++  }
++
++ private:
++  const raw_ptr<network::TestURLLoaderFactory> terminal_;
++  mojo::ReceiverSet<network::mojom::AegisAccessURLLoaderFactory> receivers_;
++  mojo::ReceiverSet<network::mojom::AegisAccessURLLoaderControl> controls_;
++  std::unique_ptr<AccessProxyingURLLoaderFactory> proxy_;
++  scoped_refptr<network::SharedURLLoaderFactory> factory_;
++};
++
+ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+  public:
+   AccessProxyingURLLoaderFactoryBrowserTest()
+@@ -1098,15 +1183,13 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+   }
+ 
+   void PublishSelectedProxyEndpoint(
+-      const std::string& destination_host,
+       const aegis_access::GenerationTuple& generations) {
+     const aegis_access::RegisteredProxyEndpoint endpoint{
+         "registration-browser-test", kProxyGroup, *owner_, generations,
+         aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1",
+         static_cast<uint16_t>(proxy_server_.port())};
+-    EXPECT_TRUE(transport_->PublishProxySelection(
+-        base::FilePath(), {destination_host}, endpoint));
+-    transport_->FlushClientsForTesting(base::FilePath());
++    EXPECT_TRUE(transport_->RegisterPreparedProxy(
++        {endpoint, net::AuthCredentials(u"browser-test", u"local-fixture")}));
+   }
+ 
+   void PublishProxyPolicy(bool publish_endpoint,
+@@ -1121,7 +1204,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+     PublishCommittedRule(destination_host, aegis_access::AccessMode::kProxy);
+     if (publish_endpoint) {
+-      PublishSelectedProxyEndpoint(destination_host, generations);
++      PublishSelectedProxyEndpoint(generations);
+     }
+   }
+ 
+@@ -1181,14 +1264,22 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     using Identity = aegis_access::PolicyPublicationIdentity;
+     auto acknowledged = std::make_shared<std::optional<Identity>>();
+     base::test::TestFuture<bool> settled;
+-    const auto start = transport_->PublishPolicyCandidateWithAck(
+-        identity, *owner_,
++    auto* runtime = AccessPublishedRequestRuntime::Get(browser()->GetProfile());
++    ASSERT_TRUE(runtime);
++    const auto* policy = runtime->GetPublishedPolicySnapshot(*owner_);
++    const auto common = runtime->CaptureCommonGenerationTupleOnUiThread(*owner_);
++    ASSERT_TRUE(policy);
++    ASSERT_TRUE(common);
++    ASSERT_EQ(policy->policy_generation, generation);
++    ASSERT_EQ(common->policy_generation, generation);
++    const auto start = transport_->PublishPrivatePolicy(
++        *policy, *common,
+         base::BindOnce(
+             [](Identity requested,
+                std::shared_ptr<std::optional<Identity>> acknowledged,
+                base::OnceCallback<void(bool)> completion, bool success) {
+               // This completion belongs to this exact publication call.
+-              // Transport validates the identity/client era at real Mojo ACK.
++              // Private publication waits for each current NetworkContext ACK.
+               if (success)
+                 *acknowledged = std::move(requested);
+               std::move(completion).Run(success);
+@@ -1201,6 +1292,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     ASSERT_TRUE(acknowledged->has_value());
+     ASSERT_EQ(**acknowledged, identity);
+     ASSERT_EQ(transport_->network_epoch(), identity.network_epoch);
++    ASSERT_TRUE(transport_->HasCurrentPrivatePolicy(*owner_, *common));
+     last_lifecycle_ack_ = **acknowledged;
+   }
+ 
+@@ -1341,7 +1433,8 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ 
+   PublishCommittedRule(kTargetHost, aegis_access::AccessMode::kDirect,
+                        /*publication_sequence=*/2);
+-  ASSERT_TRUE(transport_->ClearProxySelection(base::FilePath()));
++  ASSERT_TRUE(transport_->ForgetPreparedProxy(
++      *owner_, kProxyGroup, "registration-browser-test"));
+   ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
+   ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "off", off_generation, false));
+   ASSERT_TRUE(last_lifecycle_ack_.has_value());
+@@ -1699,11 +1792,11 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+       browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+       std::numeric_limits<int64_t>::max(), builder);
++  auto* partition = browser()->GetProfile()->GetDefaultStoragePartition();
++  ASSERT_TRUE(builder.RequiresFreshFactory());
+   scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
+-      std::move(builder).Finish(
+-          browser()->GetProfile()
+-              ->GetDefaultStoragePartition()
+-              ->GetURLLoaderFactoryForBrowserProcess());
++      std::move(builder).Finish(partition->GetNetworkContext(),
++                                partition->CreateURLLoaderFactoryParams());
+   auto request = std::make_unique<network::ResourceRequest>();
+   request->url = target_url().Resolve("/pending-cancelled");
+   request->request_initiator = url::Origin::Create(worker_page_url());
+@@ -1753,11 +1846,11 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+       browser()->GetProfile(), pending_frame,
+       handle->GetNavigationId(), builder);
++  auto* partition = browser()->GetProfile()->GetDefaultStoragePartition();
++  ASSERT_TRUE(builder.RequiresFreshFactory());
+   scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
+-      std::move(builder).Finish(
+-          browser()->GetProfile()
+-              ->GetDefaultStoragePartition()
+-              ->GetURLLoaderFactoryForBrowserProcess());
++      std::move(builder).Finish(partition->GetNetworkContext(),
++                                partition->CreateURLLoaderFactoryParams());
+   mojo::Remote<network::mojom::URLLoaderFactory> clone;
+   pending_factory->Clone(clone.BindNewPipeAndPassReceiver());
+ 
+@@ -1858,18 +1951,29 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactorySameFrameBrowserTest,
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+-                       TrailingDotHostStaysNativeWithoutPolicyAndBlocksAfterPublish) {
++                       TrailingDotHostBlocksWithRestoredAndProxyPolicies) {
+   const GURL trailing_url =
+       target_origin_.GetURL(kTrailingDotTargetHost, "/resource");
+   ASSERT_EQ(trailing_url.host(), kTrailingDotTargetHost);
+ 
++  // Startup has already restored and published an empty snapshot. The
++  // canonical-boundary contract rejects dotted DNS names for every published
++  // snapshot, including one with no matching rules. A normal host stays native.
++  auto* runtime = AccessPublishedRequestRuntime::Get(browser()->GetProfile());
++  ASSERT_TRUE(runtime);
++  const auto* restored = runtime->GetPublishedPolicySnapshot(*owner_);
++  ASSERT_TRUE(restored);
++  ASSERT_EQ(restored->policy_generation, bootstrap_policy_generation_);
++  ASSERT_TRUE(restored->rules.empty());
++  ASSERT_TRUE(FetchNoStore(target_url()));
++
+   const size_t healthy_origin_before =
+       origin_requests_.load(std::memory_order_relaxed);
+   const size_t healthy_proxy_before =
+       proxy_requests_.load(std::memory_order_relaxed);
+-  ASSERT_TRUE(FetchNoStore(trailing_url));
++  ASSERT_FALSE(FetchNoStore(trailing_url));
+   ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
+-                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
+ 
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+   const size_t origin_before =
+@@ -1886,7 +1990,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+-                       TrailingDotTopFrameBlocksCanonicalSubresourceAfterPublish) {
++                       TrailingDotNavigationBlocksWithRestoredAndProxyPolicies) {
+   const GURL trailing_page =
+       target_origin_.GetURL(kTrailingDotTargetHost, "/worker-page");
+   ASSERT_EQ(trailing_page.host(), kTrailingDotTargetHost);
+@@ -1894,24 +1998,26 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+       origin_requests_.load(std::memory_order_relaxed);
+   const size_t healthy_proxy_before =
+       proxy_requests_.load(std::memory_order_relaxed);
++  content::TestNavigationObserver restored_navigation(web_contents());
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), trailing_page));
++  EXPECT_FALSE(restored_navigation.last_navigation_succeeded());
++  EXPECT_EQ(restored_navigation.last_net_error_code(),
++            net::ERR_BLOCKED_BY_CLIENT);
+   ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
+-                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
+-
+-  const size_t native_origin_before =
+-      origin_requests_.load(std::memory_order_relaxed);
+-  const size_t native_proxy_before =
+-      proxy_requests_.load(std::memory_order_relaxed);
+-  ASSERT_TRUE(FetchNoStore(target_url()));
+-  ExpectRoutingDelta(native_origin_before, native_proxy_before,
+-                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
+ 
+   PublishProxyPolicy(/*publish_endpoint=*/true);
++  // Return to a valid document so the second result cannot be attributed to
++  // an opaque error-page origin or to reuse of the failed navigation.
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+   const size_t origin_before =
+       origin_requests_.load(std::memory_order_relaxed);
+   const size_t proxy_before =
+       proxy_requests_.load(std::memory_order_relaxed);
+-  EXPECT_FALSE(FetchNoStore(target_url()));
++  content::TestNavigationObserver proxy_navigation(web_contents());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), trailing_page));
++  EXPECT_FALSE(proxy_navigation.last_navigation_succeeded());
++  EXPECT_EQ(proxy_navigation.last_net_error_code(), net::ERR_BLOCKED_BY_CLIENT);
+   ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                      /*proxy_delta=*/0u);
+ }
+@@ -1956,7 +2062,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+       CommitIdentityGenerationForProxyPolicy(),
+       CommitSelectionGenerationForProxyPolicy(),
+       transport_->network_epoch(), CurrentBaseProxyGeneration()};
+-  PublishSelectedProxyEndpoint(kTargetHost, generations);
++  PublishSelectedProxyEndpoint(generations);
+   auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
+   ASSERT_EQ(runtime->PublishPreparedPolicyCandidate(*candidate.value).status,
+             AccessPolicyPublicationStatus::kPublished);
+@@ -2117,13 +2223,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+ 
+   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+-  network::URLLoaderFactoryBuilder builder;
+-  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+-      std::nullopt, builder);
+-  ASSERT_EQ(builder.num_interceptors(), 1u);
+-  scoped_refptr<network::SharedURLLoaderFactory> factory =
+-      std::move(builder).Finish(terminal.GetSafeWeakWrapper());
++  PrivateRelayTestFactory relay(
++      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(), *owner_,
++      transport_, &terminal);
++  scoped_refptr<network::SharedURLLoaderFactory> factory = relay.factory();
+ 
+   const GURL completed_url = target_url().Resolve("/relay-complete");
+   auto request = std::make_unique<network::ResourceRequest>();
+@@ -2228,13 +2331,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+ 
+   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+-  network::URLLoaderFactoryBuilder builder;
+-  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+-      std::nullopt, builder);
+-  ASSERT_EQ(builder.num_interceptors(), 1u);
+-  scoped_refptr<network::SharedURLLoaderFactory> factory =
+-      std::move(builder).Finish(terminal.GetSafeWeakWrapper());
++  PrivateRelayTestFactory relay(
++      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(), *owner_,
++      transport_, &terminal);
++  scoped_refptr<network::SharedURLLoaderFactory> factory = relay.factory();
+ 
+   const GURL cancelled_url = target_url().Resolve("/relay-caller-cancelled");
+   auto request = std::make_unique<network::ResourceRequest>();
+@@ -2285,13 +2385,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+ 
+   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+-  network::URLLoaderFactoryBuilder builder;
+-  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+-      std::nullopt, builder);
+-  ASSERT_EQ(builder.num_interceptors(), 1u);
+-  scoped_refptr<network::SharedURLLoaderFactory> factory =
+-      std::move(builder).Finish(terminal.GetSafeWeakWrapper());
++  PrivateRelayTestFactory relay(
++      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(), *owner_,
++      transport_, &terminal);
++  scoped_refptr<network::SharedURLLoaderFactory> factory = relay.factory();
+ 
+   const GURL timed_out_url = target_url().Resolve("/relay-watchdog");
+   auto request = std::make_unique<network::ResourceRequest>();
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.js b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+index 24f38cd1e5f6f064997d99d777457ca44b8df3eb..f6934f426c61591d1f29e48c991d0d92bfaad55d 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/viewer.js
++++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+@@ -321,6 +321,7 @@
+   window.addEventListener("message", (event) => {
+     if (event.source !== parent || event.origin !== "chrome://aegis") return;
+     if (event.data?.type === "load") load(event.data.value);
++    else if (event.data?.type === "ready-request") send("ready", true);
+     else if (event.data?.type === "print") window.print();
+     else if (event.data?.type === "configure") configure(event.data.value);
+     else if (event.data?.type === "command") command(event.data.value);
+diff --git a/chrome/browser/resources/aegis/markdown.js b/chrome/browser/resources/aegis/markdown.js
+index 5686a736dd0edd6c93d665ee9e6014eb08242620..b665420e83566171d7741bce6d718aee517672a2 100644
+--- a/chrome/browser/resources/aegis/markdown.js
++++ b/chrome/browser/resources/aegis/markdown.js
+@@ -109,6 +109,9 @@ window.addEventListener("message", (event) => {
+   } else if (type === "images" && Array.isArray(value))
+     images = value.filter((x) => typeof x === "string").slice(0, 100);
+ });
++// The iframe may have sent its initial ready event while this module's
++// dependencies were still loading. Ask again after installing our listener.
++send("ready-request");
+ $("file").onchange = async () => {
+   try {
+     await file($("file").files[0]);
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+index 7951964aafe57aa5d5707f5663c2ce9a4de1c746..a8a506c24ee10e4c6c432152ab8633b168804aa7 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+@@ -32,19 +32,24 @@ class OmniboxPopupVisibilityBrowserTest
+  public:
+   OmniboxPopupVisibilityBrowserTest() {
+     EnablePixelOutput();
+-    // This fixture exercises popup rendering independently of account eligibility.
++    // Exercise pre-warmed popup rendering, independent of eligibility and the
++    // deferred-creation defaults introduced in the upgraded Chromium.
+     if (GetParam()) {
+       feature_list_.InitWithFeatures(
+           {omnibox::internal::kWebUIOmniboxPopup,
+            omnibox::internal::kWebUIOmniboxAimPopup,
+            omnibox::internal::kWebUIOmniboxFullPopup},
+-          {omnibox::kOmniboxAimPopupRequireEligibility});
++          {omnibox::kOmniboxAimPopupRequireEligibility,
++           omnibox::kOmniboxWebUIPopupDeferCreation,
++           omnibox::kOmniboxAimPopupDeferCreation});
+     } else {
+       feature_list_.InitWithFeatures(
+           {omnibox::internal::kWebUIOmniboxPopup,
+            omnibox::internal::kWebUIOmniboxAimPopup},
+           {omnibox::internal::kWebUIOmniboxFullPopup,
+-           omnibox::kOmniboxAimPopupRequireEligibility});
++           omnibox::kOmniboxAimPopupRequireEligibility,
++           omnibox::kOmniboxWebUIPopupDeferCreation,
++           omnibox::kOmniboxAimPopupDeferCreation});
+     }
+   }
+ 

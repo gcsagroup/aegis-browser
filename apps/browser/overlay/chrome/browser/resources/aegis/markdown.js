@@ -109,6 +109,9 @@ window.addEventListener("message", (event) => {
   } else if (type === "images" && Array.isArray(value))
     images = value.filter((x) => typeof x === "string").slice(0, 100);
 });
+// The iframe may have sent its initial ready event while this module's
+// dependencies were still loading. Ask again after installing our listener.
+send("ready-request");
 $("file").onchange = async () => {
   try {
     await file($("file").files[0]);
