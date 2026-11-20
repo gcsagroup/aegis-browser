@@ -2,7 +2,10 @@ name: Android Delivery · 精简版 / Simple
 run-name: Android Delivery ${{ inputs.operation }} ${{ inputs.version }}(${{ inputs.build }})
 on:
   push:
-    branches: [ 'codex/android-release-handoff', 'codex/android-delivery-modes' ]
+    branches:
+      - 'codex/android-release-handoff'
+      - 'codex/android-delivery-modes'
+      - 'codex/android-github-public-release-20261119'
   workflow_dispatch:
     inputs:
       operation:
@@ -13,6 +16,7 @@ on:
           - 打包并上传 / Package and upload
           - 查询状态 / Status
           - 等待状态 / Wait
+          - 发布核对 / Release Wait
         default: 查询状态 / Status
       version:
         description: "版本 / Version（例如 / e.g. 6.1.0.266）"
@@ -30,6 +34,10 @@ on:
           - Beta · 内外测 / Internal and external
           - Release · 通用 / Universal
         default: Alpha · 仅内测 / Internal only
+      approved_source_sha:
+        description: "已批准源码 / Approved source SHA（Bot dispatch only）"
+        type: string
+        default: ""
 permissions:
   contents: read
   actions: read
@@ -60,7 +68,7 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm run ci:test
   delivery:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/android-release-acceptance' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' }}
     permissions:
       contents: write
       actions: read
