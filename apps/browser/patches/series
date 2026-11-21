@@ -538,3 +538,4 @@
 0538-mac-popup-native-order-out-and-scoped-cancellation.patch
 0539-preserve-access-routing-and-platform-coverage.patch
 0540-preserve-aim-prompt-during-native-focus-restoration.patch
+0541-scope-omnibox-permission-prompt-creation.patch
