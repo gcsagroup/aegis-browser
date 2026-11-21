@@ -1,0 +1,64 @@
+name: Android Delivery · Bot
+run-name: Android Bot ${{ inputs.operation }} ${{ inputs.version }}(${{ inputs.build }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        description: Authorized delivery operation
+        options: [Status, Wait, Release Wait, Package, Package and upload, Preview GitHub release, Publish prerelease, Promote to stable]
+        default: Status
+      version:
+        type: string
+        description: Product version, for example 7.2.0.339
+        required: true
+      build:
+        type: string
+        description: Exact versionCode, for example 2007000339
+        required: true
+      product:
+        type: choice
+        description: Product profile
+        options: [Alpha, Beta, Release]
+        default: Alpha
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: android-delivery-bot-${{ github.repository }}${{ inputs.operation == 'Preview GitHub release' && '-release-preview' || '' }}
+  cancel-in-progress: false
+jobs:
+  controller:
+    if: ${{ github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}
+    runs-on: ubuntu-24.04
+    environment: aegis-android-bot
+    timeout-minutes: 130
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Require current administrator for this controller request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/android-operator.mjs --context controller
+      - name: Dispatch and monitor exact App-owned delivery runs
+        env:
+          RELEASE_DISPATCH_RECEIPT: ${{ runner.temp }}/aegis-android-release-dispatch.json
+          BOT_INPUTS: ${{ toJSON(inputs) }}
+          AEGIS_ANDROID_DELIVERY_BOT: ${{ vars.AEGIS_ANDROID_DELIVERY_BOT }}
+          AEGIS_ANDROID_GITHUB_RELEASE_ENABLED: ${{ vars.AEGIS_ANDROID_GITHUB_RELEASE_ENABLED }}
+          AEGIS_ANDROID_RELEASE_ENABLED: ${{ vars.AEGIS_ANDROID_RELEASE_ENABLED }}
+          AEGIS_ANDROID_BOT_INSTALLATION_ID: ${{ vars.AEGIS_ANDROID_BOT_INSTALLATION_ID }}
+          AEGIS_ANDROID_BOT_PRIVATE_KEY: ${{ secrets.AEGIS_ANDROID_BOT_PRIVATE_KEY }}
+        run: bash scripts/ci/run-android-delivery-bot.sh
+      - name: Seal the exact release dispatch receipt
+        if: ${{ inputs.operation == 'Preview GitHub release' || inputs.operation == 'Publish prerelease' || inputs.operation == 'Promote to stable' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: android-github-release-dispatch-${{ github.run_id }}-1
+          path: ${{ runner.temp }}/aegis-android-release-dispatch.json
+          if-no-files-found: error
+          retention-days: 7
