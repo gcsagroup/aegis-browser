@@ -312,12 +312,10 @@ void AccessServiceCoordinator::OnAsyncPrepared(
     return;
   }
   transaction->candidate = std::move(*result.candidate);
-  if (transaction->pending.candidate.group.website_context) {
-    if (auto failure = ValidateTransportScope(*transaction,
-            transaction->pending.candidate.members.front().policy.mode)) {
-      FailTransaction(std::move(transaction), *failure);
-      return;
-    }
+  if (auto failure = ValidateTransportScope(
+          *transaction, transaction->pending.candidate.members.front().policy.mode)) {
+    FailTransaction(std::move(transaction), *failure);
+    return;
   }
   if (auto failure = BeginPublication(*transaction)) {
     FailTransaction(std::move(transaction), *failure);
