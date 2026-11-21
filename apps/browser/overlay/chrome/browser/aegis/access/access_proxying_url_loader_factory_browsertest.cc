@@ -2963,6 +2963,9 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   auto* dispatch_state =
       AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
   ASSERT_NE(dispatch_state, nullptr);
+  // Other page requests may also be registered for this profile.
+  const size_t ownership_before = dispatch_state->ownership().size();
+  ASSERT_GE(ownership_before, 1u);
   const AccessBlockAndCancelResult result =
       dispatch_state->InstallBlockBarrierAndCancelMatching(
           {"block-browser-0136", 1, std::move(selector)});
@@ -2972,7 +2975,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
             aegis_access::RequestOwnershipStatus::kOk);
   EXPECT_EQ(result.matched_requests, 1u);
   EXPECT_EQ(result.terminated_requests, 1u);
-  EXPECT_EQ(dispatch_state->ownership().size(), 0u);
+  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before - 1u);
 
   EXPECT_TRUE(base::test::RunUntil(
       [&] { return PendingFetchState() == "blocked"; }));

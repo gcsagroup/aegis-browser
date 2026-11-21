@@ -535,3 +535,4 @@
 0535-validate-private-redirects-and-popup-lifecycle.patch
 0536-restore-independent-access-rules.patch
 0537-validate-async-site-transport-scope.patch
+0538-mac-popup-native-order-out-and-scoped-cancellation.patch
