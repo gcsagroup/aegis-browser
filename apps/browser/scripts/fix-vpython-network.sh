@@ -26,7 +26,8 @@ find_vpython_cpython() {
   local root py
   for root in "${VPYTHON_STORE_ROOTS[@]}"; do
     [[ -d "$root" ]] || continue
-    py="$(find "$root" -path '*/cpython+*/contents/bin/python3' 2>/dev/null | head -n 1 || true)"
+    # CIPD store dirs historically used '+' (cpython+…); newer layouts use '-'.
+    py="$(find "$root" \( -path '*/cpython+*/contents/bin/python3' -o -path '*/cpython-*/contents/bin/python3' \) 2>/dev/null | head -n 1 || true)"
     if [[ -n "$py" ]]; then
       echo "$py"
       return 0
@@ -72,6 +73,27 @@ patch_requirements() {
     sed -i.bak 's/^aioquic==1\.2\.0+chromium\.1$/aioquic==1.2.0/' "$req"
     dirty=1
   fi
+  # Chromium 155 Android host: more +chromium local versions with public twins.
+  if grep -q '^cffi==1\.15\.1+chromium\.2$' "$req"; then
+    sed -i.bak 's/^cffi==1\.15\.1+chromium\.2$/cffi==1.15.1/' "$req"
+    dirty=1
+  fi
+  if grep -q '^google-crc32c==1\.5\.0+chromium\.1$' "$req"; then
+    sed -i.bak 's/^google-crc32c==1\.5\.0+chromium\.1$/google-crc32c==1.5.0/' "$req"
+    dirty=1
+  fi
+  if grep -q '^numpy==1\.23\.5+chromium\.4$' "$req"; then
+    sed -i.bak 's/^numpy==1\.23\.5+chromium\.4$/numpy==1.23.5/' "$req"
+    dirty=1
+  fi
+  if grep -q '^pandas==1\.5\.3+chromium\.1$' "$req"; then
+    sed -i.bak 's/^pandas==1\.5\.3+chromium\.1$/pandas==1.5.3/' "$req"
+    dirty=1
+  fi
+  if grep -q '^pexpect==4\.8\.0+chromium\.1$' "$req"; then
+    sed -i.bak 's/^pexpect==4\.8\.0+chromium\.1$/pexpect==4.8.0/' "$req"
+    dirty=1
+  fi
   # Yanked / unavailable on public PyPI — bump to nearest public wheel.
   if grep -q '^grpc-google-iam-v1==0\.12\.3$' "$req"; then
     sed -i.bak 's/^grpc-google-iam-v1==0\.12\.3$/grpc-google-iam-v1==0.12.4/' "$req"
@@ -97,9 +119,9 @@ patch_requirements() {
     sed -i.bak 's/^oauth2client==3\.0\.0$/oauth2client==4.1.3/' "$req"
     dirty=1
   fi
-  # psutil 5.8/5.9 没有可用的 cp311 aarch64 wheel。
-  if grep -qE '^psutil==5\.(8\.0|9\.8)$' "$req"; then
-    sed -i.bak -E 's/^psutil==5\.(8\.0|9\.8)$/psutil==6.1.1/' "$req"
+  # psutil 5.8/5.9（含 +chromium）没有可用的 cp311 aarch64 预编译 wheel，改用可源码构建的公开版本。
+  if grep -qE '^psutil==5\.(8\.0|9\.8)([+]chromium\.[0-9]+)?$' "$req"; then
+    sed -i.bak -E 's/^psutil==5\.(8\.0|9\.8)([+]chromium\.[0-9]+)?$/psutil==6.1.1/' "$req"
     dirty=1
   fi
   # pycparser 2.19 已无 binary。
@@ -129,16 +151,30 @@ ensure_local_wheel() {
   if [[ -z "$existing" ]]; then
     local py311
     py311="$(find_vpython_cpython || true)"
+    # Before the first vpython bootstrap, fall back to system python3 only when
+    # it already has pip (Debian slim images often ship python3 without pip).
+    if [[ -z "$py311" ]]; then
+      local sys_py
+      sys_py="$(command -v python3 || true)"
+      if [[ -n "$sys_py" ]] && "$sys_py" -m pip --version >/dev/null 2>&1; then
+        py311="$sys_py"
+        echo "Using system python3 for wheel bootstrap: $py311"
+      fi
+    fi
     if [[ -z "$py311" ]]; then
       echo "No vpython cpython yet — cannot build/download $spec wheel"
       return 0
     fi
     echo "Downloading/building wheel $spec -> $WHEELHOUSE"
+    if ! "$py311" -m pip --version >/dev/null 2>&1; then
+      "$py311" -m ensurepip --upgrade >/dev/null 2>&1 || true
+    fi
     # shellcheck disable=SC2046
     "$py311" -m pip download --only-binary=:all: $(pip_platform_args) \
       "$spec" -d "$WHEELHOUSE" 2>/dev/null \
       || "$py311" -m pip download --only-binary=:all: "$spec" -d "$WHEELHOUSE" 2>/dev/null \
-      || "$py311" -m pip wheel --no-deps "$spec" -w "$WHEELHOUSE"
+      || "$py311" -m pip wheel --no-deps "$spec" -w "$WHEELHOUSE" \
+      || echo "WARNING: wheel build failed for $spec"
     existing="$(find "$WHEELHOUSE" -maxdepth 1 -iname "${name}-*.whl" 2>/dev/null | head -n 1 || true)"
   fi
   if [[ -n "$existing" ]]; then
@@ -173,8 +209,20 @@ prefetch_requirements_wheels() {
   grep -vE '^(crcmod)==' "$req" > "$tmp" || true
   while IFS= read -r spec || [[ -n "$spec" ]]; do
     [[ -z "$spec" || "$spec" == \#* || "$spec" == crcmod==* ]] && continue
+    # Skip markers that cannot match this Linux host before paying pip startup cost.
+    if [[ "$(uname -s)" == "Linux" ]]; then
+      if grep -Eq "sys_platform[[:space:]]*==[[:space:]]*['\"]darwin['\"]|sys_platform[[:space:]]*==[[:space:]]*['\"]win32['\"]" <<<"$spec"; then
+        continue
+      fi
+      if [[ "$(uname -m)" == "aarch64" ]] && \
+         grep -Eq "platform_machine[[:space:]]*==[[:space:]]*['\"]x86_64['\"]" <<<"$spec"; then
+        continue
+      fi
+    fi
     name="${spec%%=*}"
+    # Strip environment markers from the version token used for wheel lookup.
     ver="${spec##*=}"
+    ver="${ver%% *}"
     name_us="${name//-/_}"
     if find "$WHEELHOUSE" \( -iname "${name}-${ver}-*.whl" -o -iname "${name_us}-${ver}-*.whl" \) 2>/dev/null | grep -q .; then
       continue
@@ -275,11 +323,20 @@ scan_cached_requirements() {
   for root in "${VPYTHON_STORE_ROOTS[@]}"; do
     for req in \
       "$root"/wheels+*/contents/requirements.txt \
-      "$root"/vpython_requirements+*/contents/requirements.txt; do
+      "$root"/wheels-*/contents/requirements.txt \
+      "$root"/vpython_requirements+*/contents/requirements.txt \
+      "$root"/vpython_requirements-*/contents/requirements.txt; do
       found=1
       patch_requirements "$req"
       prefetch_requirements_wheels "$req"
     done
+    # Newer UV layouts may nest requirements outside the historical CIPD names.
+    while IFS= read -r req; do
+      [[ -n "$req" ]] || continue
+      found=1
+      patch_requirements "$req"
+      prefetch_requirements_wheels "$req"
+    done < <(find "$root" -type f -name requirements.txt 2>/dev/null | head -n 40)
   done
   if [[ "$found" -eq 0 ]]; then
     echo "No cached wheels requirements yet — will patch after first vpython attempt if needed."
