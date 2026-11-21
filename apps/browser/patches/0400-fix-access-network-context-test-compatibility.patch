@@ -1,0 +1,47 @@
+From aac3e6e417f649b07e4b322e734c6ce16f6d1579 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 16:51:41 +0800
+Subject: [PATCH] fix(access): keep NetworkContext test double concrete after
+ private API extension
+
+---
+
+diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
+index fe6ca7245396113fa851683c7252acf410314541..425e2598ba6140b446c66288b769ca35128e5e97 100644
+--- a/services/network/test/test_network_context.h
++++ b/services/network/test/test_network_context.h
+@@ -33,6 +33,7 @@
+ #include "services/network/public/mojom/device_bound_sessions.mojom.h"
+ #include "services/network/public/mojom/host_resolver.mojom.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
++#include "services/network/public/mojom/aegis_access_route_types.mojom.h"
+ #include "services/network/public/mojom/network_service.mojom.h"
+ #include "services/network/public/mojom/oblivious_http_request.mojom.h"
+ #include "services/network/public/mojom/proxy_resolving_socket.mojom.h"
+@@ -338,6 +339,26 @@ class TestNetworkContext : public mojom::NetworkContext {
+   void CreateMdnsResponder(
+       mojo::PendingReceiver<mojom::MdnsResponder> responder_receiver) override {
+   }
++  void InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
++      InstallAegisAccessSnapshotCallback callback) override {
++    auto ack = mojom::AegisAccessSnapshotAck::New();
++    ack->owner = snapshot->owner.Clone();
++    ack->incarnation = snapshot->incarnation;
++    ack->sequence = snapshot->sequence;
++    ack->common_generations = snapshot->common_generations.Clone();
++    ack->accepted = false;
++    std::move(callback).Run(std::move(ack));
++  }
++  void BeginAegisAccessRestore(mojom::AegisAccessOwnerPtr,
++      const std::string&, BeginAegisAccessRestoreCallback callback) override {
++    std::move(callback).Run(false);
++  }
++  void CreateAegisAccessURLLoaderFactory(
++      mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory>,
++      mojom::URLLoaderFactoryParamsPtr, mojom::AegisAccessFactoryBindingPtr,
++      CreateAegisAccessURLLoaderFactoryCallback callback) override {
++    std::move(callback).Run(false);
++  }
+   void ResetURLLoaderFactories() override {}
+   void GetViaObliviousHttp(
+       mojom::ObliviousHttpRequestPtr request,

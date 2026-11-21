@@ -59,6 +59,8 @@ export default tseslint.config(
   {
     files: [
       "apps/browser/scripts/run-android-java-coverage-emulator_test.mjs",
+      "scripts/ci/android-delivery-bot.mjs",
+      "scripts/ci/android-operator.mjs",
       "scripts/ci/ios-delivery-bot.mjs",
       "scripts/ci/ios-operator.mjs",
       "scripts/ci/macos-delivery-bot.mjs",

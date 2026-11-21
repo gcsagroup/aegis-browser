@@ -1,11 +1,9 @@
-From 41acf40565074ed7bfca89dade48d8ca406ee9a8 Mon Sep 17 00:00:00 2001
+From a6ccee9994361d5dcfd95a69ef7c18d14304e545 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 11 Oct 2026 06:53:56 +0800
 Subject: [PATCH] chore: bump build 153 for fixed GCSA signing
 
 ---
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index c219afa9377c1c9bf6a9d27adfe5c4b27c69b891..c03153f92c21bb44fc32865f34419fd59c89b9a2 100644
@@ -22,6 +20,3 @@ index c219afa9377c1c9bf6a9d27adfe5c4b27c69b891..c03153f92c21bb44fc32865f34419fd5
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

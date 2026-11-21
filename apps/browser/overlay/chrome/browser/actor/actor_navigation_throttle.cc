@@ -4,15 +4,13 @@
 
 #include "chrome/browser/actor/actor_navigation_throttle.h"
 
-#include <algorithm>
-
 #include "base/types/pass_key.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
+#include "chrome/browser/actor/actor_surface_handle.h"
 #include "chrome/browser/actor/actor_task.h"
 #include "chrome/browser/actor/execution_engine.h"
 #include "chrome/browser/actor/site_policy.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/actor_webui.mojom.h"
 #include "chrome/common/chrome_features.h"
 #include "components/actor/core/actor_features.h"
 #include "components/actor/core/journal_details_builder.h"
@@ -23,6 +21,10 @@
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/page_transition_types.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/device_info.h"
+#endif
 
 namespace actor {
 
@@ -42,11 +44,6 @@ void ActorNavigationThrottle::MaybeCreateAndAdd(
 
   content::WebContents* web_contents = navigation_handle.GetWebContents();
 
-  const auto* tab = tabs::TabInterface::MaybeGetFromContents(web_contents);
-  if (!tab) {
-    return;
-  }
-
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   if (!profile) {
@@ -58,14 +55,17 @@ void ActorNavigationThrottle::MaybeCreateAndAdd(
     return;
   }
 
-  const ActorTask* task = actor_service->GetTaskFromTab(*tab);
+  const ActorSurfaceHandle actor_surface_handle =
+      ActorSurfaceHandle::From(web_contents);
+  const ActorTask* task =
+      actor_service->GetTaskFromActorSurface(actor_surface_handle);
   if (!task) {
     return;
   }
 
   if (!base::FeatureList::IsEnabled(
           kGlicAttachNavigationThrottleToPausedTasks) &&
-      !task->IsActingOnTab(tab->GetHandle())) {
+      !task->IsActingOnActorSurface(actor_surface_handle)) {
     return;
   }
 
@@ -102,8 +102,32 @@ ActorNavigationThrottle::WillRedirectRequest() {
 
 content::NavigationThrottle::ThrottleCheckResult
 ActorNavigationThrottle::WillProcessResponse() {
-  if (!execution_engine_) {
+  // Proceed if the execution engine is already gone or if the user explicitly
+  // confirmed leaving the task. `StopTask()` defers `ActorTask` and
+  // `ExecutionEngine` destruction via `RunLater()` (`pending_delete_tasks_`),
+  // so `execution_engine_` can still be non-null when `WillProcessResponse()`
+  // runs; deferring on the stopping engine would cause `~ExecutionEngine()` to
+  // cancel the navigation via `CancelPendingNavigations()`.
+  if (!execution_engine_ || was_user_confirmed_leave_) {
     return content::NavigationThrottle::PROCEED;
+  }
+  execution_engine_->ShouldNavigationCommit(
+      *navigation_handle(),
+      base::BindOnce(&ActorNavigationThrottle::OnNavigationConfirmationDecision,
+                     weak_factory_.GetWeakPtr()));
+  return content::NavigationThrottle::DEFER;
+}
+
+content::NavigationThrottle::ThrottleCheckResult
+ActorNavigationThrottle::WillCommitWithoutUrlLoader() {
+  if (navigation_handle()->IsSameDocument()) {
+    return content::NavigationThrottle::PROCEED;
+  }
+  if (!navigation_handle()->IsRendererInitiated()) {
+    return WillStartOrRedirectRequest(/*is_redirection=*/false);
+  }
+  if (!execution_engine_) {
+    return content::NavigationThrottle::CANCEL_AND_IGNORE;
   }
   execution_engine_->ShouldNavigationCommit(
       *navigation_handle(),
@@ -219,13 +243,73 @@ ActorNavigationThrottle::WillStartOrRedirectRequest(bool is_redirection) {
                                        ::ui::PAGE_TRANSITION_AUTO_BOOKMARK) ||
         (transition & ::ui::PAGE_TRANSITION_HOME_PAGE);
 
+    // Omnibox navigations carry FROM_ADDRESS_BAR, but an accepted paste
+    // commits as LINK and a keyword search as KEYWORD.
+    if (transition & ::ui::PAGE_TRANSITION_FROM_ADDRESS_BAR) {
+      is_user_ui_navigation = true;
+    }
+
+    // Exclude session history navigations. A back/forward navigation replays
+    // the core transition of the entry it restores, so returning to a page the
+    // user originally typed arrives here as PAGE_TRANSITION_TYPED with the
+    // FORWARD_BACK qualifier. Without this exclusion both the Actor's own
+    // history tool (which calls GoBack() and GoForward()) and the user's
+    // Back/Forward buttons would be confirmed.
+    if (transition & ::ui::PAGE_TRANSITION_FORWARD_BACK) {
+      is_user_ui_navigation = false;
+    }
+
     if (!is_user_ui_navigation) {
       return content::NavigationThrottle::PROCEED;
     }
 
+#if !BUILDFLAG(IS_ANDROID)
+    if (!base::FeatureList::IsEnabled(features::kGlicConfirmTabClose)) {
+      return content::NavigationThrottle::PROCEED;
+    }
+#else
+    // On Android, only desktop form factors confirm user UI navigations.
+    if (!base::android::device_info::is_desktop()) {
+      return content::NavigationThrottle::PROCEED;
+    }
+#endif
+
+    // Typing in the omnibox starts a speculative prerender that carries the
+    // same transition as the navigation the user may eventually commit.
+    // Deferring it would prompt for typing alone, and letting it load is
+    // worse: prerender activation does not run NavigationThrottles, so the
+    // committed navigation would not be confirmed. Cancelling the prerender
+    // keeps the confirmation on the real navigation.
+    if (navigation_handle()->IsInPrerenderedMainFrame()) {
+      journal.Log(navigation_url, task_id_, "NavThrottle",
+                  JournalDetailsBuilder()
+                      .Add("navigate", "Cancel user UI prerender")
+                      .Build());
+      return content::NavigationThrottle::CANCEL_AND_IGNORE;
+    }
+
+    // A navigation to the current URL (ignoring the fragment) reloads the page
+    // instead of leaving it, so proceed without confirmation, as for Reload.
+    content::WebContents* web_contents = navigation_handle()->GetWebContents();
+    if (web_contents &&
+        navigation_url.EqualsIgnoringRef(web_contents->GetLastCommittedURL())) {
+      journal.Log(navigation_url, task_id_, "NavThrottle",
+                  JournalDetailsBuilder()
+                      .Add("navigate", "Same URL as current page")
+                      .Build());
+      // This navigation replaces any deferred one, so close its confirmation.
+      if (task->navigation_delegate()) {
+        task->navigation_delegate()->CancelNavigationConfirmation(
+            tabs::TabInterface::MaybeGetFromContents(web_contents));
+      }
+      return content::NavigationThrottle::PROCEED;
+    }
+
     if (task->navigation_delegate()) {
+      auto* tab = tabs::TabInterface::MaybeGetFromContents(
+          navigation_handle()->GetWebContents());
       if (task->navigation_delegate()->MaybeDeferNavigation(
-              navigation_url,
+              tab, navigation_url,
               base::BindOnce(
                   &ActorNavigationThrottle::OnUserLeaveDialogDecision,
                   weak_factory_.GetWeakPtr()))) {

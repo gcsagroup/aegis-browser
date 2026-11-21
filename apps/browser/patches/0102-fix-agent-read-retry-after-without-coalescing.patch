@@ -1,11 +1,9 @@
-From eca7f31f40b255409e67f36da216625d24338166 Mon Sep 17 00:00:00 2001
+From 6ab25c7a538a6de15ba4cefa9d06693d287fb998 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 01:50:11 +0800
 Subject: [PATCH] fix(agent): read retry-after without coalescing
 
 ---
- chrome/browser/aegis/agent/aegis_browser_tools.cc | 9 ++++++---
- 1 file changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 index 63aaf8b3c2c92d8892ce51410acdba6eac5d4c84..d57992b418750e94cd14ef689fc8a4d973610bf2 100644
@@ -28,6 +26,3 @@ index 63aaf8b3c2c92d8892ce51410acdba6eac5d4c84..d57992b418750e94cd14ef689fc8a4d9
          retry_after_seconds = std::clamp(parsed, 1, 60);
        }
      }
--- 
-2.52.0
-

@@ -29,6 +29,10 @@ on:
         description: "阶段与轨道 / Stage and track JSON（仅 Full / Full only）"
         type: string
         default: "{}"
+      approved_source_sha:
+        description: "已批准源码 / Approved source SHA（Bot dispatch only）"
+        type: string
+        default: ""
 permissions:
   contents: read
   actions: read
@@ -45,4 +49,4 @@ jobs:
       AEGIS_ANDROID_STORE_PASSWORD: ${{ secrets.AEGIS_ANDROID_STORE_PASSWORD }}
       AEGIS_ANDROID_KEY_PASSWORD: ${{ secrets.AEGIS_ANDROID_KEY_PASSWORD }}
       AEGIS_PLAY_JSON_KEY_DATA: ${{ secrets.AEGIS_PLAY_JSON_KEY_DATA }}
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/android-release-acceptance' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' }}

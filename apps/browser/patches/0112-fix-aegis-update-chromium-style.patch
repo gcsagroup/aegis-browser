@@ -1,18 +1,9 @@
-From a1a77bf583f26034e9202308aaa4b23a41e1c547 Mon Sep 17 00:00:00 2001
+From 1b23f1e3e59217189f6e1b3c9d34c6955defe745 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 13 Sep 2026 05:01:21 +0800
 Subject: [PATCH] Fix GitHub updater Chromium style and bump Ver 1.1 (003)
 
 ---
- chrome/app/app-Info.plist                           |  4 ++--
- chrome/browser/ui/webui/help/BUILD.gn               | 13 +++++++------
- chrome/browser/ui/webui/help/aegis_github_update.h  |  6 +++---
- .../ui/webui/help/aegis_github_update_unittest.cc   |  2 +-
- chrome/browser/ui/webui/help/version_updater.cc     |  6 ++++++
- chrome/browser/ui/webui/help/version_updater.h      |  2 +-
- .../settings/settings_localized_strings_provider.cc |  2 +-
- 7 files changed, 21 insertions(+), 14 deletions(-)
- create mode 100644 chrome/browser/ui/webui/help/version_updater.cc
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
 index ea07226701fcbfc96be924deebd668d678abb626..77fcd36f3abec402d7adb0e02edc1ce26e5bc727 100644
@@ -31,7 +22,7 @@ index ea07226701fcbfc96be924deebd668d678abb626..77fcd36f3abec402d7adb0e02edc1ce2
  	<string>en</string>
  	<key>CFBundleDisplayName</key>
 diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
-index 641db50d1b50e0324a393d626600aa2f908d016b..05d287abde33425ac3f84244e758e4e9ece96df3 100644
+index 70a4f90ff69cc3ca3a983dbdd91ae0846148a711..5a31a7746df188189d1662bee3bb72b618ce130d 100644
 --- a/chrome/browser/ui/webui/help/BUILD.gn
 +++ b/chrome/browser/ui/webui/help/BUILD.gn
 @@ -8,6 +8,7 @@ import("//testing/test.gni")
@@ -51,7 +42,7 @@ index 641db50d1b50e0324a393d626600aa2f908d016b..05d287abde33425ac3f84244e758e4e9
        "help_utils_chromeos.cc",
        "version_updater_chromeos.cc",
      ]
-@@ -43,7 +44,7 @@ source_set("help") {
+@@ -47,7 +48,7 @@ source_set("help") {
  
    if (is_mac) {
      if (enable_updater) {
@@ -60,7 +51,7 @@ index 641db50d1b50e0324a393d626600aa2f908d016b..05d287abde33425ac3f84244e758e4e9
        deps += [
          "//base:i18n",
          "//chrome/app:branded_strings",
-@@ -52,7 +53,7 @@ source_set("help") {
+@@ -56,7 +57,7 @@ source_set("help") {
        ]
        frameworks = [ "Foundation.framework" ]
      } else {
@@ -69,7 +60,7 @@ index 641db50d1b50e0324a393d626600aa2f908d016b..05d287abde33425ac3f84244e758e4e9
        deps += [
          ":aegis_github_update",
          "//chrome/common",
-@@ -66,7 +67,7 @@ source_set("help") {
+@@ -70,7 +71,7 @@ source_set("help") {
  
    if (is_win) {
      if (is_chrome_branded) {
@@ -78,7 +69,7 @@ index 641db50d1b50e0324a393d626600aa2f908d016b..05d287abde33425ac3f84244e758e4e9
        deps += [
          "//chrome/app:generated_resources_grit",
          "//chrome/browser:browser_process",
-@@ -78,7 +79,7 @@ source_set("help") {
+@@ -82,7 +83,7 @@ source_set("help") {
          "//ui/gfx",
        ]
      } else {
@@ -87,7 +78,7 @@ index 641db50d1b50e0324a393d626600aa2f908d016b..05d287abde33425ac3f84244e758e4e9
        deps += [
          ":aegis_github_update",
          "//chrome/common",
-@@ -91,7 +92,7 @@ source_set("help") {
+@@ -95,7 +96,7 @@ source_set("help") {
    }
  
    if (is_linux) {
@@ -152,10 +143,10 @@ index 43b288834478d3acaeb2089dc598b6c29b486bfb..f4878215cabe7a95b82d49fe4313671a
    // Sub-classes must implement this method to create the respective
    // specialization. |web_contents| may be null, in which case any required UX
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 75bf73dd1a90bca0eac649038df925460e964caf..9c0f94b8658ae7dcdba025580f0887ee77e1a3f9 100644
+index 509916f70bdd0553e30838ddb95914cefb64cf48..943855471cfebd7b6270efefa4beff2897b15270 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -382,7 +382,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
    browser_version = VersionUI::GetAnnotatedVersionStringForUi();
  #else
    browser_version = base::StrCat(
@@ -164,6 +155,3 @@ index 75bf73dd1a90bca0eac649038df925460e964caf..9c0f94b8658ae7dcdba025580f0887ee
         l10n_util::GetStringUTF16(VersionUI::VersionProcessorVariation())});
  #endif
  
--- 
-2.52.0
-

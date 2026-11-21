@@ -11,7 +11,7 @@
 #include "chrome/browser/aegis/enhancements/enhancement_store.h"
 #include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -81,7 +81,7 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
     InProcessBrowserTest::TearDownOnMainThread();
   }
   content::WebContents* contents() {
-    return browser()->tab_strip_model()->GetActiveWebContents();
+    return browser()->GetTabStripModel()->GetActiveWebContents();
   }
   std::string Mutate(base::DictValue request) {
     base::test::TestFuture<std::string> result;
@@ -408,13 +408,13 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
   ASSERT_FALSE(original_document.empty());
   ASSERT_FALSE(original_tab.empty());
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
-                browser(), b_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                browser(), b_url, WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   auto* b = contents();
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
                 browser(), GURL("chrome://aegis/enhancements.html"),
-                WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   auto* page = contents();
@@ -521,7 +521,7 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
               EnhancementField(a_helper->Snapshot(), "document"));
   } else if (change == "closed") {
     content::WebContentsDestroyedWatcher closed(a);
-    browser()->tab_strip_model()->CloseWebContents(a, /*close_types=*/0);
+    browser()->GetTabStripModel()->CloseWebContents(a, /*close_types=*/0);
     closed.Wait();
     a = nullptr;
     a_helper = nullptr;

@@ -41,6 +41,7 @@ run_check 'public-link-fixture' node --test ./scripts/public-link-fixture_test.m
 run_check 'integration-benchmark-fixtures' node --test ./scripts/integration-benchmark-fixtures_test.mjs
 run_check 'integration-evidence-report' node --test ./scripts/integration-evidence-report_test.mjs
 run_check 'update-metadata-prototype' node --test ./scripts/update-metadata-prototype_test.mjs
+run_check '截图与 OCR 输入和确认边界' node --test ./scripts/webpage-capture_test.mjs
 
 run_check 'patch series formats' bash ./scripts/patch-series-format_test.sh
 run_check 'patch series regression fixtures' bash ./scripts/patch-series-format-regression_test.sh
