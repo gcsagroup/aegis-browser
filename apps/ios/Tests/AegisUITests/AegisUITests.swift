@@ -597,7 +597,8 @@ final class AegisUITests: XCTestCase {
             XCTAssertTrue(scrollUntilVisible(update, in: app)); update.tap()
             // 旧更新日期会保留，必须等本次请求结束，不能只断言日期标签存在。
             let finished = NSPredicate(format: "enabled == true AND label == %@", "更新过滤规则")
-            expectation(for: finished, evaluatedWith: update); waitForExpectations(timeout: 100)
+            // 两份下载各有 90 秒资源时限，另留转换与 WebKit 编译时间。
+            expectation(for: finished, evaluatedWith: update); waitForExpectations(timeout: 240)
             XCTAssertTrue(app.staticTexts["最近更新"].exists)
             attachScreenshot("在线更新广告规则成功", app)
         }
@@ -1272,6 +1273,30 @@ final class AegisUITests: XCTestCase {
 
     private func tapVisibleBrowserControl(_ choices: XCUIElementQuery, in app: XCUIApplication,
                                           timeout: TimeInterval = 5, ready: @escaping () -> Bool = { true }) {
+        // 原生菜单的 AX 行可能位于裁剪范围之外，isHittable 仍返回 true。
+        // 使用包含该行的最小菜单容器，先滚动到真实可见范围，再发送一次点击。
+        func viewport(for choice: XCUIElement) -> CGRect {
+            let identifier = choice.identifier
+            guard !identifier.isEmpty,
+                  app.collectionViews.containing(.button, identifier: identifier).firstMatch.exists else { return app.frame }
+            return app.otherElements.containing(.button, identifier: identifier).allElementsBoundByIndex
+                .map { $0.frame.intersection(app.frame) }
+                .filter { !$0.isEmpty && $0.width >= choice.frame.width && $0.height >= 44 }
+                .min { $0.width * $0.height < $1.width * $1.height } ?? app.frame
+        }
+        for _ in 0..<4 {
+            guard let choice = choices.allElementsBoundByIndex.first(where: { $0.exists && $0.isEnabled }) else { break }
+            let bounds = viewport(for: choice)
+            if choice.isHittable && bounds.contains(choice.frame) { break }
+            guard bounds != app.frame else { break }
+            let down = choice.frame.midY < bounds.midY
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.3 : 0.7) - app.frame.minY))
+            let end = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.7 : 0.3) - app.frame.minY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
         var previousFrame = CGRect.null
         var settledFrame = CGRect.null
         let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -1279,7 +1304,7 @@ final class AegisUITests: XCTestCase {
             let frames = choices.allElementsBoundByIndex.compactMap { choice -> CGRect? in
                 guard choice.exists, choice.isEnabled, choice.isHittable else { return nil }
                 let frame = choice.frame
-                return !frame.isEmpty && app.frame.contains(frame) ? frame : nil
+                return !frame.isEmpty && viewport(for: choice).contains(frame) ? frame : nil
             }
             // A native Menu can expose virtual and rendered nodes for one row.
             // Resolve one visible hit region, without depending on that AX topology.
