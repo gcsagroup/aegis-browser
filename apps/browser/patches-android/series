@@ -353,3 +353,4 @@
 0353-fix-chromium158-native-runtime-regressions.patch
 0354-fix-preserve-aegis-context-menu-uma.patch
 0355-test-access-private-routing-fixtures.patch
+0356-validate-private-redirects.patch

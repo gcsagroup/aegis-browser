@@ -7,7 +7,8 @@ const root = new URL('../../overlay/chrome/browser/resources/aegis/', import.met
 const read = path => fs.readFileSync(new URL(path, root), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function harness() {
+function harness({holdReadyRequest = false} = {}) {
+  let pendingReadyRequest;
   const parent = new JSDOM(read('markdown.html'), {
     url: 'chrome://aegis/markdown.html', runScripts: 'outside-only',
   });
@@ -27,9 +28,11 @@ function harness() {
   };
   c.postMessage = (data, target) => {
     assert.equal(target, 'chrome-untrusted://aegis-markdown');
-    queueMicrotask(() => c.dispatchEvent(new c.MessageEvent('message', {
+    const deliver = () => c.dispatchEvent(new c.MessageEvent('message', {
       source: p, origin: 'chrome://aegis', data,
-    })));
+    }));
+    if (holdReadyRequest && data.type === 'ready-request') pendingReadyRequest = deliver;
+    else queueMicrotask(deliver);
   };
   for (const w of [p, c]) {
     w.TextEncoder = TextEncoder;
@@ -49,6 +52,7 @@ function harness() {
   };
   return {
     p, c, messages, requests,
+    deliverReadyRequest() { pendingReadyRequest(); },
     startChild() {
       for (const script of ['vendor/markdown-it.min.js', 'vendor/task-lists.min.js',
         'vendor/highlight.min.js', 'vendor/purify.min.js', 'i18n.js', 'core.js', 'viewer.js'])
@@ -105,6 +109,24 @@ test('Markdown readiness handshake rejects another origin or window', async () =
     }));
     await tick();
     assert.equal(h.messages.length, before + 1);
-    assert.equal(h.messages.at(-1).type, 'ready');
+    assert.equal(h.messages.at(-1).type, 'ready-response');
+  } finally { h.close(); }
+});
+
+test('a delayed readiness reply preserves the open Markdown view', async () => {
+  const h = harness({holdReadyRequest: true});
+  try {
+    await h.startParent();
+    h.startChild();
+    await tick();
+    const rendered = h.messages.filter(message => message.type === 'images').length;
+    assert.equal(rendered, 1);
+    const source = h.c.document.getElementById('source');
+    h.c.document.getElementById('source-toggle').click();
+    assert.equal(source.hidden, false);
+    h.deliverReadyRequest();
+    await tick();
+    assert.equal(source.hidden, false);
+    assert.equal(h.messages.filter(message => message.type === 'images').length, rendered);
   } finally { h.close(); }
 });

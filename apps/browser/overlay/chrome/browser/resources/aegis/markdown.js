@@ -84,7 +84,7 @@ window.addEventListener("message", (event) => {
   )
     return;
   const { type, value } = event.data || {};
-  if (type === "ready") {
+  if (type === "ready" || (type === "ready-response" && !ready)) {
     ready = true;
     send("configure", {embedded: true, locale: loadTimeData.getString("aegisLocale"), preferences: state.readingPreferences});
     if (current) send("load", current);
