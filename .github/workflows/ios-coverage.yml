@@ -33,6 +33,16 @@ jobs:
         with:
           go-version: '1.27.3'
           cache: false
+      - name: 安装并校验固定版本 XcodeGen
+        timeout-minutes: 5
+        run: |
+          archive="$RUNNER_TEMP/xcodegen-2.46.0.zip"
+          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+            --output "$archive" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          printf '%s  %s\n' 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806 "$archive" | shasum -a 256 --check --status
+          unzip -q "$archive" -d "$RUNNER_TEMP/xcodegen-2.46.0"
+          "$RUNNER_TEMP/xcodegen-2.46.0/xcodegen/bin/xcodegen" --version
+          printf '%s\n' "$RUNNER_TEMP/xcodegen-2.46.0/xcodegen/bin" >> "$GITHUB_PATH"
       - name: Run iPhone and iPad tests with Swift coverage
         env:
           DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
