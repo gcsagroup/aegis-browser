@@ -240,6 +240,12 @@ function updateRegion() {
 const observer = new ResizeObserver(updateRegion);
 observer.observe(practice);
 window.addEventListener('resize', updateRegion, {signal: events.signal});
+// Shadow DOM 内的滚动事件不会跨越根节点；逐层监听，保持原生练习区与可见位置一致。
+let scrollRoot: Node = root;
+while (scrollRoot instanceof ShadowRoot) {
+  scrollRoot.addEventListener('scroll', updateRegion, {capture: true, passive: true, signal: events.signal});
+  scrollRoot = scrollRoot.host.getRootNode();
+}
 window.addEventListener('scroll', updateRegion, {capture: true, passive: true, signal: events.signal});
 function cancelPractice() {
   if (drawing || lastPattern) {

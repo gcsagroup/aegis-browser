@@ -1,12 +1,9 @@
-From f9b5453ae1fb7b5ee712d0ac634894b7dd5268f1 Mon Sep 17 00:00:00 2001
+From b85bfd2c96ec4263bb809e4ce817f923dfd244a9 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 17:24:21 +0800
 Subject: [PATCH] fix(aegis): validate model plan ordering
 
 ---
- chrome/browser/aegis/agent/agent_planner.cc   | 62 +++++++++++++++++++
- .../aegis/agent/agent_planner_unittest.cc     | 50 +++++++++++++++
- 2 files changed, 112 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
 index 133c54032c31f2ffb198d07849aafacf19255be8..fd62d25837f0ea90ed38f05da6434805259fc08b 100644
@@ -156,6 +153,3 @@ index 924c523f016852af95ba5ee1b21cc845a4623b10..f82cfc187055fcd84015d2d40d12ad92
    const base::ListValue* catalog = parsed->GetDict().FindList("tool_catalog");
    ASSERT_TRUE(catalog);
    ASSERT_EQ(catalog->size(), 3u);
--- 
-2.52.0
-

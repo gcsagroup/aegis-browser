@@ -27,6 +27,7 @@
 #include "components/os_crypt/async/browser/os_crypt_async.h"
 #include "components/os_crypt/async/common/encryptor.h"
 #include "components/prefs/pref_service.h"
+#include "components/split_tabs/split_tab_visual_data.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -397,7 +398,9 @@ void AegisReadingWorkspace::Dispatch(
       if (!exists) additions.Append(std::move(item));
     }
     if (op == "split") {
-      const bool ok = tabs->CreateSplit(handles).has_value();
+      // 继续使用旧接口内部的默认并排布局。
+      const bool ok =
+          tabs->CreateSplit(handles, split_tabs::SplitTabVisualData()).has_value();
       Reply(std::move(callback), {}, ok ? "" : "split_unavailable"); return;
     }
     auto next = records_.Clone();

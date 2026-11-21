@@ -1,4 +1,4 @@
-From 15543c0a4f8e4054020d6c543ed59f5fb14b50b4 Mon Sep 17 00:00:00 2001
+From 7461e6eaed10fd1a75ddca3e34e97dcf9c9e6b46 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 6 Oct 2026 17:42:24 +0800
 Subject: [PATCH] =?UTF-8?q?test:=20=E6=98=8E=E7=A1=AE=E5=BC=95=E5=85=A5?=
@@ -9,9 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../access/access_proxying_url_loader_factory_browsertest.cc  | 1 +
- chrome/browser/ui/webui/help/aegis_github_update.h            | 4 ++--
- 2 files changed, 3 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 index 13ced5abf1bafe08d9a14edfcd95c2018847ba1c..8612ef233fca03edf1f2d4a48df3bf3601bc604e 100644
@@ -40,6 +37,3 @@ index 7e0a78863146bdc663732608f0edb045c63c1e82..0e6a1022c65cbfed3ecd7493b47d417d
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

@@ -1,4 +1,4 @@
-From 4c27ec5ebdcfe25fb59450436fa073660a7ebc3b Mon Sep 17 00:00:00 2001
+From 03dc1b280b5750cbc7ca0a5b3dd47dc32b85cede Mon Sep 17 00:00:00 2001
 From: Aegis integration <aegis-integration@users.noreply.github.com>
 Date: Sat, 3 Oct 2026 15:56:40 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=BC=82=E6=AD=A5=E6=96=87?=
@@ -10,10 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- .../core/editing/finder/async_find_buffer.cc  |  9 +++-
- .../text_fragment_selector_generator_test.cc  | 44 +++++++++++++++++++
- 3 files changed, 53 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 index 7e84fbac33f32d339cdd230de87e2789c244c4de..0f4a4b1781ddc97e3af7d80b0413c6d7fb64f629 100644
@@ -31,34 +27,19 @@ index 7e84fbac33f32d339cdd230de87e2789c244c4de..0f4a4b1781ddc97e3af7d80b0413c6d7
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc b/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
-index dedfb3c15e0ed4acaa3c45b87c0d2929ed10c95d..4c794043e97f418c394f8d7049c13d8203681b2e 100644
+index 9e2bcf566d121522d8860e3690315cd92b5c5d65..9fc93090c73248b86ae668150aa10e3829558721 100644
 --- a/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
 +++ b/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
-@@ -6,6 +6,8 @@
- #include "base/auto_reset.h"
- #include "base/metrics/histogram_macros.h"
- #include "base/task/single_thread_task_runner.h"
-+#include "third_party/blink/renderer/core/display_lock/display_lock_document_state.h"
-+#include "third_party/blink/renderer/core/dom/document.h"
- #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
- #include "third_party/blink/renderer/core/editing/finder/find_buffer.h"
- 
-@@ -49,8 +51,11 @@ void AsyncFindBuffer::Run(RangeInFlatTree* search_range,
+@@ -51,6 +51,7 @@ void AsyncFindBuffer::Run(RangeInFlatTree* search_range,
      std::move(completeCallback).Run(EphemeralRangeInFlatTree());
      return;
    }
--  search_range->StartPosition().GetDocument()->UpdateStyleAndLayout(
--      DocumentUpdateReason::kFindInPage);
-+  Document& document = *search_range->StartPosition().GetDocument();
-+  // 调用方的强制更新作用域不会跨越异步任务；每次恢复查找都要重新建立。
-+  auto forced_activatable_display_locks =
-+      document.GetDisplayLockDocumentState().GetScopedForceActivatableLocks();
-+  document.UpdateStyleAndLayout(DocumentUpdateReason::kFindInPage);
- 
-   EphemeralRangeInFlatTree range =
-       FindBuffer::FindMatchInRange(search_range->ToEphemeralRange(),
++  // 每次异步恢复查找都重新建立强制显示锁作用域。
+   Document* document = search_range->StartPosition().GetDocument();
+   auto forced_lock_scope =
+       document->GetDisplayLockDocumentState().GetScopedForceActivatableLocks();
 diff --git a/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc b/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc
-index a007a78504386b3cf26063a04c31ad6538b23a5e..d78e3b943c114d7267a4ca0623617c555f91625d 100644
+index 2ba93f43aa44254b31f3c2d6b76e21ed06f57a04..291f68ed9f213a2c0606aa4e48b5600660505701 100644
 --- a/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc
 +++ b/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc
 @@ -17,6 +17,7 @@
@@ -69,8 +50,8 @@ index a007a78504386b3cf26063a04c31ad6538b23a5e..d78e3b943c114d7267a4ca0623617c55
  #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
  #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
  #include "third_party/blink/renderer/core/fragment_directive/text_fragment_handler.h"
-@@ -1929,4 +1930,47 @@ TEST_F(TextFragmentSelectorGeneratorTest, RemoveLayoutObjectAsync) {
-   EXPECT_TRUE(finished);
+@@ -1938,4 +1939,47 @@ TEST_F(TextFragmentSelectorGeneratorTest, HiddenUntilFoundDirtyLayout) {
+       selector);
  }
  
 +// 异步查找恢复时，离屏延迟渲染区域仍可能有尚未处理的样式变更。
@@ -117,6 +98,3 @@ index a007a78504386b3cf26063a04c31ad6538b23a5e..d78e3b943c114d7267a4ca0623617c55
 +}
 +
  }  // namespace blink
--- 
-2.52.0
-

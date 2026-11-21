@@ -1,18 +1,12 @@
-From 0f0a068822fda1ea5674fbdba272b6e201fe54f4 Mon Sep 17 00:00:00 2001
+From 18334f96a6a24d7a5e60cf93f82e28c0e3200f59 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:30:27 +0800
 Subject: [PATCH] Aegis: farble Audio fingerprints once per buffer and per site
 
 Stop stacking noise on every getChannelData, key the perturbation
 by page host, and apply the same pass on copyFromChannel.
+
 ---
- chrome/browser/resources/aegis/aegis.ts       | 48 +++++++++++++------
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |  8 ++--
- .../blink/renderer/core/aegis/farbling.cc     |  2 +-
- .../blink/renderer/core/aegis/farbling.h      |  3 +-
- .../renderer/modules/webaudio/audio_buffer.cc | 31 +++++++++---
- .../renderer/modules/webaudio/audio_buffer.h  |  4 ++
- 6 files changed, 69 insertions(+), 27 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
 index f8f6eb21c3cf858c305aad151aa7d6515d4d42fc..ff1be2266edc2ad1d0caa1c243357c2c1122c894 100644
@@ -148,7 +142,7 @@ index 3bf461978489443d7900fabea748af8520a3b78c..e51cf04fe1196fbf9056c711b3cae9a8
                                           float* data,
                                           size_t length);
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-index 425d9442acf164c1f4742b23802a9a5f1a700488..657471c557e4525aef07fc15b09f500ad8e6f8ac 100644
+index 4cbacd0aa20505a07d16641b15fe59af4c227fa3..a59f9a0ab3687ee634bd1288f02f6f6153fe0e0d 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 @@ -34,13 +34,16 @@
@@ -168,7 +162,7 @@ index 425d9442acf164c1f4742b23802a9a5f1a700488..657471c557e4525aef07fc15b09f500a
  
  namespace blink {
  
-@@ -215,21 +218,33 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+@@ -213,21 +216,33 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
      return NotShared<DOMFloat32Array>(nullptr);
    }
  
@@ -209,7 +203,7 @@ index 425d9442acf164c1f4742b23802a9a5f1a700488..657471c557e4525aef07fc15b09f500a
  }
  
  void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
-@@ -259,6 +274,8 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
+@@ -257,6 +272,8 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
      return;
    }
  
@@ -233,6 +227,3 @@ index 0dd11f830ee2829778b6c89ec51edeb1da839f74..0d0d0a857015f45409ff1473c90a2e14
  };
  
  // Shared data that audio threads can hold onto.
--- 
-2.52.0
-

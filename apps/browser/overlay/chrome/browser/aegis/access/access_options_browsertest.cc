@@ -3,7 +3,7 @@
 #include "chrome/browser/aegis/access/access_buildflags.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/profiles/profile.h"
 #include "base/files/file_util.h"
 #include "base/threading/thread_restrictions.h"

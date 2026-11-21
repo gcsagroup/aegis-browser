@@ -35,9 +35,9 @@ source_set("impl") {
     "reading_workspace.cc",
     "reading_workspace.h",
   ]
-  public_deps = [ "//chrome/browser:browser_public_dependencies" ]
   deps = [
     ":aegis_agent",
+    "//chrome/browser:browser_process",
     "//chrome/browser/aegis",
     "//chrome/browser/aegis:agent_core",
     "//chrome/browser/aegis:model_provider_policy",

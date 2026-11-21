@@ -1,14 +1,9 @@
-From 6c42e2b09d5e87fa2bbc38dfc7a9060be2cfb59b Mon Sep 17 00:00:00 2001
+From 8bf482306ff5a6c36ce3d50c06e4956e5c082687 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 20:15:21 +0800
 Subject: [PATCH] feat(aegis): harden v2 autonomous runtime spike
 
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    | 32 ++++----
- .../browser/aegis/agent/v2_runtime_spike.cc   | 53 ++++++++++++-
- chrome/browser/aegis/agent/v2_runtime_spike.h | 22 ++++++
- .../aegis/agent/v2_runtime_spike_unittest.cc  | 79 ++++++++++++++++++-
- 4 files changed, 167 insertions(+), 19 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index d029138eaf33535c3a00b5902eb2a8f29fbe69db..7935550fdbb19f8e3cdc1237333394de0d3f6773 100644
@@ -387,6 +382,3 @@ index 818cb5ab434a9cc8e3cfeccb1fe8ab986698b025..8e5b6a1ff29f6cdad49fb320b9d8e3fb
  }
  
  TEST(AegisV2RuntimeSpikeTest, NativeBookmarksRejectUnexpectedDestination) {
--- 
-2.52.0
-

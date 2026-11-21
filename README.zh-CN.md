@@ -46,6 +46,22 @@ mise exec -- pnpm run quality:fast
 
 这组命令执行共享 workspace 检查，不获取 Chromium，也不构建两端原生 App。
 
+### 从源码启动 Windows 浏览器
+
+在已配置 Chromium Windows x64 源码和工具链的机器上，从项目根目录运行以下命令。
+
+```powershell
+.\Start-Aegis.ps1
+```
+
+脚本从 `CHROMIUM_ROOT` 或 `apps/browser/.chromium-root` 定位包含 `src` 的目录，也可用 `-ChromiumRoot` 指定。它同步桌面 Chromium 和 V8 补丁、当前工作区的 `apps/browser/overlay` 和 Windows GN 参数，复用 `out/AegisRelease` 增量编译。成功后以 `%LOCALAPPDATA%\Aegis-Dev` 作为独立开发资料目录启动。再次编译前请关闭从该输出目录运行的浏览器。
+
+运行 `.\Start-Aegis.ps1 -CheckOnly` 可预览同步数量并定位编译树中的本地修改冲突。默认使用 4 个编译任务，可通过 `-Jobs` 调整。
+
+Chromium 基线由 `apps/browser/CHROMIUM_COMMIT` 固定。即使源码版本相同，Visual Studio 工具集更新也会改变编译命令，Ninja 会重新编译受影响的目标。
+
+Windows Access 的本地核心只接收 Windows API 返回的 `SystemRoot`，用于初始化 Winsock；不会继承父进程中的 `PATH`、代理变量或密钥。完全清空环境会导致核心报 `The requested service provider could not be loaded or initialized`。本地核心回归测试目标为 `access_local_core_manager_unittests`，其中环境隔离用例会实际创建套接字。节点连通性仍需单独验证，并在浏览器中比较关闭、开启、再关闭本站代理后的出口 IP。
+
 ### 从源码构建 macOS 浏览器
 
 [Browser 指南](apps/browser/README.zh-CN.md)包含主机依赖、`depot_tools`、独立 Chromium 源码、补丁重放、构建与验证步骤。
@@ -58,11 +74,12 @@ mise exec -- pnpm run quality:fast
 
 | 平台 | 阶段 | 状态 |
 | --- | --- | --- |
-| macOS | 当前 | Chromium 集成和 Access Service 持续推进；当前源码的运行与分发验收仍待完成。 |
-| iOS / iPadOS | 已上架 | 原生 SwiftUI/WKWebView 应用。App Store 1.0.0：[美国](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [香港](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
-| Windows / Android / Linux | 后续 | 已有源码和评估入口；当前不承诺近期发行。 |
+| iOS / iPadOS | 已上架维护 | App Store 1.0.0 已公开。当前维护这条已发布线，并验收 Access。[美国](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [香港](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
+| macOS | 争发行资格 | Chromium 集成已在源码中。运行验收和分发资格仍未完成。 |
+| Windows | 同事负责 · 原生验收暂停 | 同事负责 Windows 源码移植和原生验收。runner 准入及原生构建、测试、浏览器和安装器验收按既有决定保持暂停。这条线不阻塞 iOS 或 macOS。 |
+| Android / Linux | 后续 | 已有源码和评估入口；当前不承诺近期发行。 |
 
-macOS 可独立于 iOS 达到发行条件。完成标准见[路线图](docs/roadmap.zh-CN.md)。
+iOS 维护与 macOS 发行资格并行。Windows 保持在负责该轨道的同事手上。Access 顺序和完成标准见[路线图](docs/roadmap.zh-CN.md)。
 
 ## 隐私与 AI
 

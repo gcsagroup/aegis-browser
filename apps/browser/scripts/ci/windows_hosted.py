@@ -28,6 +28,8 @@ ACCESS_CORE_CASES = frozenset([
     'AccessLogExportDialogWindowsTest.FreshSelectionCanFinishAfterRefusedOverwrite',
     'AccessLocalCoreWinInputTest.BuildControlsLocalBinding',
     'AccessLocalCoreWinTest.WrongPinCannotLaunchOrPublish',
+    # 验收必须包含真实套接字及父进程环境隔离，避免新增用例被执行清单遗漏。
+    'AccessLocalCoreWinTest.NetworkEnvironmentRejectsParentSecretsAndOverrides',
     'AccessLocalCoreWinTest.StopCleansProcessTreeAndPrivateConfig',
     'AccessLocalCoreWinTest.SessionEndingCleansWithoutUiReplies',
 ])

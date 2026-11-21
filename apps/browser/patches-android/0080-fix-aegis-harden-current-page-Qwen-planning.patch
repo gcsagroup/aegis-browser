@@ -1,16 +1,9 @@
-From b09c82ca0a7f4263495a0fa1501aaf950fc894c6 Mon Sep 17 00:00:00 2001
+From f4486356d30b6dbd2ebedad81210cdbf13a42f96 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 16:56:03 +0800
 Subject: [PATCH] fix(aegis): harden current-page Qwen planning
 
 ---
- .../aegis/agent/aegis_agent_browsertest.cc    | 41 +++++++++++++++++++
- .../aegis/agent/aegis_agent_service.cc        |  7 ++--
- chrome/browser/aegis/agent/agent_execution.cc |  1 +
- chrome/browser/aegis/agent/agent_planner.cc   |  7 ++--
- .../aegis/agent/agent_planner_unittest.cc     |  9 ++++
- .../aegis_agent/aegis_agent_page_handler.cc   | 11 +++--
- 6 files changed, 67 insertions(+), 9 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 index 96339101da59b6332733dc6af641822faba7b62d..98934585e4bae1d5dd3ed7e07a87314a9adf1202 100644
@@ -216,6 +209,3 @@ index 738f2448dbb3e53e24ea3578b3eb43d0e056143d..5daa9c00688fc12921c19827502e7592
                       std::move(callback));
  }
  
--- 
-2.52.0
-

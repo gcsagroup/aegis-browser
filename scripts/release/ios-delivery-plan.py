@@ -13,7 +13,9 @@ spec.loader.exec_module(receipt)
 
 STAGE_INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
-          'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input', 'signing_mode', 'package_entrypoint', 'private_beta'}
+          'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input', 'signing_mode',
+          'archive_signing', 'package_entrypoint', 'private_beta'}
+ARCHIVE_SIGNING = {'development', 'ad-hoc', 'unsigned'}
 
 
 def require(condition, message):
@@ -47,7 +49,7 @@ def reject_constant(_value):
 
 
 def normalize(event, ref, inputs, mode='simple', source_sha=None):
-    allowed = {'operation', 'product', 'version', 'build', 'signing_mode', 'private_beta', 'approved_source_sha'}
+    allowed = {'operation', 'product', 'version', 'build', 'signing_mode', 'archive_signing', 'private_beta', 'approved_source_sha'}
     if mode == 'full':
         allowed |= {'source', 'groups', 'stage_input', 'package_entrypoint'}
     require(mode in {'simple', 'full'}, 'Unknown delivery mode')
@@ -67,6 +69,7 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None):
     operation = 'wait' if release_wait else receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
     new_package = operation in {'package', 'package-upload', 'draft'}
     signing_mode = inputs.get('signing_mode') or 'cloud'
+    archive_signing = inputs.get('archive_signing') or 'development'
     private_beta = inputs.get('private_beta') or 'no'
     require(private_beta in {'no', 'yes'}, 'Invalid private Beta selection')
     require(private_beta == 'no' or (operation == 'package-upload' and signing_mode == 'manual'
@@ -76,6 +79,9 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None):
     require(entrypoint in {'actions', 'fastlane'}, 'Unknown package entrypoint')
     require(entrypoint == 'actions' or operation in {'package', 'package-upload', 'draft'}, 'Entrypoint applies only to a new package')
     require(signing_mode in {'manual', 'cloud'}, 'Signing mode must be manual or cloud')
+    require(archive_signing in ARCHIVE_SIGNING, 'Archive signing must be development, ad-hoc, or unsigned')
+    require(signing_mode == 'cloud' or archive_signing == 'development',
+            'Manual signing does not select an archive identity')
     require(mode == 'full' or operation in {'package', 'package-upload', 'status', 'wait'}, 'Use the Full workflow for upload and later stages')
     version, build = inputs.get('version', ''), inputs.get('build', '')
     if version or build or operation in {'package', 'package-upload', 'draft', 'status'} or (operation == 'wait' and not inputs.get('source')):
@@ -113,6 +119,7 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None):
     # Workflow defaults accompany every operation. Existing packages select their
     # actual signing verifier from the retained manifest, not this new-package input.
     values['signing_mode'] = signing_mode if new_package else ''
+    values['archive_signing'] = archive_signing if new_package and signing_mode == 'cloud' else ''
     values['package_entrypoint'] = entrypoint
     values['private_beta'] = 'true' if private_beta == 'yes' else 'false'
     if package_upload:
@@ -131,6 +138,7 @@ def _normalize_stage(event, ref, inputs):
         tag, version, profile, build = match.groups()
         values.update(operation='package', profile=profile, version=version, build=build, destination='github-draft', tag=tag)
         values['signing_mode'] = 'cloud'
+        values['archive_signing'] = 'development'
         values['package_entrypoint'] = 'actions'
         values['private_beta'] = 'false'
     else:
