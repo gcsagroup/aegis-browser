@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "reason": "候选209与新主线占用相同序号；保留原始文件和编号，活动序列顺延以维持连续编号，不跳过、合并或删除补丁。",
+  "sourceCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+  "patches": [
+    {
+      "platform": "android",
+      "originalName": "0307-align-mobile-settings-and-expanded-forms.patch",
+      "originalCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+      "originalSha256": "41334f4f9889517c4470d3d15dc3433a6ece1f3c8dd1c02dae53642f0a45815a",
+      "archive": "apps/browser/patches-android/archive/main-20261024/0307-align-mobile-settings-and-expanded-forms.patch",
+      "activeName": "0308-align-mobile-settings-and-expanded-forms.patch",
+      "adaptedSha256": "41334f4f9889517c4470d3d15dc3433a6ece1f3c8dd1c02dae53642f0a45815a"
+    },
+    {
+      "platform": "android",
+      "originalName": "0308-align-mobile-settings-version-248.patch",
+      "originalCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+      "originalSha256": "b452690a8ce2fad60966de15c3eca5bb46adba21a819ab4c69eb6913fb1bd103",
+      "archive": "apps/browser/patches-android/archive/main-20261024/0308-align-mobile-settings-version-248.patch",
+      "activeName": "0309-align-mobile-settings-version-248.patch",
+      "adaptedSha256": "d3c8e17465b8ec850d0116ca81921c07759d9804d95c937827cb43faa8d9f535"
+    },
+    {
+      "platform": "android",
+      "originalName": "0309-fix-android-native-test-support-visibility.patch",
+      "originalCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+      "originalSha256": "ca6f9a99c2b255c72ff767ec19169699708981cb5375864967a2686fc791161a",
+      "archive": "apps/browser/patches-android/archive/main-20261024/0309-fix-android-native-test-support-visibility.patch",
+      "activeName": "0310-fix-android-native-test-support-visibility.patch",
+      "adaptedSha256": "9798d5399e15217455a91f74fcfa61860a0ef4b8fd362a335e2805f233634f22"
+    },
+    {
+      "platform": "android",
+      "originalName": "0310-annotate-android-update-network-249.patch",
+      "originalCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+      "originalSha256": "1ac113238d2b1de1ad76ff31268af2faedad05285e6c2053c07099ffcd68daa8",
+      "archive": "apps/browser/patches-android/archive/main-20261024/0310-annotate-android-update-network-249.patch",
+      "activeName": "0311-annotate-android-update-network-249.patch",
+      "adaptedSha256": "1ac113238d2b1de1ad76ff31268af2faedad05285e6c2053c07099ffcd68daa8"
+    },
+    {
+      "platform": "android",
+      "originalName": "0311-allocate-android-update-storage-250.patch",
+      "originalCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+      "originalSha256": "626672788f72b6fa4ca1ae5ee5542999479e8119f116f4ab93abe1cfd32bb24b",
+      "archive": "apps/browser/patches-android/archive/main-20261024/0311-allocate-android-update-storage-250.patch",
+      "activeName": "0312-allocate-android-update-storage-250.patch",
+      "adaptedSha256": "626672788f72b6fa4ca1ae5ee5542999479e8119f116f4ab93abe1cfd32bb24b"
+    },
+    {
+      "platform": "android",
+      "originalName": "0312-unify-mobile-settings-and-handle-unloaded-tabs-252.patch",
+      "originalCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+      "originalSha256": "9fb44fa33446e93510b29055ee8113b4ff2d70cf94dbd928f9829f31d686b59e",
+      "archive": "apps/browser/patches-android/archive/main-20261024/0312-unify-mobile-settings-and-handle-unloaded-tabs-252.patch",
+      "activeName": "0313-unify-mobile-settings-and-handle-unloaded-tabs-252.patch",
+      "adaptedSha256": "0b38d8363b412646a0e262b6038eccbffc32685b6501ac222cf5e4f333ec94b7"
+    },
+    {
+      "platform": "android",
+      "originalName": "0313-fix-mobile-settings-return-and-platform-copy-255.patch",
+      "originalCommit": "ac34187c413860f64dff88ddc009934c0c28512e",
+      "originalSha256": "ad483d1affaec941391b6dea08a212ebffdf6e604a5e389eb9beac0e88feab8c",
+      "archive": "apps/browser/patches-android/archive/main-20261024/0313-fix-mobile-settings-return-and-platform-copy-255.patch",
+      "activeName": "0314-fix-mobile-settings-return-and-platform-copy-255.patch",
+      "adaptedSha256": "ad483d1affaec941391b6dea08a212ebffdf6e604a5e389eb9beac0e88feab8c"
+    }
+  ]
+}

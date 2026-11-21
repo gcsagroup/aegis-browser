@@ -1,0 +1,132 @@
+From aee6e745685ddc8c61535f5883758fbf94365f38 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 16 Nov 2026 13:54:25 +0800
+Subject: [PATCH] fix(mac): keep unshown Omnibox popup contents hidden
+
+---
+
+diff --git a/chrome/browser/ui/views/omnibox/BUILD.gn b/chrome/browser/ui/views/omnibox/BUILD.gn
+index f1a4d68af5f3cce3b7e39cd5d03b4df2af837e4c..abb4f942b8a17db5580373ee15fa71e1cb89d0ff 100644
+--- a/chrome/browser/ui/views/omnibox/BUILD.gn
++++ b/chrome/browser/ui/views/omnibox/BUILD.gn
+@@ -309,6 +309,10 @@ source_set("browser_tests") {
+     "omnibox_webui_popup_defer_creation_browsertest.cc",
+   ]
+ 
++  if (is_mac) {
++    sources += [ "omnibox_popup_visibility_browsertest.cc" ]
++  }
++
+   deps = [
+     ":omnibox",
+     ":test_support",
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..aee0b252564684e283b94148ad78d3e7c2a0172b
+--- /dev/null
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+@@ -0,0 +1,91 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "base/test/scoped_feature_list.h"
++#include "chrome/browser/ui/omnibox/omnibox_next_features.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_presenter.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_view_webui.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_webui_base_content.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
++#include "chrome/test/base/in_process_browser_test.h"
++#include "components/omnibox/common/omnibox_features.h"
++#include "content/public/browser/visibility.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test.h"
++#include "content/public/test/browser_test_utils.h"
++
++class OmniboxPopupVisibilityBrowserTest
++    : public InProcessBrowserTest,
++      public testing::WithParamInterface<bool> {
++ public:
++  OmniboxPopupVisibilityBrowserTest() {
++    if (GetParam()) {
++      feature_list_.InitWithFeatures(
++          {omnibox::internal::kWebUIOmniboxPopup,
++           omnibox::internal::kWebUIOmniboxAimPopup,
++           omnibox::kWebUIOmniboxFullPopup},
++          {});
++    } else {
++      feature_list_.InitWithFeatures(
++          {omnibox::internal::kWebUIOmniboxPopup,
++           omnibox::internal::kWebUIOmniboxAimPopup},
++          {omnibox::kWebUIOmniboxFullPopup});
++    }
++  }
++
++ private:
++  base::test::ScopedFeatureList feature_list_;
++};
++
++IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
++                       UnshownContentsStayHiddenAndPopupCanReopen) {
++  auto* location_bar = BrowserView::GetBrowserViewForBrowser(browser())
++                           ->toolbar()
++                           ->location_bar_view();
++  ASSERT_TRUE(location_bar);
++  auto* popup_view = static_cast<OmniboxPopupViewWebUI*>(
++      location_bar->GetOmniboxPopupView());
++  ASSERT_TRUE(popup_view);
++  auto* regular = popup_view->presenter();
++  auto* aim = location_bar->GetOmniboxPopupAimPresenter();
++  ASSERT_TRUE(regular);
++  ASSERT_TRUE(aim);
++  ASSERT_TRUE(regular->GetWebUIContent());
++  ASSERT_TRUE(aim->GetWebUIContent());
++  auto* regular_contents = regular->GetWebUIContent()->GetWrappedWebContents();
++  auto* aim_contents = aim->GetWebUIContent()->GetWrappedWebContents();
++  ASSERT_TRUE(regular_contents);
++  ASSERT_TRUE(aim_contents);
++  ASSERT_TRUE(content::WaitForLoadStop(regular_contents));
++  ASSERT_TRUE(content::WaitForLoadStop(aim_contents));
++
++  // Attaching a pre-warmed view to the browser must not make its hidden
++  // renderer submit frames that have no visible native popup to present them.
++  EXPECT_EQ(regular->IsShown() ? content::Visibility::VISIBLE
++                             : content::Visibility::HIDDEN,
++            regular_contents->GetVisibility());
++  EXPECT_FALSE(aim->IsShown());
++  EXPECT_EQ(content::Visibility::HIDDEN, aim_contents->GetVisibility());
++
++  regular->Hide();
++  EXPECT_EQ(content::Visibility::HIDDEN, regular_contents->GetVisibility());
++
++  for (int show = 0; show < 2; ++show) {
++    regular->Show();
++    EXPECT_TRUE(regular->IsShown());
++    EXPECT_EQ(content::Visibility::VISIBLE, regular_contents->GetVisibility());
++    EXPECT_EQ(content::Visibility::HIDDEN, aim_contents->GetVisibility());
++
++    regular->Hide();
++    EXPECT_FALSE(regular->IsShown());
++    EXPECT_EQ(content::Visibility::HIDDEN, regular_contents->GetVisibility());
++  }
++}
++
++INSTANTIATE_TEST_SUITE_P(AllPopupModes,
++                         OmniboxPopupVisibilityBrowserTest,
++                         testing::Bool());
+diff --git a/components/omnibox/common/omnibox_features.cc b/components/omnibox/common/omnibox_features.cc
+index 21f0f8a9733853cd51ec025b1479d9875d2f90b3..da38ed736bc278e78045aa24884818b9de903f71 100644
+--- a/components/omnibox/common/omnibox_features.cc
++++ b/components/omnibox/common/omnibox_features.cc
+@@ -326,7 +326,7 @@ BASE_FEATURE(kOmniboxFullWebUISizeWebViewToPreferredHeight, DISABLED);
+ // When enabled, the Omnibox WebUI popup presenter will explicitly hide the
+ // widget upon creation, preventing pre-warmed child widgets from inheriting
+ // parent window visibility and locking compositor frames.
+-BASE_FEATURE(kOmniboxWebUIPopupHideOnCreation, DISABLED);
++BASE_FEATURE(kOmniboxWebUIPopupHideOnCreation, enable_if(BUILDFLAG(IS_MAC)));
+ 
+ // When enabled, a WebUI omnibox popup presenter creates its native widget on
+ // the first `Show()` instead of when the popup is created with the browser

@@ -1,0 +1,96 @@
+From 0000000000000000000000000000000000000341 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@local>
+Date: Fri, 20 Nov 2026 16:00:00 +0800
+Subject: [PATCH] Adapt Chromium 158 navigation enums and candidate 341
+
+---
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 8612ef233fca03edf1f2d4a48df3bf3601bc604e..ed1407fce0c5d245bb40ea6908653fd2e00f3ffa 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -1445,7 +1445,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        PendingDocumentFactoryClosesWhenTabIsDestroyed) {
+   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
+                 browser(), worker_page_url(),
+-                WindowOpenDisposition::NEW_FOREGROUND_TAB,
++                WindowOpenDisposition::kNewForegroundTab,
+                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
+             nullptr);
+   const size_t healthy_origin_before =
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 1c4d50278b8659e90a13187e04106b0afb280cbf..074c3c2d4a2c311d1c4cb5e52156a73d6a264ea8 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -62,7 +62,7 @@ class AegisUIHandlerTest : public BrowserWithTestWindowTest {
+     // 保留旧辅助方法的真实导航和索引语义，不用模拟列表替代工作区。
+     NavigateParams params(target, url, ui::PAGE_TRANSITION_TYPED);
+     params.tabstrip_index = 0;
+-    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
++    params.disposition = WindowOpenDisposition::kNewForegroundTab;
+     Navigate(&params);
+     CommitPendingLoad(&params.navigated_or_inserted_contents->GetController());
+   }
+diff --git a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+index ad3e77e61eddd4b186ab59e9cf516626642af764..950ff1f67afd930b5ef6fa7dde72d966bfd06a22 100644
+--- a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
++++ b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+@@ -193,7 +193,7 @@ IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, ScrollReloadAndTabActions) {
+   }));
+   ui_test_utils::NavigateToURLWithDisposition(
+       browser(), embedded_test_server()->GetURL("/title2.html"),
+-      WindowOpenDisposition::NEW_FOREGROUND_TAB,
++      WindowOpenDisposition::kNewForegroundTab,
+       ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+   ASSERT_EQ(2, browser()->GetTabStripModel()->count());
+   Gesture(host(), "UL");
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index f8a4f57692dc04ff16d957fde84403b501ad513d..1ad2966a9dd330cd16917679f39845c9d1c88a5d 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -527,7 +527,7 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+ 
+   ui_test_utils::NavigateToURLWithDisposition(
+       browser(), GURL(chrome::kChromeUIAegisURL),
+-      WindowOpenDisposition::NEW_BACKGROUND_TAB,
++      WindowOpenDisposition::kNewBackgroundTab,
+       ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+   content::WebContents* internal_contents =
+       browser()->tab_strip_model()->GetWebContentsAt(1);
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 6e6a70d349122c40079db4185d22e37a9bf89a52..896c23a892ee8cbf2af12783b679181a73e4b3fc 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -399,7 +399,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     if (GetWidget()) {
+       GetWidget()->Close();
+     }
+-    chrome::Reload(browser_, WindowOpenDisposition::CURRENT_TAB);
++    chrome::Reload(browser_, WindowOpenDisposition::kCurrentTab);
+   }
+ 
+   bool CanSummarizeCurrentPage() const {
+@@ -562,7 +562,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   void OpenSettings() {
+     browser_->OpenURL(content::OpenURLParams(
+                           GURL(chrome::kChromeUIAegisURL), content::Referrer(),
+-                          WindowOpenDisposition::NEW_FOREGROUND_TAB,
++                          WindowOpenDisposition::kNewForegroundTab,
+                           ui::PAGE_TRANSITION_LINK, false),
+                       /*navigation_handle_callback=*/{});
+     if (GetWidget()) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 83918a9001b3d3f9a4c47ac73c8d9c2866f7ff43..7c05f9e4bbd16a55d0ad66d31ed3602d2cee869c 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "7.4.0.340";
+-inline constexpr char kProductVersionLabel[] = "Ver 7.4 (340)";
++inline constexpr char kProductVersion[] = "7.5.0.341";
++inline constexpr char kProductVersionLabel[] = "Ver 7.5 (341)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

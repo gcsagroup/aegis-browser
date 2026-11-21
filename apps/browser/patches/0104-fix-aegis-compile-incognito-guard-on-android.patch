@@ -1,11 +1,9 @@
-From 0d1f781db7bc11a098964f3d9704dc6c8d5854b0 Mon Sep 17 00:00:00 2001
+From 5b172d3bb9cae81442aba4fae69cd75275137425 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 04:13:26 +0800
 Subject: [PATCH] fix(aegis): compile incognito guard on Android
 
 ---
- chrome/browser/aegis/aegis_service.cc | 12 ++++++------
- 1 file changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 90ff87fbfcac364598c25785171bae3439891f65..36f242ed25ad17304e75e48c272f7b349024deb0 100644
@@ -32,6 +30,3 @@ index 90ff87fbfcac364598c25785171bae3439891f65..36f242ed25ad17304e75e48c272f7b34
    }
    if (!IsEnabled()) {
      VLOG(1) << "Aegis product disabled; Incognito guard remains active";
--- 
-2.52.0
-

@@ -9,8 +9,12 @@
 #include "base/logging.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/pass_key.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
+#include "chrome/browser/actor/actor_surface_handle.h"
 #include "chrome/browser/actor/execution_engine.h"
+#include "chrome/browser/actor/ui/actor_ui_tab_controller_interface.h"
+#include "chrome/browser/actor/ui/states/handoff_button_state.h"
 #include "chrome/browser/actor/ui/ui_event_debugstring.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/desktop_browser_window_capabilities.h"
@@ -32,7 +36,6 @@
 
 #if !BUILDFLAG(SKIP_ANDROID_UNMIGRATED_ACTOR_FILES)
 #include "chrome/browser/actor/ui/actor_ui_state_manager_prefs.h"
-#include "chrome/browser/actor/ui/actor_ui_tab_controller.h"
 #include "chrome/browser/actor/ui/actor_ui_tab_controller_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"  // nogncheck
@@ -128,6 +131,17 @@ bool MaybeShowToastViaController(BrowserWindowInterface* bwi) {
 #endif
 
 }  // namespace
+
+// static
+ActorUiStateManager* ActorUiStateManager::Get(
+    content::BrowserContext* context) {
+  auto* actor_service = ActorKeyedService::Get(context);
+  if (!actor_service) {
+    return nullptr;
+  }
+  return actor_service->GetActorUiStateManager(
+      base::PassKey<ActorUiStateManager>());
+}
 
 ActorUiStateManager::ActorUiStateManager(ActorKeyedService& actor_service)
     : actor_service_(actor_service) {}
@@ -290,8 +304,8 @@ void ActorUiStateManager::OnActorTaskStateChange(
 std::vector<tabs::TabInterface*> ActorUiStateManager::GetTabs(TaskId id) {
   if (ActorTask* task = actor_service_->GetTask(id)) {
     std::vector<tabs::TabInterface*> tabs;
-    for (const tabs::TabHandle& handle : task->GetTabs()) {
-      if (tabs::TabInterface* tab = handle.Get()) {
+    for (ActorSurfaceHandle actor_surface_handle : task->GetActorSurfaces()) {
+      if (tabs::TabInterface* tab = actor_surface_handle.GetTabHandle().Get()) {
         tabs.push_back(tab);
       }
     }
@@ -426,6 +440,9 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
               tab_controller->OnUiTabStateChange(
                   kCompletedUiTabState, base::BindOnce(&LogUiChangeError));
             }
+          },
+          [](const TaskStepProgressUpdated&) {
+            // TODO(b/573229718): Show the text next to the magic cursor.
           }},
       event);
 }
@@ -506,10 +523,16 @@ std::optional<std::string> ActorUiStateManager::GetActorTaskTitle(TaskId id) {
 std::optional<raw_ptr<tabs::TabInterface>>
 ActorUiStateManager::GetLastActedOnTab(TaskId id) {
   if (ActorTask* task = actor_service_->GetTask(id)) {
-    actor::ActorTask::TabHandleSet tabs = task->GetLastActedTabs();
     // TODO(crbug.com/441064175): Will need to be updated for multi-tab
     // actuation.
-    return tabs.empty() ? nullptr : tabs.begin()->Get();
+    for (ActorSurfaceHandle actor_surface_handle :
+         task->GetLastActedActorSurfaces()) {
+      if (tabs::TabHandle tab = actor_surface_handle.GetTabHandle();
+          tab != tabs::TabHandle::Null()) {
+        return tab.Get();
+      }
+    }
+    return nullptr;
   }
   if (auto it = stopped_task_info_.find(id); it != stopped_task_info_.end()) {
     return it->second.last_acted_on_tab_handle.Get();
@@ -546,6 +569,34 @@ void ActorUiStateManager::LazyInitTabTracker() {
   }
 }
 #endif
+
+base::WeakPtr<ActorNavigationThrottle::Delegate>
+ActorUiStateManager::GetNavigationDelegate() {
+  return weak_factory_.GetWeakPtr();
+}
+
+bool ActorUiStateManager::MaybeDeferNavigation(
+    tabs::TabInterface* tab,
+    const GURL& url,
+    NavigationConfirmedCallback callback) {
+  if (!tab || !actor_service_->IsActiveOnTab(*tab)) {
+    return false;
+  }
+  if (auto* tab_controller = ActorUiTabControllerInterface::From(tab)) {
+    return tab_controller->MaybeDeferNavigation(tab, url, std::move(callback));
+  }
+  return false;
+}
+
+void ActorUiStateManager::CancelNavigationConfirmation(
+    tabs::TabInterface* tab) {
+  if (!tab) {
+    return;
+  }
+  if (auto* tab_controller = ActorUiTabControllerInterface::From(tab)) {
+    tab_controller->CancelNavigationConfirmation(tab);
+  }
+}
 
 void ActorUiStateManager::SetTabPendingActuation(tabs::TabHandle tab_handle) {
   tabs::TabInterface* tab = tab_handle.Get();

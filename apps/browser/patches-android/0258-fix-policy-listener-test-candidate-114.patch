@@ -1,4 +1,4 @@
-From 7a68f5ab6552b9eae3e794cbf02fc9e74c25f497 Mon Sep 17 00:00:00 2001
+From 6ebfbfc05159196e7ddf9923c648d52e03cf25b5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 6 Oct 2026 18:04:38 +0800
 Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E7=AD=96=E7=95=A5?=
@@ -9,12 +9,9 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- ...fm_registration_token_uploader_unittest.cc | 28 +------------------
- .../ui/webui/help/aegis_github_update.h       |  4 +--
- 2 files changed, 3 insertions(+), 29 deletions(-)
 
 diff --git a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
-index 7e5ae56b7a825492378e1c8051239b73255f157c..ca68645749ecc187cb88549998b4f3d75adb99b3 100644
+index ce13ca764b7b718d4e40a36e1ac1e7520026702c..fd4927b291cda7c808d55bd51b658ad68999daf7 100644
 --- a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 +++ b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 @@ -17,7 +17,6 @@
@@ -61,7 +58,7 @@ index 7e5ae56b7a825492378e1c8051239b73255f157c..ca68645749ecc187cb88549998b4f3d7
  struct ListenerCounters {
    size_t created = 0;
    size_t started = 0;
-@@ -375,11 +353,8 @@ class UserFmRegistrationTokenUploaderTest : public testing::Test {
+@@ -400,11 +378,8 @@ class UserFmRegistrationTokenUploaderTest : public testing::Test {
    }
  
    std::unique_ptr<KeyedService> BuildInvalidationProvider(
@@ -74,7 +71,7 @@ index 7e5ae56b7a825492378e1c8051239b73255f157c..ca68645749ecc187cb88549998b4f3d7
          base::BindRepeating(
              &UserFmRegistrationTokenUploaderTest::CreateListener,
              base::Unretained(this)));
-@@ -408,7 +383,6 @@ class UserFmRegistrationTokenUploaderTest : public testing::Test {
+@@ -433,7 +408,6 @@ class UserFmRegistrationTokenUploaderTest : public testing::Test {
    }
  
    content::BrowserTaskEnvironment task_environment_;
@@ -97,6 +94,3 @@ index 0e6a1022c65cbfed3ecd7493b47d417daec05863..a426ff959efcf6b0c73b553f36a1c7de
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

@@ -1188,7 +1188,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   std::unique_ptr<net::test_server::HttpResponse> LifecycleReply(
       bool proxy, const net::test_server::HttpRequest& request) {
-    const std::string path = request.GetURL().path();
+    const std::string path(request.GetURL().path());
     if (!path.starts_with("/aegis-lifecycle/"))
       return nullptr;
     {
@@ -1652,7 +1652,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        PendingDocumentFactoryClosesWhenTabIsDestroyed) {
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
                 browser(), worker_page_url(),
-                WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   const size_t healthy_origin_before =

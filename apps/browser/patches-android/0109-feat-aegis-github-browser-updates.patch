@@ -1,4 +1,4 @@
-From d1a0374f84381c0d70776c55147cb4f943f8eb0d Mon Sep 17 00:00:00 2001
+From 6501da8e9c5a1a22e48880149b9be8082ae76b6d Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:03:47 +0800
 Subject: [PATCH] =?UTF-8?q?feat(aegis):=20=E4=BB=8E=20GitHub=20=E6=A3=80?=
@@ -8,24 +8,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/app/app-Info.plist                     |   5 +
- .../settings/about_page/about_page.html.ts    |   9 +
- .../settings/about_page/about_page.ts         |  20 +
- .../about_page/about_page_browser_proxy.ts    |   1 +
- chrome/browser/ui/webui/help/BUILD.gn         |  67 ++++
- .../ui/webui/help/aegis_github_update.cc      | 377 ++++++++++++++++++
- .../ui/webui/help/aegis_github_update.h       |  94 +++++
- .../help/aegis_github_update_unittest.cc      | 217 ++++++++++
- .../browser/ui/webui/help/version_updater.h   |   3 +
- .../ui/webui/help/version_updater_basic.cc    |  77 +++-
- .../ui/webui/settings/about_handler.cc        |  17 +
- .../browser/ui/webui/settings/about_handler.h |   1 +
- .../settings_localized_strings_provider.cc    |   7 +-
- .../data/webui/settings/about_page_test.ts    |  28 +-
- 14 files changed, 901 insertions(+), 22 deletions(-)
- create mode 100644 chrome/browser/ui/webui/help/aegis_github_update.cc
- create mode 100644 chrome/browser/ui/webui/help/aegis_github_update.h
- create mode 100644 chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
 index 6fada0a2b1a1f4b5675fc657a3a7b2337e43c4a1..4d057cee650d317cc7a6ef516c6ac19697c3afcb 100644
@@ -64,10 +46,10 @@ index 41d9a627b014317aedf17b02b82fd2e49075971c..565719769dde457fbde34d08987506ef
  <if expr="not is_chromeos">
      <div class="separator" ?hidden="${!this.showButtonContainer_}"></div>
 diff --git a/chrome/browser/resources/settings/about_page/about_page.ts b/chrome/browser/resources/settings/about_page/about_page.ts
-index 2f474183de0902f77a3fc6aaa56a4fdd8af0215e..154ea1ed24fcb07ac854acdeb86d970eb383aedb 100644
+index 9a0190d5d2cd08da22a65c83d8df4bb76e40db13..eab9b6c8e5e878c67d49f6173adbeb12b2617b6e 100644
 --- a/chrome/browser/resources/settings/about_page/about_page.ts
 +++ b/chrome/browser/resources/settings/about_page/about_page.ts
-@@ -226,6 +226,18 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
+@@ -225,6 +225,18 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
      this.aboutBrowserProxy_.openHelpPage();
    }
  
@@ -86,7 +68,7 @@ index 2f474183de0902f77a3fc6aaa56a4fdd8af0215e..154ea1ed24fcb07ac854acdeb86d970e
    protected onRelaunchClick_() {
      this.performRestart(RestartType.RELAUNCH);
    }
-@@ -246,6 +258,14 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
+@@ -245,6 +257,14 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
    }
  
    protected getUpdateStatusMessage_(): TrustedHTML {
@@ -114,7 +96,7 @@ index 10bea4664af533ce109211c0ce8ec71f1fbc6ae2..1f9ef2349186371017067cf9730e7669
    progress?: number;
    message?: string;
 diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
-index 232867c13042d1f25f5374bc3b33282c41b42366..641db50d1b50e0324a393d626600aa2f908d016b 100644
+index a867b93e9698940d093e4cdb3b0b75397f2b3657..70a4f90ff69cc3ca3a983dbdd91ae0846148a711 100644
 --- a/chrome/browser/ui/webui/help/BUILD.gn
 +++ b/chrome/browser/ui/webui/help/BUILD.gn
 @@ -4,6 +4,7 @@
@@ -125,7 +107,7 @@ index 232867c13042d1f25f5374bc3b33282c41b42366..641db50d1b50e0324a393d626600aa2f
  
  source_set("help") {
    public = [ "version_updater.h" ]
-@@ -52,6 +53,14 @@ source_set("help") {
+@@ -56,6 +57,14 @@ source_set("help") {
        frameworks = [ "Foundation.framework" ]
      } else {
        sources = [ "version_updater_basic.cc" ]
@@ -140,7 +122,7 @@ index 232867c13042d1f25f5374bc3b33282c41b42366..641db50d1b50e0324a393d626600aa2f
      }
    }
  
-@@ -70,11 +79,27 @@ source_set("help") {
+@@ -74,11 +83,27 @@ source_set("help") {
        ]
      } else {
        sources = [ "version_updater_basic.cc" ]
@@ -168,7 +150,7 @@ index 232867c13042d1f25f5374bc3b33282c41b42366..641db50d1b50e0324a393d626600aa2f
    }
  }
  
-@@ -108,3 +133,45 @@ if (!is_android) {
+@@ -112,3 +137,45 @@ if (!is_android) {
      }
    }
  }
@@ -1051,7 +1033,7 @@ index 891cc395c269e6e05bffb76104d12199ab17a725..d4ada4774a7876adfd0f69f607b83d2e
 +  return std::make_unique<VersionUpdaterBasic>(web_contents);
  }
 diff --git a/chrome/browser/ui/webui/settings/about_handler.cc b/chrome/browser/ui/webui/settings/about_handler.cc
-index 2352aa8beeab40fa07ffddb280304b1777144f42..e04cd34f97d32271e943951ce7ec4a6fe8aacd8e 100644
+index 2f0eca6dc98a1906d8593b20bc4fb7c47d9e81e8..a53cc1b31e3b2ed2f0f546e28e26947997d9afa4 100644
 --- a/chrome/browser/ui/webui/settings/about_handler.cc
 +++ b/chrome/browser/ui/webui/settings/about_handler.cc
 @@ -28,6 +28,7 @@
@@ -1072,7 +1054,7 @@ index 2352aa8beeab40fa07ffddb280304b1777144f42..e04cd34f97d32271e943951ce7ec4a6f
    web_ui()->RegisterMessageCallback(
        "aboutPageReady", base::BindRepeating(&AboutHandler::HandlePageReady,
                                              base::Unretained(this)));
-@@ -870,6 +874,17 @@ void AboutHandler::OnExtendedUpdatesSettingChanged() {
+@@ -871,6 +875,17 @@ void AboutHandler::OnExtendedUpdatesSettingChanged() {
  
  #endif  // BUILDFLAG(IS_CHROMEOS)
  
@@ -1090,7 +1072,7 @@ index 2352aa8beeab40fa07ffddb280304b1777144f42..e04cd34f97d32271e943951ce7ec4a6f
  void AboutHandler::RequestUpdate() {
    version_updater_->CheckForUpdate(
        base::BindRepeating(&AboutHandler::SetUpdateStatus,
-@@ -895,6 +910,8 @@ void AboutHandler::SetUpdateStatus(VersionUpdater::Status status,
+@@ -897,6 +912,8 @@ void AboutHandler::SetUpdateStatus(VersionUpdater::Status status,
    base::DictValue event;
    event.Set("status", UpdateStatusToString(status));
    event.Set("message", message);
@@ -1112,10 +1094,10 @@ index d9b2085047ed09ed8f717f093919b1f472808e1f..108e87dfe7da6448141ad5dd8419b292
  #if BUILDFLAG(IS_MAC)
    // Promotes the updater for all users.
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index c88da50a589cd9b20f714950a7a875682469cae3..ab07496994758aaf0a23107916641d210a1e650b 100644
+index 2d7fb046f6610c751097f71b76815475850da58c..76319f9334f31fb1ffe92beb779c0e7ca40b9ed9 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -356,11 +356,16 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -382,11 +382,16 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
    browser_version = VersionUI::GetAnnotatedVersionStringForUi();
  #else
    browser_version = base::StrCat(
@@ -1182,6 +1164,3 @@ index 6bd195aaec963da8945940563378279f2e987ea5..bbb7cd263ac6601045cf3d9dc2787e01
    test('DisabledWithMessage', async function() {
      fireStatusChanged(
          UpdateStatus.DISABLED,
--- 
-2.52.0
-
