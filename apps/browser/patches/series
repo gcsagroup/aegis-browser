@@ -533,3 +533,4 @@
 0533-fix-preserve-aegis-context-menu-uma.patch
 0534-test-access-private-routing-fixtures.patch
 0535-validate-private-redirects-and-popup-lifecycle.patch
+0536-restore-independent-access-rules.patch

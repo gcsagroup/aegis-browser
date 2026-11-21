@@ -354,3 +354,4 @@
 0354-fix-preserve-aegis-context-menu-uma.patch
 0355-test-access-private-routing-fixtures.patch
 0356-validate-private-redirects.patch
+0357-restore-independent-access-rules.patch
