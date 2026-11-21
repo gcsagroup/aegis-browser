@@ -256,7 +256,10 @@ export async function requireIosAdministrator({environment = process.env, api = 
     const humans = principals.filter(user => user.type !== 'Bot');
     if (humans.length) {
       const admins = await administratorInventory(repository, token, api);
-      requireValue(humans.every(user => admins.some(a => sameUser(a, user))), 'Repository Admin grant required for original actor and rerunner');
+      requireValue(humans.every(user => admins.some(a => sameUser(a, user))),
+        'Repository Admin grant required for original actor and rerunner; '+
+        `待验证身份=${JSON.stringify(humans.map(({id: userId, login}) => ({id: userId, login})))}, `+
+        `API 管理员列表=${JSON.stringify(admins.map(({id: userId, login}) => ({id: userId, login})))}`);
     }
     return {authorized: true, repository, mode: 'actions_run', runId: id, attempt, principals: principals.map(({id: userId, login}) => ({id: userId, login}))};
   } catch (error) {
