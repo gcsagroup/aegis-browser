@@ -356,3 +356,4 @@
 0356-validate-private-redirects.patch
 0357-restore-independent-access-rules.patch
 0358-assert-scoped-request-cancellation.patch
+0359-preserve-access-routing-and-platform-coverage.patch

@@ -23,6 +23,7 @@
 #include "base/run_loop.h"
 #include "base/synchronization/lock.h"
 #include "base/unguessable_token.h"
+#include "base/test/bind.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_run_loop_timeout.h"
@@ -69,6 +70,7 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
+#include "content/public/test/url_loader_interceptor.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/auth.h"
@@ -77,6 +79,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -610,6 +613,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
         &ServiceWorkerOriginReply, base::Unretained(&origin_requests_)));
     target_origin_.RegisterRequestHandler(base::BindRepeating(
         &CountAndReply, base::Unretained(&origin_requests_), "origin"));
+    held_proxy_response_.emplace(&proxy_server_, "/held-access-response");
     proxy_server_.RegisterRequestHandler(
         base::BindRepeating(&IgnoreAutomaticFavicon));
     proxy_server_.RegisterRequestHandler(base::BindRepeating(
@@ -1401,6 +1405,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
   std::optional<aegis_access::PolicyPublicationIdentity> last_lifecycle_ack_;
   net::test_server::EmbeddedTestServer target_origin_;
   net::test_server::EmbeddedTestServer proxy_server_;
+  std::optional<net::test_server::ControllableHttpResponse> held_proxy_response_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
   std::optional<aegis_access::OwnershipKey> owner_;
 };
@@ -2140,6 +2145,13 @@ IN_PROC_BROWSER_TEST_F(AccessRestoredProxyRuleBrowserTest,
        CurrentBaseProxyGeneration()});
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
   ExpectRoutingDelta(0, 0, /*origin_delta=*/0u, /*proxy_delta=*/1u);
+  // Hold a response from the selected proxy across the rejected publication.
+  ASSERT_TRUE(content::ExecJs(web_contents(), R"(
+      window.redirectResult =
+          fetch('/held-access-response').then(response => response.text());
+      true;
+  )"));
+  held_proxy_response_->WaitForRequest();
   auto request = PreparedNavigationRequest(*owner_);
   for (auto& member : request.candidate_members) {
     member.proxy_group_id = "conflicting-group";
@@ -2160,10 +2172,13 @@ IN_PROC_BROWSER_TEST_F(AccessRestoredProxyRuleBrowserTest,
   EXPECT_EQ(result.Get().store_status, StoreStatus::kValid);
   const auto* restored = runtime->GetPublishedPolicySnapshot(*owner_);
   ASSERT_TRUE(restored);
-  EXPECT_EQ(restored->owner, published_before.owner);
-  EXPECT_EQ(restored->rules, published_before.rules);
-  // Recovery reserves a new publication for the same committed rules.
-  EXPECT_GT(restored->policy_generation, published_before.policy_generation);
+  EXPECT_EQ(*restored, published_before);
+  held_proxy_response_->Send(
+      "HTTP/1.1 302 Found\r\nLocation: /after-inflight-redirect\r\n"
+      "Content-Length: 0\r\n\r\n");
+  held_proxy_response_->Done();
+  EXPECT_EQ("proxy", content::EvalJs(web_contents(), "window.redirectResult"));
+  ExpectRoutingDelta(0, 0, /*origin_delta=*/0u, /*proxy_delta=*/2u);
   const auto persisted =
       coordinator->ReadCommittedSnapshot(owner_->storage_partition_token);
   ASSERT_TRUE(persisted.value);
@@ -2952,9 +2967,25 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        BlockBarrierTerminatesInFlightProxyRequest) {
   PublishProxyPolicy(/*publish_endpoint=*/true);
+  content::WebContents* selected_tab = web_contents();
+  auto* survivor_frame = ui_test_utils::NavigateToURLWithDisposition(
+      browser(), target_url(), WindowOpenDisposition::kNewBackgroundTab,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+  ASSERT_TRUE(survivor_frame);
+  ASSERT_EQ(web_contents(), selected_tab);
+  ASSERT_NE(survivor_frame, selected_tab->GetPrimaryMainFrame());
+  ASSERT_EQ(survivor_frame->GetBrowserContext(),
+            selected_tab->GetBrowserContext());
+  ASSERT_TRUE(content::ExecJs(survivor_frame, R"(
+      window.survivorResult =
+          fetch('/held-access-response').then(response => response.text());
+      true;
+  )"));
+  held_proxy_response_->WaitForRequest();
+  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
   StartPendingFetch(hanging_url());
   ASSERT_TRUE(base::test::RunUntil([&] {
-    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
+    return proxy_requests_.load(std::memory_order_relaxed) == proxy_before + 1;
   }));
   EXPECT_EQ(PendingFetchState(), "pending");
 
@@ -2963,9 +2994,9 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   auto* dispatch_state =
       AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
   ASSERT_NE(dispatch_state, nullptr);
-  // Other page requests may also be registered for this profile.
+  // Both documents now have a live request at the selected proxy.
   const size_t ownership_before = dispatch_state->ownership().size();
-  ASSERT_GE(ownership_before, 1u);
+  ASSERT_GE(ownership_before, 2u);
   const AccessBlockAndCancelResult result =
       dispatch_state->InstallBlockBarrierAndCancelMatching(
           {"block-browser-0136", 1, std::move(selector)});
@@ -2979,6 +3010,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
 
   EXPECT_TRUE(base::test::RunUntil(
       [&] { return PendingFetchState() == "blocked"; }));
+  held_proxy_response_->Send(net::HTTP_OK, "text/plain", "surviving-proxy-body");
+  held_proxy_response_->Done();
+  EXPECT_EQ("surviving-proxy-body",
+            content::EvalJs(survivor_frame, "window.survivorResult"));
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
 }
 
@@ -3099,6 +3134,27 @@ IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
   const std::optional<int> completion_error = StartPrefetchAndWait(target_url());
   ASSERT_TRUE(completion_error.has_value());
   EXPECT_EQ(*completion_error, net::OK);
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/1u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
+                       FreshFactoryPreservesBrowserProcessInterceptor) {
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+  const GURL resource = target_url().Resolve("/intercepted-prefetch");
+  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  std::atomic<int> observations{0};
+  content::URLLoaderInterceptor interceptor(base::BindLambdaForTesting(
+      [&](content::URLLoaderInterceptor::RequestParams* params) {
+        if (params->url_request.url == resource &&
+            params->process_id == network::mojom::kBrowserProcessId) {
+          ++observations;
+        }
+        return false;  // Continue through the installed private terminal.
+      }));
+  ASSERT_EQ(StartPrefetchAndWait(resource), net::OK);
+  EXPECT_EQ(observations.load(), 1);
   ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
                      /*proxy_delta=*/1u);
 }
