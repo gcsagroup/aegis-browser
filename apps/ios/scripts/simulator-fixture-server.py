@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """仅监听本机的模拟器验收服务；网页与模型响应均为明确的合成资料。"""
 import argparse
+import faulthandler
 import hashlib
 import json
 import re
@@ -341,6 +342,9 @@ if __name__ == "__main__":
     if args.self_test:
         self_test()
     else:
+        # 保留 CI 启动停滞时的调用栈，正常启动不产生日志。
+        faulthandler.dump_traceback_later(10)
         server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+        faulthandler.cancel_dump_traceback_later()
         print(json.dumps({"base_url": f"http://127.0.0.1:{server.server_port}", "download_sha256": hashlib.sha256(PAYLOAD).hexdigest(), "model": "aegis-simulator-fixture"}), flush=True)
         server.serve_forever()
