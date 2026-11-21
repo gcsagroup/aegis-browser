@@ -11,18 +11,18 @@ const action = parse(readFileSync('.github/actions/ensure-ios-ruby/action.yml', 
 const script = action.runs.steps[0].run;
 const macOS = {skip: process.platform !== 'darwin'};
 
-async function runShell(source, env) {
-  return await new Promise((resolve, reject) => {
+function runShell(source, env) {
+  return new Promise((resolve, reject) => {
     const child = spawn('/bin/bash', ['-c', source], {env});
     let output = '';
     child.stdout.on('data', data => { output += data; });
     child.stderr.on('data', data => { output += data; });
-    child.on('error', reject);
-    child.on('close', code => resolve({code, output}));
+    child.on('error', error => { reject(error); });
+    child.on('close', code => { resolve({code, output}); });
   });
 }
 
-async function exercise(proxies) {
+const exercise = async (proxies) => {
   const root = mkdtempSync(join(tmpdir(), 'aegis-ruby-action-'));
   try {
     const tooling = join(root, 'tooling');
@@ -52,7 +52,7 @@ async function exercise(proxies) {
   } finally {
     rmSync(root, {recursive: true, force: true});
   }
-}
+};
 
 test('Ruby 路径跨步骤保留，可用的小写 HTTP 代理优先于失效的其他代理', macOS, async () => {
   const server = createServer(socket => socket.end());
