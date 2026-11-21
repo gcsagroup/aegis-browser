@@ -23,8 +23,8 @@ def canonical(value):
 def allocation(application, version, build):
     if application != APPLICATION_ID:
         raise ValueError('Invalid Android delivery allocation')
-    require_version_code(version, build)
-    return hashlib.sha256(canonical([application, 'ANDROID', version, build]).encode()).hexdigest()
+    version_code = require_version_code(version, build)
+    return hashlib.sha256(canonical([application, 'ANDROID', version_code]).encode()).hexdigest()
 
 
 class GitHub:

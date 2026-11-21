@@ -5,9 +5,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 from urllib.parse import quote
+import xml.etree.ElementTree as ET
 import zipfile
 
 
@@ -67,6 +69,45 @@ def zip_symbols(out_dir, destination):
     archive.assert_symbols(destination)
 
 
+def producer_output(run_id):
+    chromium = Path(os.environ['CHROMIUM_ROOT']).resolve(strict=True)
+    return chromium, chromium / 'src' / 'out' / f'AegisAndroidDelivery-{run_id}-1'
+
+
+def verify_bundle_manifest(chromium, aab, build):
+    jar = chromium / 'src/third_party/android_build_tools/bundletool/cipd/bundletool.jar'
+    require(jar.is_file(), 'The pinned Chromium bundletool is missing')
+    output = subprocess.run(['java', '-jar', str(jar), 'dump', 'manifest',
+                             '--bundle=' + str(aab), '--module=base'],
+                            capture_output=True, timeout=120, check=True)
+    manifest = ET.fromstring(output.stdout)
+    android = '{http://schemas.android.com/apk/res/android}'
+    application = manifest.find('application')
+    require(manifest.tag == 'manifest' and manifest.get('package') == archive.APPLICATION_ID
+            and manifest.get(android + 'versionCode') == build,
+            'Generated Android bundle package or versionCode differs from the producer')
+    require(application is not None and application.get(android + 'debuggable', 'false') == 'false',
+            'Generated App Bundle is debuggable')
+
+
+def retire_producer_output():
+    pending = json.loads((ROOT / '.artifacts/android-delivery/package-pending.json').read_bytes())
+    run_id = int(os.environ['GITHUB_RUN_ID'])
+    sha = os.environ['GITHUB_SHA']
+    origin = pending['origin']
+    require(os.environ['GITHUB_RUN_ATTEMPT'] == '1' and origin['runId'] == run_id and origin['sourceSha'] == sha,
+            'Android producer cleanup does not own this run')
+    key = records.allocation(archive.APPLICATION_ID, pending['version'], pending['build'])
+    record = release._store().read('package', key)
+    require(record is not None and record['origin'] == origin,
+            'Retain Android producer output until the sealed artifact is recorded')
+    _, output = producer_output(run_id)
+    marker = output / '.aegis-producer'
+    require(output.is_dir() and output.resolve() == output and not marker.is_symlink()
+            and marker.read_text() == f'{run_id}\n{sha}\n', 'Cannot prove ownership of Android producer output')
+    shutil.rmtree(output)
+
+
 def build_and_seal(plan):
     identity = source_identity()
     require(identity['sha'] == os.environ['GITHUB_SHA'], 'Android producer checkout differs from workflow source')
@@ -75,8 +116,7 @@ def build_and_seal(plan):
     require(os.environ.get('GITHUB_RUN_ATTEMPT') == '1', 'Package attempt must stay on the first run')
     run_id = int(os.environ['GITHUB_RUN_ID'])
     certificate = verifier.normalize_certificate(os.environ['AEGIS_ANDROID_CERT_SHA256'])
-    chromium = Path(os.environ['CHROMIUM_ROOT']).resolve(strict=True)
-    out = chromium / 'src' / 'out' / f'AegisAndroidDelivery-{run_id}-1'
+    chromium, out = producer_output(run_id)
     release_dir = ROOT / '.artifacts/android-delivery'
     release_dir.mkdir(parents=True, exist_ok=True)
     # The unsigned AAB and symbols must come from this run's empty GN output.
@@ -86,6 +126,7 @@ def build_and_seal(plan):
     require(source_identity() == identity, 'Android producer source changed during the build')
     unsigned = out / 'apks/ChromePublic.aab'
     archive.assert_aab(unsigned)
+    verify_bundle_manifest(chromium, unsigned, identity['build'])
     with tempfile.TemporaryDirectory(prefix='producer-', dir=release_dir) as temp:
         signed = Path(temp) / 'signed.aab'
         signing = subprocess.run([
@@ -179,10 +220,9 @@ def approved_package(plan, store):
             and isinstance(record.get('artifact_digest'), str)
             and re.fullmatch(r'sha256:[0-9a-f]{64}', record['artifact_digest']) is not None,
             'Android package record does not bind an exact producer and artifact')
+    require(origin['sourceSha'] == os.environ['GITHUB_SHA'], 'Package source differs from the admitted workflow source')
     if pinned:
         require(origin['manifestSha256'] == plan['manifest_sha256'], 'Approved Android receipt manifest digest differs')
-    else:
-        require(origin['sourceSha'] == os.environ['GITHUB_SHA'], 'Same-run package source differs from workflow source')
     return record
 
 
@@ -227,22 +267,50 @@ def validate_query(plan):
             'Status cannot select a track, tag, or mutation')
 
 
+def emit_receipt(record, upload_run_id=None):
+    origin = record['origin']
+    packaged = origin['runId']
+    upload = upload_run_id is not None
+    target = receipt.encode(record['profile'], record['version'], record['build'], packaged,
+                            upload_run_id if upload else packaged, origin['attempt'], origin['manifestSha256'], draft=upload)
+    path = os.environ.get('GITHUB_STEP_SUMMARY')
+    if path:
+        with Path(path).open('a') as output:
+            output.write(f'\n### Android delivery receipt\n\n`{target}`\n')
+    else:
+        print(target)
+
+
 def play_stage(plan, package_dir, client, store):
     version, build = plan['version'], plan['build']
     code = receipt.require_version_code(version, build)
     key = records.allocation(archive.APPLICATION_ID, version, build)
+    approved = approved_package(plan, store)
+    verify_approved_package(plan, package_dir, approved)
+    origin = approved['origin']
+    source = {'source': {'sha': origin['sourceSha'], 'tree': origin['sourceTree']}}
     if plan['operation'] in {'package-upload', 'upload'}:
+        require(os.environ.get('GITHUB_RUN_ATTEMPT') == '1', 'Play upload requires the first workflow attempt')
+        upload_run_id = int(os.environ['GITHUB_RUN_ID'])
         require_absent(version, build, store, ('upload-start', 'upload-result'))
-        approved = approved_package(plan, store)
-        verify_approved_package(plan, package_dir, approved)
-        intent = play.draft_intent(version, build, plan['profile'], approved['origin']['manifestSha256'], plan['track'])
+        intent = play.draft_intent(version, build, plan['profile'], origin['manifestSha256'], plan['track'])
+        release._assert_current_release_source(source)
         store.create('upload-start', key, intent)
         result = client.upload_draft(Path(package_dir) / archive.asset_names(version, build)[0], code, plan['track'])
-        store.create('upload-result', key, {'intent': intent, 'result': result})
+        store.create('upload-result', key, {'intent': intent, 'result': result,
+                                          'uploadRunId': upload_run_id, 'uploadRunAttempt': 1})
+        emit_receipt(approved, upload_run_id)
         return result
+    require(plan['operation'] in {'distribute', 'submit'}, 'Unsupported Play stage')
+    receipt_run = plan.get('upload_run_id')
+    terminal = store.read('upload-result', key)
+    require(isinstance(terminal, dict) and receipt_run and receipt_run == str(terminal.get('uploadRunId')),
+            'Track changes require a receipt for the recorded Play upload')
+    release.verify_play_upload(plan, origin, store.read('upload-start', key), terminal,
+                               release.load_upload_run(terminal))
+    release._assert_current_release_source(source)
     if plan['operation'] == 'distribute':
         return client.update_track(code, plan['track'], 'inProgress', plan['user_fraction'])
-    require(plan['operation'] == 'submit', 'Unsupported Play stage')
     return client.update_track(code, 'production', 'completed', '')
 
 
@@ -259,6 +327,9 @@ def main():
     if command == 'package':
         build_and_seal(value)
         return
+    if command == 'retire-producer-output':
+        retire_producer_output()
+        return
     if command == 'record-package':
         pending = json.loads((ROOT / '.artifacts/android-delivery/package-pending.json').read_text())
         run_id = int(os.environ['GITHUB_RUN_ID'])
@@ -269,7 +340,8 @@ def main():
         jobs = release._get_jobs(run_id)
         job_matches = [job for job in jobs if job.get('name') == 'delivery / package']
         require(len(job_matches) == 1 and release.is_id(job_matches[0].get('id')), 'Package job identity is ambiguous')
-        record_package(pending, matches[0], job_matches[0]['id'], release._store())
+        record = record_package(pending, matches[0], job_matches[0]['id'], release._store())
+        emit_receipt(record)
         return
     if command == 'import':
         import_package(value, release._store(), ROOT / '.artifacts/android-delivery/unpacked')
@@ -290,15 +362,15 @@ def stage_draft(plan, package_dir):
     approved = approved_package(plan, release._store())
     manifest = verify_approved_package(plan, package_dir, approved)
     assets = {row['name']: row['sha256'] for row in manifest['assets']}
+    origin = approved['origin']
+    source = {'source': {'sha': origin['sourceSha'], 'tree': origin['sourceTree']}}
     tag = plan['tag']
     head = git_output('rev-parse', 'HEAD')
     commit = release._api('commits/' + quote(tag, safe=''))
     require(commit.get('sha') == head, 'Candidate tag does not point at this source')
-    try:
-        existing = release._api('releases/tags/' + quote(tag, safe=''))
-    except release.NotFoundError:
-        existing = None
+    existing = release._release_by_tag(tag)
     if existing is None:
+        release._assert_current_release_source(source)
         existing = release._api('releases', {'tag_name': tag, 'target_commitish': head, 'name': tag,
                                             'body': 'Aegis Android candidate draft\n', 'draft': True,
                                             'prerelease': True, 'make_latest': 'false'})
@@ -308,6 +380,7 @@ def stage_draft(plan, package_dir):
     for row in manifest['assets']:
         if row['name'] in present:
             continue
+        release._assert_current_release_source(source)
         release._upload_asset_once(existing['id'], {'name': row['name'], 'size': row['size'],
                                                    'sha256': row['sha256'], 'path': str(Path(package_dir) / row['name'])})
     proof_dir = ROOT / '.artifacts/release/android' / plan['build']
@@ -324,12 +397,12 @@ def is_draft(release_row, tag):
 
 def sys_argv():
     import sys
-    require(len(sys.argv) == 2, 'Usage: android-delivery.py check-new-upload|package|record-package|import|play-stage|stage|validate-query')
+    require(len(sys.argv) == 2, 'Usage: android-delivery.py check-new-upload|package|record-package|retire-producer-output|import|play-stage|stage|validate-query')
     return sys.argv[1]
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (KeyError, OSError, ValueError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+    except (KeyError, OSError, ValueError, subprocess.CalledProcessError, ET.ParseError, json.JSONDecodeError) as error:
         raise SystemExit(str(error)) from error

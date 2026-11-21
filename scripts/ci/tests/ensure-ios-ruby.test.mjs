@@ -46,7 +46,7 @@ const exercise = async (proxies, {expectProbe} = {}) => {
       executable(nc, 'printf "%s %s" "$4" "$5" > "$PROBE_RECEIPT"');
       env.PROBE_RECEIPT = join(root, 'probe');
       env.NC_FIXTURE = nc;
-      source = source.replace('/usr/bin/nc', '"$NC_FIXTURE"');
+      source = source.replace('"/usr/bin/nc"', 'ENV.fetch("NC_FIXTURE")');
     }
     const result = await runShell(source, env);
     if (expectProbe) assert.equal(readFileSync(env.PROBE_RECEIPT, 'utf8'), expectProbe);
@@ -69,7 +69,7 @@ test('Ruby 路径跨步骤保留，可用的小写 HTTP 代理优先于失效的
   try {
     const proxy = `http://127.0.0.1:${server.address().port}`;
     assert.deepEqual(await exercise({http_proxy: proxy, HTTP_PROXY: 'http://127.0.0.1:0', HTTPS_PROXY: 'http://127.0.0.1:0'}),
-      [proxy, 'http://127.0.0.1:0', 'http://127.0.0.1:0']);
+      [proxy, 'http://127.0.0.1:0', 'unset']);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -77,7 +77,7 @@ test('Ruby 路径跨步骤保留，可用的小写 HTTP 代理优先于失效的
 
 test('未设置小写 HTTP 代理时检测大写配置，并清除实际失效的本地代理', macOS, async () => {
   assert.deepEqual(await exercise({HTTP_PROXY: 'http://127.0.0.1:0', HTTPS_PROXY: 'https://example.invalid'}),
-    ['unset', 'unset', 'unset']);
+    ['unset', 'unset', 'https://example.invalid']);
 });
 
 test('空的小写 HTTP 代理不回退到大写或 HTTPS 配置', macOS, async () => {
@@ -96,7 +96,15 @@ test('HTTPS 本地代理按有效端口探测，IPv6 保留实际主机', macOS,
   const defaultPort = 'https://localhost';
   assert.deepEqual(await exercise({HTTP_PROXY: defaultPort}, {expectProbe: 'localhost 443'}),
     ['unset', defaultPort, 'unset']);
-  const ipv6 = 'http://[::1]:3128';
+  const ipv6 = '[::1]:3128';
   assert.deepEqual(await exercise({http_proxy: ipv6}, {expectProbe: '::1 3128'}),
     [ipv6, 'unset', 'unset']);
+});
+
+
+test('失效的小写索引代理保留健康的备用路由及归档代理', macOS, async () => {
+  const archive = 'https://downloads.example.invalid';
+  const fallback = 'http://proxy.example.invalid';
+  assert.deepEqual(await exercise({http_proxy: '127.0.0.1:0', HTTP_PROXY: fallback, HTTPS_PROXY: archive}),
+    ['unset', fallback, archive]);
 });

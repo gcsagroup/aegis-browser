@@ -171,10 +171,15 @@ def openssl_signer(unsigned, private_key):
     return _b64(result.stdout)
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
 def urllib_transport(method, url, body, headers):
     request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.build_opener(NoRedirect()).open(request, timeout=120) as response:
             return response.status, dict(response.headers), response.read()
     except urllib.error.HTTPError as error:
         return error.code, dict(error.headers), error.read()

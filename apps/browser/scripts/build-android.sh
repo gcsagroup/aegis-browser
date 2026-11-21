@@ -68,6 +68,7 @@ fi
 python3 "$ROOT_DIR/scripts/verify-build-source.py" --source "$SRC" --platform android
 if [[ -n "$bundle_profile" ]]; then
   if [[ ! "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]{0,15}$ || "${GITHUB_RUN_ATTEMPT:-}" != 1 ||
+        ! "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ||
         "$OUT" != "$SRC/out/AegisAndroidDelivery-$GITHUB_RUN_ID-1" ||
         -L "$SRC/out" || -e "$OUT" || -L "$OUT" ]]; then
     echo "Android App Bundle requires a new output directory for this producer run." >&2
@@ -77,6 +78,7 @@ if [[ -n "$bundle_profile" ]]; then
   cd "$SRC"
   mkdir -p out
   mkdir "$OUT"
+  printf '%s\n%s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > "$OUT/.aegis-producer"
   args="$(cat "$ARGS_FILE")"
   if [[ "$bundle_profile" == release ]]; then
     args="$(sed -E 's/^symbol_level = [0-9]+$/symbol_level = 1/' "$ARGS_FILE")"
@@ -85,6 +87,7 @@ if [[ -n "$bundle_profile" ]]; then
       exit 1
     fi
   fi
+  args="$(printf '%s\n%s' "$args" 'debuggable_apks = false')"
   gn gen "$OUT" --args="$args"
   autoninja -C "$OUT" chrome_public_bundle
   python3 "$ROOT_DIR/scripts/verify-build-source.py" --source "$SRC" --platform android

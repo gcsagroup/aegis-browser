@@ -133,6 +133,10 @@ jobs:
           retention-days: 30
       - name: Record the sealed package artifact after upload
         run: python3 scripts/release/android-delivery.py record-package
+      - name: Retire the recorded producer's build output
+        env:
+          CHROMIUM_ROOT: ${{ vars.AEGIS_CHROMIUM_ROOT }}
+        run: python3 scripts/release/android-delivery.py retire-producer-output
   store:
     needs: [admission, package]
     if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.package.result == 'success' || needs.package.result == 'skipped') && contains(fromJSON('["upload","status","distribute","submit","package-upload"]'), fromJSON(needs.admission.outputs.plan).operation) && fromJSON(needs.admission.outputs.plan).destination != 'github-draft' && (fromJSON(needs.admission.outputs.plan).operation != 'package-upload' || needs.package.result == 'success') }}
@@ -158,7 +162,8 @@ jobs:
         with:
           ruby-version: 3.3.6
           bundler-cache: true
-      - name: Import exact successful producer and current attempt / 校验原生产运行与当前尝试
+      - id: verified-package
+        name: Import exact successful producer and current attempt / 校验原生产运行与当前尝试
         run: python3 scripts/release/android-delivery.py import
       - name: Recheck Admin and source before Play credentials / 读取 Play 凭据前复核
         run: |
@@ -169,11 +174,11 @@ jobs:
           AEGIS_PLAY_JSON_KEY_DATA: ${{ secrets.AEGIS_PLAY_JSON_KEY_DATA }}
         run: ruby scripts/release/android-delivery-store.rb
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: ${{ always() }}
+        if: ${{ always() && steps.verified-package.outcome == 'success' }}
         with:
           name: android-delivery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/android-delivery/package.zip
-          if-no-files-found: warn
+          path: .artifacts/android-delivery/imported.zip
+          if-no-files-found: error
           retention-days: 30
   draft:
     needs: [admission, package]
@@ -201,7 +206,9 @@ jobs:
           ruby-version: 3.3.6
           bundler-cache: true
       - run: python3 scripts/release/android-delivery.py import
-      - run: node scripts/ci/android-operator.mjs
+      - run: |
+          node scripts/ci/android-operator.mjs
+          node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA"
       - run: python3 scripts/release/android-delivery.py stage
       - name: Download and hash the exact admitted Android Draft
         run: python3 scripts/release/android-draft-verify.py --delivery

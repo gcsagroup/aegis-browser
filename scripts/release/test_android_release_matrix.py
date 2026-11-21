@@ -1,11 +1,13 @@
 """Android delivery matrix: plan, Play, archive, records, evidence, and publication."""
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import importlib.util
 import io
 import json
 import os
 from pathlib import Path
 import tempfile
+from threading import Thread
 import unittest
 from unittest import mock
 import zipfile
@@ -100,36 +102,42 @@ class PlanMatrix(unittest.TestCase):
                            {'operation': 'Status', 'product': 'Alpha', 'version': VERSION, 'build': BUILD})
 
     def test_full_track_fraction_and_submit_matrix(self):
-        pinned = receipt_for('beta', '41', '40')
+        pinned = receipt_for('beta')
         beta_internal = full('完整模式 / Full', '自动 / Auto', pinned,
                              '{"operation":"upload","track":"internal"}')
         self.assertEqual((beta_internal['operation'], beta_internal['track'], beta_internal['destination']),
                          ('upload', 'internal', 'play-draft'))
-        beta_track = full('完整模式 / Full', 'Beta', pinned, '{"operation":"distribute","track":"beta","userFraction":"0.1"}')
+        uploaded = receipt_for('beta', '41', '43', draft=True)
+        beta_track = full('完整模式 / Full', 'Beta', uploaded, '{"operation":"distribute","track":"beta","userFraction":"0.1"}')
         self.assertEqual((beta_track['destination'], beta_track['user_fraction']), ('play-beta', '0.1'))
         for fraction in ('0.1', '0.001', '0.0001'):
             with self.subTest(fraction=fraction):
-                value = full('完整模式 / Full', 'Auto', pinned,
+                value = full('完整模式 / Full', 'Auto', uploaded,
                              json.dumps({'operation': 'distribute', 'track': 'internal', 'userFraction': fraction}))
                 self.assertEqual(value['user_fraction'], fraction)
         for fraction in ('0.10', '1', '0.1000', '0'):
             with self.subTest(fraction=fraction):
                 with self.assertRaises(ValueError):
-                    full('完整模式 / Full', 'Auto', pinned,
+                    full('完整模式 / Full', 'Auto', uploaded,
                          json.dumps({'operation': 'distribute', 'track': 'internal', 'userFraction': fraction}))
         alpha = receipt_for('alpha')
         with self.assertRaises(ValueError):
             full('完整模式 / Full', 'Auto', alpha, '{"operation":"upload","track":"beta"}')
-        released = receipt_for('release', '41', '40')
+        released = receipt_for()
         for track in ('internal', 'beta'):
             value = full('完整模式 / Full', 'Auto', released, json.dumps({'operation': 'upload', 'track': track}))
             self.assertEqual(value['track'], track)
         with self.assertRaises(ValueError):
             full('完整模式 / Full', 'Auto', released, '{"operation":"upload","track":"production"}')
-        submitted = full('完整模式 / Full', 'Release', released, '{"operation":"submit","track":"production"}')
+        release_draft = receipt_for('release', '41', '43', draft=True)
+        submitted = full('完整模式 / Full', 'Release', release_draft, '{"operation":"submit","track":"production"}')
         self.assertEqual(submitted['destination'], 'play-production')
         with self.assertRaises(ValueError):
-            full('完整模式 / Full', 'Auto', pinned, '{"operation":"submit","track":"production"}')
+            full('完整模式 / Full', 'Auto', uploaded, '{"operation":"submit","track":"production"}')
+        with self.assertRaisesRegex(ValueError, 'successful Play upload'):
+            full('完整模式 / Full', 'Auto', released, '{"operation":"submit","track":"production"}')
+        with self.assertRaisesRegex(ValueError, 'successful Play upload'):
+            full('完整模式 / Full', 'Beta', pinned, '{"operation":"distribute","track":"beta","userFraction":"0.1"}')
         drafted = full('仅打包 / Package', 'Release', f'{VERSION}({BUILD})', '{}')
         self.assertEqual(drafted['destination'], 'artifacts')
         candidate = full('完整模式 / Full', 'Release', f'{VERSION}({BUILD})', '{"operation":"draft"}')
@@ -217,6 +225,35 @@ class PlayMatrix(unittest.TestCase):
             play.access_token({'client_email': 'bot@example.com', 'private_key': 'PRIVATE KEY'},
                               lambda *args: (_ for _ in ()).throw(AssertionError('network')), 1, lambda *_: 'x')
 
+    def test_real_transport_returns_redirect_without_following_it(self):
+        requests = []
+
+        class Redirect(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append(self.path)
+                if self.path == '/source':
+                    self.send_response(302)
+                    self.send_header('Location', '/redirected')
+                else:
+                    self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        with HTTPServer(('127.0.0.1', 0), Redirect) as server:
+            worker = Thread(target=server.serve_forever)
+            worker.start()
+            try:
+                url = f'http://127.0.0.1:{server.server_port}/source'
+                with mock.patch.dict('os.environ', {'no_proxy': '127.0.0.1'}):
+                    status, headers, _ = play.urllib_transport('GET', url, None, {'Authorization': 'Bearer fixture'})
+            finally:
+                server.shutdown()
+                worker.join()
+        self.assertEqual((status, headers['Location']), (302, '/redirected'))
+        self.assertEqual(requests, ['/source'])
+
 
 class ArchiveAndRecordMatrix(unittest.TestCase):
     def test_unsafe_members_and_record_replay(self):
@@ -267,6 +304,8 @@ class ArchiveAndRecordMatrix(unittest.TestCase):
         with self.assertRaises(ValueError):
             records.Records(api, 1, archive.APPLICATION_ID)
         key = records.allocation(archive.APPLICATION_ID, VERSION, BUILD)
+        self.assertEqual(key, records.allocation(archive.APPLICATION_ID, '7.3.0.339', BUILD))
+        self.assertNotEqual(key, records.allocation(archive.APPLICATION_ID, VERSION, '2008000339'))
         payload = {'version': VERSION, 'build': BUILD}
         store.create('package', key, payload)
         with self.assertRaises(ValueError):
@@ -306,8 +345,14 @@ class DeliveryCommandMatrix(unittest.TestCase):
         admitted['track'] = 'production'
         with self.assertRaises(ValueError):
             delivery.validate_query(admitted)
-        with tempfile.TemporaryDirectory() as temp:
-            directory, digest, origin = sealed_package(Path(temp))
+        with (tempfile.TemporaryDirectory() as temp,
+              mock.patch.dict('os.environ', {'GITHUB_SHA': SHA, 'GITHUB_RUN_ID': '43', 'GITHUB_RUN_ATTEMPT': '1',
+                                            'GITHUB_STEP_SUMMARY': str(Path(temp) / 'summary.md')}),
+              mock.patch.object(delivery.release, '_assert_current_release_source') as verify_main,
+              mock.patch.object(delivery.release, 'load_upload_run', return_value=evidence()['upload_run']) as get_run):
+            root = Path(temp)
+            summary = root / 'summary.md'
+            directory, digest, origin = sealed_package(root)
             pending = {'origin': origin, 'profile': 'release', 'version': VERSION, 'build': BUILD, 'manifestSha256': digest}
             artifact = {'id': 70, 'digest': 'sha256:' + '11' * 32, 'name': 'android-package-41-1'}
             store = self._store()
@@ -340,13 +385,33 @@ class DeliveryCommandMatrix(unittest.TestCase):
                 delivery.play_stage(staged, directory, Client(), store)
             marker.write_bytes(original)
             self.assertEqual(calls, [])
+            submitted = {**staged, 'operation': 'submit', 'track': 'production', 'upload_run_id': '43'}
+            with self.assertRaisesRegex(ValueError, 'recorded Play upload'):
+                delivery.play_stage(submitted, directory, Client(), store)
+            verify_main.side_effect = ValueError('source is no longer current')
+            with self.assertRaisesRegex(ValueError, 'no longer current'):
+                delivery.play_stage(staged, directory, Client(), store)
+            self.assertEqual(calls, [])
+            verify_main.side_effect = None
             delivery.play_stage(staged, directory, Client(), store)
             self.assertEqual(calls, [('upload', 'internal', 2007000339)])
+            target = summary.read_text().split('`')[1]
+            self.assertEqual(receipt.decode(target)['upload_run_id'], '43')
             with self.assertRaises(ValueError):
                 delivery.play_stage(staged, directory, Client(), store)
-            delivery.play_stage({'operation': 'distribute', 'version': VERSION, 'build': BUILD, 'track': 'beta',
-                                 'user_fraction': '0.1'}, directory, Client(), store)
-            delivery.play_stage({'operation': 'submit', 'version': VERSION, 'build': BUILD}, directory, Client(), store)
+            for bad_run in ('', '44'):
+                with self.assertRaisesRegex(ValueError, 'recorded Play upload'):
+                    delivery.play_stage({**submitted, 'upload_run_id': bad_run}, directory, Client(), store)
+            run = evidence()['upload_run']
+            run['jobs'][0]['conclusion'] = 'skipped'
+            get_run.return_value = run
+            with self.assertRaisesRegex(ValueError, 'store'):
+                delivery.play_stage(submitted, directory, Client(), store)
+            self.assertEqual(len(calls), 1)
+            get_run.return_value = evidence()['upload_run']
+            delivery.play_stage({**submitted, 'operation': 'distribute', 'track': 'beta', 'user_fraction': '0.1'},
+                                directory, Client(), store)
+            delivery.play_stage(submitted, directory, Client(), store)
             self.assertEqual(calls[-2], ('track', 'beta', 'inProgress', '0.1'))
             self.assertEqual(calls[-1], ('track', 'production', 'completed', ''))
 
@@ -368,11 +433,15 @@ class DeliveryCommandMatrix(unittest.TestCase):
                 self.assertEqual((run_id, artifact_id, expected_digest), (41, 70, record['artifact_digest']))
                 destination.write_bytes(bundle.read_bytes())
 
-            with (mock.patch.dict('os.environ', {'GITHUB_RUN_ID': '42'}),
+            with (mock.patch.dict('os.environ', {'GITHUB_RUN_ID': '42', 'GITHUB_SHA': SHA}),
                   mock.patch.object(delivery.release, '_get_run', return_value=run),
                   mock.patch.object(delivery.release, '_get_jobs', return_value=run['jobs']),
                   mock.patch.object(delivery.release, '_api', return_value={'sha': SHA, 'tree': {'sha': 'f' * 40}}) as api,
                   mock.patch.object(delivery.release, 'download_package_artifact', side_effect=download) as fetch):
+                with mock.patch.dict('os.environ', {'GITHUB_SHA': 'c' * 40}):
+                    with self.assertRaisesRegex(ValueError, 'admitted workflow source'):
+                        delivery.import_package(approved, store, root / 'stale')
+                fetch.assert_not_called()
                 with self.assertRaisesRegex(ValueError, 'producer tree'):
                     delivery.import_package(approved, store, root / 'rejected')
                 fetch.assert_not_called()
@@ -418,6 +487,7 @@ class DeliveryCommandMatrix(unittest.TestCase):
 
             with (mock.patch.dict('os.environ', env), mock.patch.object(delivery, 'ROOT', root),
                   mock.patch.object(delivery, 'source_identity', return_value=identity) as read_source,
+                  mock.patch.object(delivery, 'verify_bundle_manifest') as verify_manifest,
                   mock.patch.object(delivery.subprocess, 'run', side_effect=run),
                   mock.patch.object(delivery.verifier, 'certificate_sha256', return_value='cd' * 32)):
                 plan = {'profile': 'alpha', 'version': VERSION, 'build': BUILD}
@@ -431,6 +501,60 @@ class DeliveryCommandMatrix(unittest.TestCase):
                 self.assertEqual(sealed['origin']['sourceTree'], TREE)
                 self.assertEqual(sealed['origin']['runId'], 41)
                 self.assertEqual([command[0] for command in commands], ['bash', 'jarsigner'])
+                verify_manifest.assert_called_once_with(chromium.resolve(), expected_out / 'apks/ChromePublic.aab', BUILD)
+
+    def test_only_recorded_producer_output_is_retired(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            _, digest, origin = sealed_package(root)
+            pending = root / '.artifacts/android-delivery/package-pending.json'
+            pending.parent.mkdir(parents=True)
+            pending.write_text(json.dumps({'origin': origin, 'version': VERSION, 'build': BUILD,
+                                          'profile': 'release', 'manifestSha256': digest}))
+            output = root / 'src/out/AegisAndroidDelivery-41-1'
+            other = output.with_name('AegisAndroidDelivery-40-1')
+            output.mkdir(parents=True)
+            other.mkdir()
+            marker = output / '.aegis-producer'
+            marker.write_text(f'40\n{SHA}\n')
+            store = self._store()
+            env = {'CHROMIUM_ROOT': temp, 'GITHUB_RUN_ID': '41', 'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_SHA': SHA}
+            with (mock.patch.dict('os.environ', env), mock.patch.object(delivery, 'ROOT', root),
+                  mock.patch.object(delivery.release, '_store', return_value=store)):
+                with self.assertRaisesRegex(ValueError, 'until the sealed artifact is recorded'):
+                    delivery.retire_producer_output()
+                artifact = {'id': 70, 'digest': 'sha256:' + '11' * 32, 'name': 'android-package-41-1'}
+                delivery.record_package(json.loads(pending.read_bytes()), artifact, 11, store)
+                with self.assertRaisesRegex(ValueError, 'prove ownership'):
+                    delivery.retire_producer_output()
+                self.assertTrue(output.exists())
+                marker.write_text(f'41\n{SHA}\n')
+                delivery.retire_producer_output()
+                self.assertFalse(output.exists())
+                self.assertTrue(other.exists())
+
+    def test_bundle_manifest_checks_package_version_and_debuggable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            chromium = Path(temp)
+            jar = chromium / 'src/third_party/android_build_tools/bundletool/cipd/bundletool.jar'
+            jar.parent.mkdir(parents=True)
+            jar.touch()
+            aab = chromium / 'app.aab'
+
+            def manifest(package=archive.APPLICATION_ID, code=BUILD, debug='false'):
+                return (f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+                        f'package="{package}" android:versionCode="{code}">'
+                        f'<application android:debuggable="{debug}"/></manifest>').encode()
+
+            with mock.patch.object(delivery.subprocess, 'run', return_value=mock.Mock(stdout=manifest())) as run:
+                delivery.verify_bundle_manifest(chromium, aab, BUILD)
+                self.assertEqual(run.call_args.args[0][-2:], ['--bundle=' + str(aab), '--module=base'])
+                for candidate, error in ((manifest(debug='true'), 'debuggable'),
+                                         (manifest(code='2007000340'), 'versionCode'),
+                                         (manifest(package='app.gcsa.fixture'), 'versionCode')):
+                    run.return_value.stdout = candidate
+                    with self.assertRaisesRegex(ValueError, error):
+                        delivery.verify_bundle_manifest(chromium, aab, BUILD)
 
     def _store(self):
         parent = ArchiveAndRecordMatrix()
@@ -517,15 +641,16 @@ def evidence():
     return {'version': version, 'build': build,
             'repository': {'id': release.REPOSITORY_ID, 'full_name': release.REPOSITORY, 'default_branch': 'main'},
             'current_sha': SHA, 'current_tree': TREE,
-            'package_run': workflow(41, '.github/workflows/android-delivery.yml',
-                                    [job(11, 'delivery / package', 41), job(12, 'delivery / store', 41)]),
+            'package_run': workflow(41, '.github/workflows/android-delivery-full.yml', [job(11, 'delivery / package', 41)]),
+            'upload_run': workflow(43, '.github/workflows/android-delivery-full.yml', [job(12, 'delivery / store', 43)]),
             'package_record': {'origin': origin, 'profile': 'release', 'version': version, 'build': build,
                                'package_job_id': 11, 'artifact_id': 70, 'artifact_name': 'android-package-41-1',
                                'artifact_digest': 'sha256:' + '11' * 32},
             'package_artifact': {'id': 70, 'name': 'android-package-41-1', 'expired': False, 'digest': 'sha256:' + '11' * 32},
             'manifest': manifest, 'manifest_sha256': 'cd' * 32, 'upload_start': intent,
-            'upload_result': {'intent': intent, 'result': {'status': 'uploaded_draft', 'packageName': release.APPLICATION_ID,
-                                                           'track': 'internal', 'releaseStatus': 'draft'}},
+            'upload_result': {'intent': intent, 'uploadRunId': 43, 'uploadRunAttempt': 1,
+                              'result': {'status': 'uploaded_draft', 'packageName': release.APPLICATION_ID,
+                                         'track': 'internal', 'releaseStatus': 'draft', 'versionCode': int(build)}},
             'status_run': workflow(42, '.github/workflows/android-delivery-full.yml', [job(21, 'delivery / query', 42)]),
             'status_artifact': {'id': 80, 'name': 'android-release-status-42-1', 'expired': False,
                                 'digest': 'sha256:' + '22' * 32, 'run_id': 42},
@@ -548,12 +673,12 @@ class EvidenceMatrix(unittest.TestCase):
         moved['current_sha'] = '9' * 40
         with self.assertRaisesRegex(ValueError, 'current main'):
             release.validate_delivery_evidence(moved, 'stable', 'prerelease')
-        full_path = evidence()
-        full_path['package_run']['path'] = '.github/workflows/android-delivery-full.yml'
-        self.assertEqual(release.validate_delivery_evidence(full_path, 'stable', 'prerelease')['packageRunId'], 41)
+        self.assertEqual((candidate['packageRunId'], candidate['uploadRunId']), (41, 43))
         mutations = [
             ('attempt', lambda value: value['package_run'].__setitem__('run_attempt', 2), 'identity'),
-            ('skipped store', lambda value: value['package_run']['jobs'][1].__setitem__('conclusion', 'skipped'), 'store'),
+            ('skipped store', lambda value: value['upload_run']['jobs'][0].__setitem__('conclusion', 'skipped'), 'store'),
+            ('wrong upload run', lambda value: value['upload_result'].__setitem__('uploadRunId', 44), 'upload run'),
+            ('wrong version result', lambda value: value['upload_result']['result'].__setitem__('versionCode', 339), 'upload'),
             ('processing', lambda value: value['status']['remote'].__setitem__('processingState', 'PROCESSING'), 'VALID'),
             ('expired status', lambda value: value['status_artifact'].__setitem__('expired', True), 'artifact'),
             ('alpha profile', lambda value: value['package_record'].__setitem__('profile', 'alpha'), 'producer'),

@@ -16,11 +16,11 @@ Android 交付与公开发布实现经 fork 分支 PR 进入 `gcsagroup/aegis-br
 
 每次操作都会先跑 **Release Wait**（只读查询 Play `generatedApks`）。只有近期 `VALID`、且密封的 Release 包、Play draft 记录与状态证据都对齐当前 `main` 的 versionCode 才能发布。没有「仅预览」坐标。生产者必须是当前 `main`。
 
-公开 tag 形如 `android/<version>-release.<versionCode>`，例如 `android/7.2.0.339-release.2007000339`。首次发布设 `prerelease=true`、`make_latest=false`。提升 stable 保留同一 tag，将同一条 GitHub Release 改为 `prerelease=false`，保持 `make_latest=false`。仓库的 Latest 入口供桌面端更新使用。审批用的 plan digest 绑定源码 commit/tree、package 与 status 运行、两份 Actions artifact ID 与 ZIP 的 SHA-256、Play 构建身份，以及公开资产哈希。即便公开内容相同，替换过的 artifact 也要重新预览并重新审批。release identity digest 绑定不可变的包/源码与公开资产哈希，且不含 prerelease 标志，因此晋升不会改动 tag 注解。
+公开 tag 形如 `android/<version>-release.<versionCode>`，例如 `android/7.2.0.339-release.2007000339`。首次发布设 `prerelease=true`、`make_latest=false`。提升 stable 保留同一 tag，将同一条 GitHub Release 改为 `prerelease=false`，保持 `make_latest=false`。仓库的 Latest 入口供桌面端更新使用。审批用的 plan digest 绑定源码 commit/tree、打包、上传和状态检查运行、两份 Actions artifact ID 与 ZIP 的 SHA-256、Play 构建身份，以及公开资产哈希。即便公开内容相同，替换过的 artifact 也要重新预览并重新审批。release identity digest 绑定不可变的包、上传运行、源码与公开资产哈希，且不含 prerelease 标志，因此晋升不会改动 tag 注解。
 
-公开文件只有已签名的 AAB、原生符号 zip、白名单内的公开 `android-manifest.json` 及其 SHA-256。公开清单不含上传证书和签名文件；那些留在密封包里。`apps/browser/args/aegis-android.gn` 里 打包作业先核验 Chromium 和 V8 源码树，在本次运行的全新输出目录构建 `chrome_public_bundle`，再用固定的上传证书签名。Release 在本次构建启用原生符号，并从同一目录的 `lib.unstripped` 收集库文件。
+公开文件只有已签名的 AAB、原生符号 zip、白名单内的公开 `android-manifest.json` 及其 SHA-256。上传证书和签名文件保存在密封包。打包作业先核验 Chromium 和 V8 源码树，再在本次运行的全新输出目录构建 `chrome_public_bundle`。签名前从生成的 base 清单核验应用 ID、versionCode 和不可调试设置。Release 构建启用原生符号，并从同一目录的 `lib.unstripped` 收集库文件。密封制品与不可变记录写入成功后，作业清理本次构建输出目录。构建失败时保留输出供排查。
 
-Full 交付按打包时记录的运行、作业、制品摘要和源码树导入产物，在写入 Play 前核对回执和清单。候选 Draft 核验会下载并计算全部资产的摘要。
+完整模式根据记录中的运行、作业、制品摘要和源码树导入并保留原始压缩包，核对它与此次获准的 main 提交一致。单独运行 Upload 时，复制成功打包作业中的回执。运行 **distribute** 或 **submit** 时，复制成功上传的回执，流程会核验 Play draft 的不可变结果和该次运行中成功的 store 作业。公开 Release 核验支持分次执行打包与上传。候选 Draft 核验会下载并计算全部资产的摘要。
 
 简单模式对 Release 的 **打包并上传** 只把 AAB 传到 Play `internal` 轨道，状态为 `draft`，不会 rollout production。Alpha 只走 `internal`。Beta 可用 `internal` 或 `beta`。production 的 `completed` 只允许完整模式里显式的 **submit**，且必须在 Play 已报告 `VALID` 之后。
 

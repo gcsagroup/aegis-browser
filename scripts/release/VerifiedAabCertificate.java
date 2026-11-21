@@ -16,9 +16,20 @@ final class VerifiedAabCertificate {
       return false;
     }
     String file = upper.substring("META-INF/".length());
-    return !file.contains("/") && (file.equals("MANIFEST.MF") || file.startsWith("SIG-")
-        || file.endsWith(".SF") || file.endsWith(".RSA") || file.endsWith(".DSA")
-        || file.endsWith(".EC"));
+    if (file.contains("/")) {
+      return false;
+    }
+    if (file.equals("MANIFEST.MF") || file.endsWith(".SF") || file.endsWith(".RSA")
+        || file.endsWith(".DSA") || file.endsWith(".EC")) {
+      return true;
+    }
+    if (!file.startsWith("SIG-")) {
+      return false;
+    }
+    // JDK 17 only reserves SIG-* entries without an extension or with
+    // a one-to-three-character ASCII alphanumeric extension.
+    int dot = file.lastIndexOf('.');
+    return dot < 0 || file.substring(dot + 1).matches("[A-Z0-9]{1,3}");
   }
 
   public static void main(String[] args) throws Exception {

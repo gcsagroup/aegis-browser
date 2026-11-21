@@ -72,26 +72,36 @@ runs:
           exit 1
         fi
         echo "mise: $(command -v mise) ($(mise --version | head -1))"
-        # Bundler 对 HTTPS 源也优先使用小写 http_proxy，再使用 HTTP_PROXY。
-        # 只检查它实际采用的代理，避免清除仍然可用的 HTTP 代理。
-        proxy_url="${http_proxy-${HTTP_PROXY-}}"
-        proxy_endpoint="$(printf '%s' "$proxy_url" | ruby -ruri -e '
-          begin
-            proxy = URI.parse(STDIN.read)
-            host = proxy.hostname&.downcase if proxy.is_a?(URI::HTTP)
-            if %w[127.0.0.1 localhost ::1].include?(host) && (0..65535).cover?(proxy.port)
-              puts "#{host} #{proxy.port}"
+        # Bundler uses HTTP proxy variables for index requests. RubyGems
+        # selects the archive proxy by scheme. Recheck each fallback in order.
+        dead_proxies="$(ruby -ruri -e '
+          [%w[http_proxy HTTP_PROXY], %w[https_proxy HTTPS_PROXY]].each do |names|
+            names.each do |name|
+              next unless ENV.key?(name)
+              value = ENV.fetch(name)
+              break if value.empty?
+
+              begin
+                proxy = URI.parse(value.include?("://") ? value : "http://#{value}")
+              rescue URI::InvalidURIError
+                break
+              end
+              host = proxy.is_a?(URI::HTTP) ? proxy.hostname&.downcase : nil
+              break unless %w[127.0.0.1 localhost ::1].include?(host) && (0..65535).cover?(proxy.port)
+              break if system("/usr/bin/nc", "-z", "-G", "2", host, proxy.port.to_s,
+                              out: File::NULL, err: File::NULL)
+
+              puts name
             end
-          rescue URI::InvalidURIError
-            # Let Bundler handle malformed proxy configuration.
           end
         ')"
-        if [ -n "$proxy_endpoint" ]; then
-          read -r proxy_host proxy_port <<< "$proxy_endpoint"
-          if ! /usr/bin/nc -z -G 2 "$proxy_host" "$proxy_port" >/dev/null 2>&1; then
-            echo "loopback proxy is unreachable; clearing proxy env for bundle install" >&2
-            unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy
-          fi
+        if [ -n "$dead_proxies" ]; then
+          while IFS= read -r proxy_name; do
+            case "$proxy_name" in
+              http_proxy|HTTP_PROXY|https_proxy|HTTPS_PROXY) unset "$proxy_name" ;;
+            esac
+          done <<< "$dead_proxies"
+          echo "unreachable loopback proxy routes cleared for bundle install" >&2
         fi
         bundle -v
         bundle config set --local path vendor/bundle

@@ -132,10 +132,28 @@ def _successful_job(run, name):
     return job
 
 
-def _package_jobs(run, run_id, sha):
+def _package_job(run, run_id, sha):
     path = run.get('path')
     require(path in PREFIXES and _run_identity(run, run_id, sha, path), 'Package producer run identity/source differs')
-    return {name: _successful_job(run, PREFIXES[path] + name) for name in ('package', 'store')}
+    return _successful_job(run, PREFIXES[path] + 'package')
+
+
+def verify_play_upload(plan, origin, intent, terminal, upload_run):
+    require(isinstance(intent, dict) and isinstance(terminal, dict), 'Permanent Play upload records are incomplete')
+    track = (intent.get('parameters') or {}).get('track')
+    expected = play.draft_intent(plan['version'], plan['build'], plan['profile'], origin['manifestSha256'], track)
+    result = terminal.get('result', {})
+    run_id = terminal.get('uploadRunId')
+    path = upload_run.get('path')
+    require(intent == expected and terminal.get('intent') == intent and result.get('status') == 'uploaded_draft'
+            and result.get('packageName') == APPLICATION_ID and result.get('track') == track
+            and result.get('releaseStatus') == 'draft' and result.get('versionCode') == int(plan['build']),
+            'Permanent upload intent/result does not identify this exact draft package')
+    require(is_id(run_id) and terminal.get('uploadRunAttempt') == 1 and path in PREFIXES
+            and _run_identity(upload_run, run_id, origin['sourceSha'], path),
+            'Play upload run differs from the approved package source')
+    _successful_job(upload_run, PREFIXES[path] + 'store')
+    return run_id
 
 
 def _exact_artifact(value, artifact_id, name, digest):
@@ -166,10 +184,10 @@ def validate_delivery_evidence(evidence, release_type, publication):
             and origin.get('sourceTree') == source_tree and origin.get('runIdLocal') == f'android-gh-{package_id}-1',
             'Package origin is not bound to current main and producer run')
     require(is_sha(origin.get('manifestSha256'), 64), 'Package manifest digest is invalid')
-    jobs = _package_jobs(package_run, package_id, source_sha)
+    producer = _package_job(package_run, package_id, source_sha)
     package_record = evidence.get('package_record', {})
     require(package_record.get('profile') == 'release' and package_record.get('version') == version
-            and package_record.get('build') == build and package_record.get('package_job_id') == jobs['package']['id']
+            and package_record.get('build') == build and package_record.get('package_job_id') == producer['id']
             and package_record.get('artifact_name') == f'android-package-{package_id}-1'
             and _exact_artifact(evidence.get('package_artifact', {}), package_record.get('artifact_id'),
                                 package_record.get('artifact_name'), package_record.get('artifact_digest')),
@@ -183,15 +201,8 @@ def validate_delivery_evidence(evidence, release_type, publication):
             and manifest.get('source') == {'sha': source_sha, 'tree': source_tree, 'dirty': False}
             and {row.get('name') for row in manifest.get('assets', []) if isinstance(row, dict)} >= {aab_name, symbols_name},
             'Product manifest identity/source/profile differs')
-    intent = evidence.get('upload_start', {})
-    track = (intent.get('parameters') or {}).get('track')
-    expected = play.draft_intent(version, build, 'release', origin['manifestSha256'], track)
-    terminal = evidence.get('upload_result', {})
-    result = terminal.get('result', {})
-    require(intent == expected and terminal.get('intent') == intent and result.get('status') == 'uploaded_draft'
-            and result.get('packageName') == APPLICATION_ID and result.get('track') == track
-            and result.get('releaseStatus') == 'draft',
-            'Permanent upload intent/result does not identify this exact draft package')
+    upload_id = verify_play_upload(manifest, origin, evidence.get('upload_start'),
+                                   evidence.get('upload_result'), evidence.get('upload_run', {}))
     status_run = evidence.get('status_run', {})
     status_id = status_run.get('id')
     require(is_id(status_id) and status_run.get('path') in PREFIXES
@@ -216,7 +227,7 @@ def validate_delivery_evidence(evidence, release_type, publication):
     _require_fresh_observation(remote.get('observedAt'))
     return {'channel': 'stable', 'profile': 'release', 'publication': publication, 'version': version, 'build': build,
             'source': {'sha': source_sha, 'tree': source_tree}, 'manifestSha256': origin['manifestSha256'],
-            'packageRunId': package_id, 'packageAttempt': 1, 'statusRunId': status_id,
+            'packageRunId': package_id, 'packageAttempt': 1, 'uploadRunId': upload_id, 'statusRunId': status_id,
             'playBuildIdentitySha256': remote['buildIdentitySha256'], 'playObservedAt': remote['observedAt'],
             'artifactId': package_record['artifact_id'], 'artifactDigest': package_record['artifact_digest'],
             'artifactName': package_record['artifact_name'], 'statusArtifactId': status_artifact['id'],
@@ -235,7 +246,7 @@ def build_release_plan(candidate):
     core = {'schema': 'aegis-android-github-release-plan-v1', 'channel': 'stable', 'profile': 'release',
             'version': version, 'build': build, 'tag': tag, 'source': candidate['source'],
             'manifestSha256': candidate['manifestSha256'], 'packageRunId': candidate['packageRunId'],
-            'packageAttempt': 1, 'statusRunId': candidate['statusRunId'],
+            'packageAttempt': 1, 'uploadRunId': candidate['uploadRunId'], 'statusRunId': candidate['statusRunId'],
             'playObservedAt': candidate['playObservedAt'], 'playBuildIdentitySha256': candidate['playBuildIdentitySha256'],
             'assets': dict(sorted(asset_hashes.items())), 'prerelease': publication == 'prerelease',
             'makeLatest': False}
@@ -336,6 +347,14 @@ def _get_jobs(run_id):
     return _api_items(f'actions/runs/{run_id}/attempts/1/jobs?per_page=100', 'jobs')
 
 
+def load_upload_run(record):
+    run_id = record.get('uploadRunId') if isinstance(record, dict) else None
+    require(is_id(run_id) and record.get('uploadRunAttempt') == 1, 'Successful first-attempt Play upload is required')
+    run = _get_run(run_id)
+    run['jobs'] = _get_jobs(run_id)
+    return run
+
+
 def _get_artifact(run_id, artifact_id, name):
     rows = _api_items(f'actions/runs/{run_id}/artifacts?per_page=100', 'artifacts')
     found = [row for row in rows if row.get('id') == artifact_id and row.get('name') == name]
@@ -408,7 +427,7 @@ def extract_package(version, build, bundle, destination):
     run_id = locator['package_run_id']
     producer = _get_run(run_id)
     producer['jobs'] = _get_jobs(run_id)
-    _package_jobs(producer, run_id, locator['source_sha'])
+    _package_job(producer, run_id, locator['source_sha'])
     archive.extract_flat(Path(bundle), Path(destination))
     manifest = archive.verify_package(destination, locator['source_sha'], locator['source_tree'], locator['manifest_sha256'])
     require(manifest.get('version') == version and manifest.get('build') == build and manifest.get('profile') == 'release',
@@ -430,6 +449,7 @@ def _collect_evidence(version, build, release_type, publication, status_run_id, 
     upload_result = store.read('upload-result', key)
     require(package_record is not None and upload_start is not None and upload_result is not None,
             'Permanent package/upload records are incomplete')
+    upload_run = load_upload_run(upload_result)
     package_artifact = _get_artifact(locator['package_run_id'], locator['package_artifact_id'], locator['package_artifact_name'])
     with tempfile.TemporaryDirectory(prefix='aegis-android-evidence-') as temp:
         status_path = Path(temp) / 'status.json'
@@ -442,6 +462,7 @@ def _collect_evidence(version, build, release_type, publication, status_run_id, 
     evidence = {'repository': repo, 'current_sha': current_sha, 'current_tree': current_tree,
                 'version': version, 'build': build, 'package_run': package_run, 'package_record': package_record,
                 'package_artifact': package_artifact, 'upload_start': upload_start, 'upload_result': upload_result,
+                'upload_run': upload_run,
                 'manifest': manifest, 'manifest_sha256': origin['manifestSha256'], 'status_run': status_run,
                 'status_artifact': status_artifact, 'status': status}
     candidate = validate_delivery_evidence(evidence, release_type, publication)
