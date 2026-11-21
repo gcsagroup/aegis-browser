@@ -13,8 +13,11 @@ const resourcePath = 'apps/browser/overlay/chrome/browser/resources/aegis/enhanc
 
 test('真实本机就绪探测绕过失效代理，并拒绝错误服务身份', () => {
   const result = spawnSync('python3', ['-c', `
-import json, os, pathlib, subprocess, sys, threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib.util, json, os, pathlib, subprocess, sys, threading
+from http.server import BaseHTTPRequestHandler
+spec = importlib.util.spec_from_file_location('fixture_server', sys.argv[2])
+fixture_server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fixture_server)
 source = pathlib.Path(sys.argv[1]).read_text()
 probe = source.split("fixture_ready() {\\n  python3 - <<'PYTHON'\\n", 1)[1].split('\\nPYTHON', 1)[0]
 class Handler(BaseHTTPRequestHandler):
@@ -24,7 +27,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(json.dumps({'data': [{'id': self.model}]}).encode())
-server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+server = fixture_server.FixtureHTTPServer(('127.0.0.1', 0), Handler)
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 probe = probe.replace('127.0.0.1:8768', '127.0.0.1:' + str(server.server_port))
@@ -39,7 +42,7 @@ finally:
     server.shutdown()
     server.server_close()
     thread.join(timeout=5)
-`, path.join(scripts, 'run-simulator-tests.sh')], {encoding: 'utf8', timeout: 30000});
+`, path.join(scripts, 'run-simulator-tests.sh'), path.join(scripts, 'simulator-fixture-server.py')], {encoding: 'utf8', timeout: 30000});
   assert.equal(result.status, 0, result.stderr);
 });
 
