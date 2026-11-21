@@ -22,7 +22,7 @@ function runShell(source, env) {
   });
 }
 
-const exercise = async (proxies) => {
+const exercise = async (proxies, {expectProbe} = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'aegis-ruby-action-'));
   try {
     const tooling = join(root, 'tooling');
@@ -30,7 +30,7 @@ const exercise = async (proxies) => {
     for (const directory of [tooling, rubyBin]) mkdirSync(directory, {recursive: true});
     const executable = (path, source) => writeFileSync(path, `#!/bin/bash\n${source}\n`, {mode: 0o755});
     executable(join(tooling, 'mise'), 'echo mise-fixture');
-    executable(join(rubyBin, 'ruby'), 'echo "ruby 3.3.6"');
+    executable(join(rubyBin, 'ruby'), 'if [ "$1" = -v ]; then echo "ruby 3.3.6"; else exec /usr/bin/ruby "$@"; fi');
     executable(join(rubyBin, 'bundle'), 'printf "%s\\n%s\\n%s\\n" "${http_proxy-unset}" "${HTTP_PROXY-unset}" "${HTTPS_PROXY-unset}" > "$PROXY_RECEIPT"');
     const pathFile = join(root, 'github-path');
     const receipt = join(root, 'proxies');
@@ -40,7 +40,16 @@ const exercise = async (proxies) => {
     for (const key of ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']) delete env[key];
     Object.assign(env, proxies);
     // 将主目录读取限定到测试资料，实际运行 Action 的 Bash 内容和系统 nc。
-    const result = await runShell(script.replaceAll('$HOME', '$FIXTURE_HOME'), env);
+    let source = script.replaceAll('$HOME', '$FIXTURE_HOME');
+    if (expectProbe) {
+      const nc = join(tooling, 'nc-fixture');
+      executable(nc, 'printf "%s %s" "$4" "$5" > "$PROBE_RECEIPT"');
+      env.PROBE_RECEIPT = join(root, 'probe');
+      env.NC_FIXTURE = nc;
+      source = source.replace('/usr/bin/nc', '"$NC_FIXTURE"');
+    }
+    const result = await runShell(source, env);
+    if (expectProbe) assert.equal(readFileSync(env.PROBE_RECEIPT, 'utf8'), expectProbe);
     assert.equal(result.code, 0, result.output);
     const paths = readFileSync(pathFile, 'utf8').trim().split('\n');
     // GitHub Runner 将后写入的路径置前；下一步骤必须仍能找到同一 Ruby 和 mise。
@@ -74,4 +83,20 @@ test('未设置小写 HTTP 代理时检测大写配置，并清除实际失效�
 test('空的小写 HTTP 代理不回退到大写或 HTTPS 配置', macOS, async () => {
   assert.deepEqual(await exercise({http_proxy: '', HTTP_PROXY: 'http://127.0.0.1:0', HTTPS_PROXY: 'https://example.invalid'}),
     ['', 'http://127.0.0.1:0', 'https://example.invalid']);
+});
+
+
+test('同名前缀的外部代理不会按本地代理处理', macOS, async () => {
+  const proxy = 'http://localhost-proxy.example:0';
+  assert.deepEqual(await exercise({HTTP_PROXY: proxy, HTTPS_PROXY: 'https://example.invalid'}),
+    ['unset', proxy, 'https://example.invalid']);
+});
+
+test('HTTPS 本地代理按有效端口探测，IPv6 保留实际主机', macOS, async () => {
+  const defaultPort = 'https://localhost';
+  assert.deepEqual(await exercise({HTTP_PROXY: defaultPort}, {expectProbe: 'localhost 443'}),
+    ['unset', defaultPort, 'unset']);
+  const ipv6 = 'http://[::1]:3128';
+  assert.deepEqual(await exercise({http_proxy: ipv6}, {expectProbe: '::1 3128'}),
+    [ipv6, 'unset', 'unset']);
 });

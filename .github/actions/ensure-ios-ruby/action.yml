@@ -75,13 +75,22 @@ runs:
         # Bundler 对 HTTPS 源也优先使用小写 http_proxy，再使用 HTTP_PROXY。
         # 只检查它实际采用的代理，避免清除仍然可用的 HTTP 代理。
         proxy_url="${http_proxy-${HTTP_PROXY-}}"
-        if [[ "$proxy_url" =~ ^[Hh][Tt][Tt][Pp][Ss]?://(127\.0\.0\.1|localhost)(:([0-9]+))? ]]; then
-          proxy_port="${BASH_REMATCH[3]:-80}"
-          if ! /usr/bin/nc -z -G 2 127.0.0.1 "$proxy_port" >/dev/null 2>&1; then
-            echo "loopback proxy $proxy_url is unreachable; clearing proxy env for bundle install" >&2
-            unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy || true
-          else
-            echo "loopback proxy reachable on 127.0.0.1:$proxy_port"
+        proxy_endpoint="$(printf '%s' "$proxy_url" | ruby -ruri -e '
+          begin
+            proxy = URI.parse(STDIN.read)
+            host = proxy.hostname&.downcase if proxy.is_a?(URI::HTTP)
+            if %w[127.0.0.1 localhost ::1].include?(host) && (0..65535).cover?(proxy.port)
+              puts "#{host} #{proxy.port}"
+            end
+          rescue URI::InvalidURIError
+            # Let Bundler handle malformed proxy configuration.
+          end
+        ')"
+        if [ -n "$proxy_endpoint" ]; then
+          read -r proxy_host proxy_port <<< "$proxy_endpoint"
+          if ! /usr/bin/nc -z -G 2 "$proxy_host" "$proxy_port" >/dev/null 2>&1; then
+            echo "loopback proxy is unreachable; clearing proxy env for bundle install" >&2
+            unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy
           fi
         fi
         bundle -v
