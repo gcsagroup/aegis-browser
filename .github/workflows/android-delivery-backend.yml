@@ -110,12 +110,15 @@ jobs:
         run: |
           node scripts/ci/android-operator.mjs
           node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA"
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: Build real AAB and verify Upload signature / 真实打包并验签
         env:
           CHROMIUM_ROOT: ${{ vars.AEGIS_CHROMIUM_ROOT }}
           DEPOT_TOOLS_DIR: ${{ vars.AEGIS_DEPOT_TOOLS_DIR }}
           AEGIS_ANDROID_EXPERIMENTAL_ARM64: ${{ vars.AEGIS_ANDROID_EXPERIMENTAL_ARM64 }}
-          AEGIS_BUNDLETOOL_JAR: ${{ vars.AEGIS_BUNDLETOOL_JAR }}
           AEGIS_ANDROID_KEYSTORE: ${{ vars.AEGIS_ANDROID_KEYSTORE }}
           AEGIS_ANDROID_KEY_ALIAS: ${{ vars.AEGIS_ANDROID_KEY_ALIAS }}
           AEGIS_ANDROID_CERT_SHA256: ${{ vars.AEGIS_ANDROID_CERT_SHA256 }}

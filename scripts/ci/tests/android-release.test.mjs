@@ -55,6 +55,13 @@ test('Android delivery runs on canonical main and records the sealed package bef
   assert(backend.jobs.admission.steps.some(step => step.run?.includes('runner.rb') && step.if.includes("operation == 'package-upload'")));
   assert(backend.jobs.package.if.includes("operation == 'package-upload'"));
   assert(backend.jobs.package.if.includes("operation == 'draft'"));
+  const setupJava = backend.jobs.package.steps.findIndex(step => step.uses?.startsWith('actions/setup-java@'));
+  const packageStep = backend.jobs.package.steps.findIndex(step => step.run === 'python3 scripts/release/android-delivery.py package');
+  assert(setupJava >= 0 && packageStep > setupJava);
+  assert.equal(backend.jobs.package.steps[setupJava].with['java-version'], '17');
+  const importStep = backend.jobs.store.steps.findIndex(step => step.run === 'python3 scripts/release/android-delivery.py import');
+  const playStep = backend.jobs.store.steps.findIndex(step => step.env?.AEGIS_PLAY_JSON_KEY_DATA);
+  assert(importStep >= 0 && playStep > importStep);
   assert.equal(backend.jobs.package.steps.find(step => step.uses?.startsWith('actions/upload-artifact@')).with.name,
     'android-package-${{ github.run_id }}-${{ github.run_attempt }}');
   assert(backend.jobs.package.steps.some(step => step.run === 'python3 scripts/release/android-delivery.py record-package'));

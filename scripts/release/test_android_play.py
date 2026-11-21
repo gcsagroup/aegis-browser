@@ -17,13 +17,16 @@ CODE = 2007000339
 
 class PlayTests(unittest.TestCase):
     def test_generated_apk_states(self):
-        missing = play.interpret_generated_apks({'generatedApks': []}, CODE)
+        missing = play.Play(lambda *args: (404, {}, b'{}'), 'token').status(CODE)
         self.assertEqual(missing['processingState'], 'NOT_FOUND')
-        processing = play.interpret_generated_apks({'generatedApks': [{'versionCode': CODE, 'generatedSplitApks': []}]}, CODE)
+        self.assertEqual(play.interpret_generated_apks({}, CODE)['processingState'], 'PROCESSING')
+        processing = play.interpret_generated_apks({'generatedApks': [{'certificateSha256Hash': 'key-1', 'generatedSplitApks': []}]}, CODE)
         self.assertEqual(processing['processingState'], 'PROCESSING')
         valid = play.interpret_generated_apks({'generatedApks': [{
-            'versionCode': CODE,
+            'certificateSha256Hash': 'key-1',
             'generatedUniversalApk': {'downloadId': 'universal'},
+        }, {
+            'certificateSha256Hash': 'key-2',
             'generatedSplitApks': [{'downloadId': 'base'}, {'downloadId': 'base'}],
         }]}, CODE)
         self.assertEqual(valid['uploadState'], 'COMPLETE')
@@ -35,8 +38,8 @@ class PlayTests(unittest.TestCase):
 
         def transport(method, url, body, headers):
             calls.append((method, url, body))
-            if url.endswith('/generatedApks'):
-                return 200, {}, b'{"generatedApks":[]}'
+            if url.endswith(f'/generatedApks/{CODE}'):
+                return 404, {}, b'{}'
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-1"}'
             if '/bundles?' in url:
@@ -51,9 +54,10 @@ class PlayTests(unittest.TestCase):
         result = client.upload_draft(Path(__file__), CODE, 'internal')
         self.assertEqual(result['status'], 'uploaded_draft')
         self.assertEqual([item[0] for item in calls], ['GET', 'POST', 'POST', 'PUT', 'POST'])
+        self.assertTrue(calls[0][1].endswith(f'/applications/{play.APPLICATION_ID}/generatedApks/{CODE}'))
         self.assertIn(b'"track":"internal"', calls[3][2])
         self.assertIn(b'"status":"draft"', calls[3][2])
-        occupied = play.Play(lambda *args: (200, {}, json.dumps({'generatedApks': [{'versionCode': CODE}]}).encode()), 'token')
+        occupied = play.Play(lambda *args: (200, {}, json.dumps({'generatedApks': [{'certificateSha256Hash': 'key-1'}]}).encode()), 'token')
         with self.assertRaises(ValueError):
             occupied.upload_draft(Path(__file__), CODE, 'internal')
 
@@ -62,8 +66,8 @@ class PlayTests(unittest.TestCase):
 
         def transport(method, url, body, headers):
             calls.append(body)
-            if url.endswith('/generatedApks'):
-                return 200, {}, json.dumps({'generatedApks': [{'versionCode': CODE, 'generatedUniversalApk': {'downloadId': 'u'}}]}).encode()
+            if url.endswith(f'/generatedApks/{CODE}'):
+                return 200, {}, json.dumps({'generatedApks': [{'certificateSha256Hash': 'key-1', 'generatedUniversalApk': {'downloadId': 'u'}}]}).encode()
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-2"}'
             return 200, {}, b'{}'

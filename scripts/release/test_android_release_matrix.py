@@ -178,20 +178,20 @@ class PlanMatrix(unittest.TestCase):
 
 class PlayMatrix(unittest.TestCase):
     def test_generated_apk_identity_and_rejections(self):
-        missing = play.interpret_generated_apks({'generatedApks': [{'versionCode': 1}]}, 2007000339)
-        self.assertEqual(missing['processingState'], 'NOT_FOUND')
-        processing = play.interpret_generated_apks({'generatedApks': [{'versionCode': 2007000339, 'generatedSplitApks': [{}]}]}, 2007000339)
+        empty = play.interpret_generated_apks({'generatedApks': []}, 2007000339)
+        self.assertEqual(empty['processingState'], 'PROCESSING')
+        processing = play.interpret_generated_apks({'generatedApks': [{'certificateSha256Hash': 'key-1', 'generatedSplitApks': [{}]}]}, 2007000339)
         self.assertEqual(processing['uploadState'], 'PROCESSING')
         valid = play.interpret_generated_apks({'generatedApks': [{
-            'versionCode': 2007000339,
+            'certificateSha256Hash': 'key-1',
             'generatedUniversalApk': {'downloadId': 'u'},
-            'generatedAssetPackApks': [{'downloadId': 'pack'}],
+            'generatedAssetPackSlices': [{'downloadId': 'pack'}],
             'generatedStandaloneApks': [{'downloadId': 'u'}],
         }]}, 2007000339)
         identity = play.canonical({'downloadIds': ['pack', 'u'], 'packageName': play.APPLICATION_ID, 'versionCode': 2007000339})
         self.assertEqual(valid['buildIdentitySha256'], __import__('hashlib').sha256(identity.encode()).hexdigest())
         with self.assertRaises(ValueError):
-            play.interpret_generated_apks({'generatedApks': [{'versionCode': 2007000339}, {'versionCode': 2007000339}]}, 2007000339)
+            play.interpret_generated_apks({'generatedApks': [None]}, 2007000339)
         with self.assertRaises(ValueError):
             play.draft_intent(VERSION, BUILD, 'release', 'ab' * 32, 'production')
 
@@ -200,7 +200,7 @@ class PlayMatrix(unittest.TestCase):
 
         def transport(method, url, body, headers):
             calls.append((method, url, body))
-            if url.endswith('/generatedApks'):
+            if url.endswith('/generatedApks/2007000339'):
                 return 302, {}, b''
             return 200, {}, b'{"access_token":"tok"}'
 
@@ -327,7 +327,19 @@ class DeliveryCommandMatrix(unittest.TestCase):
                     calls.append(('track', track, state, fraction))
                     return {'status': state, 'track': track}
 
-            staged = {'operation': 'upload', 'profile': 'release', 'version': VERSION, 'build': BUILD, 'track': 'internal'}
+            staged = {'operation': 'upload', 'profile': 'release', 'version': VERSION, 'build': BUILD, 'track': 'internal',
+                      'package_run_id': '41', 'source_attempt': '1', 'manifest_sha256': digest}
+            for invalid in ({'manifest_sha256': 'e' * 64}, {'source_attempt': '2'}, {'package_run_id': '42'}):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    delivery.play_stage({**staged, **invalid}, directory, Client(), store)
+                self.assertIsNone(store.read('upload-start', records.allocation(archive.APPLICATION_ID, VERSION, BUILD)))
+            marker = directory / 'package-origin.json'
+            original = marker.read_bytes()
+            marker.write_text(json.dumps({**origin, 'sourceTree': 'e' * 40}))
+            with self.assertRaisesRegex(ValueError, 'approved producer'):
+                delivery.play_stage(staged, directory, Client(), store)
+            marker.write_bytes(original)
+            self.assertEqual(calls, [])
             delivery.play_stage(staged, directory, Client(), store)
             self.assertEqual(calls, [('upload', 'internal', 2007000339)])
             with self.assertRaises(ValueError):
@@ -337,6 +349,88 @@ class DeliveryCommandMatrix(unittest.TestCase):
             delivery.play_stage({'operation': 'submit', 'version': VERSION, 'build': BUILD}, directory, Client(), store)
             self.assertEqual(calls[-2], ('track', 'beta', 'inProgress', '0.1'))
             self.assertEqual(calls[-1], ('track', 'production', 'completed', ''))
+
+    def test_import_checks_exact_producer_before_downloading(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sealed, manifest_digest, origin = sealed_package(root)
+            bundle = root / 'fixture.zip'
+            archive.zip_flat(sealed, bundle)
+            value = evidence()
+            record = {**value['package_record'], 'origin': origin}
+            run = value['package_run']
+            store = mock.Mock()
+            store.read.return_value = record
+            approved = {'operation': 'upload', 'profile': 'release', 'version': VERSION, 'build': BUILD,
+                        'package_run_id': '41', 'source_attempt': '1', 'manifest_sha256': manifest_digest}
+
+            def download(run_id, artifact_id, destination, *, expected_digest):
+                self.assertEqual((run_id, artifact_id, expected_digest), (41, 70, record['artifact_digest']))
+                destination.write_bytes(bundle.read_bytes())
+
+            with (mock.patch.dict('os.environ', {'GITHUB_RUN_ID': '42'}),
+                  mock.patch.object(delivery.release, '_get_run', return_value=run),
+                  mock.patch.object(delivery.release, '_get_jobs', return_value=run['jobs']),
+                  mock.patch.object(delivery.release, '_api', return_value={'sha': SHA, 'tree': {'sha': 'f' * 40}}) as api,
+                  mock.patch.object(delivery.release, 'download_package_artifact', side_effect=download) as fetch):
+                with self.assertRaisesRegex(ValueError, 'producer tree'):
+                    delivery.import_package(approved, store, root / 'rejected')
+                fetch.assert_not_called()
+                api.return_value = {'sha': SHA, 'tree': {'sha': TREE}}
+                manifest = delivery.import_package(approved, store, root / 'admitted')
+                self.assertEqual(manifest['source'], {'sha': SHA, 'tree': TREE, 'dirty': False})
+                self.assertEqual(fetch.call_count, 1)
+
+    def test_packaging_requires_current_source_and_builds_original_run_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            chromium = root / 'chromium'
+            chromium.mkdir()
+            old_bundle = root / 'unrelated.aab'
+            old_bundle.write_bytes(b'not produced by this run')
+            key = root / 'fixture.p12'
+            key.touch()
+            identity = {'sha': SHA, 'tree': TREE, 'version': VERSION, 'build': BUILD}
+            env = {'GITHUB_SHA': SHA, 'GITHUB_RUN_ID': '41', 'GITHUB_RUN_ATTEMPT': '1',
+                   'CHROMIUM_ROOT': str(chromium), 'AEGIS_ANDROID_CERT_SHA256': 'cd' * 32,
+                   'AEGIS_ANDROID_KEYSTORE': str(key), 'AEGIS_ANDROID_KEY_ALIAS': 'fixture',
+                   'AEGIS_ANDROID_AAB': str(old_bundle)}
+            expected_out = chromium.resolve() / 'src/out/AegisAndroidDelivery-41-1'
+            commands = []
+
+            def run(command, **kwargs):
+                commands.append(command)
+                if command[0] == 'bash':
+                    self.assertEqual(command[-2:], ['--app-bundle', 'alpha'])
+                    self.assertEqual(kwargs['env']['OUT_DIR'], str(expected_out))
+                    self.assertFalse(expected_out.exists())
+                    apks = expected_out / 'apks'
+                    apks.mkdir(parents=True)
+                    with zipfile.ZipFile(apks / 'ChromePublic.aab', 'w') as output:
+                        output.writestr('BundleConfig.pb', b'fixture')
+                elif command[0] == 'jarsigner':
+                    signed, unsigned = (Path(item) for item in command[-3:-1])
+                    self.assertEqual(unsigned, expected_out / 'apks/ChromePublic.aab')
+                    signed.write_bytes(unsigned.read_bytes())
+                else:
+                    self.fail(command[0])
+                return mock.Mock(returncode=0)
+
+            with (mock.patch.dict('os.environ', env), mock.patch.object(delivery, 'ROOT', root),
+                  mock.patch.object(delivery, 'source_identity', return_value=identity) as read_source,
+                  mock.patch.object(delivery.subprocess, 'run', side_effect=run),
+                  mock.patch.object(delivery.verifier, 'certificate_sha256', return_value='cd' * 32)):
+                plan = {'profile': 'alpha', 'version': VERSION, 'build': BUILD}
+                read_source.return_value = {**identity, 'sha': 'f' * 40}
+                with self.assertRaisesRegex(ValueError, 'checkout differs'):
+                    delivery.build_and_seal(plan)
+                self.assertEqual(commands, [])
+                read_source.return_value = identity
+                sealed = delivery.build_and_seal(plan)
+                self.assertEqual(sealed['origin']['sourceSha'], SHA)
+                self.assertEqual(sealed['origin']['sourceTree'], TREE)
+                self.assertEqual(sealed['origin']['runId'], 41)
+                self.assertEqual([command[0] for command in commands], ['bash', 'jarsigner'])
 
     def _store(self):
         parent = ArchiveAndRecordMatrix()
@@ -379,11 +473,22 @@ class DeliveryCommandMatrix(unittest.TestCase):
         with self.assertRaises(ValueError):
             status.status_document({'version': VERSION, 'build': BUILD}, remote, {'sha': SHA, 'tree': TREE},
                                    'rollout', '2026-11-19T00:00:00+00:00')
-        proof = {'draft': True, 'tag': f'candidate/android/{VERSION}-release.{BUILD}', 'releaseId': 9}
-        self.assertEqual(drafts.verify(proof, {'id': 9, 'tag_name': proof['tag'], 'draft': True, 'prerelease': True,
-                                               'make_latest': 'false'})['draft'], True)
-        with self.assertRaises(ValueError):
-            drafts.verify(proof, {'id': 9, 'tag_name': proof['tag'], 'draft': False, 'prerelease': True})
+        name = archive.asset_names(VERSION, BUILD)[0]
+        digest = 'ab' * 32
+        proof = {'draft': True, 'tag': f'candidate/android/{VERSION}-release.{BUILD}', 'releaseId': 9,
+                 'assets': {name: digest}}
+        asset = {'id': 10, 'name': name, 'size': 4, 'state': 'uploaded', 'digest': f'sha256:{digest}'}
+        remote = {'id': 9, 'tag_name': proof['tag'], 'draft': True, 'prerelease': True, 'assets': [asset]}
+        read = mock.Mock(return_value=(4, digest))
+        self.assertTrue(drafts.verify(proof, remote, read)['draft'])
+        read.assert_called_once_with(asset)
+        for bad in ({**remote, 'draft': False}, {**remote, 'assets': []},
+                    {**remote, 'assets': [asset, asset]},
+                    {**remote, 'assets': [{**asset, 'digest': 'sha256:' + 'cd' * 32}]}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                drafts.verify(proof, bad, read)
+        with self.assertRaisesRegex(ValueError, 'Downloaded'):
+            drafts.verify(proof, remote, lambda asset: (4, 'cd' * 32))
 
 
 def evidence():
@@ -474,8 +579,6 @@ class EvidenceMatrix(unittest.TestCase):
             with self.subTest(observed=observed.isoformat()):
                 with self.assertRaisesRegex(ValueError, 'stale'):
                     release.validate_delivery_evidence(value, 'stable', 'prerelease')
-        sample = 'jar verified.\nSHA256: ' + ':'.join(('cd' * 32)[index:index + 2] for index in range(0, 64, 2))
-        self.assertEqual(verifier.parse_certificate(sample), 'cd' * 32)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             raw = io.BytesIO()
@@ -528,7 +631,7 @@ class Publisher:
         if path == 'releases/500':
             return self.release
         if path == 'releases/latest':
-            return self.release
+            return {'id': 700, 'tag_name': 'v7.2.0.339'}
         if path.startswith('git/ref/tags/'):
             if self.tag is None:
                 raise release.NotFoundError(path)
@@ -590,7 +693,7 @@ class PublicationMatrix(unittest.TestCase):
         self.assertNotEqual(prerelease['planSha256'], stable['planSha256'])
         self.assertTrue(prerelease['prerelease'])
         self.assertFalse(prerelease['makeLatest'])
-        self.assertTrue(stable['makeLatest'])
+        self.assertFalse(stable['makeLatest'])
         state = Publisher(stable)
         self.bind(state)
         assets = [{'name': name, 'size': 4, 'sha256': digest, 'path': '/tmp/' + name} for name, digest in prerelease['assets'].items()]
@@ -622,7 +725,7 @@ class PublicationMatrix(unittest.TestCase):
         self.assertEqual(state.release['name'], stable['name'])
         self.assertEqual(sum(path == 'git/tags' for path, _payload in state.mutations), 1)
         self.assertIn(('releases/500', {'name': stable['name'], 'body': stable['body'], 'draft': False,
-                                        'prerelease': False, 'make_latest': 'true'}), state.mutations)
+                                        'prerelease': False, 'make_latest': 'false'}), state.mutations)
 
     def test_stale_observation_does_not_create_a_release(self):
         prerelease, _stable = self.plans()

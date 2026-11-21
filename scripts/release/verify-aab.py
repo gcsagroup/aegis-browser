@@ -21,22 +21,10 @@ def normalize_certificate(value):
     return text
 
 
-def parse_certificate(output):
-    require(isinstance(output, str) and 'jar verified' in output.lower(), 'Android App Bundle signature was not verified')
-    require(re.search(r'jar is unsigned', output, re.IGNORECASE) is None, 'Android App Bundle is unsigned')
-    found = re.findall(r'SHA-?256:\s*((?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2})', output)
-    unique = {normalize_certificate(item) for item in found}
-    require(len(unique) == 1, 'Android App Bundle certificate is missing or ambiguous')
-    return unique.pop()
-
-
-def certificate_sha256(path, runner=None):
+def certificate_sha256(path):
     archive.assert_aab(path)
-    command = ['jarsigner', '-verify', '-certs', '-verbose', str(path)]
-    if runner is None:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
-        output, code = (result.stdout or '') + (result.stderr or ''), result.returncode
-    else:
-        output, code = runner(command)
-    require(code == 0, 'jarsigner could not verify the Android App Bundle')
-    return parse_certificate(output)
+    source = Path(__file__).with_name('VerifiedAabCertificate.java')
+    result = subprocess.run(['java', str(source), str(Path(path).resolve())],
+                            capture_output=True, text=True, timeout=120)
+    require(result.returncode == 0, 'App Bundle payload must be signed by a single verified certificate')
+    return normalize_certificate(result.stdout.strip())

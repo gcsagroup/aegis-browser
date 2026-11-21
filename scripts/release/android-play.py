@@ -43,8 +43,9 @@ def download_ids(row):
     universal = row.get('generatedUniversalApk')
     if isinstance(universal, dict) and isinstance(universal.get('downloadId'), str) and universal['downloadId']:
         found.append(universal['downloadId'])
-    for key in ('generatedSplitApks', 'generatedAssetPackApks', 'generatedStandaloneApks'):
-        items = row.get(key) or []
+    for key in ('generatedSplitApks', 'generatedAssetPackSlices', 'generatedStandaloneApks',
+                'generatedRecoveryModules', 'unprotectedGeneratedSplitApks', 'unprotectedGeneratedStandaloneApks'):
+        items = row.get(key, [])
         require(isinstance(items, list), 'Play generated APK list is invalid')
         for item in items:
             require(isinstance(item, dict), 'Play generated APK row is invalid')
@@ -55,14 +56,12 @@ def download_ids(row):
 
 
 def interpret_generated_apks(document, version_code):
-    require(isinstance(document, dict) and isinstance(document.get('generatedApks'), list),
+    require(isinstance(document, dict) and (not document or isinstance(document.get('generatedApks'), list)),
             'Play generated APK response is invalid')
-    matches = [row for row in document['generatedApks'] if row.get('versionCode') == version_code]
-    require(len(matches) <= 1, 'Play returned more than one row for this versionCode')
+    groups = document.get('generatedApks', [])
+    require(all(isinstance(group, dict) for group in groups), 'Play signing-key group is invalid')
+    ids = [download for group in groups for download in download_ids(group)]
     base = {'packageName': APPLICATION_ID, 'versionCode': version_code, 'expired': False}
-    if not matches:
-        return {**base, 'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
-    ids = download_ids(matches[0])
     if not ids:
         return {**base, 'processingState': 'PROCESSING', 'uploadState': 'PROCESSING'}
     identity = canonical({'downloadIds': sorted(set(ids)), 'packageName': APPLICATION_ID, 'versionCode': version_code})
@@ -85,30 +84,31 @@ class Play:
     def _request(self, method, url, body=None, headers=None, ok=(200,)):
         response = self.transport(method, url, body, {'Authorization': 'Bearer ' + self.token, **(headers or {})})
         require(isinstance(response, tuple) and len(response) == 3, 'Play transport response is invalid')
-        status, response_headers, payload = response
+        status, _headers, payload = response
         require(status not in {301, 302, 303, 307, 308}, 'Play refused to follow a redirect')
         require(status in ok, 'Play request failed')
-        return response_headers, payload
-
-    def generated_apks(self):
-        _headers, payload = self._request('GET', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/generatedApks')
-        return json.loads(payload.decode())
+        return status, payload
 
     def status(self, version_code):
-        require(isinstance(version_code, int) and version_code > 0, 'Invalid Play versionCode')
-        return interpret_generated_apks(self.generated_apks(), version_code)
+        require(type(version_code) is int and 1 <= version_code <= receipt.MAX_CODE, 'Invalid Play versionCode')
+        status, payload = self._request(
+            'GET', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/generatedApks/{version_code}', ok=(200, 404))
+        if status == 404:
+            return {'packageName': APPLICATION_ID, 'versionCode': version_code, 'expired': False,
+                    'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
+        return interpret_generated_apks(json.loads(payload.decode()), version_code)
 
     def upload_draft(self, aab, version_code, track):
         require(track in {'internal', 'beta'}, 'Play draft upload cannot target production')
         remote = self.status(version_code)
         require(remote['processingState'] == 'NOT_FOUND', 'Play already has this versionCode')
-        _headers, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
+        _status, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
                                           {'Content-Type': 'application/json'})
         edit = json.loads(payload.decode())
         edit_id = edit.get('id')
         require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
         upload = API + f'/upload/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}/bundles?uploadType=media'
-        _headers, payload = self._request('POST', upload, Path(aab).read_bytes(),
+        _status, payload = self._request('POST', upload, Path(aab).read_bytes(),
                                           {'Content-Type': 'application/octet-stream'}, ok=(200,))
         bundle = json.loads(payload.decode())
         require(bundle.get('versionCode') == version_code, 'Play stored a different versionCode')
@@ -127,7 +127,7 @@ class Play:
                 'Only an explicit production submission can complete a rollout')
         require(status != 'inProgress' or (track != 'production' and user_fraction),
                 'A partial rollout needs a non-production track and a user fraction')
-        _headers, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
+        _status, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
                                           {'Content-Type': 'application/json'})
         edit_id = json.loads(payload.decode()).get('id')
         require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')

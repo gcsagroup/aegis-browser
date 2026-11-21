@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 
@@ -114,10 +115,20 @@ class ReleaseEvidenceTests(unittest.TestCase):
             bundle.write_bytes(blob)
             release.extract_verified_status_archive(bundle, Path(temp) / 'status.json', digest)
             self.assertEqual((Path(temp) / 'status.json').read_text(), '{"ok":true}')
-        sample = 'jar verified.\nSHA-256: ' + ':'.join(DIGEST[index:index + 2] for index in range(0, 64, 2))
-        self.assertEqual(verifier.parse_certificate(sample), DIGEST)
-        with self.assertRaises(ValueError):
-            verifier.parse_certificate('jar verified.\nSHA256: aa:bb\nSHA-256: cc:dd')
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'bundle.aab'
+            with zipfile.ZipFile(path, 'w') as bundle:
+                bundle.writestr('BundleConfig.pb', b'config')
+            with mock.patch.object(verifier.subprocess, 'run',
+                                   return_value=mock.Mock(returncode=0, stdout=DIGEST + '\n')) as java:
+                self.assertEqual(verifier.certificate_sha256(path), DIGEST)
+                args = java.call_args.args[0]
+                self.assertEqual(args[0], 'java')
+                self.assertTrue(args[1].endswith('VerifiedAabCertificate.java'))
+            with mock.patch.object(verifier.subprocess, 'run', return_value=mock.Mock(returncode=1)):
+                with self.assertRaisesRegex(ValueError, 'single verified certificate'):
+                    verifier.certificate_sha256(path)
+
 
     def test_ruleset_allows_omitted_bypass_and_promotion_needs_a_prerelease(self):
         desired = json.loads((Path(__file__).resolve().parents[2] / release.TAG_RULESET).read_text())
