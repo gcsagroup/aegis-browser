@@ -90,7 +90,8 @@ const parseConventionalType = subject => {
 const integrateTypes = new Set(['feat', 'fix', 'perf', 'refactor', 'build', 'test', 'revert']);
 const deepTypes = new Set(['feat', 'fix', 'perf', 'refactor', 'build', 'revert']);
 const blankPlatforms = () => ({ios: false, android: false, macos: false, windows: false, linux: false});
-// Release files invoked by the unsigned archive job or consumed by its helpers.
+const browserCommonScript = 'apps/browser/scripts/common.sh';
+// Exact release inputs for iOS contracts and the unsigned archive.
 const iosArchiveInputs = new Set([
   'scripts/release/build-ios-access-core.sh',
   'scripts/release/development_key_access.py',
@@ -102,8 +103,10 @@ const iosArchiveInputs = new Set([
   'scripts/release/safari_manifest.py',
   'scripts/release/test_development_key_access.py',
   'scripts/release/test_development_signing.py',
+  'scripts/release/test_ios_embedded_core.py',
   'scripts/release/test_ios_linked_bundle.py',
   'scripts/release/test_ios_profile_trust.py',
+  'scripts/release/test_verify_ios_archive.py',
   'scripts/release/verify-ios-archive.py',
   'scripts/release/verify-signed-ios.py',
 ]);
@@ -111,9 +114,11 @@ const selectsIos = path => path.startsWith('apps/ios/')
   || path.startsWith('.github/workflows/ios-')
   || path.startsWith('scripts/ci/ios-')
   || path.startsWith('scripts/ci/run-ios-')
+  || path === browserCommonScript
   || iosArchiveInputs.has(path);
 const selectsAndroid = path => path.startsWith('apps/browser/patches-android/')
   || (path.startsWith('apps/browser/scripts/') && path.toLowerCase().includes('android'))
+  || path === browserCommonScript
   || path.startsWith('.github/workflows/android-')
   || path.startsWith('scripts/ci/android-')
   || path.startsWith('scripts/ci/run-android-')
@@ -122,8 +127,10 @@ const selectsAndroid = path => path.startsWith('apps/browser/patches-android/')
   || path.startsWith('scripts/release/android_')
   || (path.startsWith('scripts/release/test_android') && path.endsWith('.py'))
   || path === 'scripts/release/runner.rb'
-  || path === 'scripts/release/verify-aab.py';
+  || path === 'scripts/release/verify-aab.py'
+  || path === 'scripts/release/VerifiedAabCertificate.java';
 const selectsMacos = path => path.startsWith('.github/workflows/macos-')
+  || path === browserCommonScript
   || (path.startsWith('scripts/release/') && path.toLowerCase().includes('macos'));
 const selectsWindows = path => path.endsWith('.ps1')
   || path.startsWith('scripts/ci/platform-tests/windows-')

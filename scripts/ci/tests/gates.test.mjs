@@ -622,7 +622,7 @@ test('Mac quality chain retains shared tests and isolates platform-specific exec
     'utf8',
   );
   assert.doesNotMatch(rootScripts['quality:fast'], /test:android|test:model-relay|test:winrm/u);
-  assert.match(fullQuality, /await command\('android-release-python-tests', 'python3', \['-B', '-m', 'unittest', 'discover',\s*'-s', 'scripts\/release', '-p', 'test_android\*\.py'\]\)/u);
+  assert.match(fullQuality, /await command\('android-release-python-tests', 'python3', \['-B', 'scripts\/ci\/run-android-release-tests\.py'\]\)/u);
   assert.match(fullQuality, /await command\('ci-tests', 'corepack', \['pnpm', 'run', 'ci:test'\]/u);
   assert.match(rootScripts['ci:test'], /scripts\/ci\/tests\/\*\.test\.mjs/u);
   for (const name of ['test:scripts', 'test:agent-ui', 'test:local-model']) assert.ok(rootScripts['quality:fast'].includes(name));
@@ -632,6 +632,46 @@ test('Mac quality chain retains shared tests and isolates platform-specific exec
   for (const name of ['patch-series-format-regression_test.sh', 'test-aegis-access-native.sh', 'sign-chromium-app_test.sh', 'fetch-toolchain_test.sh', 'verify-agent-local-model.mjs']) assert.ok(browserScriptQualityChecks.includes(name));
   assert.match(browserScriptQualityChecks, /run_check 'patch series regression fixtures'/u);
   for (const name of ['test:android-target', 'test:android-ui', 'test:scripts:android', 'test:winrm-model-relay']) assert.ok(rootScripts['quality:other-platforms'].includes(name));
+});
+
+test('required Android Python runner rejects missing, failing, unloadable and entirely skipped suites', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'aegis-android-release-tests-'));
+  const release = join(cwd, 'scripts/release');
+  const fixture = 'test_android_fixture.py';
+  const runner = join(scripts, 'run-android-release-tests.py');
+  const execute = () => run('python3', ['-B', runner], {cwd});
+  const passing = `import unittest
+
+class AndroidReleaseTest(unittest.TestCase):
+    def test_release(self):
+        self.assertTrue(True)
+`;
+  try {
+    const nested = join(release, 'non_package');
+    mkdirSync(nested, {recursive: true});
+    writeFileSync(join(nested, fixture), passing);
+    const empty = execute();
+    assert.equal(empty.status, 1, empty.stderr);
+    assert.match(empty.stderr, /No Android release tests discovered/u);
+
+    for (const [source, exitCode, output] of [
+      [passing, 0, /Ran 1 test\b/u],
+      [passing.replace('self.assertTrue(True)', 'self.fail("fixture test failed")'), 1, /AssertionError: fixture test failed/u],
+      ['raise ImportError("fixture suite could not load")\n', 1, /ImportError: fixture suite could not load/u],
+      [passing.replace('self.assertTrue(True)', 'self.skipTest("fixture skip")'), 1, /No active Android release tests ran/u],
+      [passing.replace('        self.assertTrue(True)', `        with self.subTest(case="skipped"):
+            self.skipTest("fixture skip")
+        with self.subTest(case="active"):
+            self.assertTrue(True)`), 0, /OK \(skipped=1\)/u],
+    ]) {
+      writeFileSync(join(release, fixture), source);
+      const result = execute();
+      assert.equal(result.status, exitCode, result.stderr);
+      assert.match(result.stderr, output);
+    }
+  } finally {
+    rmSync(cwd, {recursive: true, force: true});
+  }
 });
 
 test('native classification is NUL-safe, rename-safe, and conservative for unknown production paths', () => {

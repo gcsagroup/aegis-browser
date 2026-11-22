@@ -300,8 +300,12 @@ test('paths select platforms and commit types select stage depth', () => {
   };
   try {
     git('init', '-b', 'develop'); git('config', 'user.name', 'Routing Test'); git('config', 'user.email', 'routing@example.invalid');
+    const commonScript = 'apps/browser/scripts/common.sh';
+    const iosArchiveTests = ['scripts/release/test_verify_ios_archive.py', 'scripts/release/test_ios_embedded_core.py'];
+    const aabCertificate = 'scripts/release/VerifiedAabCertificate.java';
     save('README.md', 'base');
     save('docs/ios-webkit-protection.en.md', 'initial');
+    for (const path of [commonScript, ...iosArchiveTests, aabCertificate]) save(path, 'initial');
     git('add', '.'); git('commit', '-m', 'base');
     const before = git('rev-parse', 'HEAD');
     const pr = (mutate, message) => {
@@ -326,6 +330,11 @@ test('paths select platforms and commit types select stage depth', () => {
     const route = ({ios, android, macos, windows, linux, integrate, deep}) => ({ios, android, macos, windows, linux, integrate, deep});
     const iosRoute = {ios: true, android: false, macos: false, windows: false, linux: false, integrate: true, deep: true};
     const androidRoute = {...iosRoute, ios: false, android: true};
+    const sharedSetup = pr(() => save(commonScript, 'updated'), 'fix: repair browser setup');
+    assert.deepEqual(route(sharedSetup), {...iosRoute, android: true, macos: true});
+    for (const path of iosArchiveTests) {
+      assert.deepEqual(route(pr(() => save(path, 'updated'), 'test: cover archive input')), {...iosRoute, deep: false}, path);
+    }
     for (const file of [
       'build-ios-access-core.sh', 'development_key_access.py', 'development_signing.py',
       'ios_embedded_core.py', 'ios_linked_core.py', 'prepare-ios-access-core.sh', 'record-ios-access-core-digests.sh',
@@ -337,7 +346,7 @@ test('paths select platforms and commit types select stage depth', () => {
     for (const path of [
       'scripts/release/android-delivery.py', 'scripts/release/android_product_delivery.py',
       'scripts/release/test_android_release_matrix.py', 'scripts/release/runner.rb', 'scripts/release/verify-aab.py',
-      'scripts/ci/tests/android-release.test.mjs',
+      aabCertificate, 'scripts/ci/run-android-release-tests.py', 'scripts/ci/tests/android-release.test.mjs',
     ]) {
       assert.deepEqual(route(pr(() => save(path, 'android'), 'fix: repair android release')), androidRoute, path);
     }
