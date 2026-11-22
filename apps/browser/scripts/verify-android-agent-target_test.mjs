@@ -39,6 +39,15 @@ test('只用打开的 Profile 文件证明目录，不根据参数或缓存推�
   assert.deepEqual(activeProfileRoots('1 -> /data/user/0/com.gcsa.aegis/../other/Default/History'), []);
 });
 
+test('Profile 目录只接受当前 Android 应用 ID', () => {
+  for (const otherPackage of ['app.gcsa.aegis', PACKAGE + '.other']) {
+    const otherProfile = profile.replace(PACKAGE, otherPackage);
+    assert.deepEqual(activeProfileRoots('1 -> ' + otherProfile + '/Default/History'), []);
+    assert.throws(() => verifyTarget({...good(), profileRoots: [otherProfile]}, hash, otherProfile),
+      /必须指定 Aegis 独立测试资料目录/);
+  }
+});
+
 test('未知、锁定或灭屏状态不能当作可交互', () => {
   assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_ON'), unlocked);
   assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=2\n interactiveState=2'), unlocked);

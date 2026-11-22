@@ -6,6 +6,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 export const PACKAGE = 'com.gcsa.aegis';
+const PROFILE_DIRECTORY_PREFIX = `/data/user/0/${PACKAGE}/`;
 const HASH = /^[a-f0-9]{64}$/;
 const fail = message => { throw new Error(message); };
 const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -28,10 +29,12 @@ export function packageApkPath(output) {
 export function activeProfileRoots(fdListing) {
   // 只识别已打开的 Profile 文件路径，不把 Java 公用缓存目录当作资料目录。
   const roots = new Set();
-  const pattern = / -> (\/data\/(?:user\/0|data)\/app\.gcsa\.aegis\/[^\r\n]*?)\/(?:Default|Profile \d+)\//g;
+  const pattern = / -> (\/data\/(?:user\/0|data)\/[^/\r\n]+\/[^\r\n]*?)\/(?:Default|Profile \d+)\//g;
   for (const match of fdListing.matchAll(pattern)) {
     const root = match[1].replace('/data/data/', '/data/user/0/');
-    if (!root.split('/').some(part => part === '..' || part === '.')) roots.add(root);
+    if (root.startsWith(PROFILE_DIRECTORY_PREFIX) && !root.split('/').some(part => part === '..' || part === '.')) {
+      roots.add(root);
+    }
   }
   return [...roots].sort();
 }
@@ -47,7 +50,8 @@ export function parseKeyguard(policy) {
 
 export function verifyTarget(report, expectedHash, expectedProfile) {
   if (!HASH.test(expectedHash)) fail('候选 APK 摘要无效');
-  if (!/^\/data\/user\/0\/app\.gcsa\.aegis\/aegis-test-user-data-[a-z0-9-]+$/.test(expectedProfile)) {
+  if (typeof expectedProfile !== 'string' || !expectedProfile.startsWith(PROFILE_DIRECTORY_PREFIX) ||
+      !/^aegis-test-user-data-[a-z0-9-]+$/.test(expectedProfile.slice(PROFILE_DIRECTORY_PREFIX.length))) {
     fail('必须指定 Aegis 独立测试资料目录');
   }
   if (report.package !== PACKAGE || report.androidUser !== '0') fail('包或 Android 用户不匹配');
