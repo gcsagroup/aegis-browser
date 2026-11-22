@@ -76,6 +76,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       macos: ${{ steps.impact.outputs.macos }}
+      integrate: ${{ steps.impact.outputs.integrate }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -89,6 +90,8 @@ jobs:
         env:
           ROUTE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           ROUTE_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          ROUTE_PUSH_BEFORE: ${{ github.event.before }}
+          ROUTE_DEFAULT_MISSING_MACOS: 'true'
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             parents="$(git show -s --format=%P HEAD)"
@@ -107,11 +110,7 @@ jobs:
           else
             echo '{"macos":true,"reason":"trusted-baseline-predates-router"}' > .artifacts/ci/macos-impact.json
           fi
-          # An older registered router can lack this newly introduced platform.
-          if ! grep -q '^macos=' "$GITHUB_OUTPUT"; then
-            echo 'macos=true' >> "$GITHUB_OUTPUT"
-            node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const file = ".artifacts/ci/macos-impact.json"; const plan = JSON.parse(readFileSync(file)); writeFileSync(file, JSON.stringify({...plan, macos:true, platformReason:"missing-platform-rule-full-fallback"}, null, 2));'
-          fi
+          node scripts/ci/fill-platform-route-defaults.mjs .artifacts/ci/macos-impact.json
       - name: Check documentation consumers
         run: node scripts/check-repo-contracts.mjs
       - name: Upload macOS routing evidence
@@ -124,7 +123,7 @@ jobs:
           retention-days: 14
   contracts:
     needs: impact
-    if: ${{ github.event_name != 'workflow_dispatch' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') && needs.impact.outputs.macos == 'true' }}
+    if: ${{ github.event_name != 'workflow_dispatch' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') && needs.impact.result == 'success' && needs.impact.outputs.macos == 'true' && needs.impact.outputs.integrate == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

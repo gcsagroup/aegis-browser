@@ -63,17 +63,26 @@ try {
         fail(`${label}/${id} may not use the required check name or ID for a skipped Draft job`);
       }
       const cloudExercise = automatic === iosValidationWorkflow && id === 'cloud-poc';
-      const iosContracts = automatic === iosValidationWorkflow && ['contracts', 'ios-archive'].includes(id);
+      const iosImpact = automatic === iosValidationWorkflow && id === 'impact';
+      const iosContracts = automatic === iosValidationWorkflow && id === 'contracts';
+      const iosArchive = automatic === iosValidationWorkflow && id === 'ios-archive';
+      const otherPlatforms = automatic === workflow && id === 'other-platforms';
       const expectedCondition = cloudExercise
         ? "${{ github.event_name == 'workflow_dispatch' && inputs.exercise == 'cloud-poc' && github.repository == 'gcsagroup/aegis-browser' }}"
-        : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && ' + (id === 'ios-archive' ? "needs.contracts.outputs.ios == 'true' && " : '') + '(' + ready + ') }}'
-          : automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
+        : iosImpact ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') }}'
+          : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') && needs.impact.result == \'success\' && (github.event_name == \'workflow_dispatch\' || (needs.impact.outputs.ios == \'true\' && needs.impact.outputs.integrate == \'true\')) }}'
+            : iosArchive ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') && needs.impact.result == \'success\' && needs.contracts.result == \'success\' && (github.event_name == \'workflow_dispatch\' || needs.impact.outputs.deep == \'true\') }}'
+              : otherPlatforms ? '${{ (' + ready + ') && needs.quality.result == \'success\' && needs.impact.result == \'success\' && (needs.impact.outputs.android == \'true\' || needs.impact.outputs.windows == \'true\') && needs.impact.outputs.integrate == \'true\' }}'
+                : automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
       if (job.if !== expectedCondition) {
         fail(`${label}/${id} must require explicit Ready PR metadata, preserve non-PR execution and summary always()`);
       }
     }
   }
-  if (iosValidationWorkflow.jobs['ios-archive'].needs !== 'contracts') fail('iOS archive must wait for Linux contracts');
+  if (JSON.stringify(array(iosValidationWorkflow.jobs['ios-archive'].needs)) !== JSON.stringify(['impact', 'contracts'])) {
+    fail('iOS archive must wait for routing and Linux contracts');
+  }
+  if (iosValidationWorkflow.jobs.contracts?.needs !== 'impact') fail('iOS contracts must wait for routing');
   const triggers = workflow.on ?? {};
   const triggerNames = Object.keys(triggers).sort();
   if (JSON.stringify(triggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {
@@ -177,7 +186,7 @@ try {
   const shellCoverage = otherWorkflow.jobs?.['shell-coverage'];
   const powershellCoverage = otherWorkflow.jobs?.['powershell-coverage'];
   const gate = jobs['quality-summary'];
-  const expectedJobs = ['impact', 'quality', 'quality-summary'];
+  const expectedJobs = ['impact', 'other-platforms', 'quality', 'quality-summary'];
   if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
   if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {})) !== JSON.stringify(['android-java-coverage'])) fail('Android job set must be exactly android-java-coverage');
   const androidSteps = array(androidWorkflow.jobs['android-java-coverage'].steps);
@@ -262,7 +271,7 @@ try {
     }
   }
   const checkoutSteps = allSteps.filter((step) => String(step.uses ?? '').startsWith('actions/checkout@'));
-  if (checkoutSteps.length !== 7) fail('Every job must use the approved checkout action exactly once');
+  if (checkoutSteps.length !== 8) fail('Every job must use the approved checkout action exactly once');
   for (const step of checkoutSteps) {
     if (step.with?.['persist-credentials'] !== false) fail('Checkout must disable persisted credentials');
     if (step.with?.['fetch-depth'] !== 0) fail('Checkout must fetch history for identity validation');
