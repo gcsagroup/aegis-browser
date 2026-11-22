@@ -646,6 +646,11 @@ class AndroidReleaseTest(unittest.TestCase):
     def test_release(self):
         self.assertTrue(True)
 `;
+  const skippedSubtest = `        with self.subTest(case="skipped"):
+            self.skipTest("fixture skip")`;
+  const activeSubtest = `        with self.subTest(case="active"):
+            self.assertTrue(True)`;
+  const mixedSubtests = [`${skippedSubtest}\n${activeSubtest}`, `${activeSubtest}\n${skippedSubtest}`];
   try {
     const nested = join(release, 'non_package');
     mkdirSync(nested, {recursive: true});
@@ -667,10 +672,30 @@ class AndroidReleaseTest(unittest.TestCase):
 
     def test_release(self):
         self.fail("fixture body must not run")`), 1, /No active Android release tests ran/u],
-      [passing.replace('        self.assertTrue(True)', `        with self.subTest(case="skipped"):
+      [passing.replace('    def test_release(self):\n        self.assertTrue(True)', `    def setUp(self):
+        with self.subTest(case="setup"):
+            self.assertTrue(True)
+        with self.subTest(case="setup-skipped"):
             self.skipTest("fixture skip")
-        with self.subTest(case="active"):
-            self.assertTrue(True)`), 0, /OK \(skipped=1\)/u],
+
+    def test_release(self):
+        self.fail("fixture body must not run")`), 1, /No active Android release tests ran/u],
+      [passing.replace('        self.assertTrue(True)', `${skippedSubtest}
+
+    def tearDown(self):
+        with self.subTest(case="teardown"):
+            self.assertTrue(True)`), 1, /No active Android release tests ran/u],
+      ...mixedSubtests.map((body) => [
+        passing.replace('        self.assertTrue(True)', body), 0, /OK \(skipped=1\)/u,
+      ]),
+      [`import asyncio
+import unittest
+
+class AndroidReleaseTest(unittest.IsolatedAsyncioTestCase):
+    async def test_release(self):
+        await asyncio.sleep(0)
+${mixedSubtests[0]}
+`, 0, /OK \(skipped=1\)/u],
     ]) {
       writeFileSync(join(release, fixture), source);
       const result = execute();
