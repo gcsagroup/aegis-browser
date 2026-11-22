@@ -44,7 +44,34 @@ setup 返回 3（已打开现有版本）时显示“已打开现有版本（本
 
 ## 卸载确认
 
-从 Windows 发起交互卸载时，简体中文窗口标题为“卸载 GCSA Aegis”，正文询问“确定要卸载 GCSA Aegis 吗？”删除浏览数据的选项默认未勾选。浏览器仍在运行时，窗口会提示用户先关闭所有 GCSA Aegis 窗口。
+从 Windows 发起交互卸载时，确认窗口沿用安装器的白底、居中 80 DIP 品牌图标、
+深色标题、青蓝色主按钮与圆角样式。图标使用与安装器 ICO 相同的蓝底应用图标，
+通过最终 `resources.pak` 与 ICO 的 256px 图层逐字节比对保证一致。
+正文询问“确定要卸载 Aegis Browser 吗？”，
+下方保留删除浏览数据选项和居中的“卸载”“取消”按钮。窗口隐藏标题栏和系统关闭按钮，
+顶部留白可拖动；长译文可换行并增加窗口高度，控件随屏幕 DPI 缩放。
+
+删除浏览数据默认未勾选，初始焦点位于“取消”；Tab、空格、回车与 Esc 继续由原生
+Views 对话框处理。取消、关闭或未作选择即销毁都返回取消；只有明确确认且勾选删除选项
+才请求删除资料。高对比度使用系统色，普通明暗主题均与白底安装器保持一致。
+确认窗口只返回选择，实际卸载由 Chromium setup 执行，不显示虚构的卸载进度。
+浏览器仍在运行时，现有提示会要求先关闭所有 Aegis Browser 窗口。
+
+卸载 UI 的独立原生回归只创建控件，不执行安装或删除用户资料：
+
+```powershell
+autoninja -C out/AegisRelease aegis_uninstall_view_unittests
+out/AegisRelease/aegis_uninstall_view_unittests.exe --test-launcher-jobs=1
+```
+
+测试覆盖保留资料、主动勾选删除、取消/关闭、异常销毁、默认焦点、拖动命中、
+居中按钮、长文案与高对比度切换；仍需在目标设备检查实际窗口和缩放效果。
+
+在产品仓库根目录检查同次构建的图标资源：
+
+```powershell
+python apps/browser/scripts/windows-uninstall-branding_test.py <Chromium-src> <Windows-out>
+```
 
 构建 Windows 语言包后，在产品仓库根目录运行以下回归。它读取浏览器使用的英文、简体中文及繁体中文 `.pak` 文件。
 

@@ -529,3 +529,4 @@
 0529-prepare-resource-recovery-build342.patch
 0530-adapt-chromium158-actor-surface343.patch
 0531-preserve-reading-split-default344.patch
+0532-align-windows-uninstall-ui.patch

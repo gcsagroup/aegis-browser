@@ -1,0 +1,614 @@
+From 1a06ce77199362644268124ed5019138a86bc045 Mon Sep 17 00:00:00 2001
+From: lain665 <lain@erjinyi.com>
+Date: Sun, 22 Nov 2026 08:26:58 +0800
+Subject: [PATCH] feat(windows): align uninstall dialog with installer
+
+---
+ .../app/theme/chrome_unscaled_resources.grd   |   4 +
+ chrome/browser/ui/views/BUILD.gn              |  35 ++-
+ .../ui/views/aegis_uninstall_test_main.cc     |  37 +++
+ chrome/browser/ui/views/uninstall_view.cc     | 220 +++++++++++++-----
+ chrome/browser/ui/views/uninstall_view.h      |  17 +-
+ .../ui/views/uninstall_view_unittest.cc       | 127 +++++++++-
+ 6 files changed, 376 insertions(+), 64 deletions(-)
+ create mode 100644 chrome/browser/ui/views/aegis_uninstall_test_main.cc
+
+diff --git a/chrome/app/theme/chrome_unscaled_resources.grd b/chrome/app/theme/chrome_unscaled_resources.grd
+index 2cffbfc..d97a273 100644
+--- a/chrome/app/theme/chrome_unscaled_resources.grd
++++ b/chrome/app/theme/chrome_unscaled_resources.grd
+@@ -157,6 +157,10 @@
+         <include name="IDR_LINUX_ILLUSTRATION" file="crostini/linux_illustration_2x.png" type="BINDATA" />
+         <include name="IDR_LINUX_SUCCESS_ILLUSTRATION" file="crostini/linux_success_illustration.svg" type="BINDATA" />
+       </if>
++      <if expr="is_win">
++        <!-- 与 Windows 安装器 ICO 的 256px 图层共用原始应用图标，避免误用透明品牌 Logo。 -->
++        <include name="IDR_AEGIS_WINDOWS_APP_ICON" file="gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_256.png" type="BINDATA" />
++      </if>
+     </includes>
+   </release>
+ </grit>
+diff --git a/chrome/browser/ui/views/BUILD.gn b/chrome/browser/ui/views/BUILD.gn
+index ccf57b0..1376d8b 100644
+--- a/chrome/browser/ui/views/BUILD.gn
++++ b/chrome/browser/ui/views/BUILD.gn
+@@ -8,6 +8,7 @@ import("//build/config/ui.gni")
+ import("//crypto/features.gni")
+ import("//extensions/buildflags/buildflags.gni")
+ import("//printing/buildflags/buildflags.gni")
++import("//testing/test.gni")
+ import("//ui/views/features.gni")
+ 
+ assert(toolkit_views)
+@@ -388,17 +389,49 @@ if (is_win) {
+     public = [ "uninstall_view.h" ]
+     sources = [ "uninstall_view.cc" ]
+     deps = [
+-      ":layout_provider",
+       "//base",
+       "//chrome/app:branded_strings",
+       "//chrome/app:generated_resources",
++
++      # 卸载确认使用与安装器相同的高分辨率产品图标。
++      "//chrome/app/theme:chrome_unscaled_resources",
+       "//chrome/browser/ui:uninstall_browser_prompt",
+       "//chrome/common:constants",
+       "//content/public/common",
+       "//ui/base",
++      "//ui/color",
++      "//ui/gfx",
++      "//ui/gfx/geometry",
++      "//ui/native_theme",
++      "//ui/views",
++    ]
++  }
++
++  # 独立运行真实卸载控件的回归，不启动浏览器、不执行安装或删除资料。
++  test("aegis_uninstall_view_unittests") {
++    sources = [
++      "aegis_uninstall_test_main.cc",
++      "uninstall_view_unittest.cc",
++    ]
++    deps = [
++      ":uninstall_browser_prompt",
++      "//base",
++      "//chrome/common:constants",
++      "//content/public/common",
++      "//mojo/core/embedder",
++      "//testing/gtest",
++      "//ui/base",
++      "//ui/color",
+       "//ui/gfx",
+       "//ui/gfx/geometry",
++      "//ui/native_theme",
++      "//ui/resources:ui_test_pak",
+       "//ui/views",
++      "//ui/views:test_support",
++    ]
++    data_deps = [
++      "//chrome:packed_resources",
++      "//ui/resources:ui_test_pak_data",
+     ]
+   }
+ }
+diff --git a/chrome/browser/ui/views/aegis_uninstall_test_main.cc b/chrome/browser/ui/views/aegis_uninstall_test_main.cc
+new file mode 100644
+index 0000000..f127f0f
+--- /dev/null
++++ b/chrome/browser/ui/views/aegis_uninstall_test_main.cc
+@@ -0,0 +1,37 @@
++// Copyright 2026 The Aegis Browser Authors
++// Windows 卸载 UI 的独立 Views 测试入口；加载产品语言与图标，不运行浏览器或 setup。
++
++#include "base/base_paths.h"
++#include "base/check.h"
++#include "base/command_line.h"
++#include "base/files/file_path.h"
++#include "base/path_service.h"
++#include "mojo/core/embedder/embedder.h"
++#include "ui/base/resource/resource_bundle.h"
++#include "ui/views/views_test_suite.h"
++
++namespace {
++class UninstallTestSuite : public views::ViewsTestSuite {
++ public:
++  using views::ViewsTestSuite::ViewsTestSuite;
++
++ protected:
++  void Initialize() override {
++    views::ViewsTestSuite::Initialize();
++    base::FilePath directory;
++    CHECK(base::PathService::Get(base::DIR_EXE, &directory));
++    auto& resources = ui::ResourceBundle::GetSharedInstance();
++    const auto locale =
++        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("lang");
++    CHECK(!resources.ReloadLocaleResources(locale.empty() ? "en-US" : locale)
++               .empty());
++    resources.AddDataPackFromPath(directory.AppendASCII("resources.pak"),
++                                  ui::kScaleFactorNone);
++  }
++};
++}  // namespace
++
++int main(int argc, char** argv) {
++  mojo::core::Init();
++  return UninstallTestSuite(argc, argv).RunTests();
++}
+diff --git a/chrome/browser/ui/views/uninstall_view.cc b/chrome/browser/ui/views/uninstall_view.cc
+index 18fd1ee..6282bf2 100644
+--- a/chrome/browser/ui/views/uninstall_view.cc
++++ b/chrome/browser/ui/views/uninstall_view.cc
+@@ -1,83 +1,196 @@
+ // Copyright 2012 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
++// Windows 卸载确认展示：沿用安装器品牌与留白，只返回选择，不删除文件或资料。
+ 
+ #include "chrome/browser/ui/views/uninstall_view.h"
+ 
++#include <algorithm>
++#include <memory>
++#include <optional>
++
++#include "base/functional/bind.h"
+ #include "base/run_loop.h"
+ #include "base/task/current_thread.h"
+ #include "chrome/browser/ui/uninstall_browser_prompt.h"
+-#include "chrome/browser/ui/views/chrome_layout_provider.h"
+ #include "chrome/common/chrome_result_codes.h"
+ #include "chrome/grit/branded_strings.h"
++#include "chrome/grit/chrome_unscaled_resources.h"
++#include "ui/base/hit_test.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/base/models/image_model.h"
+ #include "ui/base/mojom/dialog_button.mojom.h"
+-#include "ui/views/accessibility/accessibility_paint_checks.h"
++#include "ui/base/resource/resource_bundle.h"
++#include "ui/color/color_id.h"
++#include "ui/color/color_provider.h"
++#include "ui/gfx/font_list.h"
++#include "ui/gfx/image/image.h"
++#include "ui/native_theme/native_theme.h"
++#include "ui/views/bubble/bubble_frame_view.h"
+ #include "ui/views/controls/button/checkbox.h"
++#include "ui/views/controls/button/md_text_button.h"
++#include "ui/views/controls/image_view.h"
+ #include "ui/views/controls/label.h"
+ #include "ui/views/layout/box_layout.h"
+-#include "ui/views/layout/box_layout_view.h"
+-#include "ui/views/metadata/view_factory.h"
++#include "ui/views/layout/layout_provider.h"
+ #include "ui/views/view_class_properties.h"
+ #include "ui/views/widget/widget.h"
++#include "ui/views/window/non_client_view.h"
++
++namespace {
++// 与 mini_installer/aegis_install_ui.cc 使用相同的 DIP 尺寸和品牌色；
++// Views 负责按显示器 DPI 渲染，不缩放整窗位图。长译文可自然增加窗口高度。
++constexpr int kWidth = 640;
++constexpr int kContentWidth = 560;
++constexpr SkColor kInk = SkColorSetRGB(23, 36, 54);
++constexpr SkColor kMuted = SkColorSetRGB(102, 116, 134);
++constexpr SkColor kAccent = SkColorSetRGB(0, 128, 160);
++constexpr SkColor kSecondary = SkColorSetRGB(231, 238, 244);
++}  // namespace
+ 
+ UninstallView::UninstallView(int* user_selection,
+-                             const base::RepeatingClosure& quit_closure)
++                           const base::RepeatingClosure& quit_closure)
+     : user_selection_(*user_selection), quit_closure_(quit_closure) {
++  // 只有明确接受才能继续卸载；窗口异常销毁也不能误报用户同意。
++  *user_selection_ = CHROME_RESULT_CODE_UNINSTALL_USER_CANCEL;
+   SetupControls();
+ }
+ 
+ UninstallView::~UninstallView() {
+-  // Exit the message loop we were started with so that uninstall can continue.
++  // 选择由调用方持有，退出嵌套消息循环后才交给 setup 执行实际卸载。
+   quit_closure_.Run();
+ }
+ 
+ void UninstallView::SetupControls() {
+-  ChromeLayoutProvider* provider = ChromeLayoutProvider::Get();
+-  const int checkbox_indent =
+-      provider->GetDistanceMetric(DISTANCE_SUBSECTION_HORIZONTAL_INDENT);
+-  const int unrelated_vertical_spacing =
+-      provider->GetDistanceMetric(views::DISTANCE_UNRELATED_CONTROL_VERTICAL);
+-  const int related_vertical_small =
+-      provider->GetDistanceMetric(DISTANCE_RELATED_CONTROL_VERTICAL_SMALL);
+-
+-  auto builder =
+-      views::Builder<UninstallView>(this)
+-          .SetButtonLabel(ui::mojom::DialogButton::kOk,
+-                          l10n_util::GetStringUTF16(IDS_UNINSTALL_BUTTON_TEXT))
+-          .SetTitle(IDS_UNINSTALL_CHROME)
+-          .SetAcceptCallback(base::BindOnce(&UninstallView::OnDialogAccepted,
+-                                            base::Unretained(this)))
+-          .SetCancelCallback(base::BindOnce(&UninstallView::OnDialogCancelled,
+-                                            base::Unretained(this)))
+-          .SetCloseCallback(base::BindOnce(&UninstallView::OnDialogCancelled,
+-                                           base::Unretained(this)))
+-          .set_margins(provider->GetDialogInsetsForContentType(
+-              views::DialogContentType::kText, views::DialogContentType::kText))
+-          .SetLayoutManager(std::make_unique<views::BoxLayout>(
+-              views::BoxLayout::Orientation::kVertical))
+-          .AddChildren(
+-              // Message to confirm uninstallation.
+-              views::Builder<views::Label>()
+-                  .SetText(l10n_util::GetStringUTF16(IDS_UNINSTALL_VERIFY))
+-                  .SetHorizontalAlignment(gfx::ALIGN_LEFT)
+-                  .SetProperty(
+-                      views::kMarginsKey,
+-                      gfx::Insets::TLBR(0, 0, unrelated_vertical_spacing, 0)),
+-              // The "delete profile" check box.
+-              views::Builder<views::Checkbox>()
+-                  .CopyAddressTo(&delete_profile_)
+-                  .SetText(
+-                      l10n_util::GetStringUTF16(IDS_UNINSTALL_DELETE_PROFILE))
+-                  .SetProperty(views::kMarginsKey,
+-                               gfx::Insets::TLBR(0, checkbox_indent, 0, 0)));
+-
+-  std::move(builder)
+-      .AddChild(views::Builder<views::View>().SetProperty(
+-          views::kMarginsKey,
+-          gfx::Insets::TLBR(related_vertical_small, 0, 0, 0)))
+-      .BuildChildren();
++  SetTitle(IDS_UNINSTALL_CHROME);
++  SetShowTitle(false);
++  SetShowCloseButton(false);
++  SetButtonLabel(ui::mojom::DialogButton::kOk,
++                 l10n_util::GetStringUTF16(IDS_UNINSTALL_BUTTON_TEXT));
++  // 保留 DialogDelegate 的输入保护、Esc、Tab 和辅助功能；默认焦点为取消，
++  // 打开窗口后直接按回车不能无意卸载，更不能默认删除用户资料。
++  SetDefaultButton(static_cast<int>(ui::mojom::DialogButton::kCancel));
++  SetButtonStyle(ui::mojom::DialogButton::kOk, ui::ButtonStyle::kProminent);
++  SetButtonStyle(ui::mojom::DialogButton::kCancel, ui::ButtonStyle::kTonal);
++  SetAcceptCallback(base::BindOnce(&UninstallView::OnDialogAccepted,
++                                  base::Unretained(this)));
++  SetCancelCallback(base::BindOnce(&UninstallView::OnDialogCancelled,
++                                  base::Unretained(this)));
++  SetCloseCallback(base::BindOnce(&UninstallView::OnDialogCancelled,
++                                 base::Unretained(this)));
++  set_frame_margins({.contents = gfx::Insets(), .title = gfx::Insets()});
++
++  auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
++      views::BoxLayout::Orientation::kVertical,
++      gfx::Insets::TLBR(62, 40, 0, 40)));
++  layout->set_cross_axis_alignment(views::BoxLayout::CrossAxisAlignment::kCenter);
++  auto* logo = AddChildView(std::make_unique<views::ImageView>());
++  // 使用与安装器 ICO 相同的 256px 应用图标；通用 PRODUCT_LOGO 是透明品牌标志，
++  // 不是安装器使用的蓝底图标。源图保留足够像素供高 DPI 的 80 DIP 展示采样。
++  logo->SetImage(ui::ImageModel::FromImageSkia(
++      ui::ResourceBundle::GetSharedInstance()
++          .GetImageNamed(IDR_AEGIS_WINDOWS_APP_ICON)
++          .AsImageSkia()));
++  logo->SetImageSize(gfx::Size(80, 80));
++  logo->SetProperty(views::kMarginsKey, gfx::Insets::TLBR(0, 0, 22, 0));
++
++  title_ = AddChildView(std::make_unique<views::Label>(u"Aegis Browser"));
++  title_->SetFontList(gfx::FontList({"Segoe UI"}, gfx::Font::NORMAL, 34,
++                                  gfx::Font::Weight::SEMIBOLD));
++  title_->SetPreferredSize(gfx::Size(kContentWidth, 48));
++  title_->SetProperty(views::kMarginsKey, gfx::Insets::TLBR(0, 0, 24, 0));
++
++  const gfx::FontList body_font({"Microsoft YaHei UI", "Segoe UI"},
++                                gfx::Font::NORMAL, 14,
++                                gfx::Font::Weight::NORMAL);
++  message_ = AddChildView(std::make_unique<views::Label>(
++      l10n_util::GetStringUTF16(IDS_UNINSTALL_VERIFY)));
++  message_->SetFontList(body_font);
++  message_->SetMultiLine(true);
++  // 连续长词也允许换行，避免窄屏或较长译文被静默截断。
++  message_->SetAllowCharacterBreak(true);
++  message_->SetLineHeight(20);
++  message_->SizeToFit(kContentWidth);
++  message_->SetProperty(views::kMarginsKey, gfx::Insets::TLBR(0, 0, 16, 0));
++
++  delete_profile_ = AddChildView(std::make_unique<views::Checkbox>(
++      l10n_util::GetStringUTF16(IDS_UNINSTALL_DELETE_PROFILE)));
++  delete_profile_->SetMultiLine(true);
++  delete_profile_->SetMinSize(gfx::Size(0, 24));
++  delete_profile_->SetMaxSize(gfx::Size(kContentWidth, 0));
++  delete_profile_->SetChecked(false);
++}
++
++void UninstallView::OnWidgetInitialized() {
++  views::DialogDelegateView::OnWidgetInitialized();
++  for (auto* button : {GetOkButton(), GetCancelButton()}) {
++    button->SetMinSize(gfx::Size(112, 40));
++    button->SetCornerRadius(8);
++  }
++  // 仍由框架创建和处理确认按钮；根据译文实际宽度计算居中留白。
++  const int button_width =
++      std::max(GetOkButton()->GetPreferredSize().width(),
++               GetCancelButton()->GetPreferredSize().width());
++  const int spacing = views::LayoutProvider::Get()->GetDistanceMetric(
++      views::DISTANCE_RELATED_BUTTON_HORIZONTAL);
++  const int inset = std::max(40, (kWidth - 2 * button_width - spacing) / 2);
++  SetButtonRowInsets(gfx::Insets::TLBR(24, inset, 40, inset));
++  auto* frame = GetBubbleFrameView();
++  frame->bubble_border()->set_draw_border_stroke(false);
++  frame->bubble_border()->set_rounded_corners(gfx::RoundedCornersF(8));
++  // 顶部留白为拖动区；不把正文、复选框或按钮误判为标题栏。
++  frame->set_non_client_hit_test_callback(base::BindRepeating(
++      [](views::BubbleFrameView* frame, const gfx::Point& point) {
++        const gfx::Rect bounds = frame->GetBoundsForClientView();
++        return bounds.Contains(point) && point.y() < bounds.y() + 36
++                   ? HTCAPTION
++                   : HTNOWHERE;
++      },
++      base::Unretained(frame)));
++  UpdateColors();
++  // 按完成初始化后的按钮和译文尺寸居中，避免框架的初始按钮高度压缩正文。
++  GetWidget()->CenterWindow(
++      GetWidget()->non_client_view()->GetPreferredSize({}));
++}
++
++void UninstallView::OnThemeChanged() {
++  views::DialogDelegateView::OnThemeChanged();
++  // 初次加入控件树时按钮可能尚未创建；初始化完成后还会统一更新一次。
++  if (GetWidget() && GetBubbleFrameView() && GetOkButton() && GetCancelButton()) {
++    UpdateColors();
++  }
++}
++
++void UninstallView::UpdateColors() {
++  // 普通明暗主题都与白底安装器一致；系统强制高对比度时恢复系统色，
++  // 不强行套用青蓝背景或白字，以免覆盖用户的可读性设置。
++  const bool high_contrast =
++      GetNativeTheme()->forced_colors() !=
++      ui::ColorProviderKey::ForcedColors::kNone;
++  const auto* colors = GetColorProvider();
++  const SkColor background =
++      high_contrast ? colors->GetColor(ui::kColorDialogBackground) : SK_ColorWHITE;
++  const SkColor ink =
++      high_contrast ? colors->GetColor(ui::kColorLabelForeground) : kInk;
++  GetBubbleFrameView()->SetBackgroundColor(background);
++  title_->SetEnabledColor(ink);
++  message_->SetEnabledColor(high_contrast ? ink : kMuted);
++  title_->SetBackgroundColor(background);
++  message_->SetBackgroundColor(background);
++  delete_profile_->SetEnabledTextColors(ink);
++  for (auto* button : {GetOkButton(), GetCancelButton()}) {
++    const bool primary = button == GetOkButton();
++    button->SetBgColorOverrideDeprecated(
++        high_contrast ? std::nullopt
++                      : std::make_optional(primary ? kAccent : kSecondary));
++    button->SetStrokeColorOverrideDeprecated(
++        high_contrast ? std::nullopt : std::make_optional(SK_ColorTRANSPARENT));
++    button->SetEnabledTextColors(high_contrast
++                                    ? std::nullopt
++                                    : std::make_optional(ui::ColorVariant(
++                                          primary ? SK_ColorWHITE : kInk)));
++  }
+ }
+ 
+ void UninstallView::OnDialogAccepted() {
+@@ -96,11 +209,10 @@ END_METADATA
+ 
+ int ShowUninstallBrowserPrompt() {
+   CHECK(base::CurrentUIThread::IsSet(), base::NotFatalUntil::M162);
+-  int result = content::RESULT_CODE_NORMAL_EXIT;
+-
++  int result = CHROME_RESULT_CODE_UNINSTALL_USER_CANCEL;
+   base::RunLoop run_loop;
+-  UninstallView* view = new UninstallView(&result, run_loop.QuitClosure());
+-  views::DialogDelegate::CreateDialogWidget(view, NULL, NULL)->Show();
++  auto* view = new UninstallView(&result, run_loop.QuitClosure());
++  views::DialogDelegate::CreateDialogWidget(view, nullptr, nullptr)->Show();
+   run_loop.Run();
+   return result;
+ }
+diff --git a/chrome/browser/ui/views/uninstall_view.h b/chrome/browser/ui/views/uninstall_view.h
+index 531cb7e..1609ba0 100644
+--- a/chrome/browser/ui/views/uninstall_view.h
++++ b/chrome/browser/ui/views/uninstall_view.h
+@@ -1,6 +1,7 @@
+ // Copyright 2012 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
++// Windows 原生卸载确认窗口；只展示品牌与选项，实际卸载仍由 setup 管理。
+ 
+ #ifndef CHROME_BROWSER_UI_VIEWS_UNINSTALL_VIEW_H_
+ #define CHROME_BROWSER_UI_VIEWS_UNINSTALL_VIEW_H_
+@@ -14,10 +15,11 @@
+ 
+ namespace views {
+ class Checkbox;
++class Label;
+ }  // namespace views
+ 
+-// UninstallView implements the dialog that confirms Chrome uninstallation
+-// and asks whether to delete Chrome profile.
++// 返回 Chromium 既有的取消、保留资料或删除资料退出码；默认不授予卸载许可。
++// 调用方必须让 user_selection 和 quit_closure 的依赖存活到窗口销毁。
+ class UninstallView : public views::DialogDelegateView {
+   METADATA_HEADER(UninstallView, views::DialogDelegateView)
+ 
+@@ -28,13 +30,20 @@ class UninstallView : public views::DialogDelegateView {
+   UninstallView& operator=(const UninstallView&) = delete;
+   ~UninstallView() override;
+ 
++  // 控件仍归 Views 所有；初始化后设置视觉样式，主题变化时遵循高对比度。
++  void OnWidgetInitialized() override;
++  void OnThemeChanged() override;
++
+  private:
+-  // Initializes the controls on the dialog.
++  friend class UninstallViewTestPeer;
+   void SetupControls();
+-
++  void UpdateColors();
++  // 只有接受回调读取删除选项；取消和关闭永远返回取消。
+   void OnDialogAccepted();
+   void OnDialogCancelled();
+ 
++  raw_ptr<views::Label> title_ = nullptr;
++  raw_ptr<views::Label> message_ = nullptr;
+   raw_ptr<views::Checkbox> delete_profile_ = nullptr;
+   const raw_ref<int> user_selection_;
+   base::RepeatingClosure quit_closure_;
+diff --git a/chrome/browser/ui/views/uninstall_view_unittest.cc b/chrome/browser/ui/views/uninstall_view_unittest.cc
+index 448687a..7107269 100644
+--- a/chrome/browser/ui/views/uninstall_view_unittest.cc
++++ b/chrome/browser/ui/views/uninstall_view_unittest.cc
+@@ -1,33 +1,150 @@
+ // Copyright 2020 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
++// 只创建真实确认控件并验证返回契约；测试不执行 setup 或删除任何浏览资料。
+ 
+ #include "chrome/browser/ui/views/uninstall_view.h"
+ 
++#include <algorithm>
++#include <string>
++
++#include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "chrome/common/chrome_result_codes.h"
+-#include "chrome/test/views/chrome_views_test_base.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "ui/base/hit_test.h"
++#include "ui/base/mojom/dialog_button.mojom.h"
++#include "ui/color/color_provider.h"
++#include "ui/native_theme/native_theme.h"
++#include "ui/views/bubble/bubble_frame_view.h"
++#include "ui/views/controls/button/checkbox.h"
++#include "ui/views/controls/button/md_text_button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/test/views_test_base.h"
++#include "ui/views/widget/widget.h"
++
++// 只暴露测试所需的用户选项和换行标签，不增加产品 API。
++class UninstallViewTestPeer {
++ public:
++  static views::Checkbox* DeleteProfile(UninstallView& view) {
++    return view.delete_profile_;
++  }
++  static views::Label* Message(UninstallView& view) { return view.message_; }
++};
+ 
+-using UninstallViewTest = ChromeViewsTestBase;
++using UninstallViewTest = views::ViewsTestBase;
+ 
+-TEST_F(UninstallViewTest, Accept) {
++TEST_F(UninstallViewTest, AcceptKeepsProfileByDefault) {
++  // 未勾选的确认只卸载程序，不能被视觉更新变成默认删除资料。
+   int result = -1;
+   UninstallView view(&result, base::DoNothing());
++  EXPECT_FALSE(UninstallViewTestPeer::DeleteProfile(view)->GetChecked());
+   view.Accept();
+   EXPECT_EQ(result, content::RESULT_CODE_NORMAL_EXIT);
+ }
+ 
+-TEST_F(UninstallViewTest, Cancel) {
++TEST_F(UninstallViewTest, DeleteProfileRequiresExplicitOptIn) {
++  int result = -1;
++  UninstallView view(&result, base::DoNothing());
++  UninstallViewTestPeer::DeleteProfile(view)->SetChecked(true);
++  view.Accept();
++  EXPECT_EQ(result, CHROME_RESULT_CODE_UNINSTALL_DELETE_PROFILE);
++}
++
++TEST_F(UninstallViewTest, CancelDiscardsDeleteSelection) {
+   int result = -1;
+   UninstallView view(&result, base::DoNothing());
++  UninstallViewTestPeer::DeleteProfile(view)->SetChecked(true);
+   view.Cancel();
+   EXPECT_EQ(result, CHROME_RESULT_CODE_UNINSTALL_USER_CANCEL);
+ }
+ 
+-TEST_F(UninstallViewTest, Close) {
++TEST_F(UninstallViewTest, CloseDiscardsDeleteSelection) {
+   int result = -1;
+   UninstallView view(&result, base::DoNothing());
++  UninstallViewTestPeer::DeleteProfile(view)->SetChecked(true);
+   view.Close();
+   EXPECT_EQ(result, CHROME_RESULT_CODE_UNINSTALL_USER_CANCEL);
+ }
++
++TEST_F(UninstallViewTest, DestructionWithoutChoiceCancelsAndQuits) {
++  // 窗口创建失败或直接销毁都必须保守取消，同时释放调用方消息循环。
++  int result = content::RESULT_CODE_NORMAL_EXIT;
++  int quit_count = 0;
++  {
++    UninstallView view(&result, base::BindRepeating(
++                                   [](int* count) { ++*count; }, &quit_count));
++  }
++  EXPECT_EQ(result, CHROME_RESULT_CODE_UNINSTALL_USER_CANCEL);
++  EXPECT_EQ(quit_count, 1);
++}
++
++TEST_F(UninstallViewTest, BrandLayoutKeepsSafeKeyboardDefault) {
++  int result = -1;
++  auto* view = new UninstallView(&result, base::DoNothing());
++  auto* widget =
++      views::DialogDelegate::CreateDialogWidget(view, GetContext(), nullptr);
++  widget->Show();
++  EXPECT_FALSE(view->ShouldShowWindowTitle());
++  EXPECT_FALSE(view->ShouldShowCloseButton());
++  EXPECT_EQ(view->GetInitiallyFocusedView(), view->GetCancelButton());
++  EXPECT_EQ(view->GetDefaultDialogButton(),
++            static_cast<int>(ui::mojom::DialogButton::kCancel));
++  EXPECT_EQ(view->width(), 640);
++  auto* frame = view->GetBubbleFrameView();
++  const gfx::Rect client = frame->GetBoundsForClientView();
++  EXPECT_EQ(frame->NonClientHitTest(client.origin() + gfx::Vector2d(100, 20)),
++            HTCAPTION);
++  EXPECT_EQ(frame->NonClientHitTest(client.origin() + gfx::Vector2d(100, 240)),
++            HTCLIENT);
++  EXPECT_GE(view->GetOkButton()->height(), 40);
++  EXPECT_GE(view->GetCancelButton()->height(), 40);
++  const auto* checkbox = UninstallViewTestPeer::DeleteProfile(*view);
++  EXPECT_TRUE(view->GetLocalBounds().Contains(checkbox->bounds()));
++  const gfx::Rect ok = view->GetOkButton()->GetBoundsInScreen();
++  const gfx::Rect cancel = view->GetCancelButton()->GetBoundsInScreen();
++  EXPECT_FALSE(ok.Intersects(cancel));
++  const int button_center =
++      (std::min(ok.x(), cancel.x()) + std::max(ok.right(), cancel.right())) / 2;
++  EXPECT_NEAR(button_center, view->GetBoundsInScreen().CenterPoint().x(), 1);
++  widget->CloseNow();
++}
++
++TEST_F(UninstallViewTest, LongTranslationExpandsWithoutCoveringChoices) {
++  // 固定品牌宽度不应截断较长译文，也不能让正文覆盖删除选项或按钮。
++  int result = -1;
++  auto* view = new UninstallView(&result, base::DoNothing());
++  auto* message = UninstallViewTestPeer::Message(*view);
++  message->SetText(std::u16string(240, u'W'));
++  message->SizeToFit(560);
++  auto* widget =
++      views::DialogDelegate::CreateDialogWidget(view, GetContext(), nullptr);
++  widget->Show();
++  EXPECT_GT(message->height(), 20);
++  auto* checkbox = UninstallViewTestPeer::DeleteProfile(*view);
++  EXPECT_LE(message->bounds().bottom(), checkbox->y());
++  EXPECT_LE(checkbox->GetBoundsInScreen().bottom(),
++            view->GetOkButton()->GetBoundsInScreen().y());
++  widget->CloseNow();
++}
++
++TEST_F(UninstallViewTest, HighContrastRestoresSystemButtonColors) {
++  // 模拟运行时强制色切换；离开高对比度后应恢复安装器的品牌色。
++  int result = -1;
++  auto* view = new UninstallView(&result, base::DoNothing());
++  auto* widget =
++      views::DialogDelegate::CreateDialogWidget(view, GetContext(), nullptr);
++  auto* theme = view->GetNativeTheme();
++  const auto original = theme->forced_colors();
++  theme->set_forced_colors(ui::ColorProviderKey::ForcedColors::kSystem);
++  view->OnThemeChanged();
++  EXPECT_FALSE(view->GetOkButton()->GetBgColorOverrideDeprecated().has_value());
++  EXPECT_FALSE(
++      view->GetCancelButton()->GetStrokeColorOverrideDeprecated().has_value());
++  theme->set_forced_colors(ui::ColorProviderKey::ForcedColors::kNone);
++  view->OnThemeChanged();
++  EXPECT_EQ(view->GetOkButton()->GetBgColorOverrideDeprecated(),
++            SkColorSetRGB(0, 128, 160));
++  theme->set_forced_colors(original);
++  widget->CloseNow();
++}
+-- 
+2.56.0.windows.4
+
