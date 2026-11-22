@@ -1,0 +1,247 @@
+From 46a0bd50bfa8880c996d4c34ea8bb97483bc4d41 Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 01:22:46 +0800
+Subject: [PATCH] Verify activation by the competing browser window and its
+ owned popup
+
+---
+ .../omnibox/omnibox_aim_popup_browsertest.cc  | 154 ++++++++++++++----
+ 1 file changed, 124 insertions(+), 30 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index 6a30ed1bc423ad8204d78b951726d784c471ecf7..933957c0d5f73ead0af82f405c7ea20f87b6e565 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -76,6 +76,7 @@
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/shell_dialogs/fake_select_file_dialog.h"
+ #include "ui/views/controls/menu/menu_controller.h"
++#include "ui/views/view_tracker.h"
+ #include "ui/views/view_utils.h"
+ #include "ui/views/widget/widget.h"
+ #include "ui/views/widget/widget_delegate.h"
+@@ -932,6 +933,30 @@ class OmniboxAimPopupFullWebUIBrowserTest : public OmniboxAimPopupBrowserTest {
+ 
+  protected:
+ #if BUILDFLAG(IS_MAC)
++  static bool IsBrowserOrFullPopupActive(
++      const base::WeakPtr<BrowserWindowInterface>& browser) {
++    auto* browser_view =
++        browser ? BrowserView::GetBrowserViewForBrowser(browser.get()) : nullptr;
++    const auto* browser_widget =
++        browser_view ? browser_view->GetWidget() : nullptr;
++    if (!browser_widget) {
++      return false;
++    }
++    if (browser_widget->IsActive()) {
++      return true;
++    }
++
++    // The Full WebUI popup can take key status from its browser window.
++    auto* bar = browser_view->toolbar()->location_bar_view();
++    if (!bar || !bar->is_full_webui_omnibox()) {
++      return false;
++    }
++    auto* popup = bar->GetOmniboxPopupView();
++    auto* presenter = popup ? popup->presenter() : nullptr;
++    const auto* popup_widget = presenter ? presenter->GetWidget() : nullptr;
++    return popup_widget && popup_widget->IsActive();
++  }
++
+   void ShowFocusedFullPopupWithTabMicrophonePrompt() {
+     ASSERT_TRUE(ui_test_utils::NavigateToURL(
+         browser(), chrome::ChromeUINewTabURLAsGURL()));
+@@ -1121,15 +1146,15 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+   auto* controller = location_bar()->GetOmniboxController();
+   auto* presenter = location_bar()->GetOmniboxPopupView()->presenter();
+   test::PermissionRequestManagerTestApi api(browser());
+-  auto* prompt = api.GetPromptWindow();
+-  ASSERT_TRUE(prompt && prompt->IsActive());
++  auto* prompt_widget = api.GetPromptWindow();
++  ASSERT_TRUE(prompt_widget && prompt_widget->IsActive());
++  const auto prompt = prompt_widget->GetWeakPtr();
+ 
+   auto* other_browser = CreateBrowser(browser()->GetProfile());
+   ASSERT_TRUE(other_browser);
+-  ui_test_utils::WaitUntilBrowserBecomeActive(other_browser);
+-  auto* other_widget =
+-      BrowserView::GetBrowserViewForBrowser(other_browser)->GetWidget();
+-  ASSERT_TRUE(other_widget->IsActive());
++  const auto other_window = other_browser->GetWeakPtr();
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return IsBrowserOrFullPopupActive(other_window); }));
+ 
+   ASSERT_TRUE(base::test::RunUntil([&] {
+     return !controller->edit_model()->has_focus() &&
+@@ -1137,10 +1162,16 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+                OmniboxPopupState::kNone &&
+            !presenter->IsPermissionPromptPreventingClose();
+   }));
+-  ASSERT_EQ(api.GetPromptWindow(), prompt);
++  ASSERT_TRUE(prompt);
++  ASSERT_EQ(api.GetPromptWindow(), prompt.get());
++  EXPECT_FALSE(prompt->IsClosed());
+   EXPECT_TRUE(prompt->IsVisible());
+   EXPECT_FALSE(prompt->IsActive());
+-  EXPECT_TRUE(other_widget->IsActive());
++  EXPECT_FALSE(location_bar()->GetWidget()->GetTopLevelWidget()->IsActive());
++  if (const auto* popup_widget = presenter->GetWidget()) {
++    EXPECT_FALSE(popup_widget->IsActive());
++  }
++  EXPECT_TRUE(IsBrowserOrFullPopupActive(other_window));
+   api.manager()->Dismiss(/*prompt_options=*/std::monostate());
+ }
+ 
+@@ -1169,15 +1200,18 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+     return prompt && prompt->IsActive() &&
+            presenter->IsPermissionPromptPreventingClose();
+   }));
+-  auto* prompt = api.GetPromptWindow();
++  auto* prompt_widget = api.GetPromptWindow();
++  ASSERT_TRUE(prompt_widget);
++  const auto prompt = prompt_widget->GetWeakPtr();
+ 
+   auto* other_browser = CreateBrowser(browser()->GetProfile());
+   ASSERT_TRUE(other_browser);
+-  ui_test_utils::WaitUntilBrowserBecomeActive(other_browser);
+-  auto* other_widget =
+-      BrowserView::GetBrowserViewForBrowser(other_browser)->GetWidget();
+-  ASSERT_TRUE(other_widget->IsActive());
+-  ASSERT_EQ(api.GetPromptWindow(), prompt);
++  const auto other_window = other_browser->GetWeakPtr();
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return IsBrowserOrFullPopupActive(other_window); }));
++  ASSERT_TRUE(prompt);
++  ASSERT_EQ(api.GetPromptWindow(), prompt.get());
++  ASSERT_FALSE(prompt->IsClosed());
+   ASSERT_TRUE(prompt->IsVisible());
+   ASSERT_FALSE(prompt->IsActive());
+   ASSERT_TRUE(presenter->IsShown());
+@@ -1188,7 +1222,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+     return !api.manager()->IsRequestInProgress() &&
+            !presenter->IsPermissionPromptPreventingClose();
+   }));
+-  EXPECT_TRUE(other_widget->IsActive());
++  EXPECT_TRUE(IsBrowserOrFullPopupActive(other_window));
+   EXPECT_FALSE(location_bar()->GetWidget()->GetTopLevelWidget()->IsActive());
+   if (presenter->GetWidget()) {
+     EXPECT_FALSE(presenter->GetWidget()->IsActive());
+@@ -1232,43 +1266,103 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupEmbeddedPermissionBrowserTest,
+   api.SetOrigin(requesting_origin);
+   api.AddSimpleRequest(frame, permissions::RequestType::kMicStream);
+ 
+-  auto* browser_widget = location_bar()->GetWidget()->GetTopLevelWidget();
++  const auto weak_contents = contents->GetWeakPtr();
++  const auto browser_widget =
++      location_bar()->GetWidget()->GetTopLevelWidget()->GetWeakPtr();
++  views::ViewTracker bar_tracker(location_bar());
++  const auto get_manager = [&] {
++    return weak_contents
++               ? permissions::PermissionRequestManager::FromWebContents(
++                     weak_contents.get())
++               : nullptr;
++  };
++  const auto get_presenter = [&] {
++    auto* bar = static_cast<LocationBarView*>(bar_tracker.view());
++    return bar ? bar->GetOmniboxPopupAimPresenter() : nullptr;
++  };
+   base::WeakPtr<views::Widget> prompt;
+   ASSERT_TRUE(base::test::RunUntil([&] {
+-    if (!manager->GetCurrentPrompt()) {
++    const auto* current_manager = get_manager();
++    if (!browser_widget || !current_manager ||
++        !current_manager->GetCurrentPrompt()) {
+       return false;
+     }
+     for (views::Widget* widget :
+          views::Widget::GetAllOwnedWidgets(browser_widget->GetNativeView())) {
+       const auto* view = views::AsViewClass<EmbeddedPermissionPromptBaseView>(
+           widget->GetClientContentsView());
+-      if (view && view->web_contents() == contents && widget->IsVisible() &&
+-          !widget->IsClosed()) {
++      if (view && view->web_contents() == weak_contents.get() &&
++          widget->IsVisible() && !widget->IsClosed()) {
+         prompt = widget->GetWeakPtr();
+         return true;
+       }
+     }
+     return false;
+   }));
+-  ASSERT_TRUE(presenter->IsPermissionPromptPreventingClose());
++  auto* prompt_presenter = get_presenter();
++  ASSERT_TRUE(prompt_presenter);
++  ASSERT_TRUE(prompt_presenter->IsPermissionPromptPreventingClose());
++  ASSERT_TRUE(prompt && !prompt->IsClosed());
+   // The close callback notifies the popup contents identified during layout.
+-  if (presenter->get_minimum_size().IsEmpty()) {
++  if (prompt_presenter->get_minimum_size().IsEmpty()) {
+     gfx::Rect bounds = prompt->GetWindowBoundsInScreen();
+     bounds.set_width(bounds.width() + 1);
+     prompt->SetBounds(bounds);
+-    ASSERT_TRUE(base::test::RunUntil(
+-        [&] { return !presenter->get_minimum_size().IsEmpty(); }));
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      const auto* current_presenter = get_presenter();
++      return current_presenter && !current_presenter->get_minimum_size().IsEmpty();
++    }));
+   }
+ 
+   ASSERT_TRUE(prompt && !prompt->IsClosed());
++  // BubbleFrameView's close button invokes the same DialogDelegate close path.
+   prompt->CloseWithReason(views::Widget::ClosedReason::kCloseButtonClicked);
+-  ASSERT_TRUE(base::test::RunUntil([&] {
+-    return !manager->IsRequestInProgress() && presenter->GetWidget() &&
+-           presenter->GetWidget()->IsActive() &&
+-           presenter->get_minimum_size().IsEmpty() &&
+-           !presenter->IsPermissionPromptPreventingClose();
+-  }));
+-  ASSERT_NO_FATAL_FAILURE(VerifyFocusRestoredToWebUIInput(presenter, content));
++  const bool restored = base::test::RunUntil([&] {
++    const auto* current_manager = get_manager();
++    const auto* current_presenter = get_presenter();
++    const auto* popup_widget =
++        current_presenter ? current_presenter->GetWidget() : nullptr;
++    return current_manager && !current_manager->IsRequestInProgress() &&
++           popup_widget && popup_widget->IsActive() &&
++           current_presenter->get_minimum_size().IsEmpty() &&
++           !current_presenter->IsPermissionPromptPreventingClose();
++  });
++  if (!restored) {
++    const auto* current_manager = get_manager();
++    const auto* current_presenter = get_presenter();
++    const auto* popup_widget =
++        current_presenter ? current_presenter->GetWidget() : nullptr;
++    FAIL() << "Permission request pending = "
++           << (current_manager ? testing::PrintToString(
++                                     current_manager->IsRequestInProgress())
++                               : "manager unavailable")
++           << "\nAIM popup shown = "
++           << (current_presenter
++                   ? testing::PrintToString(current_presenter->IsShown())
++                   : "presenter unavailable")
++           << "\nAIM popup active (key on Mac) = "
++           << (popup_widget ? testing::PrintToString(popup_widget->IsActive())
++                            : "widget unavailable")
++           << "\nBrowser active (key on Mac) = "
++           << (browser_widget ? testing::PrintToString(browser_widget->IsActive())
++                              : "widget unavailable")
++           << "\nAIM popup minimum size = "
++           << (current_presenter
++                   ? current_presenter->get_minimum_size().ToString()
++                   : "presenter unavailable")
++           << "\nPermission close guard = "
++           << (current_presenter
++                   ? testing::PrintToString(
++                         current_presenter->IsPermissionPromptPreventingClose())
++                   : "presenter unavailable");
++  }
++  auto* restored_presenter = get_presenter();
++  ASSERT_TRUE(restored_presenter);
++  auto* restored_content = static_cast<OmniboxAimPopupWebUIContent*>(
++      restored_presenter->GetWebUIContent());
++  ASSERT_TRUE(restored_content);
++  ASSERT_NO_FATAL_FAILURE(
++      VerifyFocusRestoredToWebUIInput(restored_presenter, restored_content));
+ 
+   auto* other_browser = CreateBrowser(browser()->GetProfile());
+   ASSERT_TRUE(other_browser);
