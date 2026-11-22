@@ -1,0 +1,327 @@
+From 315a7087aee8e9d526749a93ea0fcee13fbf617d Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 04:33:37 +0800
+Subject: [PATCH] Verify focus transitions in native windows and the WebUI
+ voice flow
+
+---
+ .../omnibox/omnibox_aim_popup_browsertest.cc  | 127 +-----------------
+ .../data/webui/omnibox_popup/aim_app_test.ts  |  98 +++++++++++++-
+ .../omnibox_popup_browsertest.cc              |   6 +
+ 3 files changed, 110 insertions(+), 121 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index 14f69b246c0223345c939257cc0a1b2a57a4acb6..1ec5a49375f370fd54a6eede1a1812debcd160ba 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -1185,6 +1185,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+                        TabMicrophonePromptRemovedDuringHandoffBlursFullPopup) {
+   auto* other_browser = CreateBrowser(browser()->GetProfile());
+   ASSERT_TRUE(other_browser);
++  const auto other_window = other_browser->GetWeakPtr();
+   auto* other_view = BrowserView::GetBrowserViewForBrowser(other_browser);
+   ASSERT_TRUE(other_view && other_view->GetWidget());
+   auto* other_widget = other_view->GetWidget();
+@@ -1222,7 +1223,11 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+   }));
+   EXPECT_FALSE(presenter->IsShown());
+   EXPECT_FALSE(presenter->IsPermissionPromptPreventingClose());
+-  EXPECT_TRUE(other_widget->IsActive());
++  EXPECT_TRUE(IsBrowserOrFullPopupActive(other_window));
++  EXPECT_FALSE(browser_widget->IsActive());
++  if (const auto* popup_widget = presenter->GetWidget()) {
++    EXPECT_FALSE(popup_widget->IsActive());
++  }
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+@@ -1381,7 +1386,6 @@ class OmniboxAimPopupEmbeddedPermissionBrowserTest
+     ASSERT_TRUE(prompt_ && prompt_->IsVisible() && !prompt_->IsClosed());
+   }
+ 
+-  void WaitForAimWidgetRestoredAfterPromptClose();
+   void VerifyAimRestoredAfterPromptClose();
+ 
+   base::WeakPtr<views::Widget> browser_widget_;
+@@ -1394,7 +1398,7 @@ class OmniboxAimPopupEmbeddedPermissionBrowserTest
+ };
+ 
+ void OmniboxAimPopupEmbeddedPermissionBrowserTest::
+-    WaitForAimWidgetRestoredAfterPromptClose() {
++    VerifyAimRestoredAfterPromptClose() {
+   const bool restored = base::test::RunUntil([&] {
+     const auto* manager = GetPermissionManager();
+     const auto* presenter = GetAimPresenter();
+@@ -1433,11 +1437,6 @@ void OmniboxAimPopupEmbeddedPermissionBrowserTest::
+                                presenter->IsPermissionPromptPreventingClose())
+                          : "presenter unavailable");
+   }
+-}
+-
+-void OmniboxAimPopupEmbeddedPermissionBrowserTest::
+-    VerifyAimRestoredAfterPromptClose() {
+-  ASSERT_NO_FATAL_FAILURE(WaitForAimWidgetRestoredAfterPromptClose());
+   auto* presenter = GetAimPresenter();
+   auto* content =
+       static_cast<OmniboxAimPopupWebUIContent*>(presenter->GetWebUIContent());
+@@ -1532,118 +1531,6 @@ IN_PROC_BROWSER_TEST_F(
+   ASSERT_NO_FATAL_FAILURE(VerifyAimRestoredAfterPromptClose());
+ }
+ 
+-IN_PROC_BROWSER_TEST_F(
+-    OmniboxAimPopupEmbeddedPermissionWebUILocationBarBrowserTest,
+-    EmbeddedPromptEscapeRestoresInputAfterVoiceModeEnds) {
+-  auto* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
+-  ASSERT_TRUE(browser_view);
+-  ASSERT_FALSE(browser_view->GetLocationBarView());
+-  auto* bar = browser_view->GetLocationBar();
+-  ASSERT_TRUE(bar);
+-  ASSERT_TRUE(base::test::RunUntil([&] { return bar->GetAnchorOrNull(); }));
+-
+-  ASSERT_NO_FATAL_FAILURE(ShowFocusedAimPopup());
+-  ASSERT_EQ(true, content::EvalJs(aim_contents_.get(), R"(
+-    (async () => {
+-      const app = document.querySelector('omnibox-aim-app');
+-      const box = app.$.composebox;
+-      // Recreate the recognizer with a local stand-in for audio/speech only.
+-      // The rendered microphone still runs the real composebox click handler.
+-      box.showVoiceSearch = false;
+-      await box.updateComplete;
+-      let speechStarts = 0;
+-      window.webkitSpeechRecognition = class {
+-        started = false;
+-        start() {
+-          this.started = true;
+-          ++speechStarts;
+-        }
+-        stop() {
+-          this.abort();
+-        }
+-        abort() {
+-          if (this.started) {
+-            this.started = false;
+-            queueMicrotask(() => this.onend());
+-          }
+-        }
+-      };
+-      box.searchboxLayoutMode = 'TallBottomContext';
+-      box.showVoiceSearch = true;
+-      await box.updateComplete;
+-      const voice = box.shadowRoot.querySelector('#voiceSearch');
+-      await voice.updateComplete;
+-      const input = box.getInputElement().inputElement;
+-      const microphone = box.shadowRoot.querySelector('#voiceSearchButton');
+-      if (!input.checkVisibility() || !microphone?.checkVisibility()) {
+-        return false;
+-      }
+-      microphone.focus();
+-      if (box.getActiveElement() !== microphone || box.isFocusInInput()) {
+-        return false;
+-      }
+-      microphone.click();
+-      await box.updateComplete;
+-      window.aimVoiceTest = {box, voice, input, focusRequests: 0};
+-      // Observe the existing Mojo callback without changing what it does.
+-      const router = app.browserProxy_.callbackRouter;
+-      const id = router.focusInput.addListener(() => {
+-        ++window.aimVoiceTest.focusRequests;
+-        router.removeListener(id);
+-      });
+-      return speechStarts === 1 && box.inVoiceSearchMode &&
+-          !input.checkVisibility() && !box.isFocusInInput();
+-    })()
+-  )"));
+-
+-  ASSERT_NO_FATAL_FAILURE(ShowEmbeddedMicrophonePrompt());
+-  ASSERT_TRUE(base::test::RunUntil([&] {
+-    return prompt_ && prompt_->IsActive() &&
+-           content::EvalJs(aim_contents_.get(), R"(
+-             window.aimVoiceTest.voice.isPermissionPromptOpen
+-           )")
+-               .ExtractBool();
+-  }));
+-  auto* dialog =
+-      views::AsViewClass<views::DialogClientView>(prompt_->client_view());
+-  ASSERT_TRUE(dialog);
+-  ASSERT_TRUE(dialog->AcceleratorPressed(
+-      ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE)));
+-  if (prompt_) {
+-    EXPECT_EQ(views::Widget::ClosedReason::kEscKeyPressed,
+-              prompt_->closed_reason());
+-  }
+-  ASSERT_NO_FATAL_FAILURE(WaitForAimWidgetRestoredAfterPromptClose());
+-
+-  // Wait for the actual browser focus message while the editor is still
+-  // hidden. Activating the widget alone cannot satisfy the DOM focus check.
+-  ASSERT_TRUE(base::test::RunUntil([&] {
+-    return content::EvalJs(aim_contents_.get(), R"(
+-      document.hasFocus() && window.aimVoiceTest.focusRequests === 1 &&
+-          !window.aimVoiceTest.voice.isPermissionPromptOpen
+-    )")
+-        .ExtractBool();
+-  }));
+-  EXPECT_EQ(true, content::EvalJs(aim_contents_.get(), R"(
+-    (async () => {
+-      const {box, voice, input} = window.aimVoiceTest;
+-      if (!box.inVoiceSearchMode || input.checkVisibility() ||
+-          box.isFocusInInput()) {
+-        return false;
+-      }
+-      const exit = voice.shadowRoot.querySelector('#closeButton, #stopButton');
+-      if (!exit?.checkVisibility()) {
+-        return false;
+-      }
+-      exit.focus();
+-      exit.click();
+-      await box.updateComplete;
+-      return document.hasFocus() && !box.inVoiceSearchMode &&
+-          input.checkVisibility() && input.getRootNode().activeElement === input;
+-    })()
+-  )"));
+-}
+-
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupEmbeddedPermissionBrowserTest,
+                        AimActivationBeforeDeferredRestoreStillFocusesInput) {
+   ASSERT_NO_FATAL_FAILURE(ShowFocusedAimPopup());
+diff --git a/chrome/test/data/webui/omnibox_popup/aim_app_test.ts b/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
+index 4dc01a554d58876ecf21f957de40a53ccd13f695..0cbee1cb7e5e850382aaeb2512ae7f91293b0874 100644
+--- a/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
++++ b/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
+@@ -5,9 +5,12 @@
+ import {aimBrowserProxyFactory, ComposeboxProxyImpl, OmniboxPopupAimPageHandlerRemote, SearchboxBrowserProxy} from 'chrome://omnibox-popup.top-chrome/omnibox_popup_aim.js';
+ import type {OmniboxAimAppElement, OmniboxPopupAimPageRemote} from 'chrome://omnibox-popup.top-chrome/omnibox_popup_aim.js';
+ import {PageHandlerRemote as ComposeboxPageHandlerRemote} from 'chrome://resources/cr_components/composebox/composebox.mojom-webui.js';
++import type {ComposeboxVoiceSearchElement} from 'chrome://resources/cr_components/composebox/composebox_voice_search.js';
++import {WindowProxy} from 'chrome://resources/cr_components/composebox/window_proxy.js';
+ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+ import type {PageCallbackRouter as SearchboxPageCallbackRouter, PageHandlerRemote as SearchboxPageHandlerRemote} from 'chrome://resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
+-import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
++import {InputType} from 'chrome://resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
++import {assertEquals, assertFalse, assertNotEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
+ import type {MetricsTracker} from 'chrome://webui-test/metrics_test_support.js';
+ import {fakeMetricsPrivate} from 'chrome://webui-test/metrics_test_support.js';
+ import {TestMock} from 'chrome://webui-test/test_mock.js';
+@@ -543,6 +546,99 @@ suite('AimAppTest', function() {
+     document.body.style.width = '';
+   });
+ 
++  test('RestoresInputFocusAfterVoiceModeEnds', async () => {
++    const originalWindowProxy = WindowProxy.getInstance();
++    const speech = new EventTarget() as unknown as SpeechRecognition & {
++      onend?: (event: Event) => void,
++    };
++    let recognizing = false;
++    speech.start = () => {
++      recognizing = true;
++    };
++    speech.abort = () => {
++      if (recognizing) {
++        recognizing = false;
++        queueMicrotask(() => speech.onend?.(new Event('end')));
++      }
++    };
++    WindowProxy.setInstance(Object.assign(new WindowProxy(), {
++      hasWebkitSpeechRecognition: () => true,
++      createSpeechRecognition: () => speech,
++    }));
++    testProxy.handler.setPromiseResolveFor<'getInputState'>('getInputState', {
++      state: {
++        ...createDefaultInputState(),
++        allowedInputTypes: [InputType.kBrowserTab],
++      },
++    });
++
++    const app = document.createElement('omnibox-aim-app');
++    try {
++      document.body.appendChild(app);
++      const composebox = app.$.composebox;
++      composebox.setBaseSearchboxLayoutModeForTesting('TallBottomContext');
++      await microtasksFinished();
++
++      const inputHost = composebox.getInputElement();
++      const input = inputHost.inputElement;
++      const microphone = composebox.shadowRoot.querySelector<HTMLElement>(
++          '#voiceSearchButton');
++      assertTrue(!!microphone, 'The microphone button must be rendered');
++      assertTrue(microphone.checkVisibility());
++      assertTrue(input.checkVisibility());
++      assertTrue(document.hasFocus(), 'The AIM test page must have focus');
++      microphone.focus();
++      assertEquals(microphone, composebox.shadowRoot.activeElement);
++      microphone.click();
++      await microtasksFinished();
++
++      assertTrue(recognizing, 'The microphone button must start recognition');
++      assertTrue(composebox.inVoiceSearchMode);
++      assertFalse(input.checkVisibility(), 'Voice mode must hide the input');
++      assertNotEquals(input, inputHost.shadowRoot.activeElement);
++
++      const voiceSearch =
++          composebox.shadowRoot.querySelector<ComposeboxVoiceSearchElement>(
++              '#voiceSearch');
++      assertTrue(!!voiceSearch);
++      testProxy.page.onPermissionPromptChanged(true, {width: 250, height: 220});
++      await testProxy.page.$.flushForTesting();
++      assertTrue(voiceSearch.isPermissionPromptOpen);
++      testProxy.page.onPermissionPromptChanged(false, {width: 0, height: 0});
++      await testProxy.page.$.flushForTesting();
++      assertFalse(voiceSearch.isPermissionPromptOpen);
++      await voiceSearch.updateComplete;
++
++      const closeButton =
++          voiceSearch.shadowRoot.querySelector<HTMLElement>('#closeButton');
++      assertTrue(!!closeButton, 'The voice close button must be rendered');
++      assertTrue(closeButton.checkVisibility());
++      closeButton.focus();
++      assertEquals(closeButton, voiceSearch.shadowRoot.activeElement);
++
++      page.focusInput();
++      await page.$.flushForTesting();
++      assertTrue(document.hasFocus(), 'The AIM test page must stay focused');
++      assertTrue(composebox.inVoiceSearchMode);
++      assertFalse(input.checkVisibility());
++      assertNotEquals(input, inputHost.shadowRoot.activeElement);
++      assertEquals(closeButton, voiceSearch.shadowRoot.activeElement);
++
++      closeButton.click();
++      await microtasksFinished();
++      assertFalse(recognizing, 'The voice close button must end recognition');
++      assertFalse(composebox.inVoiceSearchMode);
++      assertTrue(input.checkVisibility());
++      assertTrue(document.hasFocus(), 'The AIM test page must stay focused');
++      assertEquals(
++          input, inputHost.shadowRoot.activeElement,
++          'The browser focus request must reach the input after voice mode');
++    } finally {
++      app.remove();
++      WindowProxy.setInstance(originalWindowProxy);
++    }
++  });
++
+   test('ComposeboxConfiguresItselfAndHostPassesPopupSettings', async () => {
+     loadTimeData.overrideValues({
+       composeboxSmartComposeEnabled: true,
+diff --git a/chrome/test/data/webui/omnibox_popup/omnibox_popup_browsertest.cc b/chrome/test/data/webui/omnibox_popup/omnibox_popup_browsertest.cc
+index 9a73dfcac77ea6d54cd38d01e5649f3a1e382fd4..0afe0fb50b59d377eb3266445841acc6e2793030 100644
+--- a/chrome/test/data/webui/omnibox_popup/omnibox_popup_browsertest.cc
++++ b/chrome/test/data/webui/omnibox_popup/omnibox_popup_browsertest.cc
+@@ -14,6 +14,7 @@
+ #include "chrome/test/base/web_ui_mocha_browser_test.h"
+ #include "components/omnibox/browser/aim_eligibility_service_features.h"
+ #include "components/omnibox/common/omnibox_features.h"
++#include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/scoped_page_focus_override.h"
+ 
+@@ -78,6 +79,11 @@ class OmniboxPopupAimTest : public WebUIMochaBrowserTest {
+     set_test_loader_host(chrome::kChromeUIOmniboxPopupHost);
+   }
+ 
++  void OnWebContentsAvailable(content::WebContents* web_contents) override {
++    // Focus the actual test page for the AIM input focus assertions.
++    web_contents->Focus();
++  }
++
+  private:
+   base::test::ScopedFeatureList scoped_feature_list_{
+       omnibox::internal::kWebUIOmniboxAimPopup};

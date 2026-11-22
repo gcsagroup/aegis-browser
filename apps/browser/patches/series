@@ -554,3 +554,4 @@
 0554-restore-aim-focus-after-owned-permission-close.patch
 0555-complete-aim-permission-dismissal-focus.patch
 0556-complete-permission-focus-across-voice-and-window-handoff.patch
+0557-stabilize-permission-focus-regression-fixtures.patch
