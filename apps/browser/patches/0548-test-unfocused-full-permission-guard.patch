@@ -1,0 +1,42 @@
+From 26dec900322d2bbbb2907b784e69e432dc8baf1d Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sun, 22 Nov 2026 16:04:35 +0800
+Subject: [PATCH] Assert permission dismissal releases the inactive Full popup
+
+---
+ .../ui/views/omnibox/omnibox_aim_popup_browsertest.cc     | 8 ++------
+ 1 file changed, 2 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index bab3b0d3a5f7f4e22066f8f0a78926b6de828871..77757f420e21b100b868a88c2a866f1d35940916 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -996,7 +996,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+-                       PermissionDismissalAllowsUnfocusedFullPopupToClose) {
++                       PermissionDismissalReleasesUnfocusedFullPopup) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+       browser(), embedded_test_server()->GetURL("/empty.html")));
+@@ -1032,18 +1032,14 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+            presenter->IsPermissionPromptPreventingClose();
+   }));
+ 
+-  auto* closer = controller->client()->GetOmniboxPopupCloser();
+-  ASSERT_TRUE(closer);
+-  closer->CloseWithReason(omnibox::PopupCloseReason::kBlur);
+   ASSERT_EQ(state->popup_state(), OmniboxPopupState::kFull);
+   manager->Dismiss(/*prompt_options=*/std::monostate());
+   ASSERT_TRUE(
+       base::test::RunUntil([&] { return !manager->IsRequestInProgress(); }));
+   ASSERT_TRUE(presenter->IsShown());
++  EXPECT_EQ(state->popup_state(), OmniboxPopupState::kFull);
+   EXPECT_FALSE(presenter->GetWidget()->IsActive());
+   EXPECT_FALSE(presenter->IsPermissionPromptPreventingClose());
+-  closer->CloseWithReason(omnibox::PopupCloseReason::kBlur);
+-  EXPECT_EQ(state->popup_state(), OmniboxPopupState::kNone);
+ }
+ 
+ // Verifies that when the Omnibox popup is closed, creating a permission prompt

@@ -545,3 +545,4 @@
 0545-prepare-passive-omnibox-permission-fixture.patch
 0546-test-activation-after-aim-permission-dismissal.patch
 0547-finish-permission-focus-restore.patch
+0548-test-unfocused-full-permission-guard.patch
