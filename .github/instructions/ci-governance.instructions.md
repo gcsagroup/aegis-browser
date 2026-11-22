@@ -6,7 +6,7 @@ applyTo: ".github/workflows/**/*.yml,.github/workflows/**/*.yaml,.github/copilot
 
 Use [the CI guide](../../docs/development/ci.zh-CN.md) for the current required result set and promotion flow.
 
-- Preserve macOS `quality` + `quality-gate` as the automatic blocking route. iOS/Android/Linux/Windows reporting stays manual unless policy explicitly changes. Missing, skipped, cancelled, timed-out, stale or substitute jobs cannot satisfy required results.
+- Preserve macOS `quality` + `quality-gate` as the automatic blocking route. The Linux `other-platforms` contract is automatic and not required. iOS/Android/Linux/Windows emulator and coverage reporting stays manual unless policy explicitly changes. Missing, skipped, cancelled, timed-out, stale or substitute jobs cannot satisfy required results.
 - Bind PR results to exact B/H/M and branch-push results to S, including run attempt and check source. A push, rebase, conflict resolution or base advance invalidates mismatched evidence. Repository files do not prove live branch protection, service settings or scanner authorization.
 - Use least-privilege tokens; untrusted PR code never receives repository secrets. The sole `pull_request_target` exception is PR-title metadata: exact base checkout, persisted credentials disabled, metadata writes only, and no PR-head code execution/inspection under that token.
 - Keep upstream Codacy, independent review, hosted CI and applicable integration evidence separate. Copilot review is optional. Preserve distinctions among product failures, infrastructure/account failures, identity/governance mismatches and unavailable Chromium integration.

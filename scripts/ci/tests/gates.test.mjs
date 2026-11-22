@@ -458,8 +458,8 @@ test('workflow validator enforces automatic platform reporting and its execution
     [3, 'impact'], [3, 'android-java-coverage'],
   ];
   const automaticJobs = [
-    [0, 'impact'], [0, 'quality'], [0, 'quality-summary'], ...reportingJobs,
-    [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive'],
+    [0, 'impact'], [0, 'quality'], [0, 'quality-summary'], [0, 'other-platforms'], ...reportingJobs,
+    [5, 'cpp-unit-tests'], [6, 'impact'], [6, 'contracts'], [6, 'ios-archive'],
   ];
   const mutations = [
     ...[0, 2, 3, 5, 6].flatMap((index) => [

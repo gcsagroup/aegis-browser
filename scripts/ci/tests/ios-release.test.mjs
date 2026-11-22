@@ -112,7 +112,7 @@ test('iOS workflow credentials and permissions stay in their protected stage', (
   const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
   const validation = workflow('ios-release-validation');
   assert.deepEqual(validation.permissions, {contents: 'read', actions: 'read'});
-  for (const id of ['contracts', 'ios-archive']) assert(!JSON.stringify(validation.jobs[id]).includes('secrets.'));
+  for (const id of ['impact', 'contracts', 'ios-archive']) assert(!JSON.stringify(validation.jobs[id]).includes('secrets.'));
   const poc = validation.jobs['cloud-poc'];
   assert.equal(poc.environment, 'aegis-ios-cloud-poc');
   assert(poc.if.includes("github.event_name == 'workflow_dispatch'"));
@@ -172,7 +172,7 @@ test('every protected delivery route depends on Admin admission and normalized o
       assert(guard >= 0, name+' requires manual Admin guard');
       if (name === 'ios-release-validation' && job.environment !== 'aegis-ios-cloud-poc') assert.equal(job.steps[guard].if, "${{ github.event_name == 'workflow_dispatch' }}");
       const expensive = job.steps.findIndex(s => s.run?.includes('bundle exec') || s.run?.includes('xcodebuild ') || s.run?.includes('run-simulator-tests.sh'));
-      assert(guard < expensive, name+' must authorize before expensive work');
+      if (expensive >= 0) assert(guard < expensive, name+' must authorize before expensive work');
     }
   }
 });
