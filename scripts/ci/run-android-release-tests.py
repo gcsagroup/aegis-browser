@@ -8,6 +8,24 @@ class ReleaseTestResult(unittest.TextTestResult):
     def __init__(self, stream, descriptions, verbosity):
         super().__init__(stream, descriptions, verbosity)
         self.ran_active_test = False
+        self._current_test = None
+
+    def startTest(self, test):
+        super().startTest(test)
+        self._current_test = test
+        self._case_has_successful_subtest = False
+        self._case_skipped = False
+
+    def stopTest(self, test):
+        if self._case_has_successful_subtest and not self._case_skipped:
+            self.ran_active_test = True
+        self._current_test = None
+        super().stopTest(test)
+
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        if test is self._current_test:
+            self._case_skipped = True
 
     def addSuccess(self, test):
         super().addSuccess(test)
@@ -19,9 +37,8 @@ class ReleaseTestResult(unittest.TextTestResult):
 
     def addSubTest(self, test, subtest, err):
         super().addSubTest(test, subtest, err)
-        # A successful subtest counts even if another subtest was skipped.
-        if err is None:
-            self.ran_active_test = True
+        if test is self._current_test and err is None:
+            self._case_has_successful_subtest = True
 
 
 def main():

@@ -650,6 +650,7 @@ class AndroidReleaseTest(unittest.TestCase):
     const nested = join(release, 'non_package');
     mkdirSync(nested, {recursive: true});
     writeFileSync(join(nested, fixture), passing);
+    writeFileSync(join(release, 'test_ios_fixture.py'), passing.replace('AndroidReleaseTest', 'IOSReleaseTest'));
     const empty = execute();
     assert.equal(empty.status, 1, empty.stderr);
     assert.match(empty.stderr, /No Android release tests discovered/u);
@@ -659,6 +660,13 @@ class AndroidReleaseTest(unittest.TestCase):
       [passing.replace('self.assertTrue(True)', 'self.fail("fixture test failed")'), 1, /AssertionError: fixture test failed/u],
       ['raise ImportError("fixture suite could not load")\n', 1, /ImportError: fixture suite could not load/u],
       [passing.replace('self.assertTrue(True)', 'self.skipTest("fixture skip")'), 1, /No active Android release tests ran/u],
+      [passing.replace('    def test_release(self):\n        self.assertTrue(True)', `    def setUp(self):
+        with self.subTest(case="setup"):
+            self.assertTrue(True)
+        self.skipTest("fixture skip")
+
+    def test_release(self):
+        self.fail("fixture body must not run")`), 1, /No active Android release tests ran/u],
       [passing.replace('        self.assertTrue(True)', `        with self.subTest(case="skipped"):
             self.skipTest("fixture skip")
         with self.subTest(case="active"):
