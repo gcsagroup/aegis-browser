@@ -634,27 +634,29 @@ test('Mac quality chain retains shared tests and isolates platform-specific exec
   for (const name of ['test:android-target', 'test:android-ui', 'test:scripts:android', 'test:winrm-model-relay']) assert.ok(rootScripts['quality:other-platforms'].includes(name));
 });
 
-test('required Android Python runner rejects missing, failing, unloadable and entirely skipped suites', () => {
+test('required Android Python runner requires suite success and a complete Android case', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'aegis-android-release-tests-'));
   const release = join(cwd, 'scripts/release');
   const fixture = 'test_android_fixture.py';
   const runner = join(scripts, 'run-android-release-tests.py');
   const execute = () => run('python3', ['-B', runner], {cwd});
-  const passing = `import unittest
+  const syncCase = `import unittest
 
-class AndroidReleaseTest(unittest.TestCase):
+class AndroidReleaseTest(unittest.TestCase):`;
+  const passing = `${syncCase}
     def test_release(self):
         self.assertTrue(True)
 `;
   const skippedSubtest = `        with self.subTest(case="skipped"):
             self.skipTest("fixture skip")`;
-  const activeSubtest = `        with self.subTest(case="active"):
-            self.assertTrue(True)`;
-  const mixedSubtests = [`${skippedSubtest}\n${activeSubtest}`, `${activeSubtest}\n${skippedSubtest}`];
+  const partialBody = `        with self.subTest(case="passed"):
+            self.assertTrue(True)
+${skippedSubtest}`;
   const asyncCase = `import asyncio
 import unittest
 
 class AndroidReleaseTest(unittest.IsolatedAsyncioTestCase):`;
+  const noCompleteCase = /No complete Android release tests passed/u;
   try {
     const nested = join(release, 'non_package');
     mkdirSync(nested, {recursive: true});
@@ -664,40 +666,80 @@ class AndroidReleaseTest(unittest.IsolatedAsyncioTestCase):`;
     assert.equal(empty.status, 1, empty.stderr);
     assert.match(empty.stderr, /No Android release tests discovered/u);
 
-    for (const [source, exitCode, output] of [
-      [passing, 0, /Ran 1 test\b/u],
-      [passing.replace('self.assertTrue(True)', 'self.fail("fixture test failed")'), 1, /AssertionError: fixture test failed/u],
-      ['raise ImportError("fixture suite could not load")\n', 1, /ImportError: fixture suite could not load/u],
-      [passing.replace('self.assertTrue(True)', 'self.skipTest("fixture skip")'), 1, /No active Android release tests ran/u],
-      [passing.replace('    def test_release(self):\n        self.assertTrue(True)', `    def setUp(self):
+    for (const [name, source, exitCode, output] of [
+      ['complete case', passing, 0, /Ran 1 test\b/u],
+      ['failure alongside a complete case', `${passing}
+    def test_failure(self):
+        self.fail("fixture test failed")
+`, 1, /AssertionError: fixture test failed/u],
+      ['load error', 'raise ImportError("fixture suite could not load")\n', 1, /ImportError: fixture suite could not load/u],
+      ['whole case skipped', passing.replace('self.assertTrue(True)', 'self.skipTest("fixture skip")'), 1, noCompleteCase],
+      ['expected failure only', `${syncCase}
+    @unittest.expectedFailure
+    def test_release(self):
+        self.fail("fixture expected failure")
+`, 1, noCompleteCase],
+      ['partial body', passing.replace('        self.assertTrue(True)', partialBody), 1, noCompleteCase],
+      ['complete case with partial and skipped siblings', `${passing}
+    def test_partial(self):
+${partialBody}
+
+    def test_skipped(self):
+        self.skipTest("fixture skip")
+`, 0, /OK \(skipped=2\)/u],
+      ['partial body in a fresh context', `from contextvars import Context
+${syncCase}
+    def test_release(self):
+        Context().run(self.check_subtests)
+
+    def check_subtests(self):
+${partialBody}
+`, 1, noCompleteCase],
+      ['complete async case in a fresh context', `from contextvars import Context
+${asyncCase}
+    async def test_release(self):
+        await asyncio.sleep(0)
+        Context().run(self.check_subtest)
+
+    def check_subtest(self):
+        with self.subTest(case="passed"):
+            self.assertTrue(True)
+`, 0, /Ran 1 test\b/u],
+      ['setup subtest before whole case skip', `${syncCase}
+    def setUp(self):
         with self.subTest(case="setup"):
             self.assertTrue(True)
         self.skipTest("fixture skip")
 
     def test_release(self):
-        self.fail("fixture body must not run")`), 1, /No active Android release tests ran/u],
-      [passing.replace('    def test_release(self):\n        self.assertTrue(True)', `    def setUp(self):
+        self.fail("fixture body must not run")
+`, 1, noCompleteCase],
+      ['partial setup', `${syncCase}
+    def setUp(self):
         with self.subTest(case="setup"):
             self.assertTrue(True)
         with self.subTest(case="setup-skipped"):
             self.skipTest("fixture skip")
 
     def test_release(self):
-        self.fail("fixture body must not run")`), 1, /No active Android release tests ran/u],
-      [passing.replace('        self.assertTrue(True)', `${skippedSubtest}
+        self.fail("fixture body must not run")
+`, 1, noCompleteCase],
+      ['teardown subtest using the body’s asyncio runner', `import asyncio
+${syncCase}
+    def test_release(self):
+        self.runner = asyncio.Runner()
+        self.addCleanup(self.runner.close)
+        self.runner.run(asyncio.sleep(0))
+${skippedSubtest}
 
     def tearDown(self):
+        self.runner.run(self.report_subtest())
+
+    async def report_subtest(self):
         with self.subTest(case="teardown"):
-            self.assertTrue(True)`), 1, /No active Android release tests ran/u],
-      ...mixedSubtests.map((body) => [
-        passing.replace('        self.assertTrue(True)', body), 0, /OK \(skipped=1\)/u,
-      ]),
-      ...mixedSubtests.map((body) => [`${asyncCase}
-    async def test_release(self):
-        await asyncio.sleep(0)
-${body}
-`, 0, /OK \(skipped=1\)/u]),
-      [`${asyncCase}
+            self.assertTrue(True)
+`, 1, noCompleteCase],
+      ['background subtest from async setup', `${asyncCase}
     async def asyncSetUp(self):
         async def report_subtest():
             await asyncio.sleep(0)
@@ -709,21 +751,21 @@ ${body}
     async def test_release(self):
         await self.setup_task
 ${skippedSubtest}
-`, 1, /No active Android release tests ran/u],
-      [`${asyncCase}
+`, 1, noCompleteCase],
+      ['background subtest from async body', `${asyncCase}
     async def test_release(self):
         async def report_subtest():
             with self.subTest(case="child-task"):
                 self.assertTrue(True)
 
-        await asyncio.create_task(report_subtest(), context=self._asyncioTestContext)
+        await asyncio.create_task(report_subtest())
 ${skippedSubtest}
-`, 1, /No active Android release tests ran/u],
+`, 1, noCompleteCase],
     ]) {
       writeFileSync(join(release, fixture), source);
       const result = execute();
-      assert.equal(result.status, exitCode, result.stderr);
-      assert.match(result.stderr, output);
+      assert.equal(result.status, exitCode, `${name}\n${result.stderr}`);
+      assert.match(result.stderr, output, `${name}\n${result.stderr}`);
     }
   } finally {
     rmSync(cwd, {recursive: true, force: true});
