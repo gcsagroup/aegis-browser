@@ -455,9 +455,36 @@ class DeliveryCommandMatrix(unittest.TestCase):
                     delivery.import_package(approved, store, root / 'rejected')
                 fetch.assert_not_called()
                 api.return_value = {'sha': SHA, 'tree': {'sha': TREE}}
+                run['status'] = 'in_progress'
+                with self.assertRaisesRegex(ValueError, 'producer run identity'):
+                    delivery.import_package(approved, store, root / 'unfinished')
+                run.update(status='completed', conclusion='failure')
+                run['jobs'][0]['conclusion'] = 'failure'
+                with self.assertRaisesRegex(ValueError, 'Required job did not succeed'):
+                    delivery.import_package(approved, store, root / 'failed-producer')
+                fetch.assert_not_called()
+                run['jobs'][0]['conclusion'] = 'success'
                 manifest = delivery.import_package(approved, store, root / 'admitted')
                 self.assertEqual(manifest['source'], {'sha': SHA, 'tree': TREE, 'dirty': False})
                 self.assertEqual(fetch.call_count, 1)
+
+    def test_oversized_archive_stops_before_pending_package_record(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sealed, _, _ = sealed_package(root)
+            member_bytes = sum(path.stat().st_size for path in sealed.iterdir())
+            identity = {'sha': SHA, 'tree': TREE, 'version': VERSION, 'build': BUILD}
+            package_plan = {'profile': 'release', 'version': VERSION, 'build': BUILD}
+            for limit, error in ((member_bytes - 1, 'members exceed'), (member_bytes, 'archive size limit')):
+                with self.subTest(limit=limit):
+                    release_root = root / str(limit)
+                    (release_root / '.artifacts/android-delivery').mkdir(parents=True)
+                    with (mock.patch.object(delivery, 'ROOT', release_root),
+                          mock.patch.object(delivery.archive, 'MAX_MEMBER', limit)):
+                        with self.assertRaisesRegex(ValueError, error):
+                            delivery.seal_package(package_plan, identity, root / 'app.aab',
+                                                  root / 'symbols.zip', 'cd' * 32, 41)
+                    self.assertFalse((release_root / '.artifacts/android-delivery/package-pending.json').exists())
 
     def test_packaging_requires_current_source_and_builds_original_run_output(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -753,6 +780,9 @@ class EvidenceMatrix(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'current main'):
             release.validate_delivery_evidence(moved, 'stable', 'prerelease')
         self.assertEqual((candidate['packageRunId'], candidate['uploadRunId']), (41, 43))
+        recovered = evidence()
+        recovered['package_run']['conclusion'] = 'failure'
+        self.assertEqual(release.validate_delivery_evidence(recovered, 'stable', 'prerelease')['packageRunId'], 41)
         mutations = [
             ('attempt', lambda value: value['package_run'].__setitem__('run_attempt', 2), 'identity'),
             ('skipped store', lambda value: value['upload_run']['jobs'][0].__setitem__('conclusion', 'skipped'), 'store'),
@@ -941,6 +971,30 @@ class PublicationMatrix(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'stale'):
                 release.publish_release(prerelease, [])
         self.assertNotIn('releases', [path for path, _payload in state.mutations])
+
+    def test_prerelease_revalidates_draft_and_tag_before_each_asset_write(self):
+        for change, error in (('published', 'draft moved'), ('retargeted', 'tag conflicts')):
+            with self.subTest(change=change):
+                prerelease, _stable = self.plans()
+                state = Publisher(prerelease)
+                self.bind(state)
+                assets = [{'name': name, 'sha256': digest} for name, digest in prerelease['assets'].items()]
+
+                def upload(release_id, asset):
+                    self.assertEqual(release_id, 500)
+                    state.release['assets'].append({'name': asset['name'], 'state': 'uploaded',
+                                                    'digest': 'sha256:' + asset['sha256']})
+                    if change == 'published':
+                        state.release['draft'] = False
+                    else:
+                        state.tag['target_sha'] = '3' * 40
+
+                with (mock.patch.object(release, '_upload_asset_once', side_effect=upload) as write,
+                      mock.patch.dict('os.environ', {'EXPECTED_PLAN_SHA256': prerelease['planSha256']})):
+                    with self.assertRaisesRegex(ValueError, error):
+                        release.publish_release(prerelease, assets)
+                write.assert_called_once()
+                self.assertNotIn('releases/500', [path for path, _payload in state.mutations])
 
     def test_approval_and_ruleset_matrix(self):
         _prerelease, stable = self.plans()

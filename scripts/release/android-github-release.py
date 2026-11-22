@@ -82,7 +82,7 @@ def extract_verified_package_archive(bundle, destination, expected_digest):
     with zipfile.ZipFile(bundle) as zipped:
         rows = zipped.infolist()
         require(len(rows) == 1 and rows[0].filename == 'package.zip' and not rows[0].is_dir()
-                and not stat.S_ISLNK(rows[0].external_attr >> 16) and rows[0].file_size <= 1024 ** 3,
+                and not stat.S_ISLNK(rows[0].external_attr >> 16) and rows[0].file_size <= archive.MAX_MEMBER,
                 'Sealed package artifact must contain exactly one bounded package.zip file')
         destination.parent.mkdir(parents=True, exist_ok=True)
         with zipped.open(rows[0]) as source, destination.open('xb') as target:
@@ -132,9 +132,13 @@ def _successful_job(run, name):
     return job
 
 
-def _package_job(run, run_id, sha):
+def _package_job(run, run_id, sha, *, same_run=False):
     path = run.get('path')
-    require(path in PREFIXES and _run_identity(run, run_id, sha, path), 'Package producer run identity/source differs')
+    # A subsequent store or draft job can fail after an immutable package is
+    # recorded. Its own successful job is the authoritative producer.
+    require(path in PREFIXES and _run_identity(run, run_id, sha, path, completed=False)
+            and (same_run or (run.get('status') == 'completed' and run.get('conclusion') in {'success', 'failure'})),
+            'Package producer run identity/source differs')
     return _successful_job(run, PREFIXES[path] + 'package')
 
 
@@ -764,12 +768,21 @@ def publish_release(plan, assets):
     _verify_existing_release(plan, release, plan['tag'])
     release_id = release.get('id')
     require(is_id(release_id), 'Exact release ID is required for staging')
+
+    def read_draft(*, complete=False):
+        _verify_release_tag(plan, plan['tag'])
+        fresh = _api(f'releases/{release_id}')
+        require(fresh.get('id') == release_id and fresh.get('draft') is True, 'Exact release draft moved during staging')
+        _verify_release_metadata(plan, fresh)
+        _verify_release_assets(plan, fresh, complete=complete)
+        return fresh
+
     if release['draft']:
-        existing = {item['name'] for item in release['assets']}
         for asset in assets:
-            if asset['name'] in existing:
-                continue
             _assert_release_write_allowed(plan)
+            current = read_draft()
+            if asset['name'] in {item['name'] for item in current['assets']}:
+                continue
             try:
                 _upload_asset_once(release_id, asset)
             except (OSError, ValueError, http.client.HTTPException) as error:
@@ -778,14 +791,8 @@ def publish_release(plan, assets):
                 if (len(match) != 1 or match[0].get('state') != 'uploaded'
                         or match[0].get('digest') != 'sha256:' + asset['sha256']):
                     raise ValueError('Asset upload outcome unknown; reconcile draft before retrying: ' + asset['name']) from error
-        _assert_current_release_source(plan)
-        _verify_release_tag(plan, plan['tag'])
-        staged = _api(f'releases/{release_id}')
-        require(staged.get('id') == release_id and staged.get('draft') is True, 'Exact release draft moved during staging')
-        _verify_release_metadata(plan, staged)
-        _verify_release_assets(plan, staged)
-        require({item.get('name') for item in staged['assets']} == set(plan['assets']), 'Staged asset inventory is incomplete')
         _assert_release_write_allowed(plan)
+        read_draft(complete=True)
         _api(f'releases/{release_id}', {'draft': False, 'make_latest': 'false'}, method='PATCH')
     reread = _release_by_tag(plan['tag'])
     require(reread is not None and reread.get('id') == release_id and reread.get('draft') is False,

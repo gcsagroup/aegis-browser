@@ -251,12 +251,9 @@ def import_package(plan, store, destination):
     origin = approved['origin']
     run_id = origin['runId']
     run = release._get_run(run_id)
-    path = run.get('path')
     same_run = str(run_id) == os.environ['GITHUB_RUN_ID']
-    require(path in release.PREFIXES and release._run_identity(run, run_id, origin['sourceSha'], path, completed=not same_run),
-            'Android package producer run differs from the approved source')
     run['jobs'] = release._get_jobs(run_id)
-    job = release._successful_job(run, release.PREFIXES[path] + 'package')
+    job = release._package_job(run, run_id, origin['sourceSha'], same_run=same_run)
     require(job['id'] == approved['package_job_id'], 'Android package job differs from the approved producer')
     commit = release._api(f"git/commits/{origin['sourceSha']}")
     require(commit.get('sha') == origin['sourceSha'] and commit.get('tree', {}).get('sha') == origin['sourceTree'],
