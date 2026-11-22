@@ -238,7 +238,7 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 
 ## 分阶段平台路由（第三批）
 
-现行平台选择以本节为准。分类仍只执行目标分支上的 `scripts/ci/platform-impact.mjs`。PR 绑定合并候选的两个父提交。push 另传入 `github.event.before`：它是被测提交的祖先时，按这个区间选择平台；它是 40 个 0、缺失或不是祖先时，维持原来的 iOS + macOS 全量自动路径，不因此打开 Android、Windows 或 Linux。`workflow_dispatch` 不参与跳过。三条 workflow 不因为缺键把已经打印的 `false` 改成 `true`。旧路由器没有 `integrate` / `deep` 时，二者跟随当时的 `ios` 或 `macos`；没有 `android` / `windows` / `linux` 时缺省为 false。
+现行平台选择以本节为准。分类仍只执行目标分支上的 `scripts/ci/platform-impact.mjs`。缺省补全同样只执行目标分支上的 `scripts/ci/fill-platform-route-defaults.mjs`；目标分支还没有这个文件时，使用 workflow 中写明的同一份补全，不执行候选工作区里的副本。PR 绑定合并候选的两个父提交。push 另传入 `github.event.before`：它是被测提交的祖先时，按这个区间选择平台；它是 40 个 0、缺失或不是祖先时，维持原来的 iOS + macOS 全量自动路径，不因此打开 Android、Windows 或 Linux。`workflow_dispatch` 不参与跳过。三条 workflow 不因为缺键把已经打印的 `false` 改成 `true`。旧路由器没有 `integrate` / `deep` 时，二者跟随当时的 `ios` 或 `macos`；没有 `android` / `windows` / `linux` 时缺省为 false。
 
 路径决定平台，取并集。Conventional Commit 的主题类型只决定阶段，不能清掉路径已经选中的平台，也不读取 scope。非 Conventional、空主题、删除、重命名、模式变化、符号链接，以及分类器自身被修改，进入最严自动阶段。分类器自身被修改时五个平台都打开。白名单说明文档的普通内容修改仍只走已准入的 Linux 文档门；push 不走这条轻量路径。
 

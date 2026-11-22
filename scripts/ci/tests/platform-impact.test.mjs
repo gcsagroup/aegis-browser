@@ -8,6 +8,16 @@ import YAML from 'yaml';
 import {readFileSync} from 'node:fs';
 
 const script = resolve('scripts/ci/platform-impact.mjs');
+const routeDefaultSource = readFileSync('scripts/ci/fill-platform-route-defaults.mjs', 'utf8');
+const assertTrustedRouteDefaults = run => {
+  assert.match(run, /git show "\$ROUTE_BASE_SHA:scripts\/ci\/platform-impact\.mjs"/u);
+  assert.match(run, /git show "\$ROUTE_BASE_SHA:scripts\/ci\/fill-platform-route-defaults\.mjs" > "\$RUNNER_TEMP\/fill-platform-route-defaults\.mjs"/u);
+  assert.match(run, /node "\$RUNNER_TEMP\/fill-platform-route-defaults\.mjs"/u);
+  assert.doesNotMatch(run, /node scripts\/ci\/fill-platform-route-defaults\.mjs/u);
+  const fallback = run.match(/<<'EOF'\n([\s\S]*?)\nEOF/u);
+  assert.ok(fallback, 'workflow must embed the trusted fallback');
+  assert.equal(`${fallback[1]}\n`, routeDefaultSource);
+};
 test('platform routing binds real merge parents and rejects hidden product changes', () => {
   const root = mkdtempSync(join(tmpdir(), 'platform-impact-'));
   const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
@@ -225,6 +235,7 @@ test('iOS archive waits for contracts and keeps failed archives out of distribut
   assert.match(diagnostics.if, /failure\(\)/u);
   assert(!diagnostics.with.path.includes('.xcarchive'));
   assert.match(workflow.concurrency.group, /github.sha/u);
+  assertTrustedRouteDefaults(workflow.jobs.impact.steps.find(step => step.id === 'impact').run);
 });
 
 
@@ -245,8 +256,7 @@ test('macOS automatic contracts wait for trusted routing and exclude Draft or ma
   assert.match(admission.if, /workflow_dispatch/u);
   assert.deepEqual(packaging.needs, ['admission', 'access-tests']);
   const run = impact.steps.find(step => step.id === 'impact').run;
-  assert.match(run, /git show "\$ROUTE_BASE_SHA:scripts\/ci\/platform-impact.mjs"/u);
-  assert.match(run, /fill-platform-route-defaults\.mjs/u);
+  assertTrustedRouteDefaults(run);
   assert.doesNotMatch(run, /echo 'macos=true'/u);
   assert.equal(impact.steps.find(step => step.id === 'impact').env.ROUTE_DEFAULT_MISSING_MACOS, 'true');
   assert.equal(impact.outputs.integrate, '${{ steps.impact.outputs.integrate }}');
@@ -278,7 +288,7 @@ test('quality preflight selects Linux docs and preserves full checks on all othe
   assert.match(other.steps.find(step => step.name === 'Run Android and Windows contract checks').run, /pnpm run quality:other-platforms/u);
   assert.equal(summary.steps.find(step => step.name === 'Require every mandatory job to succeed').env.REQUIRED_RESULTS, '{"quality":"${{ needs.quality.result }}"}');
   assert.equal(impact.outputs.android, '${{ steps.impact.outputs.android }}');
-  assert.match(impact.steps.find(step => step.id === 'impact').run, /fill-platform-route-defaults\.mjs/u);
+  assertTrustedRouteDefaults(impact.steps.find(step => step.id === 'impact').run);
 });
 
 test('archive compiler diagnostics reach Actions and retain exit status before sealing', () => {
