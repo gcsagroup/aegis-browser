@@ -1,24 +1,89 @@
 name: Android Java Coverage
 
 on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  push:
+    branches: [develop, main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}-{1}', github.ref, github.sha) || format('dispatch-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  impact:
+    name: android-coverage-impact
+    if: ${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.route.outputs.run }}
+      pr_base: ${{ steps.route.outputs.pr_base }}
+      pr_head: ${{ steps.route.outputs.pr_head }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select Android coverage from the tested Git diff
+        id: route
+        env:
+          EVENT_PR_BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_PUSH_BEFORE: ${{ github.event.before }}
+        shell: bash
+        run: |
+          router=scripts/ci/coverage-impact.sh
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          base=''
+          pr_base=''
+          pr_head=''
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              parents="$(git show -s --format=%P HEAD)"
+              read -r pr_base pr_head extra <<< "$parents"
+              [[ -n "$pr_base" && -n "$pr_head" && -z "$extra" && "$pr_head" == "$EVENT_PR_HEAD" ]]
+              [[ "$EVENT_PR_BASE" =~ ^[0-9a-f]{40}$ ]]
+              git merge-base --is-ancestor "$EVENT_PR_BASE" "$pr_base"
+              if git cat-file -e "$pr_base:$router"; then
+                git show "$pr_base:$router" > "$RUNNER_TEMP/coverage-impact.sh"
+                router="$RUNNER_TEMP/coverage-impact.sh"
+                base="$pr_base"
+              fi
+              ;;
+            push)
+              [[ "$EVENT_PUSH_BEFORE" =~ ^[0-9a-f]{40}$ ]]
+              if [[ "$EVENT_PUSH_BEFORE" != '0000000000000000000000000000000000000000' ]]; then
+                git merge-base --is-ancestor "$EVENT_PUSH_BEFORE" "$GITHUB_SHA"
+                base="$EVENT_PUSH_BEFORE"
+              fi
+              ;;
+            workflow_dispatch) ;;
+            *) exit 2 ;;
+          esac
+          decision='run=true'
+          if [[ -n "$base" ]]; then
+            output="$(mktemp "$RUNNER_TEMP/coverage-route.XXXXXX")"
+            GITHUB_OUTPUT="$output" bash "$router" "$base" "$GITHUB_SHA"
+            decision="$(grep '^run=' "$output")"
+            [[ "$decision" == 'run=true' || "$decision" == 'run=false' ]]
+          fi
+          printf '%s\npr_base=%s\npr_head=%s\n' "$decision" "$pr_base" "$pr_head" >> "$GITHUB_OUTPUT"
   android-java-coverage:
     name: android-java-coverage
+    needs: impact
+    if: ${{ needs.impact.outputs.run == 'true' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
       AEGIS_TESTED_SHA: ${{ github.sha }}
-      AEGIS_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
-      AEGIS_PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+      AEGIS_PR_HEAD_SHA: ${{ needs.impact.outputs.pr_head }}
+      AEGIS_PR_BASE_SHA: ${{ needs.impact.outputs.pr_base }}
       EVIDENCE_DIR: ${{ github.workspace }}/.artifacts/android-java-coverage/github-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Check out exact tested source
@@ -53,6 +118,8 @@ jobs:
           node --test apps/browser/scripts/android-agent-ui_test.mjs apps/browser/scripts/verify-android-agent-target_test.mjs \
             apps/browser/scripts/run-android-java-coverage-emulator_test.mjs
           bash -n apps/browser/scripts/run-android-java-coverage-emulator.sh
+          bash apps/browser/scripts/package-android-guards_test.sh
+          bash -n apps/browser/scripts/package-android.sh
 
       - name: Fetch fixed JaCoCo and build both helper modes
         run: |
@@ -99,10 +166,20 @@ jobs:
         run: |
           node --input-type=module -e '
             import fs from "node:fs";
+            import {execFileSync} from "node:child_process";
+            const git = (...args) => execFileSync("git", args, {encoding: "utf8"}).trim();
+            const context = JSON.parse(fs.readFileSync(process.env.EVIDENCE_DIR + "/ci-context.json", "utf8"));
             const report = JSON.parse(fs.readFileSync(process.env.EVIDENCE_DIR + "/coverage/summary.json", "utf8"));
-            if (report.testedSha !== process.env.AEGIS_TESTED_SHA || report.repositoryDirtyAtBuild !== false ||
+            if (context.testedSha !== process.env.AEGIS_TESTED_SHA || context.testedSha !== git("rev-parse", "HEAD") ||
+                context.eventName !== process.env.GITHUB_EVENT_NAME ||
+                report.testedSha !== context.testedSha || report.repositoryDirtyAtBuild !== false ||
                 report.selfTestCases !== 6 || report.browserTested !== false || report.passed !== true ||
                 report.line.covered <= 0 || report.line.total !== report.line.covered + report.line.missed) process.exit(1);
+            if (context.eventName === "pull_request") {
+              const parents = git("show", "-s", "--format=%P", "HEAD").split(" ");
+              if (parents.length !== 2 || context.pullRequestBaseSha !== parents[0] ||
+                  context.pullRequestHeadSha !== parents[1]) process.exit(1);
+            } else if (context.pullRequestBaseSha !== null || context.pullRequestHeadSha !== null) process.exit(1);
           '
 
       - name: Upload Android Java coverage evidence

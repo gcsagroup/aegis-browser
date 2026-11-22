@@ -1,18 +1,24 @@
 name: Other Platform Coverage
 
 on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  push:
+    branches: [develop, main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.run_id }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}-{1}', github.ref, github.sha) || format('dispatch-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   shell-coverage:
     name: shell-coverage
+    if: ${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -57,6 +63,7 @@ jobs:
 
   powershell-coverage:
     name: powershell-coverage
+    if: ${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false' }}
     runs-on: windows-2025
     timeout-minutes: 20
     steps:
@@ -73,6 +80,11 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: 3.11.9
+      - name: Run WinRM model relay self-test
+        shell: bash
+        run: |
+          node --check apps/browser/scripts/agent-winrm-model-relay.mjs
+          node apps/browser/scripts/agent-winrm-model-relay.mjs --self-test
       - name: Run native installer UI and policy fixtures without installation
         shell: pwsh
         run: |
