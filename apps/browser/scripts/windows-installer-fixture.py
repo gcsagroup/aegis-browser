@@ -5,6 +5,7 @@ This fixture uses a FilePath character-type shim for installer constants. It is
 not a Chromium GN build, a setup/mini_installer binary, or Explorer/token proof.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -15,18 +16,23 @@ import subprocess
 import urllib.request
 import zipfile
 
-CHROMIUM = "43a195105613ac83c21d3f14de279f4a045c7da0"
 GTEST = "4fe3307fb2d9f86d19777c7eb0e4809e9694dde7"
 GTEST_SHA256 = "7da5cbd7991e88e61a2e2142475041fe6685484ad13013401e8f1e3fb5f3001a"
+# The three common inputs are identical at both approved Chromium pins.
 HEADERS = {
     "build/win/common_controls.manifest":
         "3a8ca9721b476635b2bb6567f61c74adc85fdc168d4fd762d9b08414bb3f35c6",
-    "chrome/installer/util/util_constants.h":
-        "f40b2e5872bb326970857f23949b411964a902fa76f9feabe07b40bfaec2c749",
     "chrome/installer/mini_installer/mini_installer_resource.h":
         "294851fd8c62a5ff0ee9ace34473a6a498a68c32ff6d4713036d30aaffd89caf",
     "testing/gtest/include/gtest/gtest.h":
         "e65bc0f551d8016c5027352b013ecd90f0ee3c61ff0ddd9d1f8e7ba6676dee58",
+}
+UTIL_CONSTANTS = "chrome/installer/util/util_constants.h"
+UTIL_CONSTANTS_SHA256 = {
+    "43a195105613ac83c21d3f14de279f4a045c7da0":
+        "f40b2e5872bb326970857f23949b411964a902fa76f9feabe07b40bfaec2c749",
+    "b8c2be851f62f6a394ec57955d7f31335d7cb6d4":
+        "a0afe0f69ad9165af8d2f21680568df9eac95294ef8d493e1a6c4b07f121a859",
 }
 SOURCES = [
     "chrome/installer/aegis_install_progress.h",
@@ -44,13 +50,24 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def download(url, destination, expected):
+def pinned_headers(chromium_pin):
+    try:
+        return {**HEADERS, UTIL_CONSTANTS: UTIL_CONSTANTS_SHA256[chromium_pin]}
+    except KeyError as error:
+        raise RuntimeError(f"Update pinned fixture inputs for Chromium {chromium_pin}") from error
+
+
+def download(url, destination, expected_sha256, *, gitiles_text=False):
     with urllib.request.urlopen(url, timeout=60) as response:
         data = response.read()
-    if digest(data) != expected:
+    if gitiles_text:
+        data = base64.b64decode(b"".join(data.split()), validate=True)
+    actual = digest(data)
+    if actual != expected_sha256:
         raise RuntimeError(f"Pinned download mismatch: {destination.name}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(data)
+    return actual
 
 
 def verify_inputs(root, head, overlay):
@@ -126,7 +143,7 @@ def main():
     report_dir = Path(args.report_dir).resolve()
     report_dir.mkdir(parents=True, exist_ok=True)
     report = {"result": "FAIL", "testedSha": args.tested_sha,
-              "chromiumPin": CHROMIUM, "googletestPin": GTEST,
+              "chromiumPin": None, "googletestPin": GTEST,
               "nativeWindows": os.name == "nt", "fullChromiumBuild": False,
               "installerExecuted": False, "explorerTokenAcceptance": False,
               "shim": "base::FilePath::CharType and FILE_PATH_LITERAL only",
@@ -138,8 +155,12 @@ def main():
             ["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
         if head != args.tested_sha:
             raise RuntimeError("Tested SHA does not match checkout")
-        if (root / "apps/browser/CHROMIUM_COMMIT").read_text().strip() != CHROMIUM:
-            raise RuntimeError("Update pinned fixture inputs for the new Chromium pin")
+        chromium_pin = subprocess.check_output(
+            ["git", "show", f"{head}:apps/browser/CHROMIUM_COMMIT"], cwd=root, text=True).strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", chromium_pin):
+            raise RuntimeError("Tested Chromium pin must be a full SHA")
+        report["chromiumPin"] = chromium_pin
+        headers = pinned_headers(chromium_pin)
         overlay = root / "apps/browser/overlay"
         verify_inputs(root, head, overlay)
         hashes = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
@@ -150,9 +171,11 @@ def main():
             destination = fixture / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes((overlay / name).read_bytes())
-        for name, expected in HEADERS.items():
-            download(f"https://raw.githubusercontent.com/chromium/chromium/{CHROMIUM}/{name}",
-                     fixture / name, expected)
+        report["chromiumHeaderSha256"] = {
+            name: download(f"https://chromium.googlesource.com/chromium/src/+/{chromium_pin}/{name}?format=TEXT",
+                           fixture / name, approved, gitiles_text=True)
+            for name, approved in headers.items()
+        }
         archive = fixture / "googletest.zip"
         download(f"https://codeload.github.com/google/googletest/zip/{GTEST}",
                  archive, GTEST_SHA256)

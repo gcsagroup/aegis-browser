@@ -442,7 +442,7 @@ test('push and dispatch identity admit configured maintenance lines while reject
   for (const event of ['push', 'workflow_dispatch']) assert.notEqual(verify(event, 'refs/heads/develop', unrelated).status, 0, 'unrelated base must fail');
 });
 
-test('workflow validator enforces Mac-only automatic gates and safe manual workflows', () => {
+test('workflow validator enforces automatic platform reporting and its execution boundaries', () => {
   const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml']
     .map((name) => join(root, '.github/workflows', name));
   const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
@@ -453,9 +453,16 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
   assert.notEqual(validate(paths).status, 0, 'the iOS workflow path cannot be overridden');
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'];
-  const automaticJobs = [[0, 'impact'], [0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive']];
+  const reportingJobs = [
+    [2, 'shell-coverage'], [2, 'powershell-coverage'],
+    [3, 'impact'], [3, 'android-java-coverage'],
+  ];
+  const automaticJobs = [
+    [0, 'impact'], [0, 'quality'], [0, 'quality-summary'], ...reportingJobs,
+    [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive'],
+  ];
   const mutations = [
-    ...[0, 5, 6].flatMap((index) => [
+    ...[0, 2, 3, 5, 6].flatMap((index) => [
       [index, (w) => { delete w.on.pull_request.types; }, 'missing PR event selection'],
       ...prTypes.map((type) => [index, (w) => {
         w.on.pull_request.types = prTypes.filter((value) => value !== type);
@@ -532,14 +539,39 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [0, (w) => { w.jobs['quality-summary'].steps[1].env.REQUIRED_RESULTS = value; }]),
     [0, (w) => { w.jobs['quality-summary'].steps[1].run += ' || true'; }],
     [0, (w) => { w.jobs['quality-summary'].steps[1].if = '${{ false }}'; }],
-    ...[1, 2, 3].flatMap((index) => [
-      [index, (w) => { w.on.push = {branches: ['main']}; }],
-      [index, (w) => { w.permissions.contents = 'write'; }],
-      [index, (w) => { Object.values(w.jobs)[0]['continue-on-error'] = true; }],
-      [index, (w) => { Object.values(w.jobs)[0].permissions = {'contents': 'write'}; }],
-      [index, (w) => { Object.values(w.jobs)[0].steps[0].with['persist-credentials'] = true; }],
-      [index, (w) => { Object.values(w.jobs)[0].steps[0].uses = 'actions/checkout@v7'; }],
+    ...[2, 3].flatMap((index) => [
+      [index, (w) => { delete w.on.push; }, 'reporting loses post-merge coverage'],
+      [index, (w) => { delete w.on.workflow_dispatch; }, 'reporting loses manual diagnostics'],
+      [index, (w) => { w.on.push.branches = ['main']; }, 'reporting misses develop pushes'],
+      [index, (w) => { w.on.pull_request.branches.push('feature'); }, 'reporting admits unrelated PR base'],
+      [index, (w) => { w.on.push['tags-ignore'] = ['**']; }, 'reporting must specify only branch pushes'],
+      [index, (w) => { w.concurrency.group = 'report'; }, 'reporting loses SHA-specific concurrency'],
+      [index, (w) => { w.concurrency['cancel-in-progress'] = true; }, 'an automatic push must not cancel another push'],
     ]),
+    ...[1, 2, 3].map(index => [index, (w) => {
+      w.permissions.contents = 'write';
+    }, 'coverage workflow must have read-only permissions']),
+    ...[[1, 'ios-coverage'], ...reportingJobs].flatMap(([index, job]) => [
+      [index, (w) => { w.jobs[job]['continue-on-error'] = true; }, `${job} ignores failure`],
+      [index, (w) => { w.jobs[job].permissions = {contents: 'write'}; }, `${job} gains write permissions`],
+      [index, (w) => {
+        const checkout = w.jobs[job].steps.find(step => step.uses?.startsWith('actions/checkout@'));
+        checkout.with['persist-credentials'] = true;
+      }, `${job} retains checkout credentials`],
+      [index, (w) => {
+        const checkout = w.jobs[job].steps.find(step => step.uses?.startsWith('actions/checkout@'));
+        checkout.uses = 'actions/checkout@v7';
+      }, `${job} uses an unpinned action`],
+    ]),
+    ...reportingJobs.map(([index, job]) => [index, (w) => {
+      w.jobs[job]['runs-on'] = ['self-hosted', 'macOS', 'ARM64', 'aegis-test'];
+    }, `${job} must run on the declared hosted platform`]),
+    [1, (w) => { w.on.push = {branches: ['main']}; }, 'iOS coverage remains manual'],
+    [2, (w) => { w.on.push.paths = ['apps/browser/**']; }, 'desktop reports must also cover shared changes'],
+    [3, (w) => { w.on.push.paths = ['apps/browser/**']; }, 'Android routing must inspect the complete push diff'],
+    [3, (w) => { delete w.jobs['android-java-coverage'].needs; }, 'emulator allocation must wait for routing'],
+    [3, (w) => { w.jobs.impact.outputs.pr_base = '${{ github.event.pull_request.base.sha }}'; }, 'router must emit the exact merge base'],
+    [3, (w) => { w.jobs['android-java-coverage'].env.AEGIS_PR_HEAD_SHA = '${{ github.event.pull_request.head.sha }}'; }, 'report must use the verified second parent'],
     [3, (w) => {
       const step = w.jobs['android-java-coverage'].steps.find((entry) => entry.name === 'Run six fixtures and collect real Java coverage');
       delete step.run;
