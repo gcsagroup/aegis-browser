@@ -16,7 +16,7 @@ Android 交付与公开发布实现经 fork 分支 PR 进入 `gcsagroup/aegis-br
 
 每次操作都会先跑 **Release Wait**（只读查询 Play `generatedApks`）。只有近期 `VALID`、且密封的 Release 包、Play draft 记录与状态证据都对齐当前 `main` 的 versionCode 才能发布。没有「仅预览」坐标。生产者必须是当前 `main`。
 
-公开 tag 形如 `android/<version>-release.<versionCode>`，例如 `android/7.2.0.339-release.2007000339`。首次发布设 `prerelease=true`、`make_latest=false`。提升 stable 保留同一 tag，将同一条 GitHub Release 改为 `prerelease=false`，保持 `make_latest=false`。执行更新前，发布器按 ID 回读 Release，确认其 ID 与选定的 Release 一致，tag 与审批计划一致。即使 Git tag ref 未变也要复核。仓库的 Latest 入口供桌面端更新使用。审批用的 plan digest 绑定源码 commit/tree、打包、上传和状态检查运行、两份 Actions artifact ID 与 ZIP 的 SHA-256、Play 构建身份，以及公开资产哈希。即便公开内容相同，替换过的 artifact 也要重新预览并重新审批。release identity digest 绑定不可变的包、上传运行、源码与公开资产哈希，且不含 prerelease 标志，因此晋升不会改动 tag 注解。
+公开 tag 形如 `android/<version>-release.<versionCode>`，例如 `android/7.2.0.339-release.2007000339`。首次发布设 `prerelease=true`、`make_latest=false`。提升 stable 保留同一 tag，将同一条 GitHub Release 改为 `prerelease=false`，保持 `make_latest=false`。stable 预览显示精确的 GitHub Release ID，并将其绑定到审批用的 plan digest。发布器重算计划时重新查找公开 Release，更新前按审批的 ID 回读，核验公开 prerelease、tag 和资产清单。即使 tag 和所有资产一致，替换 Release 也需要重新预览和审批。仓库的 Latest 入口供桌面端更新使用。审批用的 plan digest 绑定源码 commit/tree、打包、上传和状态检查运行、两份 Actions artifact ID 与 ZIP 的 SHA-256、Play 构建身份，以及公开资产哈希。即便公开内容相同，替换过的 artifact 也要重新预览并重新审批。release identity digest 绑定不可变的包、上传运行、源码与公开资产哈希，在晋升前后保持一致。GitHub Release ID 只纳入 stable 审批计划。
 
 公开文件只有已签名的 AAB、原生符号 zip、白名单内的公开 `android-manifest.json` 及其 SHA-256。上传证书和签名文件保存在密封包。打包作业先核验 Chromium 和 V8 源码树，再在本次运行的全新输出目录构建 `chrome_public_bundle`。签名前从生成的 base 清单核验应用 ID、versionCode 和不可调试设置。Release 构建启用原生符号，并从同一目录的 `lib.unstripped` 收集库文件。不可变打包记录写入后，由同一打包作业的独立步骤尝试清理本次构建输出。构建失败、记录校验失败或输出归属校验失败时保留输出。清理失败会标记该步骤失败并发出警告，打包作业仍可成功。回执仍要求精确匹配且首次尝试成功的打包作业。
 

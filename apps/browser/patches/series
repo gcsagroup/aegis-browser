@@ -548,3 +548,4 @@
 0548-test-unfocused-full-permission-guard.patch
 0549-preserve-owned-permission-activation.patch
 0550-scope-permission-widget-ownership-to-views.patch
+0551-track-owned-permission-focus-transitions.patch

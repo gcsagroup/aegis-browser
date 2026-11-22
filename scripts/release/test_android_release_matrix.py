@@ -774,7 +774,7 @@ class EvidenceMatrix(unittest.TestCase):
         candidate = release.validate_delivery_evidence(evidence(), 'stable', 'prerelease')
         promoted = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
         self.assertEqual(release.build_release_plan(candidate)['releaseIdentitySha256'],
-                         release.build_release_plan(promoted)['releaseIdentitySha256'])
+                         release.build_release_plan(promoted, stable_release_id=500)['releaseIdentitySha256'])
         moved = evidence()
         moved['current_sha'] = '9' * 40
         with self.assertRaisesRegex(ValueError, 'current main'):
@@ -905,7 +905,7 @@ class PublicationMatrix(unittest.TestCase):
     def plans(self):
         candidate = release.validate_delivery_evidence(evidence(), 'stable', 'prerelease')
         stable = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
-        return release.build_release_plan(candidate), release.build_release_plan(stable)
+        return release.build_release_plan(candidate), release.build_release_plan(stable, stable_release_id=500)
 
     def bind(self, state):
         release._api = state.api
@@ -958,8 +958,42 @@ class PublicationMatrix(unittest.TestCase):
         self.assertFalse(state.release['prerelease'])
         self.assertEqual(state.release['name'], stable['name'])
         self.assertEqual(sum(path == 'git/tags' for path, _payload in state.mutations), 1)
-        self.assertIn(('releases/500', {'name': stable['name'], 'body': stable['body'], 'draft': False,
-                                        'prerelease': False, 'make_latest': 'false'}), state.mutations)
+        promotions = [payload for path, payload in state.mutations
+                      if path == 'releases/500' and payload.get('prerelease') is False]
+        self.assertEqual(promotions, [{'name': stable['name'], 'body': stable['body'], 'draft': False,
+                                       'prerelease': False, 'make_latest': 'false'}])
+
+    def test_same_tag_and_assets_replacement_requires_new_stable_approval(self):
+        prerelease, stable = self.plans()
+        state = Publisher(stable)
+        self.bind(state)
+        state.tag = {'tag_sha': 'd' * 40, 'target_sha': SHA, 'message': release._expected_tag_message(prerelease)}
+        assets = [{'name': name, 'size': 4, 'sha256': digest} for name, digest in stable['assets'].items()]
+        state.release = {'id': 500, 'tag_name': prerelease['tag'], 'draft': False, 'prerelease': True,
+                         'name': prerelease['name'], 'body': prerelease['body'],
+                         'assets': [{'name': asset['name'], 'state': 'uploaded', 'digest': 'sha256:' + asset['sha256']}
+                                    for asset in assets]}
+        candidate = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
+        with (tempfile.TemporaryDirectory() as temp,
+              mock.patch.dict('os.environ', {'GITHUB_OUTPUT': '', 'GITHUB_STEP_SUMMARY': str(Path(temp) / 'summary'),
+                                             'GITHUB_RUN_ID': '444', 'AEGIS_ANDROID_GITHUB_RELEASE_ADMIN_IDS': '2'})):
+            approved = release._write_plan(candidate, assets, Path(temp) / 'plan.json')
+            self.assertEqual(approved['releaseId'], 500)
+            self.assertIn('GitHub Release ID: `500`', (Path(temp) / 'summary').read_text())
+            self.assertTrue(release.preview_release(approved)['existingRelease'])
+            state.approval['comment'] = 'publish ' + approved['planSha256']
+            state.release = {**state.release, 'id': 501}
+            replacement = release._write_plan(candidate, assets, None)
+            self.assertEqual(replacement['releaseId'], 501)
+            with self.assertRaisesRegex(ValueError, 'Release ID changed'):
+                release.preview_release(approved)
+            with mock.patch.dict('os.environ', {'EXPECTED_PLAN_SHA256': approved['planSha256']}):
+                with self.assertRaisesRegex(ValueError, 'Post-approval evidence differs'):
+                    release.publish_release(replacement, assets)
+                with self.assertRaisesRegex(ValueError, 'Release ID differs'):
+                    release.publish_release(approved, assets)
+        self.assertTrue(state.release['prerelease'])
+        self.assertEqual(state.mutations, [])
 
     def test_stale_observation_does_not_create_a_release(self):
         prerelease, _stable = self.plans()

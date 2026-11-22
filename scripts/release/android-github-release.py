@@ -238,10 +238,14 @@ def validate_delivery_evidence(evidence, release_type, publication):
             'statusArtifactDigest': status_artifact['digest'], 'manifest': manifest}
 
 
-def build_release_plan(candidate):
+def _release_tag(candidate):
+    return f"android/{candidate['version']}-release.{candidate['build']}"
+
+
+def build_release_plan(candidate, *, stable_release_id=None):
     publication = candidate['publication']
     version, build = candidate['version'], candidate['build']
-    tag = f'android/{version}-release.{build}'
+    tag = _release_tag(candidate)
     payloads = archive.public_manifest_payloads(candidate['manifest'])
     asset_hashes = {row['name']: row['sha256'] for row in candidate['manifest']['assets']
                     if row['name'].endswith(('.aab', '.symbols.zip'))}
@@ -259,6 +263,9 @@ def build_release_plan(candidate):
     release_identity_sha = hashlib.sha256(json.dumps(release_identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     core['evidenceArtifacts'] = {'package': {'id': candidate['artifactId'], 'digest': candidate['artifactDigest']},
                                  'status': {'id': candidate['statusArtifactId'], 'digest': candidate['statusArtifactDigest']}}
+    if publication == 'stable':
+        require(is_id(stable_release_id), 'Stable approval requires a positive GitHub Release ID')
+        core['releaseId'] = stable_release_id
     plan_sha = hashlib.sha256(json.dumps(core, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     body = ('Aegis Android public release\n\n'
             f'Channel: {label}\nSource: {candidate["source"]["sha"]}\nSource tree: {candidate["source"]["tree"]}\n'
@@ -475,7 +482,10 @@ def _collect_evidence(version, build, release_type, publication, status_run_id, 
 
 
 def _write_plan(candidate, assets, path):
-    plan = build_release_plan(candidate)
+    release_id = None
+    if candidate['publication'] == 'stable':
+        release_id = _public_release_for_promotion(_release_tag(candidate))['id']
+    plan = build_release_plan(candidate, stable_release_id=release_id)
     require({asset['name']: asset['sha256'] for asset in assets} == plan['assets'], 'Public asset inventory differs from the plan')
     if path:
         Path(path).write_text(json.dumps(plan, indent=2, sort_keys=True) + '\n')
@@ -488,10 +498,11 @@ def _write_plan(candidate, assets, path):
             output.write(f"status_run_id={plan['statusRunId']}\n")
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
+        release_id_line = f"- GitHub Release ID: `{plan['releaseId']}`\n" if not plan['prerelease'] else ''
         with open(summary, 'a') as output:
             output.write(f"## Android GitHub Release preview\n\n- Channel: {plan['channel']}\n- Publication: "
                          f"{'prerelease' if plan['prerelease'] else 'stable'}\n- Tag: `{plan['tag']}`\n"
-                         f"- Source: `{plan['source']['sha']}`\n- Plan SHA-256: `{plan['planSha256']}`\n\n"
+                         f"{release_id_line}- Source: `{plan['source']['sha']}`\n- Plan SHA-256: `{plan['planSha256']}`\n\n"
                          f"### Proposed release notes\n\n{plan['body']}\n")
             for asset in assets:
                 output.write(f"| `{asset['name']}` | {asset['size']} | `{asset['sha256']}` |\n")
@@ -523,9 +534,17 @@ def _release_by_tag(tag, *, include_drafts=True):
         return drafts[0] if drafts else None
 
 
+def _public_release_for_promotion(tag):
+    release = _release_by_tag(tag, include_drafts=False)
+    require(release is not None and is_id(release.get('id')) and release.get('tag_name') == tag
+            and release.get('draft') is False and type(release.get('prerelease')) is bool,
+            'Stable promotion requires the public prerelease or its promoted release')
+    return release
+
+
 def _read_release_by_id(plan, release_id):
     fresh = _api(f'releases/{release_id}')
-    require(fresh.get('id') == release_id and fresh.get('tag_name') == plan['tag'],
+    require(is_id(fresh.get('id')) and fresh['id'] == release_id and fresh.get('tag_name') == plan['tag'],
             'Release ID or tag changed before publication')
     return fresh
 
@@ -677,23 +696,23 @@ def _check_approval(plan, current_run_id):
 def preview_release(plan):
     _verify_tag_ruleset()
     existing_tag = _tag_target(plan['tag'])
-    release = _release_by_tag(plan['tag'], include_drafts=False)
-    if release is not None:
-        if not plan['prerelease'] and release.get('prerelease') is True:
-            require(release.get('draft') is False and release.get('tag_name') == plan['tag'],
-                    'Stable promotion requires the public prerelease')
+    if not plan['prerelease']:
+        release = _public_release_for_promotion(plan['tag'])
+        require(release['id'] == plan['releaseId'], 'GitHub Release ID changed during stable preview')
+        if release['prerelease']:
             _verify_release_tag(plan, plan['tag'])
             _verify_release_assets(plan, release)
         else:
             _verify_existing_release(plan, release, plan['tag'])
-    elif existing_tag is not None:
-        require(existing_tag['target_sha'] == plan['source']['sha'] and existing_tag['object_type'] == 'commit'
-                and existing_tag['message'] == _expected_tag_message(plan),
-                'Conflicting tag exists; release preview is blocked')
-    if not plan['prerelease']:
-        require(release is not None and release.get('draft') is False,
-                'Stable promotion requires the public prerelease')
         _production_environment_config()
+    else:
+        release = _release_by_tag(plan['tag'], include_drafts=False)
+        if release is not None:
+            _verify_existing_release(plan, release, plan['tag'])
+        elif existing_tag is not None:
+            require(existing_tag['target_sha'] == plan['source']['sha'] and existing_tag['object_type'] == 'commit'
+                    and existing_tag['message'] == _expected_tag_message(plan),
+                    'Conflicting tag exists; release preview is blocked')
     return {'tag': plan['tag'], 'existingTag': existing_tag is not None, 'existingRelease': release is not None,
             'draftStatus': 'visible-public-release' if release else 'unverified',
             'productionEnvironmentVerified': not plan['prerelease']}
@@ -727,18 +746,16 @@ def _upload_asset_once(release_id, asset):
 
 def _promote_to_stable(plan):
     _assert_current_release_source(plan)
-    release = _release_by_tag(plan['tag'], include_drafts=False)
-    require(release is not None, 'Publish the prerelease before promoting it to the stable release')
-    release_id = release.get('id')
-    require(is_id(release_id) and release.get('draft') is False and release.get('tag_name') == plan['tag'],
-            'Stable promotion requires the public prerelease')
+    release_id = plan['releaseId']
+    require(is_id(release_id), 'Stable approval requires a positive GitHub Release ID')
+    release = _public_release_for_promotion(plan['tag'])
+    require(release['id'] == release_id, 'Public Release ID differs from the approved stable plan')
     _verify_release_tag(plan, plan['tag'])
     _verify_release_assets(plan, release)
     if release.get('prerelease') is False:
         _verify_existing_release(plan, release, plan['tag'])
         _verify_release_is_off_latest(release)
         return release
-    require(release.get('prerelease') is True, 'Only a public prerelease can be promoted')
     _check_approval(plan, os.environ['GITHUB_RUN_ID'])
     _verify_release_tag(plan, plan['tag'])
     _assert_release_write_allowed(plan)
@@ -748,9 +765,9 @@ def _promote_to_stable(plan):
     _verify_release_assets(plan, staged)
     _api(f'releases/{release_id}', {'name': plan['name'], 'body': plan['body'], 'draft': False,
                                     'prerelease': False, 'make_latest': 'false'}, method='PATCH')
-    reread = _release_by_tag(plan['tag'])
-    require(reread is not None and reread.get('id') == release_id and reread.get('draft') is False
-            and reread.get('prerelease') is False, 'Promoted release cannot be read back')
+    reread = _public_release_for_promotion(plan['tag'])
+    require(reread['id'] == release_id and reread['prerelease'] is False,
+            'Promoted release cannot be read back')
     _verify_existing_release(plan, reread, plan['tag'])
     _verify_release_is_off_latest(reread)
     print(json.dumps({'state': 'promoted-and-verified', 'tag': plan['tag'], 'releaseId': release_id, 'url': reread.get('html_url')}))

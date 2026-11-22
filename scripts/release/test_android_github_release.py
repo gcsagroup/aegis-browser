@@ -89,7 +89,17 @@ class ReleaseEvidenceTests(unittest.TestCase):
         candidate = release.validate_delivery_evidence(evidence(), 'stable', 'prerelease')
         first = release.build_release_plan(candidate)
         changed = release.build_release_plan({**candidate, 'artifactId': 71})
-        promoted = release.build_release_plan(release.validate_delivery_evidence(evidence(), 'stable', 'stable'))
+        stable = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
+        promoted = release.build_release_plan(stable, stable_release_id=37)
+        replacement = release.build_release_plan(stable, stable_release_id=38)
+        self.assertNotIn('releaseId', first)
+        self.assertEqual(promoted['releaseId'], 37)
+        self.assertNotEqual(promoted['planSha256'], replacement['planSha256'])
+        self.assertEqual(promoted['releaseIdentitySha256'], replacement['releaseIdentitySha256'])
+        self.assertEqual(release._expected_tag_message(promoted), release._expected_tag_message(replacement))
+        for invalid in (None, True, 0, -1, '37'):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'positive GitHub Release ID'):
+                release.build_release_plan(stable, stable_release_id=invalid)
         self.assertNotEqual(first['planSha256'], changed['planSha256'])
         self.assertEqual(first['releaseIdentitySha256'], changed['releaseIdentitySha256'])
         self.assertEqual(first['releaseIdentitySha256'], promoted['releaseIdentitySha256'])
@@ -153,7 +163,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         finally:
             release._api = original
         candidate = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
-        plan = release.build_release_plan(candidate)
+        plan = release.build_release_plan(candidate, stable_release_id=37)
 
         def missing(path, payload=None, method=None):
             if path.startswith('releases/tags/'):
@@ -162,17 +172,14 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 return []
             raise AssertionError(path)
 
-        release._current_repository = lambda: ({}, SHA, TREE)
-        release._api = missing
-        try:
-            with self.assertRaises(ValueError) as caught:
+        with (mock.patch.object(release, '_current_repository', return_value=({}, SHA, TREE)),
+              mock.patch.object(release, '_api', side_effect=missing)):
+            with self.assertRaisesRegex(ValueError, 'public prerelease'):
                 release._promote_to_stable(plan)
-        finally:
-            release._api = original
-        self.assertIn('prerelease', str(caught.exception).lower())
 
     def test_stable_promotion_rejects_retagged_prerelease_before_patch(self):
-        plan = release.build_release_plan(release.validate_delivery_evidence(evidence(), 'stable', 'stable'))
+        candidate = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
+        plan = release.build_release_plan(candidate, stable_release_id=37)
         prerelease = {'id': 37, 'tag_name': plan['tag'], 'draft': False, 'prerelease': True,
                       'assets': [{'name': name, 'state': 'uploaded', 'digest': 'sha256:' + digest}
                                  for name, digest in plan['assets'].items()]}
