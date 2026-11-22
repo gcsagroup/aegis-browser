@@ -18,7 +18,7 @@
 
 | 項目 | 預留目標 |
 |---|---|
-| Application ID | `app.gcsa.aegis` |
+| Application ID | `com.gcsa.aegis` |
 | 顯示名稱 | GCSA-aegis |
 | 短名 | Aegis |
 | 預設商店語言 | 簡體中文 |

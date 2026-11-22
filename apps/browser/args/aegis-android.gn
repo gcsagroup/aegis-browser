@@ -25,7 +25,7 @@ proprietary_codecs = false
 ffmpeg_branding = "Chromium"
 
 # Play / 侧载 applicationId。不要用 org.chromium.chrome。
-chrome_public_manifest_package = "app.gcsa.aegis"
+chrome_public_manifest_package = "com.gcsa.aegis"
 android_channel = "default"
 
 # Android 与桌面保持一致，不加载 Chromium 的测试 Field Trial 配置。

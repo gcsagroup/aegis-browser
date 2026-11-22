@@ -18,8 +18,8 @@ import {
 
 const hash = 'a'.repeat(64);
 const now = Date.now();
-const options = {profile: '/data/user/0/app.gcsa.aegis/aegis-test-user-data-r1', apkSha256: hash, node: '0.2', text: '帮我总结页面内容 🔋'};
-const snapshot = () => ({package: 'app.gcsa.aegis', profile: options.profile, apkSha256: hash,
+const options = {profile: '/data/user/0/com.gcsa.aegis/aegis-test-user-data-r1', apkSha256: hash, node: '0.2', text: '帮我总结页面内容 🔋'};
+const snapshot = () => ({package: 'com.gcsa.aegis', profile: options.profile, apkSha256: hash,
   snapshotSha256: hash, observedAt: new Date(now).toISOString(),
   nodes: [{node: '0.2', visible: true, enabled: true, editable: true, clickable: true, password: false}]});
 

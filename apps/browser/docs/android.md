@@ -13,7 +13,7 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 - 2026-11-11 Android 源码候选为正式 Stable `157.0.8103.50`，桌面为 `157.0.8103.51`。334 个 Android 补丁已独立回放通过；APK 构建、原签名和真实设备验收仍未完成。
 - 2026-11-07 Android 正式 Stable 为 `157.0.8103.46`，桌面为 `157.0.8103.39`。Android 独立回放通过 328 个 Chromium 补丁和 3 个 V8 补丁。APK 构建、发行签名和实机验收待完成。
 - 2026-11-01 Android 源码候选使用正式 Stable `156.0.8078.79`；桌面为 `156.0.8078.80`。Android 保留独立 pin 与补丁目录，325 个 Chromium 和 3 个 V8 补丁回放通过。尚未编译 APK、签名或实机验收；真实构建前递增产品版本，不能使用历史产物冒充本版本验收。
-- The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
+- The reserved application ID is `com.gcsa.aegis`; reservation does not establish a valid package or Play identity.
 - The 2026-10-09 source candidate is Ver 2.2 (144), versionCode `2002000144`, with 276 Chromium patches and 3 V8 patches. Full Chromium replay passed; its tree differs from the verified desktop source only in official `chrome/VERSION`. This preserves the shared Agent fixes and desktop-only gesture guards; it does not enable desktop gestures on Android. APK build, signing, package identity and physical-device acceptance remain pending.
 - There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.
 - v2 source resolves the public page behind the full-page Agent tab and binds current-page tasks to that document. Page capture, redaction, navigation invalidation, and results still require physical-device acceptance.
@@ -51,7 +51,7 @@ Expected candidate paths, which **do not currently exist as accepted outputs**, 
 
 - `$CHROMIUM_ROOT/src/out/AegisAndroid/apks/ChromePublic.apk`
 - `apps/browser/dist/GCSA-aegis.apk`
-- application ID: `app.gcsa.aegis`
+- application ID: `com.gcsa.aegis`
 - launcher name: `GCSA-aegis`
 
 An AAB path and Play signing identity must be defined and verified before store work.

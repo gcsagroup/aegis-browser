@@ -12,7 +12,7 @@ spec = importlib.util.spec_from_file_location('android_delivery_receipt', Path(_
 receipt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(receipt)
 
-APPLICATION_ID = 'app.gcsa.aegis'
+APPLICATION_ID = 'com.gcsa.aegis'
 SCOPE = 'https://www.googleapis.com/auth/androidpublisher'
 TOKEN_URL = 'https://oauth2.googleapis.com/token'
 API = 'https://androidpublisher.googleapis.com'
