@@ -235,3 +235,26 @@ macOS 批次另加入 `docs/plans/macos-access-toolbar-bubble-NOTES.md` 和 `doc
 macOS delivery 的自动 Ready PR 先在 Linux 校验 Git 身份和文档消费者，再根据可信 base 规则分配合同测试。规则对白名单说明文档的普通内容修改、或只涉及 `apps/ios/` 的变更省去 macOS 专用交付合同。共享接口、CI、自修改路由及未知路径保守运行；混合改动取并集。旧版规则未登记 macOS 时保守运行。Draft 不分配自动合同 runner，同 PR 更新取消旧运行，push 按实际 SHA 分组。
 
 Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS 路径继续依次通过 admission、Mac 上的 Access tests、package，只有所需前置项成功才打包。Chromium 编译、GN/GTest、桌面运行、签名和公证分别验收。基础 quality 增加 Linux 可信影响范围门。只有已配置开发 Fork 内同仓 develop PR 的已验证白名单说明文档内容修改走 Linux 文档合同，其余 PR、未知或旧规则、push 和手动事件继续完整 macOS 质量门。quality-gate 在 Linux 运行可信目标分支的汇总器，保留原检查名与 push 的 quality/quality-gate 作业身份。每个 push SHA 独立分组。全仓零 Mac 和 5 分钟有效反馈须在规则合入后的真实文档 Ready PR 实测。
+
+## 分阶段平台路由（第三批）
+
+现行平台选择以本节为准。分类仍只执行目标分支上的 `scripts/ci/platform-impact.mjs`。缺省补全同样只执行目标分支上的 `scripts/ci/fill-platform-route-defaults.mjs`；目标分支还没有这个文件时，使用 workflow 中写明的同一份补全，不执行候选工作区里的副本。PR 绑定合并候选的两个父提交。push 另传入 `github.event.before`：它是被测提交的祖先时，按这个区间选择平台；它是 40 个 0、缺失或不是祖先时，维持原来的 iOS + macOS 全量自动路径，不因此打开 Android、Windows 或 Linux。`workflow_dispatch` 不参与跳过。三条 workflow 不因为缺键把已经打印的 `false` 改成 `true`。旧路由器没有 `integrate` / `deep` 时，二者跟随当时的 `ios` 或 `macos`；没有 `android` / `windows` / `linux` 时缺省为 false。
+
+路径决定平台，取并集。Conventional Commit 的主题类型只决定阶段，不能清掉路径已经选中的平台，也不读取 scope。非 Conventional、空主题、删除、重命名、模式变化、符号链接，以及分类器自身被修改，进入最严自动阶段。分类器自身被修改时五个平台都打开。白名单说明文档的普通内容修改仍只走已准入的 Linux 文档门；push 不走这条轻量路径。
+
+- iOS：`apps/ios/**`、`.github/workflows/ios-*`、`scripts/ci/ios-*`、`scripts/ci/run-ios-*`
+- Android：`apps/browser/patches-android/**`、`apps/browser/scripts/**` 中路径含 android 的文件、`.github/workflows/android-*`、`scripts/ci/android-*`、`scripts/ci/run-android-*`
+- macOS：`scripts/release/**` 中路径含 macos 的文件、`.github/workflows/macos-*`，以及共享或未知路径
+- Windows：`**/*.ps1`、`apps/browser/scripts/**` 中路径含 winrm 的文件、`scripts/ci/platform-tests/windows-*`、`apps/browser/scripts/ci/windows*`
+- Linux：`scripts/ci/run-shell-coverage.sh`、`scripts/ci/platform-tests/kcov-*`。只有这些路径时不打开 macOS 合同
+- 共享产品：`packages/core/**`、`apps/browser/overlay/**`、`apps/browser/patches/**`（不含 `patches-android`）。打开 macOS 合同和完整 quality，不打开 iOS archive、Android 或 Windows
+- 未知路径同样只打开 macOS 合同和完整 quality
+
+阶段只作用于自动作业：
+
+- 门禁：非文档轻量路由继续跑完整 quality。`quality-gate` 的必需结果仍然只有 `quality`
+- 集成：平台被选中，且类型属于 `feat`、`fix`、`perf`、`refactor`、`build`、`test`、`revert`，或者事件是 push。`chore`、`ci`、`style`、`docs` 的 PR 不跑平台合同
+- 深度：在集成之上，类型属于 `feat`、`fix`、`perf`、`refactor`、`build`、`revert`，或者事件是 push。`test` 的 PR 停在合同，不编 unsigned archive
+- 提升：签名、公证、TestFlight、Play 和 GitHub Release 仍只接受手动 dispatch
+
+iOS 先跑短的路由作业。合同要求路由成功且 `ios && integrate`；archive 再要求合同成功且 `deep`。手动 dispatch 仍跑合同和 archive。macOS 自动合同要求 `macos && integrate`。quality 成功之后，仅当 Android 或 Windows 被选中且 `integrate` 为真时，在 Linux 上跑 `pnpm run quality:other-platforms`。这个作业不进入必需结果。模拟器、kcov 和 Pester 仍是手动覆盖率 workflow。前一阶段失败则后续作业不分配 runner。

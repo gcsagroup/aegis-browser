@@ -453,7 +453,7 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
   assert.notEqual(validate(paths).status, 0, 'the iOS workflow path cannot be overridden');
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'];
-  const automaticJobs = [[0, 'impact'], [0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive']];
+  const automaticJobs = [[0, 'impact'], [0, 'quality'], [0, 'quality-summary'], [0, 'other-platforms'], [5, 'cpp-unit-tests'], [6, 'impact'], [6, 'contracts'], [6, 'ios-archive']];
   const mutations = [
     ...[0, 5, 6].flatMap((index) => [
       [index, (w) => { delete w.on.pull_request.types; }, 'missing PR event selection'],
