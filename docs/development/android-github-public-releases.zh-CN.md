@@ -20,7 +20,9 @@ Android 交付与公开发布实现经 fork 分支 PR 进入 `gcsagroup/aegis-br
 
 公开文件只有已签名的 AAB、原生符号 zip、白名单内的公开 `android-manifest.json` 及其 SHA-256。上传证书和签名文件保存在密封包。打包作业先核验 Chromium 和 V8 源码树，再在本次运行的全新输出目录构建 `chrome_public_bundle`。签名前从生成的 base 清单核验应用 ID、versionCode 和不可调试设置。Release 构建启用原生符号，并从同一目录的 `lib.unstripped` 收集库文件。密封制品与不可变记录写入成功后，作业清理本次构建输出目录。构建失败时保留输出供排查。
 
-完整模式根据记录中的运行、作业、制品摘要和源码树导入并保留原始压缩包，核对它与此次获准的 main 提交一致。单独运行 Upload 时，复制成功打包作业中的回执。运行 **distribute** 或 **submit** 时，复制成功上传的回执，流程会核验 Play draft 的不可变结果和该次运行中成功的 store 作业。公开 Release 核验支持分次执行打包与上传。候选 Draft 核验会下载并计算全部资产的摘要。
+完整模式根据记录中的运行、作业、制品摘要和源码树核对此次获准的 main 提交，在接触 Play 前导入并保留原始压缩包。单独运行 Upload 时，复制成功打包作业中的回执。运行 **distribute** 或 **submit** 时，复制成功上传的回执，流程会核验 Play draft 的不可变结果和该次运行中成功的 store 作业。签名、保留 versionCode 和写入 Play edit 前都会复核当前 main。公开 Release 核验支持分次执行打包与上传。候选 Draft 每次写入资产前复核 tag 和草稿状态，最后下载并计算全部资产的摘要。
+
+每次新打包都要求应用的 versionCode 尚未被占用。按 versionCode 建立的记录写入 `android-delivery-v2/`，启用前要求原 `android-delivery/` 命名空间为空。如果已有旧记录，先核对这些版本号的保留状态。
 
 简单模式对 Release 的 **打包并上传** 只把 AAB 传到 Play `internal` 轨道，状态为 `draft`，不会 rollout production。Alpha 只走 `internal`。Beta 可用 `internal` 或 `beta`。production 的 `completed` 只允许完整模式里显式的 **submit**，且必须在 Play 已报告 `VALID` 之后。
 

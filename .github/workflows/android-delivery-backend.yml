@@ -62,11 +62,11 @@ jobs:
       - id: plan
         name: Normalize exact AAB or existing state / 校验产物或原交付凭据
         run: python3 scripts/release/android-delivery-plan.py
-      - name: Require authoritative unused versionCode before new upload / 新上传核验
-        if: ${{ fromJSON(steps.plan.outputs.plan).operation == 'package-upload' }}
+      - name: Require authoritative unused versionCode before packaging / 打包前核验构建号
+        if: ${{ contains(fromJSON('["package","package-upload","draft"]'), fromJSON(steps.plan.outputs.plan).operation) }}
         env:
           ANDROID_DELIVERY_PLAN: ${{ steps.plan.outputs.plan }}
-        run: python3 scripts/release/android-delivery.py check-new-upload
+        run: python3 scripts/release/android-delivery.py check-new-package
       - name: Require exact-source admission / 核验来源与质量门禁
         env:
           RELEASE_DESTINATION: ${{ fromJSON(steps.plan.outputs.plan).destination }}
@@ -162,9 +162,14 @@ jobs:
         with:
           ruby-version: 3.3.6
           bundler-cache: true
-      - id: verified-package
-        name: Import exact successful producer and current attempt / 校验原生产运行与当前尝试
+      - name: Import exact successful producer and current attempt / 校验原生产运行与当前尝试
         run: python3 scripts/release/android-delivery.py import
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: android-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/android-delivery/imported.zip
+          if-no-files-found: error
+          retention-days: 30
       - name: Recheck Admin and source before Play credentials / 读取 Play 凭据前复核
         run: |
           node scripts/ci/android-operator.mjs
@@ -173,13 +178,6 @@ jobs:
         env:
           AEGIS_PLAY_JSON_KEY_DATA: ${{ secrets.AEGIS_PLAY_JSON_KEY_DATA }}
         run: ruby scripts/release/android-delivery-store.rb
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: ${{ always() && steps.verified-package.outcome == 'success' }}
-        with:
-          name: android-delivery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/android-delivery/imported.zip
-          if-no-files-found: error
-          retention-days: 30
   draft:
     needs: [admission, package]
     if: ${{ !cancelled() && needs.admission.result == 'success' && needs.package.result == 'success' && fromJSON(needs.admission.outputs.plan).operation == 'draft' && fromJSON(needs.admission.outputs.plan).destination == 'github-draft' }}

@@ -282,6 +282,8 @@ class ArchiveAndRecordMatrix(unittest.TestCase):
             def request(self, path, payload=None, missing=False):
                 if path == '':
                     return {'id': 1348409663}
+                if path == records.LEGACY_REFS:
+                    return []
                 if path == 'git/commits' and payload is not None:
                     digest = __import__('hashlib').sha1(payload['message'].encode()).hexdigest()
                     self.commits[digest] = payload
@@ -356,6 +358,11 @@ class DeliveryCommandMatrix(unittest.TestCase):
             pending = {'origin': origin, 'profile': 'release', 'version': VERSION, 'build': BUILD, 'manifestSha256': digest}
             artifact = {'id': 70, 'digest': 'sha256:' + '11' * 32, 'name': 'android-package-41-1'}
             store = self._store()
+            verify_main.side_effect = ValueError('Producer source is no longer current')
+            with self.assertRaisesRegex(ValueError, 'no longer current'):
+                delivery.record_package(pending, artifact, 11, store)
+            self.assertIsNone(store.read('package', records.allocation(archive.APPLICATION_ID, VERSION, BUILD)))
+            verify_main.side_effect = None
             delivery.record_package(pending, artifact, 11, store)
             self.assertEqual(delivery.record_package(pending, artifact, 11, store)['artifact_id'], 70)
             with self.assertRaises(ValueError):
@@ -363,12 +370,14 @@ class DeliveryCommandMatrix(unittest.TestCase):
             calls = []
 
             class Client:
-                def upload_draft(self, aab, code, track):
+                def upload_draft(self, aab, code, track, *, authorize_write):
+                    authorize_write()
                     calls.append(('upload', track, code))
                     return {'status': 'uploaded_draft', 'packageName': archive.APPLICATION_ID,
                             'track': track, 'releaseStatus': 'draft', 'versionCode': code}
 
-                def update_track(self, code, track, state, fraction):
+                def update_track(self, code, track, state, fraction, *, authorize_write):
+                    authorize_write()
                     calls.append(('track', track, state, fraction))
                     return {'status': state, 'track': track}
 
@@ -466,14 +475,17 @@ class DeliveryCommandMatrix(unittest.TestCase):
                    'AEGIS_ANDROID_AAB': str(old_bundle)}
             expected_out = chromium.resolve() / 'src/out/AegisAndroidDelivery-41-1'
             commands = []
+            store = mock.Mock()
+            store.read.return_value = None
 
             def run(command, **kwargs):
                 commands.append(command)
                 if command[0] == 'bash':
                     self.assertEqual(command[-2:], ['--app-bundle', 'alpha'])
-                    self.assertEqual(kwargs['env']['OUT_DIR'], str(expected_out))
-                    self.assertFalse(expected_out.exists())
-                    apks = expected_out / 'apks'
+                    out = chromium.resolve() / 'src/out' / f"AegisAndroidDelivery-{kwargs['env']['GITHUB_RUN_ID']}-1"
+                    self.assertEqual(kwargs['env']['OUT_DIR'], str(out))
+                    self.assertFalse(out.exists())
+                    apks = out / 'apks'
                     apks.mkdir(parents=True)
                     with zipfile.ZipFile(apks / 'ChromePublic.aab', 'w') as output:
                         output.writestr('BundleConfig.pb', b'fixture')
@@ -487,6 +499,8 @@ class DeliveryCommandMatrix(unittest.TestCase):
 
             with (mock.patch.dict('os.environ', env), mock.patch.object(delivery, 'ROOT', root),
                   mock.patch.object(delivery, 'source_identity', return_value=identity) as read_source,
+                  mock.patch.object(delivery.release, '_store', return_value=store),
+                  mock.patch.object(delivery.release, '_assert_current_release_source') as check_main,
                   mock.patch.object(delivery, 'verify_bundle_manifest') as verify_manifest,
                   mock.patch.object(delivery.subprocess, 'run', side_effect=run),
                   mock.patch.object(delivery.verifier, 'certificate_sha256', return_value='cd' * 32)):
@@ -496,12 +510,31 @@ class DeliveryCommandMatrix(unittest.TestCase):
                     delivery.build_and_seal(plan)
                 self.assertEqual(commands, [])
                 read_source.return_value = identity
+                store.read.return_value = {'occupied': True}
+                with self.assertRaisesRegex(ValueError, 'versionCode is already recorded'):
+                    delivery.build_and_seal(plan)
+                self.assertEqual(commands, [])
+                store.read.return_value = None
+                separate_tree = root / 'separate-source'
+                separate_tree.mkdir()
+                link = chromium / 'src'
+                link.symlink_to(separate_tree, target_is_directory=True)
+                with self.assertRaisesRegex(ValueError, 'physical Chromium source'):
+                    delivery.build_and_seal(plan)
+                self.assertEqual(commands, [])
+                link.unlink()
                 sealed = delivery.build_and_seal(plan)
                 self.assertEqual(sealed['origin']['sourceSha'], SHA)
                 self.assertEqual(sealed['origin']['sourceTree'], TREE)
                 self.assertEqual(sealed['origin']['runId'], 41)
                 self.assertEqual([command[0] for command in commands], ['bash', 'jarsigner'])
                 verify_manifest.assert_called_once_with(chromium.resolve(), expected_out / 'apks/ChromePublic.aab', BUILD)
+                check_main.assert_called_once_with({'source': {'sha': SHA, 'tree': TREE}})
+                check_main.side_effect = ValueError('Producer source is no longer current')
+                with mock.patch.dict('os.environ', {'GITHUB_RUN_ID': '42'}):
+                    with self.assertRaisesRegex(ValueError, 'no longer current'):
+                        delivery.build_and_seal(plan)
+                self.assertEqual([command[0] for command in commands], ['bash', 'jarsigner', 'bash'])
 
     def test_only_recorded_producer_output_is_retired(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -520,6 +553,7 @@ class DeliveryCommandMatrix(unittest.TestCase):
             store = self._store()
             env = {'CHROMIUM_ROOT': temp, 'GITHUB_RUN_ID': '41', 'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_SHA': SHA}
             with (mock.patch.dict('os.environ', env), mock.patch.object(delivery, 'ROOT', root),
+                  mock.patch.object(delivery.release, '_assert_current_release_source'),
                   mock.patch.object(delivery.release, '_store', return_value=store)):
                 with self.assertRaisesRegex(ValueError, 'until the sealed artifact is recorded'):
                     delivery.retire_producer_output()
@@ -532,6 +566,49 @@ class DeliveryCommandMatrix(unittest.TestCase):
                 delivery.retire_producer_output()
                 self.assertFalse(output.exists())
                 self.assertTrue(other.exists())
+
+    def test_candidate_draft_revalidates_tag_and_release_between_assets(self):
+        for change in ('retargeted', 'public'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                directory, digest, origin = sealed_package(root)
+                tag = f'candidate/android/{VERSION}-release.{BUILD}'
+                plan = {'operation': 'draft', 'destination': 'github-draft', 'tag': tag,
+                        'version': VERSION, 'build': BUILD, 'profile': 'release'}
+                remote = {'id': 9, 'tag_name': tag, 'draft': True, 'prerelease': True, 'assets': []}
+                tag_sha = SHA
+
+                def api(path):
+                    if path.startswith('commits/refs%2Ftags%2Fcandidate%2Fandroid%2F'):
+                        return {'sha': tag_sha}
+                    self.assertEqual(path, 'releases/9')
+                    return remote
+
+                def upload(release_id, row):
+                    nonlocal tag_sha
+                    self.assertEqual(release_id, 9)
+                    remote['assets'].append({'name': row['name'], 'state': 'uploaded', 'digest': 'sha256:' + row['sha256']})
+                    if change == 'retargeted':
+                        tag_sha = '3' * 40
+                    else:
+                        remote['draft'] = False
+
+                store = self._store()
+                pending = {'origin': origin, 'profile': 'release', 'version': VERSION, 'build': BUILD, 'manifestSha256': digest}
+                artifact = {'id': 70, 'digest': 'sha256:' + '11' * 32, 'name': 'android-package-41-1'}
+                env = {'GITHUB_RUN_ID': '41', 'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_SHA': SHA}
+                with (mock.patch.dict('os.environ', env), mock.patch.object(delivery, 'ROOT', root),
+                      mock.patch.object(delivery, 'git_output', return_value=SHA),
+                      mock.patch.object(delivery.release, '_assert_current_release_source'),
+                      mock.patch.object(delivery.release, '_store', return_value=store),
+                      mock.patch.object(delivery.release, '_release_by_tag', return_value=remote),
+                      mock.patch.object(delivery.release, '_api', side_effect=api),
+                      mock.patch.object(delivery.release, '_upload_asset_once', side_effect=upload) as write):
+                    delivery.record_package(pending, artifact, 11, store)
+                    with self.assertRaisesRegex(ValueError, 'no longer'):
+                        delivery.stage_draft(plan, directory)
+                    write.assert_called_once()
+                    self.assertFalse((root / '.artifacts/release/android' / BUILD / 'github-draft.json').exists())
 
     def test_bundle_manifest_checks_package_version_and_debuggable(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -568,6 +645,8 @@ class DeliveryCommandMatrix(unittest.TestCase):
             def request(self, path, payload=None, missing=False):
                 if path == '':
                     return {'id': 1348409663}
+                if path == records.LEGACY_REFS:
+                    return []
                 if path == 'git/commits' and payload is not None:
                     digest = __import__('hashlib').sha1(payload['message'].encode()).hexdigest()
                     self.commits[digest] = payload
@@ -599,7 +678,7 @@ class DeliveryCommandMatrix(unittest.TestCase):
                                    'rollout', '2026-11-19T00:00:00+00:00')
         name = archive.asset_names(VERSION, BUILD)[0]
         digest = 'ab' * 32
-        proof = {'draft': True, 'tag': f'candidate/android/{VERSION}-release.{BUILD}', 'releaseId': 9,
+        proof = {'draft': True, 'tag': f'candidate/android/{VERSION}-release.{BUILD}', 'releaseId': 9, 'sha': SHA,
                  'assets': {name: digest}}
         asset = {'id': 10, 'name': name, 'size': 4, 'state': 'uploaded', 'digest': f'sha256:{digest}'}
         remote = {'id': 9, 'tag_name': proof['tag'], 'draft': True, 'prerelease': True, 'assets': [asset]}

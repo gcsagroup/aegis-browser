@@ -519,6 +519,13 @@ def _release_by_tag(tag, *, include_drafts=True):
         return drafts[0] if drafts else None
 
 
+def require_candidate_tag_source(tag, source_sha):
+    require(is_sha(source_sha) and isinstance(tag, str) and tag.startswith('candidate/android/'),
+            'Candidate draft needs an exact tag and source')
+    commit = _api('commits/' + quote('refs/tags/' + tag, safe=''))
+    require(commit.get('sha') == source_sha, 'Candidate tag no longer points at this source')
+
+
 def _tag_target(tag):
     try:
         ref = _api('git/ref/tags/' + quote(tag, safe=''))

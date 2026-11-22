@@ -89,6 +89,10 @@ class Play:
         require(status in ok, 'Play request failed')
         return status, payload
 
+    def _write(self, authorize, method, url, body, headers=None):
+        authorize()
+        return self._request(method, url, body, headers)
+
     def status(self, version_code):
         require(type(version_code) is int and 1 <= version_code <= receipt.MAX_CODE, 'Invalid Play versionCode')
         status, payload = self._request(
@@ -98,48 +102,46 @@ class Play:
                     'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
         return interpret_generated_apks(json.loads(payload.decode()), version_code)
 
-    def upload_draft(self, aab, version_code, track):
+    def upload_draft(self, aab, version_code, track, *, authorize_write):
         require(track in {'internal', 'beta'}, 'Play draft upload cannot target production')
         remote = self.status(version_code)
         require(remote['processingState'] == 'NOT_FOUND', 'Play already has this versionCode')
-        _status, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
-                                          {'Content-Type': 'application/json'})
+        edits = API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits'
+        _status, payload = self._write(authorize_write, 'POST', edits, b'{}', {'Content-Type': 'application/json'})
         edit = json.loads(payload.decode())
         edit_id = edit.get('id')
         require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
         upload = API + f'/upload/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}/bundles?uploadType=media'
-        _status, payload = self._request('POST', upload, Path(aab).read_bytes(),
-                                          {'Content-Type': 'application/octet-stream'}, ok=(200,))
+        _status, payload = self._write(authorize_write, 'POST', upload, Path(aab).read_bytes(),
+                                       {'Content-Type': 'application/octet-stream'})
         bundle = json.loads(payload.decode())
         require(bundle.get('versionCode') == version_code, 'Play stored a different versionCode')
         release = {'status': 'draft', 'versionCodes': [str(version_code)]}
         body = canonical({'releases': [release], 'track': track}).encode()
-        self._request('PUT', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}/tracks/{track}',
-                      body, {'Content-Type': 'application/json'})
-        self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}:commit', b'')
+        self._write(authorize_write, 'PUT', f'{edits}/{edit_id}/tracks/{track}', body, {'Content-Type': 'application/json'})
+        self._write(authorize_write, 'POST', f'{edits}/{edit_id}:commit', b'')
         return {'editId': edit_id, 'packageName': APPLICATION_ID, 'releaseStatus': 'draft',
                 'status': 'uploaded_draft', 'track': track, 'versionCode': version_code}
 
-    def update_track(self, version_code, track, status, user_fraction=''):
+    def update_track(self, version_code, track, status, user_fraction='', *, authorize_write):
         require(track in TRACKS and status in {'inProgress', 'completed'}, 'Unsupported Play track update')
         require(self.status(version_code)['processingState'] == 'VALID', 'Play has not finished this versionCode')
         require(status != 'completed' or (track == 'production' and user_fraction == ''),
                 'Only an explicit production submission can complete a rollout')
         require(status != 'inProgress' or (track != 'production' and user_fraction),
                 'A partial rollout needs a non-production track and a user fraction')
-        _status, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
-                                          {'Content-Type': 'application/json'})
-        edit_id = json.loads(payload.decode()).get('id')
-        require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
         if user_fraction:
             require(re.fullmatch(r'0\.(?:[0-9]{0,3}[1-9])', user_fraction), 'Invalid Play user fraction')
             body = ('{"releases":[{"status":"%s","userFraction":%s,"versionCodes":["%s"]}],"track":"%s"}'
                     % (status, user_fraction, version_code, track)).encode()
         else:
             body = canonical({'releases': [{'status': status, 'versionCodes': [str(version_code)]}], 'track': track}).encode()
-        self._request('PUT', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}/tracks/{track}',
-                      body, {'Content-Type': 'application/json'})
-        self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}:commit', b'')
+        edits = API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits'
+        _status, payload = self._write(authorize_write, 'POST', edits, b'{}', {'Content-Type': 'application/json'})
+        edit_id = json.loads(payload.decode()).get('id')
+        require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
+        self._write(authorize_write, 'PUT', f'{edits}/{edit_id}/tracks/{track}', body, {'Content-Type': 'application/json'})
+        self._write(authorize_write, 'POST', f'{edits}/{edit_id}:commit', b'')
         return {'editId': edit_id, 'status': status, 'track': track, 'versionCode': version_code}
 
 

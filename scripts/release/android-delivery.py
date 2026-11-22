@@ -8,7 +8,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from urllib.parse import quote
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -29,6 +28,7 @@ release = module('android_github_release', 'android-github-release.py')
 
 ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY = archive.REPOSITORY
+PACKAGE_OPERATIONS = frozenset({'package', 'package-upload', 'draft'})
 
 
 def require(condition, message):
@@ -71,7 +71,9 @@ def zip_symbols(out_dir, destination):
 
 def producer_output(run_id):
     chromium = Path(os.environ['CHROMIUM_ROOT']).resolve(strict=True)
-    return chromium, chromium / 'src' / 'out' / f'AegisAndroidDelivery-{run_id}-1'
+    output = chromium / 'src' / 'out' / f'AegisAndroidDelivery-{run_id}-1'
+    require(output.resolve() == output, 'Android producer requires a physical Chromium source and output path')
+    return chromium, output
 
 
 def verify_bundle_manifest(chromium, aab, build):
@@ -115,6 +117,7 @@ def build_and_seal(plan):
             'Requested versionCode differs from the committed Android source')
     require(os.environ.get('GITHUB_RUN_ATTEMPT') == '1', 'Package attempt must stay on the first run')
     run_id = int(os.environ['GITHUB_RUN_ID'])
+    require_absent(plan['version'], plan['build'], release._store(), ('package', 'upload-start', 'upload-result'))
     certificate = verifier.normalize_certificate(os.environ['AEGIS_ANDROID_CERT_SHA256'])
     chromium, out = producer_output(run_id)
     release_dir = ROOT / '.artifacts/android-delivery'
@@ -129,6 +132,7 @@ def build_and_seal(plan):
     verify_bundle_manifest(chromium, unsigned, identity['build'])
     with tempfile.TemporaryDirectory(prefix='producer-', dir=release_dir) as temp:
         signed = Path(temp) / 'signed.aab'
+        release._assert_current_release_source({'source': {'sha': identity['sha'], 'tree': identity['tree']}})
         signing = subprocess.run([
             'jarsigner', '-keystore', str(Path(os.environ['AEGIS_ANDROID_KEYSTORE']).resolve(strict=True)),
             '-storepass:env', 'AEGIS_ANDROID_STORE_PASSWORD', '-keypass:env', 'AEGIS_ANDROID_KEY_PASSWORD',
@@ -190,7 +194,12 @@ def record_package(pending, artifact, job_id, store):
     if existing is not None:
         require(existing == payload, 'Existing package record does not match this sealed artifact')
         return existing
-    return store.create('package', key, payload)
+    origin = pending['origin']
+
+    def authorize_create():
+        release._assert_current_release_source({'source': {'sha': origin['sourceSha'], 'tree': origin['sourceTree']}})
+
+    return store.create('package', key, payload, authorize_create=authorize_create)
 
 
 def approved_package(plan, store):
@@ -289,14 +298,18 @@ def play_stage(plan, package_dir, client, store):
     verify_approved_package(plan, package_dir, approved)
     origin = approved['origin']
     source = {'source': {'sha': origin['sourceSha'], 'tree': origin['sourceTree']}}
+
+    def authorize_write():
+        release._assert_current_release_source(source)
+
     if plan['operation'] in {'package-upload', 'upload'}:
         require(os.environ.get('GITHUB_RUN_ATTEMPT') == '1', 'Play upload requires the first workflow attempt')
         upload_run_id = int(os.environ['GITHUB_RUN_ID'])
         require_absent(version, build, store, ('upload-start', 'upload-result'))
         intent = play.draft_intent(version, build, plan['profile'], origin['manifestSha256'], plan['track'])
-        release._assert_current_release_source(source)
-        store.create('upload-start', key, intent)
-        result = client.upload_draft(Path(package_dir) / archive.asset_names(version, build)[0], code, plan['track'])
+        store.create('upload-start', key, intent, authorize_create=authorize_write)
+        result = client.upload_draft(Path(package_dir) / archive.asset_names(version, build)[0], code, plan['track'],
+                                     authorize_write=authorize_write)
         store.create('upload-result', key, {'intent': intent, 'result': result,
                                           'uploadRunId': upload_run_id, 'uploadRunAttempt': 1})
         emit_receipt(approved, upload_run_id)
@@ -308,17 +321,17 @@ def play_stage(plan, package_dir, client, store):
             'Track changes require a receipt for the recorded Play upload')
     release.verify_play_upload(plan, origin, store.read('upload-start', key), terminal,
                                release.load_upload_run(terminal))
-    release._assert_current_release_source(source)
     if plan['operation'] == 'distribute':
-        return client.update_track(code, plan['track'], 'inProgress', plan['user_fraction'])
-    return client.update_track(code, 'production', 'completed', '')
+        return client.update_track(code, plan['track'], 'inProgress', plan['user_fraction'],
+                                   authorize_write=authorize_write)
+    return client.update_track(code, 'production', 'completed', '', authorize_write=authorize_write)
 
 
 def main():
     command = sys_argv()
     value = plan_from_env()
-    if command == 'check-new-upload':
-        require(value['operation'] == 'package-upload', 'Unused-version admission is only for a new upload')
+    if command == 'check-new-package':
+        require(value['operation'] in PACKAGE_OPERATIONS, 'Unused-version admission requires a new package')
         require_absent(value['version'], value['build'], release._store(), ('package', 'upload-start', 'upload-result'))
         return
     if command == 'validate-query':
@@ -333,6 +346,10 @@ def main():
     if command == 'record-package':
         pending = json.loads((ROOT / '.artifacts/android-delivery/package-pending.json').read_text())
         run_id = int(os.environ['GITHUB_RUN_ID'])
+        origin = pending['origin']
+        require(origin['runId'] == run_id and origin['sourceSha'] == os.environ['GITHUB_SHA']
+                and origin['attempt'] == 1 and os.environ['GITHUB_RUN_ATTEMPT'] == '1',
+                'Package record must match the admitted producer source and run')
         name = f'android-package-{run_id}-1'
         rows = release._api_items(f'actions/runs/{run_id}/artifacts?per_page=100', 'artifacts')
         matches = [row for row in rows if row.get('name') == name and row.get('expired') is False]
@@ -366,33 +383,44 @@ def stage_draft(plan, package_dir):
     source = {'source': {'sha': origin['sourceSha'], 'tree': origin['sourceTree']}}
     tag = plan['tag']
     head = git_output('rev-parse', 'HEAD')
-    commit = release._api('commits/' + quote(tag, safe=''))
-    require(commit.get('sha') == head, 'Candidate tag does not point at this source')
+    require(head == origin['sourceSha'], 'Candidate Draft checkout differs from the approved producer')
+    release.require_candidate_tag_source(tag, head)
     existing = release._release_by_tag(tag)
     if existing is None:
         release._assert_current_release_source(source)
+        release.require_candidate_tag_source(tag, head)
         existing = release._api('releases', {'tag_name': tag, 'target_commitish': head, 'name': tag,
                                             'body': 'Aegis Android candidate draft\n', 'draft': True,
                                             'prerelease': True, 'make_latest': 'false'})
     require(is_draft(existing, tag), 'Candidate release is no longer a draft for this tag')
-    release._verify_release_assets({'assets': assets}, existing)
-    present = {item.get('name') for item in (existing.get('assets') or [])}
+    release_id = existing['id']
+
+    def read_draft(*, complete=False):
+        release.require_candidate_tag_source(tag, head)
+        fresh = release._api(f'releases/{release_id}')
+        require(is_draft(fresh, tag) and fresh['id'] == release_id,
+                'Candidate release is no longer the same draft for this tag')
+        release._verify_release_assets({'assets': assets}, fresh, complete=complete)
+        return fresh
+
     for row in manifest['assets']:
-        if row['name'] in present:
-            continue
         release._assert_current_release_source(source)
-        release._upload_asset_once(existing['id'], {'name': row['name'], 'size': row['size'],
-                                                   'sha256': row['sha256'], 'path': str(Path(package_dir) / row['name'])})
+        current = read_draft()
+        if row['name'] not in {item['name'] for item in current['assets']}:
+            release._upload_asset_once(release_id, {**row, 'path': str(Path(package_dir) / row['name'])})
+    read_draft(complete=True)
     proof_dir = ROOT / '.artifacts/release/android' / plan['build']
     proof_dir.mkdir(parents=True, exist_ok=True)
-    proof = {'tag': tag, 'releaseId': existing['id'], 'draft': True, 'sha': head,
+    proof = {'tag': tag, 'releaseId': release_id, 'draft': True, 'sha': head,
              'assets': assets}
     (proof_dir / 'github-draft.json').write_text(json.dumps(proof, indent=2, sort_keys=True) + '\n')
 
 
 
 def is_draft(release_row, tag):
-    return isinstance(release_row, dict) and release_row.get('draft') is True and release_row.get('tag_name') == tag and release.is_id(release_row.get('id'))
+    return (isinstance(release_row, dict) and release_row.get('draft') is True
+            and release_row.get('prerelease') is True and release_row.get('tag_name') == tag
+            and release.is_id(release_row.get('id')))
 
 
 def sys_argv():

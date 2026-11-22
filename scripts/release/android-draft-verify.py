@@ -35,7 +35,8 @@ def downloaded_asset(asset):
 
 
 def verify(proof, remote, read_asset=downloaded_asset):
-    if not isinstance(proof, dict) or proof.get('draft') is not True or not isinstance(proof.get('tag'), str):
+    if (not isinstance(proof, dict) or proof.get('draft') is not True
+            or not isinstance(proof.get('tag'), str) or not release.is_sha(proof.get('sha'))):
         raise ValueError('Android draft proof is incomplete')
     if remote.get('id') != proof.get('releaseId') or remote.get('tag_name') != proof['tag'] or remote.get('draft') is not True:
         raise ValueError('Android candidate draft changed before verification')
@@ -49,7 +50,7 @@ def verify(proof, remote, read_asset=downloaded_asset):
         size, digest = read_asset(asset)
         if size != asset.get('size') or digest != expected[asset['name']]:
             raise ValueError('Downloaded Android draft asset differs from the sealed manifest: ' + asset['name'])
-    return {'tag': proof['tag'], 'releaseId': proof['releaseId'], 'draft': True, 'assets': expected}
+    return {'tag': proof['tag'], 'releaseId': proof['releaseId'], 'draft': True, 'sha': proof['sha'], 'assets': expected}
 
 
 def main():
@@ -59,6 +60,7 @@ def main():
     if len(proofs) != 1:
         raise SystemExit('Android draft proof is missing or ambiguous')
     proof = json.loads(proofs[0].read_text())
+    release.require_candidate_tag_source(proof['tag'], proof['sha'])
     remote = release._api('releases/' + str(proof['releaseId']))
     verified_metadata = {}
 
@@ -71,6 +73,7 @@ def main():
     fresh = release._api('releases/' + str(proof['releaseId']))
     # Relative counters such as download_count can change during a read.
     verify(proof, fresh, lambda asset: verified_metadata.get(asset.get('id'), (None, None)))
+    release.require_candidate_tag_source(proof['tag'], proof['sha'])
     path = proofs[0].with_name(f"android-draft-download-{proof['releaseId']}.json")
     with path.open('x') as output:
         json.dump(result, output, indent=2, sort_keys=True)

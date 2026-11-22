@@ -22,6 +22,8 @@ class MemoryApi:
     def request(self, path, payload=None, missing=False):
         if path == '':
             return {'id': 1348409663}
+        if path == records.LEGACY_REFS:
+            return [value for name, value in self.refs.items() if name.startswith('heads/android-delivery/')]
         if path == 'git/commits' and payload is not None:
             sha = hashlib.sha1(payload['message'].encode()).hexdigest()
             self.commits[sha] = payload
@@ -61,7 +63,20 @@ class RecordTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.create('package', key, payload)
         self.assertEqual(len(api.refs), 1)
-        self.assertTrue(next(iter(api.refs)).startswith('heads/android-delivery/package/'))
+        self.assertTrue(next(iter(api.refs)).startswith('heads/android-delivery-v2/package/'))
+
+    def test_existing_or_late_legacy_reservation_blocks_new_allocation(self):
+        api = MemoryApi()
+        store = records.Records(api, 1348409663, records.APPLICATION_ID)
+        legacy_ref = 'heads/android-delivery/upload-start/' + 'a' * 64
+        api.refs[legacy_ref] = {'ref': 'refs/' + legacy_ref}
+        key = records.allocation(records.APPLICATION_ID, '7.2.0.339', '2007000339')
+        with self.assertRaisesRegex(ValueError, 'require reconciliation'):
+            records.Records(api, 1348409663, records.APPLICATION_ID)
+        with self.assertRaisesRegex(ValueError, 'require reconciliation'):
+            store.create('package', key, {'build': '2007000339'})
+        self.assertEqual(list(api.refs), [legacy_ref])
+        self.assertEqual(api.commits, {})
 
 
 if __name__ == '__main__':
