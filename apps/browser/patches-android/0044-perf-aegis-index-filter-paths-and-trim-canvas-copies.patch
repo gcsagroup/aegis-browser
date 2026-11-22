@@ -1,14 +1,9 @@
-From 1b78c0266fec316843207e10f8d9caaa9bda2a12 Mon Sep 17 00:00:00 2001
+From 028bc886bfea37378984b0183c49206a2120019c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 16:52:48 +0800
 Subject: [PATCH] perf(aegis): index filter paths and trim canvas copies
 
 ---
- chrome/common/aegis/filter_list_matcher.cc    | 103 ++++++++++++------
- chrome/common/aegis/filter_list_matcher.h     |   6 +-
- .../aegis/filter_list_matcher_unittest.cc     |  37 +++++++
- .../blink/renderer/core/aegis/farbling.cc     |  10 +-
- 4 files changed, 114 insertions(+), 42 deletions(-)
 
 diff --git a/chrome/common/aegis/filter_list_matcher.cc b/chrome/common/aegis/filter_list_matcher.cc
 index 13bf01415504b66042464fb373b50481b462e86d..d24a6c5d9cc248f1cf299f5924dd5f2029bc0c48 100644
@@ -295,6 +290,3 @@ index 4bf5bfe3b325361962e96252a92ff3c0d53f0e10..edaa9e6ae7ca96d1c4a0227b307c4a56
  
    return UnacceleratedStaticBitmapImage::Create(
        SkImages::RasterFromBitmap(bitmap), image->Orientation());
--- 
-2.52.0
-

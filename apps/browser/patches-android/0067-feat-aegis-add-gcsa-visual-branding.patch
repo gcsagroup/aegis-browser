@@ -1,169 +1,9 @@
-From da9fcb8668138773170fc259e5f685fa9908bfb3 Mon Sep 17 00:00:00 2001
+From 4e5c81f8ce714eaa07e3c703274016abeee16682 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 29 Aug 2026 17:20:15 +0800
 Subject: [PATCH] feat(aegis): add GCSA visual branding
 
 ---
- .../drawable/themed_app_icon.xml              |  81 +++++++++++++-----
- .../mipmap-hdpi/app_icon.png                  | Bin 2435 -> 9241 bytes
- .../mipmap-hdpi/layered_app_icon.png          | Bin 1836 -> 34007 bytes
- .../layered_app_icon_background.png           | Bin 1487 -> 477 bytes
- .../mipmap-mdpi/app_icon.png                  | Bin 1715 -> 4789 bytes
- .../mipmap-mdpi/layered_app_icon.png          | Bin 1210 -> 17785 bytes
- .../layered_app_icon_background.png           | Bin 1111 -> 343 bytes
- .../layered_app_icon_foreground.xml           |  76 ++++++++++++++--
- .../mipmap-xhdpi/app_icon.png                 | Bin 3895 -> 14656 bytes
- .../mipmap-xhdpi/layered_app_icon.png         | Bin 2242 -> 55027 bytes
- .../layered_app_icon_background.png           | Bin 1885 -> 679 bytes
- .../mipmap-xxhdpi/app_icon.png                | Bin 6138 -> 28006 bytes
- .../mipmap-xxhdpi/layered_app_icon.png        | Bin 2920 -> 113938 bytes
- .../layered_app_icon_background.png           | Bin 2824 -> 1045 bytes
- .../mipmap-xxxhdpi/app_icon.png               | Bin 9667 -> 45244 bytes
- .../mipmap-xxxhdpi/layered_app_icon.png       | Bin 3652 -> 196486 bytes
- .../layered_app_icon_background.png           | Bin 3519 -> 1356 bytes
- chrome/app/chrome_dll.rc                      |   2 +-
- chrome/app/chrome_exe.rc                      |  10 +--
- .../app/theme/chrome_unscaled_resources.grd   |   8 +-
- .../gcsa_aegis/favicon_password_manager.png   | Bin 0 -> 530 bytes
- .../gcsa_aegis/linux/product_logo_16.png      | Bin 0 -> 530 bytes
- .../gcsa_aegis/linux/product_logo_32.png      | Bin 0 -> 1188 bytes
- .../gcsa_aegis/product_logo_16.png            | Bin 0 -> 530 bytes
- .../gcsa_aegis/product_logo_32.png            | Bin 0 -> 1188 bytes
- .../gcsa_aegis/product_logo_name_22.png       | Bin 0 -> 2697 bytes
- .../gcsa_aegis/product_logo_name_22_white.png | Bin 0 -> 1512 bytes
- .../gcsa_aegis/webstore_icon.png              | Bin 0 -> 10434 bytes
- .../gcsa_aegis/webstore_icon_16.png           | Bin 0 -> 504 bytes
- .../gcsa_aegis/webstore_icon_24.png           | Bin 0 -> 743 bytes
- .../gcsa_aegis/webstore_icon_32.png           | Bin 0 -> 990 bytes
- .../gcsa_aegis/favicon_password_manager.png   | Bin 0 -> 1188 bytes
- .../gcsa_aegis/product_logo_16.png            | Bin 0 -> 1188 bytes
- .../gcsa_aegis/product_logo_32.png            | Bin 0 -> 2562 bytes
- .../gcsa_aegis/product_logo_name_22.png       | Bin 0 -> 6284 bytes
- .../gcsa_aegis/product_logo_name_22_white.png | Bin 0 -> 3572 bytes
- .../gcsa_aegis/webstore_icon.png              | Bin 0 -> 23627 bytes
- .../gcsa_aegis/webstore_icon_16.png           | Bin 0 -> 990 bytes
- .../gcsa_aegis/webstore_icon_24.png           | Bin 0 -> 1509 bytes
- .../gcsa_aegis/webstore_icon_32.png           | Bin 0 -> 2094 bytes
- chrome/app/theme/gcsa_aegis/BRANDING          |  10 +++
- .../chromeos/chrome_app_icon_192.png          | Bin 0 -> 58445 bytes
- .../chromeos/chrome_app_icon_32.png           | Bin 0 -> 3119 bytes
- .../chromeos/crosh_app_icon_256.png           | Bin 0 -> 2615 bytes
- .../chromeos/webstore_app_icon_128.png        | Bin 0 -> 6065 bytes
- .../chromeos/webstore_app_icon_16.png         | Bin 0 -> 501 bytes
- .../gcsa_aegis/linux/product_logo_128.png     | Bin 0 -> 5222 bytes
- .../gcsa_aegis/linux/product_logo_24.png      | Bin 0 -> 847 bytes
- .../gcsa_aegis/linux/product_logo_256.png     | Bin 0 -> 10707 bytes
- .../gcsa_aegis/linux/product_logo_32.xpm      |  39 +++++++++
- .../gcsa_aegis/linux/product_logo_48.png      | Bin 0 -> 1930 bytes
- .../gcsa_aegis/linux/product_logo_64.png      | Bin 0 -> 2562 bytes
- .../AppIcon.icon/Assets/gcsa-aegis-app.png    | Bin 0 -> 1155883 bytes
- .../gcsa_aegis/mac/AppIcon.icon/icon.json     |  29 +++++++
- chrome/app/theme/gcsa_aegis/mac/Assets.car    | Bin 0 -> 4289160 bytes
- .../AppIcon.appiconset/Contents.json          |  18 ++++
- .../AppIcon.appiconset/appicon_1024.png       | Bin 0 -> 1155883 bytes
- .../AppIcon.appiconset/appicon_128.png        | Bin 0 -> 30937 bytes
- .../AppIcon.appiconset/appicon_16.png         | Bin 0 -> 995 bytes
- .../AppIcon.appiconset/appicon_256.png        | Bin 0 -> 94569 bytes
- .../AppIcon.appiconset/appicon_32.png         | Bin 0 -> 3119 bytes
- .../AppIcon.appiconset/appicon_512.png        | Bin 0 -> 332482 bytes
- .../AppIcon.appiconset/appicon_64.png         | Bin 0 -> 10067 bytes
- .../mac/Assets.xcassets/Contents.json         |   6 ++
- .../Icon.iconset/icon_256x256.png             | Bin 0 -> 94569 bytes
- .../Icon.iconset/icon_256x256@2x.png          | Bin 0 -> 332482 bytes
- chrome/app/theme/gcsa_aegis/mac/app.icns      | Bin 0 -> 2470070 bytes
- chrome/app/theme/gcsa_aegis/product_logo.svg  |  27 ++++++
- .../app/theme/gcsa_aegis/product_logo_128.png | Bin 0 -> 5222 bytes
- .../app/theme/gcsa_aegis/product_logo_16.png  | Bin 0 -> 530 bytes
- .../theme/gcsa_aegis/product_logo_22_mono.png | Bin 0 -> 744 bytes
- .../app/theme/gcsa_aegis/product_logo_24.png  | Bin 0 -> 847 bytes
- .../app/theme/gcsa_aegis/product_logo_256.png | Bin 0 -> 10707 bytes
- .../app/theme/gcsa_aegis/product_logo_48.png  | Bin 0 -> 1930 bytes
- .../app/theme/gcsa_aegis/product_logo_64.png  | Bin 0 -> 2562 bytes
- .../gcsa_aegis/product_logo_animation.svg     |  28 ++++++
- .../theme/gcsa_aegis/product_logo_name.svg    |  21 +++++
- .../gcsa_aegis/product_logo_name_white.svg    |  14 +++
- chrome/app/theme/gcsa_aegis/win/README        |   4 +
- chrome/app/theme/gcsa_aegis/win/app_list.ico  | Bin 0 -> 145774 bytes
- chrome/app/theme/gcsa_aegis/win/chromium.ico  | Bin 0 -> 145774 bytes
- .../app/theme/gcsa_aegis/win/chromium_doc.ico | Bin 0 -> 145774 bytes
- .../app/theme/gcsa_aegis/win/chromium_pdf.ico | Bin 0 -> 145774 bytes
- chrome/app/theme/gcsa_aegis/win/incognito.ico | Bin 0 -> 21973 bytes
- .../app/theme/gcsa_aegis/win/tiles/Logo.png   | Bin 0 -> 463025 bytes
- .../theme/gcsa_aegis/win/tiles/SmallLogo.png  | Bin 0 -> 49902 bytes
- .../settings/about_page/about_page.html.ts    |   8 +-
- .../settings/settings_menu/settings_menu.html |   2 +-
- chrome/updater/branding.gni                   |   3 +-
- .../vector_icons/gcsa_aegis/product.icon      |  28 ++++++
- .../gcsa_aegis/product_refresh.icon           |  29 +++++++
- 91 files changed, 398 insertions(+), 45 deletions(-)
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/favicon_password_manager.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/linux/product_logo_16.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/linux/product_logo_32.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_16.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_32.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_name_22.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_name_22_white.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon_16.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon_24.png
- create mode 100644 chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon_32.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/favicon_password_manager.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_16.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_32.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_name_22.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_name_22_white.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon_16.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon_24.png
- create mode 100644 chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon_32.png
- create mode 100644 chrome/app/theme/gcsa_aegis/BRANDING
- create mode 100644 chrome/app/theme/gcsa_aegis/chromeos/chrome_app_icon_192.png
- create mode 100644 chrome/app/theme/gcsa_aegis/chromeos/chrome_app_icon_32.png
- create mode 100644 chrome/app/theme/gcsa_aegis/chromeos/crosh_app_icon_256.png
- create mode 100644 chrome/app/theme/gcsa_aegis/chromeos/webstore_app_icon_128.png
- create mode 100644 chrome/app/theme/gcsa_aegis/chromeos/webstore_app_icon_16.png
- create mode 100644 chrome/app/theme/gcsa_aegis/linux/product_logo_128.png
- create mode 100644 chrome/app/theme/gcsa_aegis/linux/product_logo_24.png
- create mode 100644 chrome/app/theme/gcsa_aegis/linux/product_logo_256.png
- create mode 100644 chrome/app/theme/gcsa_aegis/linux/product_logo_32.xpm
- create mode 100644 chrome/app/theme/gcsa_aegis/linux/product_logo_48.png
- create mode 100644 chrome/app/theme/gcsa_aegis/linux/product_logo_64.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/AppIcon.icon/Assets/gcsa-aegis-app.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/AppIcon.icon/icon.json
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.car
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/Contents.json
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_1024.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_128.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_16.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_256.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_32.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_512.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_64.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Contents.json
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Icon.iconset/icon_256x256.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Icon.iconset/icon_256x256@2x.png
- create mode 100644 chrome/app/theme/gcsa_aegis/mac/app.icns
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo.svg
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_128.png
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_16.png
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_22_mono.png
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_24.png
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_256.png
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_48.png
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_64.png
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_animation.svg
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_name.svg
- create mode 100644 chrome/app/theme/gcsa_aegis/product_logo_name_white.svg
- create mode 100644 chrome/app/theme/gcsa_aegis/win/README
- create mode 100644 chrome/app/theme/gcsa_aegis/win/app_list.ico
- create mode 100644 chrome/app/theme/gcsa_aegis/win/chromium.ico
- create mode 100644 chrome/app/theme/gcsa_aegis/win/chromium_doc.ico
- create mode 100644 chrome/app/theme/gcsa_aegis/win/chromium_pdf.ico
- create mode 100644 chrome/app/theme/gcsa_aegis/win/incognito.ico
- create mode 100644 chrome/app/theme/gcsa_aegis/win/tiles/Logo.png
- create mode 100644 chrome/app/theme/gcsa_aegis/win/tiles/SmallLogo.png
- create mode 100644 components/vector_icons/gcsa_aegis/product.icon
- create mode 100644 components/vector_icons/gcsa_aegis/product_refresh.icon
 
 diff --git a/chrome/android/java/res_chromium_base/drawable/themed_app_icon.xml b/chrome/android/java/res_chromium_base/drawable/themed_app_icon.xml
 index 32a95bc6ee4d53551d84474cfd3ea88911a46620..434cc1154412ebdd9b642bf76530a179ca3a57da 100644
@@ -227211,10 +227051,10 @@ index 41c3308183b4805bf7fb6f0a3a65b23316d6d1e6..41d9a627b014317aedf17b02b82fd2e4
      <div class="product-heading">
        <div class="product-title">$i18n{aboutProductTitle}</div>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index a1fd7102ed08696b076a2cd28bc792939cd22cd0..6db81ec22be55a3fa32fc4611f530903695d8c7f 100644
+index 9bb2ad7b1f32b2d41581b979043e24bec5e185f1..998c0b7e5836e249ddda8108adeca8420192b2fa 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-@@ -197,7 +197,7 @@
+@@ -124,7 +124,7 @@
          <a role="menuitem" id="about-menu" href="/help"
              class="cr-nav-menu-item">
  <if expr="not _google_chrome and not _is_chrome_for_testing">
@@ -227306,6 +227146,3 @@ index 0000000000000000000000000000000000000000..c8fb2b9b7bfee8a98ad2b4f32758ab8c
 +CUBIC_TO, 14.4, 16.2, 15.9, 14.8, 16.2, 12.7,
 +MOVE_TO, 12.2, 11.5,
 +H_LINE_TO, 19
--- 
-2.52.0
-

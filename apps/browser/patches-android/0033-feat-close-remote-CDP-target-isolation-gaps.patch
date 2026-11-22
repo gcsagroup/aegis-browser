@@ -1,47 +1,9 @@
-From f5d86732c8fc6c44ed49540623c06d04c0b7d035 Mon Sep 17 00:00:00 2001
+From 3db113eebcd5863899ab3186d940873e0ee8f9c4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 21:10:29 +0800
 Subject: [PATCH] feat: close remote CDP target isolation gaps
 
 ---
- .../browser/aegis/aegis_phish_tab_helper.cc   |  35 +-
- chrome/browser/aegis/aegis_phish_tab_helper.h |   2 +-
- .../aegis/aegis_phish_tab_helper_unittest.cc  |  60 ++-
- .../devtools_manager_delegate_android.cc      |  26 +-
- .../devtools/chrome_devtools_session.cc       |   7 +-
- .../chrome_devtools_session_android.cc        |   2 +-
- .../device/devtools_device_discovery.cc       |   7 +-
- .../devtools/protocol/browser_handler.cc      |  25 +-
- .../devtools/protocol/browser_handler.h       |  12 +-
- .../protocol/browser_handler_android.cc       |   7 +-
- .../protocol/browser_handler_android.h        |   5 +-
- .../protocol/devtools_protocol_browsertest.cc | 353 +++++++++++++++++-
- .../devtools/protocol/extensions_handler.cc   |   9 +-
- .../devtools/protocol/extensions_handler.h    |  14 +-
- .../devtools/protocol/target_handler.cc       |  11 +-
- .../protocol/target_handler_android.cc        |   9 +-
- .../devtools/devtools_agent_host_impl.cc      | 215 +++++++++--
- .../devtools/devtools_agent_host_impl.h       |  27 ++
- .../devtools_agent_host_impl_unittest.cc      |   1 +
- .../browser/devtools/devtools_http_handler.cc | 250 ++++++++++++-
- .../browser/devtools/devtools_http_handler.h  |   5 +
- .../devtools_http_handler_unittest.cc         | 132 ++++++-
- .../browser/devtools/devtools_pipe_handler.cc | 141 ++++++-
- .../browser/devtools/devtools_pipe_handler.h  |  20 +-
- content/browser/devtools/devtools_session.cc  |  24 +-
- content/browser/devtools/devtools_session.h   |  12 +-
- .../browser/devtools/forwarding_agent_host.cc |  16 +-
- .../browser/devtools/forwarding_agent_host.h  |   6 +-
- .../browser/devtools/protocol/page_handler.cc |  57 ++-
- .../devtools/protocol/target_handler.cc       | 110 ++++--
- .../render_frame_devtools_agent_host.cc       |  58 ++-
- .../render_frame_devtools_agent_host.h        |   2 +
- content/public/browser/devtools_agent_host.h  |  21 ++
- .../browser/devtools_agent_host_client.cc     |  15 +-
- .../browser/devtools_agent_host_client.h      |  17 +-
- .../browser/devtools_external_agent_proxy.h   |  15 +-
- .../devtools_external_agent_proxy_delegate.h  |   8 +-
- 37 files changed, 1557 insertions(+), 179 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
 index 01671ebd20450086aa0a9d1877d52e94b428d879..eef77b5444b5d2042274ae8f8092b002afc9b7ea 100644
@@ -228,10 +190,10 @@ index cf5d0b3ffc1e6a3d39f924558fdaf7cf12c271bd..3fe8cf6f6fb1375b5a2f51da96eafe95
    const GURL url("https://phish.example.test/login");
    auto navigation =
 diff --git a/chrome/browser/android/devtools_manager_delegate_android.cc b/chrome/browser/android/devtools_manager_delegate_android.cc
-index d3b63f446dfc522f0e5d63316bdd1022847af799..2104c62a9218606e5e517ef858301eb7ef36bf1b 100644
+index 0ee50b21da95645d2cefeca89aa61b3837a759c9..8cd260d35204caa10ba31f698983764e6e75da1d 100644
 --- a/chrome/browser/android/devtools_manager_delegate_android.cc
 +++ b/chrome/browser/android/devtools_manager_delegate_android.cc
-@@ -63,12 +63,26 @@ class ClientProxy : public content::DevToolsAgentHostClient {
+@@ -67,12 +67,26 @@ class ClientProxy : public content::DevToolsAgentHostClient {
      return proxy_->IsRemoteDebuggingClient();
    }
  
@@ -262,7 +224,7 @@ index d3b63f446dfc522f0e5d63316bdd1022847af799..2104c62a9218606e5e517ef858301eb7
    }
  
    void BeginRemoteDebuggingTargetCreation() override {
-@@ -141,6 +155,10 @@ class TabProxyDelegate : public content::DevToolsExternalAgentProxyDelegate {
+@@ -145,6 +159,10 @@ class TabProxyDelegate : public content::DevToolsExternalAgentProxyDelegate {
      return agent_host_ ? agent_host_->GetURL() : url_;
    }
  
@@ -299,10 +261,10 @@ index 41be668daa232d370fbddb4111f59afc728ccbbc..ea4bb6918605acd52c336246d19f96d5
    if (IsDomainAvailableToUntrustedClient<SystemInfoHandler>() ||
        channel->GetClient()->IsTrusted()) {
 diff --git a/chrome/browser/devtools/chrome_devtools_session_android.cc b/chrome/browser/devtools/chrome_devtools_session_android.cc
-index 5d32a1e153b3ee98c6bbbe3741819df2d94d13e6..b249f3da227a04daf1f856115226fb005be58359 100644
+index 33dbe103897b08a45f142b6cd4b0199e610ce400..b90acd1f91d9c0aa859e95efaef88f865d854083 100644
 --- a/chrome/browser/devtools/chrome_devtools_session_android.cc
 +++ b/chrome/browser/devtools/chrome_devtools_session_android.cc
-@@ -38,7 +38,7 @@ ChromeDevToolsSessionAndroid::ChromeDevToolsSessionAndroid(
+@@ -49,7 +49,7 @@ ChromeDevToolsSessionAndroid::ChromeDevToolsSessionAndroid(
    if (IsDomainAvailableToUntrustedClient<BrowserHandlerAndroid>() ||
        channel->GetClient()->IsTrusted()) {
      browser_handler_ = std::make_unique<BrowserHandlerAndroid>(
@@ -312,7 +274,7 @@ index 5d32a1e153b3ee98c6bbbe3741819df2d94d13e6..b249f3da227a04daf1f856115226fb00
    if (IsDomainAvailableToUntrustedClient<TargetHandlerAndroid>() ||
        channel->GetClient()->IsTrusted()) {
 diff --git a/chrome/browser/devtools/device/devtools_device_discovery.cc b/chrome/browser/devtools/device/devtools_device_discovery.cc
-index 8e4b48f4d7aa6f0eb36aeed5d92eb958b540d5c4..5710b1e8e378cbca5457765b5c4481cfd845b63f 100644
+index 2b8b5ea6278f6e1038d129b37de8d95e05bb7504..1439df9b7d5bf6c1e64f74d68fff5376cc00e819 100644
 --- a/chrome/browser/devtools/device/devtools_device_discovery.cc
 +++ b/chrome/browser/devtools/device/devtools_device_discovery.cc
 @@ -180,6 +180,7 @@ class AgentHostDelegate : public content::DevToolsExternalAgentProxyDelegate {
@@ -462,10 +424,10 @@ index e1424aa52cbf60d3de12a509f7eb815a390a32bc..70c984634e591c72bbc7d7eba9cd5bf5
  
  #endif  // CHROME_BROWSER_DEVTOOLS_PROTOCOL_BROWSER_HANDLER_H_
 diff --git a/chrome/browser/devtools/protocol/browser_handler_android.cc b/chrome/browser/devtools/protocol/browser_handler_android.cc
-index 7e68ad976d8e1d480d4297e7ade562c2b2f693a7..355221fc1da473a8058f5b9083cd075686d0ed69 100644
+index 1c71e149fe186cd2d2cb4ee89a45c306e4d3a78f..3d7789e7cbfbe88e58db7febf248b65d8703d2a5 100644
 --- a/chrome/browser/devtools/protocol/browser_handler_android.cc
 +++ b/chrome/browser/devtools/protocol/browser_handler_android.cc
-@@ -97,8 +97,9 @@ BrowserHandlerAndroid::BuildBrowserWindowBounds(ui::BaseWindow* window) {
+@@ -113,8 +113,9 @@ BrowserHandlerAndroid::BuildBrowserWindowBounds(ui::BaseWindow* window) {
  
  BrowserHandlerAndroid::BrowserHandlerAndroid(
      protocol::UberDispatcher* dispatcher,
@@ -477,7 +439,7 @@ index 7e68ad976d8e1d480d4297e7ade562c2b2f693a7..355221fc1da473a8058f5b9083cd0756
    CHECK(dispatcher);
    protocol::Browser::Dispatcher::wire(dispatcher, this);
  }
-@@ -216,7 +217,7 @@ Response BrowserHandlerAndroid::GetWindowForTarget(
+@@ -232,7 +233,7 @@ Response BrowserHandlerAndroid::GetWindowForTarget(
      std::unique_ptr<protocol::Browser::Bounds>* out_bounds) {
    auto host =
        content::DevToolsAgentHost::GetForId(target_id.value_or(target_id_));
@@ -487,10 +449,10 @@ index 7e68ad976d8e1d480d4297e7ade562c2b2f693a7..355221fc1da473a8058f5b9083cd0756
    }
    content::WebContents* web_contents = host->GetWebContents();
 diff --git a/chrome/browser/devtools/protocol/browser_handler_android.h b/chrome/browser/devtools/protocol/browser_handler_android.h
-index 83bec7125e1fb966a61450bf93fc3aca6f46d438..28dfeef82009cc3a6b42e58bad57153bb3434cfa 100644
+index 65c8b83cdf3a9551f93c9dff719e9c5c39970a89..877c2f43f4b7c2e9f681652a6701fb2c045a4583 100644
 --- a/chrome/browser/devtools/protocol/browser_handler_android.h
 +++ b/chrome/browser/devtools/protocol/browser_handler_android.h
-@@ -15,6 +15,7 @@
+@@ -17,6 +17,7 @@
  class BrowserWindowInterface;
  
  namespace content {
@@ -498,7 +460,7 @@ index 83bec7125e1fb966a61450bf93fc3aca6f46d438..28dfeef82009cc3a6b42e58bad57153b
  class WebContents;
  }
  
-@@ -25,7 +26,8 @@ class BaseWindow;
+@@ -27,7 +28,8 @@ class BaseWindow;
  class BrowserHandlerAndroid : public protocol::Browser::Backend {
   public:
    BrowserHandlerAndroid(protocol::UberDispatcher* dispatcher,
@@ -508,7 +470,7 @@ index 83bec7125e1fb966a61450bf93fc3aca6f46d438..28dfeef82009cc3a6b42e58bad57153b
  
    BrowserHandlerAndroid(const BrowserHandlerAndroid&) = delete;
    BrowserHandlerAndroid& operator=(const BrowserHandlerAndroid&) = delete;
-@@ -90,6 +92,7 @@ class BrowserHandlerAndroid : public protocol::Browser::Backend {
+@@ -99,6 +101,7 @@ class BrowserHandlerAndroid : public protocol::Browser::Backend {
    void OnBrowserWindowClosed(BrowserWindowInterface* browser_window);
  
    const std::string target_id_;
@@ -517,7 +479,7 @@ index 83bec7125e1fb966a61450bf93fc3aca6f46d438..28dfeef82009cc3a6b42e58bad57153b
    base::flat_map<BrowserWindowInterface*, base::CallbackListSubscription>
        window_close_subscriptions_;
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37ca8fd20fd 100644
+index a45d5e2be6f8f518af793b2e9252c258acc538ee..d412acb1498949fb0ab7234ccb09bccbf411863b 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -2,6 +2,7 @@
@@ -528,15 +490,15 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
  #include <set>
  #include <string>
  #include <string_view>
-@@ -64,6 +65,7 @@
- #include "content/public/browser/navigation_entry.h"
- #include "content/public/browser/page_navigator.h"
+@@ -66,6 +67,7 @@
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/render_process_host.h"
  #include "content/public/browser/ssl_status.h"
 +#include "content/public/browser/weak_document_ptr.h"
  #include "content/public/browser/web_contents.h"
  #include "content/public/common/content_features.h"
- #include "content/public/common/referrer.h"
-@@ -88,6 +90,7 @@
+ #include "content/public/common/content_switches.h"
+@@ -92,6 +94,7 @@
  #include "ui/base/window_open_disposition.h"
  #include "ui/gfx/codec/png_codec.h"
  #include "url/origin.h"
@@ -544,7 +506,7 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
  
  #if BUILDFLAG(IS_ANDROID)
  #include "base/android/android_info.h"
-@@ -360,12 +363,82 @@ class AegisRemoteDevToolsProtocolTest : public DevToolsProtocolTestBase {
+@@ -369,12 +372,82 @@ class AegisRemoteDevToolsProtocolTest : public DevToolsProtocolTestBase {
   private:
    bool IsRemoteDebuggingClient() override { return true; }
  
@@ -633,7 +595,7 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
    }
  
    void BeginRemoteDebuggingTargetCreation() override {
-@@ -374,13 +447,17 @@ class AegisRemoteDevToolsProtocolTest : public DevToolsProtocolTestBase {
+@@ -383,13 +456,17 @@ class AegisRemoteDevToolsProtocolTest : public DevToolsProtocolTestBase {
  
    void EndRemoteDebuggingTargetCreation() override {
      target_creation_in_progress_ = false;
@@ -652,7 +614,7 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
    bool target_creation_in_progress_ = false;
  };
  
-@@ -432,6 +509,30 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -441,6 +518,30 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    EXPECT_TRUE(found_http_target);
    EXPECT_FALSE(found_internal_target);
  
@@ -683,7 +645,7 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
    const base::DictValue* attach_result = SendCommandSync(
        "Target.attachToTarget",
        base::DictValue().Set("targetId", http_target_id).Set("flatten", true));
-@@ -446,9 +547,175 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -455,9 +556,175 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    EXPECT_EQ("No target with given id found", *error()->FindString("message"));
  }
  
@@ -859,7 +821,7 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
  
    const base::DictValue* create_result = SendCommandSync(
        "Target.createTarget", base::DictValue().Set("url", "about:blank"));
-@@ -457,13 +724,22 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -466,13 +733,22 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    ASSERT_TRUE(target_id);
    const std::string created_target_id = *target_id;
  
@@ -886,7 +848,7 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
  
    AegisOtherRemoteDevToolsProtocolClient other_remote_client;
    other_remote_client.AttachToBrowserTarget();
-@@ -481,6 +757,61 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -490,6 +766,61 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    EXPECT_EQ("No target with given id found",
              *other_remote_client.command_error()->FindString("message"));
    other_remote_client.DetachProtocolClient();
@@ -949,7 +911,7 @@ index 69822a16c9fddfd0132739f17b585597a6c6591b..81da5856e4d426af3404410a3573e37c
  
  IN_PROC_BROWSER_TEST_F(
 diff --git a/chrome/browser/devtools/protocol/extensions_handler.cc b/chrome/browser/devtools/protocol/extensions_handler.cc
-index 08de746ed0e90536448e6facd3de5e58e0b4682e..07438e137b8a4a58484788e6969ba67ac4ea683b 100644
+index f385520f69f07af846b2cd40d6479ec7c7802232..c50286f7f682a682aebb63e268e3afc5a84c576d 100644
 --- a/chrome/browser/devtools/protocol/extensions_handler.cc
 +++ b/chrome/browser/devtools/protocol/extensions_handler.cc
 @@ -170,7 +170,8 @@ protocol::DispatchResponse ExtensionsHandler::TriggerAction(
@@ -962,7 +924,7 @@ index 08de746ed0e90536448e6facd3de5e58e0b4682e..07438e137b8a4a58484788e6969ba67a
      return protocol::Response::ServerError(
          "cannot retrieve host for the provided id");
    }
-@@ -202,9 +203,11 @@ protocol::DispatchResponse ExtensionsHandler::TriggerAction(
+@@ -214,9 +215,11 @@ protocol::DispatchResponse ExtensionsHandler::TriggerAction(
  
  ExtensionsHandler::ExtensionsHandler(protocol::UberDispatcher* dispatcher,
                                       const std::string& target_id,
@@ -1017,11 +979,11 @@ index ca7c2afad6be19224a2478c3e42bdc19cfaf22a1..95300ed8bbfcc4d24c61a88dec9aa85e
    std::unique_ptr<protocol::Extensions::Frontend> frontend_;
    base::WeakPtrFactory<ExtensionsHandler> weak_factory_{this};
 diff --git a/chrome/browser/devtools/protocol/target_handler.cc b/chrome/browser/devtools/protocol/target_handler.cc
-index baef34f2b3f914a14fec1c823532160f3f92fa58..a04d30c82123703a1eda2d5390919289d21c322e 100644
+index 6a435425529d63b5c0f6382762ecb87bd5d643b7..b0875a415123fd1e617c42813620d0fc43e70898 100644
 --- a/chrome/browser/devtools/protocol/target_handler.cc
 +++ b/chrome/browser/devtools/protocol/target_handler.cc
-@@ -25,6 +25,8 @@
- #include "chrome/common/webui_url_constants.h"
+@@ -26,6 +26,8 @@
+ #include "components/webapps/isolated_web_apps/scheme.h"
  #include "content/public/browser/devtools_agent_host.h"
  #include "content/public/browser/devtools_agent_host_client.h"
 +#include "content/public/browser/render_frame_host.h"
@@ -1029,7 +991,7 @@ index baef34f2b3f914a14fec1c823532160f3f92fa58..a04d30c82123703a1eda2d5390919289
  #include "content/public/browser/web_contents.h"
  #include "content/public/common/url_constants.h"
  #include "content/public/common/url_utils.h"
-@@ -229,8 +231,7 @@ protocol::Response TargetHandler::CreateTarget(
+@@ -249,8 +251,7 @@ protocol::Response TargetHandler::CreateTarget(
    }
  
    base::ScopedClosureRunner target_creation_scope;
@@ -1039,7 +1001,7 @@ index baef34f2b3f914a14fec1c823532160f3f92fa58..a04d30c82123703a1eda2d5390919289
      client_->BeginRemoteDebuggingTargetCreation();
      target_creation_scope.ReplaceClosure(base::BindOnce(
          &content::DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
-@@ -292,7 +293,11 @@ protocol::Response TargetHandler::CreateTarget(
+@@ -312,7 +313,11 @@ protocol::Response TargetHandler::CreateTarget(
                           ->GetId();
    }
    if (is_remote_debugging_client_) {
@@ -1053,7 +1015,7 @@ index baef34f2b3f914a14fec1c823532160f3f92fa58..a04d30c82123703a1eda2d5390919289
    return protocol::Response::Success();
  }
 diff --git a/chrome/browser/devtools/protocol/target_handler_android.cc b/chrome/browser/devtools/protocol/target_handler_android.cc
-index 7adf5997c25f01fb9feae7b66bc4426de8070bc5..c1c29988003db16d1a8d4701f83bfd8b7b311350 100644
+index 885fba83e8a5f393516900e2f6e8304d052efbe2..b94117c4e29f67731f249c89a7e10efbc5a48aaa 100644
 --- a/chrome/browser/devtools/protocol/target_handler_android.cc
 +++ b/chrome/browser/devtools/protocol/target_handler_android.cc
 @@ -25,6 +25,8 @@
@@ -1065,7 +1027,7 @@ index 7adf5997c25f01fb9feae7b66bc4426de8070bc5..c1c29988003db16d1a8d4701f83bfd8b
  #include "content/public/browser/web_contents.h"
  #include "content/public/common/url_constants.h"
  #include "content/public/common/url_utils.h"
-@@ -131,7 +133,7 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
+@@ -135,7 +137,7 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
    }
  
    base::ScopedClosureRunner target_creation_scope;
@@ -1074,7 +1036,7 @@ index 7adf5997c25f01fb9feae7b66bc4426de8070bc5..c1c29988003db16d1a8d4701f83bfd8b
      client_->BeginRemoteDebuggingTargetCreation();
      target_creation_scope.ReplaceClosure(base::BindOnce(
          &content::DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
-@@ -221,7 +223,10 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
+@@ -225,7 +227,10 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
          content::DevToolsAgentHost::GetOrCreateFor(web_contents)->GetId();
    }
    if (is_remote_debugging_client_) {
@@ -1401,10 +1363,10 @@ index 78239cec61e62aa2d549e461d9cd332576b511b2..edda3a66f4bd71c135740c546e43de55
    static int s_force_creation_count_;
  };
 diff --git a/content/browser/devtools/devtools_agent_host_impl_unittest.cc b/content/browser/devtools/devtools_agent_host_impl_unittest.cc
-index a766208e31395b6888e40910f12af8b44cc5f2ef..495caa2699a0dd64ffb964010b0e0f084b62e8f1 100644
+index 6a4fc71e66e38a0f1232e381c2e3be3de20df2b4..a49960f8d02c268c7372bd7b1dcf469c29a6ef49 100644
 --- a/content/browser/devtools/devtools_agent_host_impl_unittest.cc
 +++ b/content/browser/devtools/devtools_agent_host_impl_unittest.cc
-@@ -212,6 +212,7 @@ class TestExternalAgentDelegate : public DevToolsExternalAgentProxyDelegate {
+@@ -257,6 +257,7 @@ class TestExternalAgentDelegate : public DevToolsExternalAgentProxyDelegate {
    std::string GetTitle() override { return std::string(); }
    std::string GetDescription() override { return std::string(); }
    GURL GetURL() override { return GURL(); }
@@ -1413,7 +1375,7 @@ index a766208e31395b6888e40910f12af8b44cc5f2ef..495caa2699a0dd64ffb964010b0e0f08
    std::string GetFrontendURL() override { return std::string(); }
    bool Activate() override { return false; }
 diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
-index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f329a327b 100644
+index 3de65fecde0dde143e1c9c7cf4d4dbb0b564e52f..3f146d1d69a9ded1ac35b58df6cee729e59b55ae 100644
 --- a/content/browser/devtools/devtools_http_handler.cc
 +++ b/content/browser/devtools/devtools_http_handler.cc
 @@ -8,10 +8,12 @@
@@ -1429,7 +1391,7 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
  
  #include "base/command_line.h"
  #include "base/compiler_specific.h"
-@@ -36,6 +38,7 @@
+@@ -37,6 +39,7 @@
  #include "base/values.h"
  #include "build/build_config.h"
  #include "build/util/chromium_git_revision.h"
@@ -1437,7 +1399,7 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
  #include "content/browser/devtools/devtools_manager.h"
  #include "content/public/browser/browser_task_traits.h"
  #include "content/public/browser/browser_thread.h"
-@@ -44,6 +47,7 @@
+@@ -45,6 +48,7 @@
  #include "content/public/browser/devtools_frontend_host.h"
  #include "content/public/browser/devtools_manager_delegate.h"
  #include "content/public/browser/devtools_socket_factory.h"
@@ -1445,17 +1407,18 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
  #include "content/public/common/content_client.h"
  #include "content/public/common/content_constants.h"
  #include "content/public/common/content_switches.h"
-@@ -329,12 +333,17 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
-       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+@@ -340,13 +344,18 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
        ServerWrapper* server_wrapper,
        int connection_id,
--      scoped_refptr<DevToolsAgentHost> agent_host)
-+      scoped_refptr<DevToolsAgentHost> agent_host,
+       scoped_refptr<DevToolsAgentHost> agent_host,
+-      const net::IPEndPoint& peer_address)
++      const net::IPEndPoint& peer_address,
 +      WeakDocumentPtr initial_owned_document = WeakDocumentPtr())
        : task_runner_(std::move(task_runner)),
          server_wrapper_(server_wrapper),
          connection_id_(connection_id),
-         agent_host_(agent_host) {
+         agent_host_(agent_host),
+         peer_address_(peer_address) {
      CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
 +    if (initial_owned_document.AsRenderFrameHostIfValid()) {
 +      RegisterRemoteDebuggingTarget(agent_host_->GetId(),
@@ -1464,7 +1427,7 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
      if (!agent_host_->AttachClient(this)) {
        agent_host_ = nullptr;
      }
-@@ -350,25 +359,153 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
+@@ -367,25 +376,153 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
  
    bool IsRemoteDebuggingClient() override { return true; }
  
@@ -1626,10 +1589,10 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
    }
  
    bool IsAttached() const { return agent_host_ != nullptr; }
-@@ -410,8 +547,9 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
-   const raw_ptr<ServerWrapper> server_wrapper_;
+@@ -428,8 +565,9 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
    const int connection_id_;
    scoped_refptr<DevToolsAgentHost> agent_host_;
+   const net::IPEndPoint peer_address_;
 -  std::set<std::string> owned_target_ids_;
 -  size_t target_creation_depth_ = 0;
 +  std::map<std::string, WeakDocumentPtr> owned_target_documents_;
@@ -1638,7 +1601,7 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
  };
  
  static bool TimeComparator(scoped_refptr<DevToolsAgentHost> host1,
-@@ -680,6 +818,7 @@ void DevToolsHttpHandler::OnJsonRequest(
+@@ -699,6 +837,7 @@ void DevToolsHttpHandler::OnJsonRequest(
    }
  
    if (command == "new") {
@@ -1646,7 +1609,7 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
      if (!base::EqualsCaseInsensitiveASCII(
              info.method, net::HttpRequestHeaders::kPutMethod)) {
        SendJson(
-@@ -716,9 +855,35 @@ void DevToolsHttpHandler::OnJsonRequest(
+@@ -735,9 +874,35 @@ void DevToolsHttpHandler::OnJsonRequest(
                 "Could not create new page");
        return;
      }
@@ -1684,7 +1647,7 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
        agent_host->Close();
        SendJson(connection_id, net::HTTP_NOT_FOUND, std::nullopt,
                 "No such target");
-@@ -951,7 +1116,10 @@ void DevToolsHttpHandler::OnWebSocketRequest(
+@@ -984,7 +1149,10 @@ void DevToolsHttpHandler::OnWebSocketRequest(
      return;
    }
  
@@ -1696,17 +1659,17 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
                kWebSocketConnect,
            agent.get())) {
-@@ -960,7 +1128,8 @@ void DevToolsHttpHandler::OnWebSocketRequest(
+@@ -1000,7 +1168,8 @@ void DevToolsHttpHandler::OnWebSocketRequest(
    }
  
    auto client = std::make_unique<DevToolsAgentHostClientImpl>(
--      thread_->task_runner(), server_wrapper_.get(), connection_id, agent);
+-      thread_->task_runner(), server_wrapper_.get(), connection_id, agent, request.peer);
 +      thread_->task_runner(), server_wrapper_.get(), connection_id, agent,
-+      std::move(initial_owned_document));
++      request.peer, std::move(initial_owned_document));
    if (!client->IsAttached()) {
      Send404(connection_id);
      return;
-@@ -1138,7 +1307,7 @@ base::DictValue DevToolsHttpHandler::SerializeDescriptor(
+@@ -1178,7 +1347,7 @@ base::DictValue DevToolsHttpHandler::SerializeDescriptor(
                   base::EscapeForHTML(agent_host->GetTitle()));
    dictionary.Set(kTargetDescriptionField, agent_host->GetDescription());
  
@@ -1715,7 +1678,7 @@ index 57064e48d445554c0696080791cc135ff6765219..79d9ce039498fc8c8848d42a34b7bb5f
    dictionary.Set(kTargetUrlField, url.spec());
  
    GURL favicon_url = agent_host->GetFaviconURL();
-@@ -1165,9 +1334,52 @@ bool DevToolsHttpHandler::AllowRemoteTargetOperation(
+@@ -1205,9 +1374,52 @@ bool DevToolsHttpHandler::AllowRemoteTargetOperation(
  bool DevToolsHttpHandler::AllowRemoteTargetOperation(
      DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
      DevToolsAgentHost* agent_host) const {
@@ -1802,10 +1765,10 @@ index deb1ac3df844b9e9ea3f0ad71427ef3f715fff50..d2c67238ecc1e2c802c9ad07988fc2c2
    std::unique_ptr<DevToolsSocketFactory> socket_factory_;
    base::WeakPtrFactory<DevToolsHttpHandler> weak_factory_{this};
 diff --git a/content/browser/devtools/devtools_http_handler_unittest.cc b/content/browser/devtools/devtools_http_handler_unittest.cc
-index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9ff309372 100644
+index 619a5a7d36507c2fdae2af63c10aa81537904396..3978223a03adafe7e057091a7275e0a0aaca1d48 100644
 --- a/content/browser/devtools/devtools_http_handler_unittest.cc
 +++ b/content/browser/devtools/devtools_http_handler_unittest.cc
-@@ -224,6 +224,7 @@ class PolicyTestExternalAgentDelegate
+@@ -236,6 +236,7 @@ class PolicyTestExternalAgentDelegate
    std::string GetTitle() override { return "policy test"; }
    std::string GetDescription() override { return std::string(); }
    GURL GetURL() override { return url_; }
@@ -1813,7 +1776,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
    GURL GetFaviconURL() override { return GURL(); }
    std::string GetFrontendURL() override { return std::string(); }
    bool Activate() override {
-@@ -296,6 +297,41 @@ TEST_F(DevToolsHttpHandlerTest, TestStartStop) {
+@@ -308,6 +309,41 @@ TEST_F(DevToolsHttpHandlerTest, TestStartStop) {
    run_loop_2.Run();
  }
  
@@ -1855,7 +1818,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
  TEST_F(DevToolsHttpHandlerTest, TestServerSocketFailed) {
    base::RunLoop run_loop, run_loop_2;
    auto factory = std::make_unique<FailingServerSocketFactory>(
-@@ -543,7 +579,8 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
+@@ -555,7 +591,8 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
    std::unique_ptr<net::URLRequest> RunRequestUntilCompletion(
        std::string url,
        std::map<std::string, std::string> headers = {},
@@ -1865,7 +1828,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
      net::TestDelegate delegate;
      auto request = request_context_->CreateRequest(
          GURL(url), net::DEFAULT_PRIORITY, &delegate,
-@@ -551,6 +588,7 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
+@@ -563,6 +600,7 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
      for (auto const& [key, value] : headers) {
        request->SetExtraRequestHeaderByName(key, value, true);
      }
@@ -1873,7 +1836,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
  
      request->Start();
      delegate.RunUntilComplete();
-@@ -601,6 +639,12 @@ TEST_F(DevToolsHttpHandlerWithServerTest, TargetPolicyFiltersJsonList) {
+@@ -644,6 +682,12 @@ TEST_F(DevToolsHttpHandlerWithServerTest, TargetPolicyFiltersJsonList) {
          return type == DevToolsAgentHost::kTypeBrowser ||
                 url.SchemeIsHTTPOrHTTPS();
        });
@@ -1886,7 +1849,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
  
    auto public_target = base::MakeRefCounted<MockDevToolsAgentHostWithType>(
        DevToolsAgentHost::kTypePage, GURL("https://example.test/public"));
-@@ -620,6 +664,32 @@ TEST_F(DevToolsHttpHandlerWithServerTest, TargetPolicyFiltersJsonList) {
+@@ -663,6 +707,32 @@ TEST_F(DevToolsHttpHandlerWithServerTest, TargetPolicyFiltersJsonList) {
    StopServer();
  }
  
@@ -1919,7 +1882,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
  TEST_F(DevToolsHttpHandlerWithServerTest,
         DeniedActivateAndCloseMatchMissingTarget) {
    int port = StartServer();
-@@ -631,6 +701,18 @@ TEST_F(DevToolsHttpHandlerWithServerTest,
+@@ -674,6 +744,18 @@ TEST_F(DevToolsHttpHandlerWithServerTest,
          return type == DevToolsAgentHost::kTypeBrowser ||
                 url.SchemeIsHTTPOrHTTPS();
        });
@@ -1938,7 +1901,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
  
    int internal_attach_count = 0;
    int internal_activate_count = 0;
-@@ -701,6 +783,12 @@ TEST_F(DevToolsWebSocketHandlerTest, DeniedPageWebSocketMatchesMissingTarget) {
+@@ -744,6 +826,12 @@ TEST_F(DevToolsWebSocketHandlerTest, DeniedPageWebSocketMatchesMissingTarget) {
          return type == DevToolsAgentHost::kTypeBrowser ||
                 url.SchemeIsHTTPOrHTTPS();
        });
@@ -1951,7 +1914,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
  
    int attach_count = 0;
    int activate_count = 0;
-@@ -745,6 +833,48 @@ TEST_F(DevToolsWebSocketHandlerTest, DeniedPageWebSocketMatchesMissingTarget) {
+@@ -788,6 +876,48 @@ TEST_F(DevToolsWebSocketHandlerTest, DeniedPageWebSocketMatchesMissingTarget) {
    StopServer();
  }
  
@@ -2001,7 +1964,7 @@ index bb1126b3e14d9ffa67ff0cb26954248ed3ac5446..87b2513ed5cf123930d444f2926521f9
         TestRejectsWebSocketConnectionsWithOrigin) {
    int port = StartServer();
 diff --git a/content/browser/devtools/devtools_pipe_handler.cc b/content/browser/devtools/devtools_pipe_handler.cc
-index 5d91880574cce922c08cc3f6f4bbc0ba99afbef9..baf89d2badd59a2c4e07a9091ba33c04c15d9b04 100644
+index 2203e8ac0847cc8a13bf49c07755f09bb6ba915e..29bff9caf8f3ecaf5a86f132ceb4184ac215c3cb 100644
 --- a/content/browser/devtools/devtools_pipe_handler.cc
 +++ b/content/browser/devtools/devtools_pipe_handler.cc
 @@ -34,6 +34,7 @@
@@ -2172,7 +2135,7 @@ index 5d91880574cce922c08cc3f6f4bbc0ba99afbef9..baf89d2badd59a2c4e07a9091ba33c04
  bool DevToolsPipeHandler::UsesBinaryProtocol() {
    return mode_ == ProtocolMode::kCBOR;
 diff --git a/content/browser/devtools/devtools_pipe_handler.h b/content/browser/devtools/devtools_pipe_handler.h
-index 1815ea3830354cdd0ddb00c77511fbc07feba3be..3c9a5c19257b83ca594b780a930e04774680d49b 100644
+index 1ef8fac49147214f40b5a8ba7790e9178756b70a..6f9cc5746465ade25892ed010e013f1168b4e5b1 100644
 --- a/content/browser/devtools/devtools_pipe_handler.h
 +++ b/content/browser/devtools/devtools_pipe_handler.h
 @@ -6,13 +6,15 @@
@@ -2210,7 +2173,7 @@ index 1815ea3830354cdd0ddb00c77511fbc07feba3be..3c9a5c19257b83ca594b780a930e0477
    void BeginRemoteDebuggingTargetCreation() override;
    void EndRemoteDebuggingTargetCreation() override;
    bool IsRemoteDebuggingTargetCreationInProgress() override;
-@@ -66,8 +75,9 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
+@@ -67,8 +76,9 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
    int read_fd_;
    int write_fd_;
    bool shutting_down_ = false;
@@ -2223,7 +2186,7 @@ index 1815ea3830354cdd0ddb00c77511fbc07feba3be..3c9a5c19257b83ca594b780a930e0477
  };
  
 diff --git a/content/browser/devtools/devtools_session.cc b/content/browser/devtools/devtools_session.cc
-index d09cbf7bcc18ce2f555affd3c315d93cb10c8cde..cd91a87544a0c4c9b5865718fca5ba72027d55a0 100644
+index fa371dcaa833d87d79a273bb4f20e2674e48d719..9e4897a406d40c22520aeb98f0b9c1cf1c983945 100644
 --- a/content/browser/devtools/devtools_session.cc
 +++ b/content/browser/devtools/devtools_session.cc
 @@ -189,13 +189,29 @@ bool DevToolsSession::IsRemoteDebuggingClient() {
@@ -2261,10 +2224,10 @@ index d09cbf7bcc18ce2f555affd3c315d93cb10c8cde..cd91a87544a0c4c9b5865718fca5ba72
  
  void DevToolsSession::BeginRemoteDebuggingTargetCreation() {
 diff --git a/content/browser/devtools/devtools_session.h b/content/browser/devtools/devtools_session.h
-index 43b52eacc966aaa3b58d252e30492dfe78e7a103..73939031ee148994159295bcde86eb1c6be5b2c5 100644
+index 854bb65884740e41d7b618468823e253be190299..032082a7994a23ab33f15d2039330547bfdcc85c 100644
 --- a/content/browser/devtools/devtools_session.h
 +++ b/content/browser/devtools/devtools_session.h
-@@ -221,8 +221,16 @@ class DevToolsSession : public protocol::FrontendChannel,
+@@ -226,8 +226,16 @@ class DevToolsSession : public protocol::FrontendChannel,
    void DispatchOnClientHost(base::span<const uint8_t> message) override;
    void ConnectionClosed() override;
    bool IsRemoteDebuggingClient() override;
@@ -2351,7 +2314,7 @@ index b1024a1cf1a7be31795fb9f6437356cc4a221d0f..84dee3a03fac9e865872d4bcdca6d67d
  
  }  // namespace content
 diff --git a/content/browser/devtools/protocol/page_handler.cc b/content/browser/devtools/protocol/page_handler.cc
-index 34f1a439cbe8b9c218c0165d08cd184b1dc30ba7..33fe81516f05d5e2945dc42cb0606c1ee646047f 100644
+index d9a6aaa5e300162b86550a31a050240d62ab164f..4db62672e04fa93aac2db10c2e8b4f0ee474dc5e 100644
 --- a/content/browser/devtools/protocol/page_handler.cc
 +++ b/content/browser/devtools/protocol/page_handler.cc
 @@ -35,6 +35,7 @@
@@ -2388,23 +2351,19 @@ index 34f1a439cbe8b9c218c0165d08cd184b1dc30ba7..33fe81516f05d5e2945dc42cb0606c1e
  
  using BitmapEncoder =
      base::RepeatingCallback<std::optional<std::vector<uint8_t>>(
-@@ -965,6 +985,15 @@ void PageHandler::Navigate(const std::string& url,
-     return;
+@@ -989,6 +1009,11 @@ Response PageHandler::CheckNavigationAllowed(const GURL& url) {
+     return Response::ServerError("Navigating to local URL is not allowed");
    }
  
-+  // The navigation-time access check detaches remote sessions after a
-+  // disallowed NavigationRequest is created. Reject Page.navigate here as
-+  // well, so a remote client cannot use the command for a navigation side
-+  // effect before being detached.
-+  if (!IsRemoteDebuggingNavigationAllowed(session(), gurl)) {
-+    callback->sendFailure(Response::ServerError(kRemoteNavigationDenied));
-+    return;
++  // 在创建导航请求前拒绝远程受限目标；普通导航和历史跳转共用此检查。
++  if (!IsRemoteDebuggingNavigationAllowed(session(), url)) {
++    return Response::ServerError(kRemoteNavigationDenied);
 +  }
 +
-   // chrome-untrusted:// WebUIs might perform high-priviledged actions on
+   // chrome-untrusted:// WebUIs might perform high-privileged actions on
    // navigation, disallow navigation to them unless the client is trusted.
    if ((inner_url.SchemeIs(kChromeUIUntrustedScheme) ||
-@@ -1265,15 +1294,33 @@ Response PageHandler::GetNavigationHistory(
+@@ -1282,15 +1307,25 @@ Response PageHandler::GetNavigationHistory(
    }
  
    NavigationController& controller = host_->frame_tree()->controller();
@@ -2421,40 +2380,23 @@ index 34f1a439cbe8b9c218c0165d08cd184b1dc30ba7..33fe81516f05d5e2945dc42cb0606c1e
    *entries = std::make_unique<NavigationEntries>();
    for (int i = 0; i != controller.GetEntryCount(); ++i) {
      auto* entry = controller.GetEntryAtIndex(i);
+-    // A client that is not allowed to navigate the page to a URL must not
+-    // learn it either, so the same check gates disclosure. Redact such entries
+-    // rather than omitting them, so that `currentIndex` and the entry ids keep
+-    // matching the actual history. Navigating to a redacted entry is rejected
+-    // by NavigateToHistoryEntry().
 +    if (!IsRemoteDebuggingNavigationAllowed(session(), entry->GetURL())) {
 +      continue;
 +    }
 +    if (i < controller_current_index) {
 +      ++*current_index;
 +    }
-+    const bool may_expose_user_typed_url =
-+        IsRemoteDebuggingNavigationAllowed(session(), entry->GetUserTypedURL());
-     (*entries)->emplace_back(
-         Page::NavigationEntry::Create()
-             .SetId(entry->GetUniqueID())
-             .SetUrl(entry->GetURL().spec())
--            .SetUserTypedURL(entry->GetUserTypedURL().spec())
-+            .SetUserTypedURL(may_expose_user_typed_url
-+                                 ? entry->GetUserTypedURL().spec()
-+                                 : std::string())
-             .SetTitle(base::UTF16ToUTF8(entry->GetTitle()))
-             .SetTransitionType(TransitionTypeName(entry->GetTransitionType()))
-             .Build());
-@@ -1289,7 +1336,11 @@ Response PageHandler::NavigateToHistoryEntry(int entry_id) {
- 
-   NavigationController& controller = host_->frame_tree()->controller();
-   for (int i = 0; i != controller.GetEntryCount(); ++i) {
--    if (controller.GetEntryAtIndex(i)->GetUniqueID() == entry_id) {
-+    NavigationEntry* entry = controller.GetEntryAtIndex(i);
-+    if (entry->GetUniqueID() == entry_id) {
-+      if (!IsRemoteDebuggingNavigationAllowed(session(), entry->GetURL())) {
-+        return Response::ServerError(kRemoteNavigationDenied);
-+      }
-       controller.GoToIndex(i);
-       return Response::Success();
-     }
++    // Aegis 受限目标完全隐藏；其余条目继续执行上游的导航权限脱敏。
+     const bool may_disclose =
+         !CheckNavigationAllowed(entry->GetURL()).IsError() &&
+         !CheckNavigationAllowed(entry->GetUserTypedURL()).IsError();
 diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
-index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55cf292fe75 100644
+index 3de879af74c54faf89dcc763726ecda4c732fd70..5ddbe8572bdbea2713bb87aadf5e1b9703d70ec0 100644
 --- a/content/browser/devtools/protocol/target_handler.cc
 +++ b/content/browser/devtools/protocol/target_handler.cc
 @@ -36,6 +36,9 @@
@@ -2560,7 +2502,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
      target_info->SetParentFrameId(host->GetParentFrameId());
    }
    if (host->GetBrowserContext()) {
-@@ -706,12 +712,28 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
+@@ -716,12 +722,28 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
      return GetRootClient()->IsRemoteDebuggingClient();
    }
  
@@ -2593,7 +2535,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
    }
  
    void BeginRemoteDebuggingTargetCreation() override {
-@@ -1091,6 +1113,11 @@ void TargetHandler::SetAttachedTargetsOfType(
+@@ -1103,6 +1125,11 @@ void TargetHandler::SetAttachedTargetsOfType(
  }
  
  void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
@@ -2605,7 +2547,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
    const bool may_enumerate = AllowRemoteTargetOperation(
        root_session_,
        DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
-@@ -1104,7 +1131,6 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
+@@ -1116,7 +1143,6 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
    } else if (!was_reported && should_report) {
      frontend_->TargetCreated(BuildTargetInfo(host, root_session_));
      reported_hosts_.insert(host);
@@ -2613,7 +2555,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
    }
  
    if (!AllowRemoteTargetOperation(
-@@ -1126,6 +1152,10 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
+@@ -1138,6 +1164,10 @@ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
      policy_detaching_hosts_.erase(host);
    }
  
@@ -2624,7 +2566,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
    // Only send target info for targets we reported in any way.
    if (!reported_hosts_.contains(host) &&
        auto_attached_sessions_.find(host) == auto_attached_sessions_.end()) {
-@@ -1596,8 +1626,7 @@ Response TargetHandler::CreateTarget(
+@@ -1609,8 +1639,7 @@ Response TargetHandler::CreateTarget(
      }
  
      base::ScopedClosureRunner target_creation_scope;
@@ -2634,7 +2576,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
        root_session_->GetClient()->BeginRemoteDebuggingTargetCreation();
        target_creation_scope.ReplaceClosure(base::BindOnce(
            &DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
-@@ -1607,7 +1636,11 @@ Response TargetHandler::CreateTarget(
+@@ -1620,7 +1649,11 @@ Response TargetHandler::CreateTarget(
      *out_target_id =
          hidden_target_manager_.CreateHiddenTarget(gurl, browser_context);
      if (root_session_->GetClient()->IsRemoteDebuggingClient()) {
@@ -2647,7 +2589,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
      }
      return Response::Success();
    }
-@@ -1633,8 +1666,7 @@ Response TargetHandler::CreateTarget(
+@@ -1646,8 +1679,7 @@ Response TargetHandler::CreateTarget(
      return Response::InvalidParams(kTargetNotFound);
    }
    base::ScopedClosureRunner target_creation_scope;
@@ -2657,7 +2599,7 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
      root_session_->GetClient()->BeginRemoteDebuggingTargetCreation();
      target_creation_scope.ReplaceClosure(base::BindOnce(
          &DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
-@@ -1647,7 +1679,9 @@ Response TargetHandler::CreateTarget(
+@@ -1660,7 +1692,9 @@ Response TargetHandler::CreateTarget(
    }
    *out_target_id = agent_host->GetId();
    if (root_session_->GetClient()->IsRemoteDebuggingClient()) {
@@ -2669,10 +2611,10 @@ index 8e87c057326e4c9bf7336140098a9b6284719d75..9c8d41c6b845200c29a344cd9e2ff55c
    return Response::Success();
  }
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index c1966aaef51e5dcb492ae3f2303a441083a91a72..6ead35ff839ad76f01c0ed5342b47e7c8f9dd2f8 100644
+index 7cda5e1997bfe6c0aee5bd98102e139eebbf9ea4..ca387ba37550ad03626769231d3b281ed545d492 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
-@@ -390,6 +390,38 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
+@@ -401,6 +401,38 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
      return false;
    }
  
@@ -2711,7 +2653,7 @@ index c1966aaef51e5dcb492ae3f2303a441083a91a72..6ead35ff839ad76f01c0ed5342b47e7c
    const bool is_main_frame = !frame_tree_node_ || !frame_tree_node_->parent();
  
    if (frame_tree_node_ && !frame_tree_node_->parent() &&
-@@ -449,7 +481,13 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
+@@ -464,7 +496,13 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
            base::Unretained(this)));
    session->CreateAndAddHandler<protocol::SchemaHandler>();
    const bool may_attach_to_browser = session->GetClient()->IsTrusted();
@@ -2726,7 +2668,7 @@ index c1966aaef51e5dcb492ae3f2303a441083a91a72..6ead35ff839ad76f01c0ed5342b47e7c
    session->CreateAndAddHandler<protocol::StorageHandler>(this,
                                                           session->GetClient());
    session->CreateAndAddHandler<protocol::SystemInfoHandler>(
-@@ -971,6 +1009,14 @@ GURL RenderFrameDevToolsAgentHost::GetURL() {
+@@ -1003,6 +1041,14 @@ GURL RenderFrameDevToolsAgentHost::GetURL() {
    return GURL();
  }
  
@@ -2741,7 +2683,7 @@ index c1966aaef51e5dcb492ae3f2303a441083a91a72..6ead35ff839ad76f01c0ed5342b47e7c
  GURL RenderFrameDevToolsAgentHost::GetFaviconURL() {
    if (!frame_tree_node_) {
      return GURL();
-@@ -1145,17 +1191,19 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+@@ -1177,17 +1223,19 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
      return true;
    }
    const bool is_initial_blank_target =
@@ -2766,10 +2708,10 @@ index c1966aaef51e5dcb492ae3f2303a441083a91a72..6ead35ff839ad76f01c0ed5342b47e7c
           (agent_host &&
            manager->delegate()->AllowRemoteDebuggingTargetOperation(
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.h b/content/browser/devtools/render_frame_devtools_agent_host.h
-index 6677e90cdb125b95532386ee11bee1d5eb409818..9903a73eac9cb43c52182ccd86ca08f55d64673a 100644
+index d95a49626360448118bdf53c1a56d6182f7c1d09..1577ea3f776e228d9d6398b635f8e926a8789e24 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.h
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.h
-@@ -149,6 +149,8 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
+@@ -147,6 +147,8 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
    // DevToolsAgentHostImpl overrides.
    bool AttachSession(DevToolsSession* session) override;
    void DetachSession(DevToolsSession* session) override;
@@ -2825,7 +2767,7 @@ index f4aa39408926dc23b7fa76abb42e1bf595924a61..c2a29e5b1ce40099b0a01121e9d0277c
    virtual void DispatchProtocolMessage(DevToolsAgentHostClient* client,
                                         base::span<const uint8_t> message) = 0;
 diff --git a/content/public/browser/devtools_agent_host_client.cc b/content/public/browser/devtools_agent_host_client.cc
-index 00c32f985afe5cfa3be99ca8c6578fe513c445a8..2f16d15a71bea32251571f880f49266930f7228f 100644
+index 3eb960c32581b13312c397183bc54d53eef8d910..084e65a44cfb5ccf28fde3b7c6b84d7c39b7b7b8 100644
 --- a/content/public/browser/devtools_agent_host_client.cc
 +++ b/content/public/browser/devtools_agent_host_client.cc
 @@ -24,14 +24,25 @@ bool DevToolsAgentHostClient::IsRemoteDebuggingClient() {
@@ -2857,10 +2799,10 @@ index 00c32f985afe5cfa3be99ca8c6578fe513c445a8..2f16d15a71bea32251571f880f492669
  
  void DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation() {}
 diff --git a/content/public/browser/devtools_agent_host_client.h b/content/public/browser/devtools_agent_host_client.h
-index 018353f06a3104500d6c55603aa6493c06d2ce54..7e7baac0cd7ffcfe70f2e23c81fd9087c85686d0 100644
+index 0154fa7d7b9a7ada9dcdf04c86bd16274f35260d..5a203c8d15aa431ab35bf92dced1315416258edc 100644
 --- a/content/public/browser/devtools_agent_host_client.h
 +++ b/content/public/browser/devtools_agent_host_client.h
-@@ -17,6 +17,7 @@ namespace content {
+@@ -19,6 +19,7 @@ namespace content {
  
  class DevToolsAgentHost;
  class RenderFrameHost;
@@ -2868,7 +2810,7 @@ index 018353f06a3104500d6c55603aa6493c06d2ce54..7e7baac0cd7ffcfe70f2e23c81fd9087
  
  // DevToolsAgentHostClient can attach to a DevToolsAgentHost and start
  // debugging it.
-@@ -51,10 +52,22 @@ class CONTENT_EXPORT DevToolsAgentHostClient {
+@@ -63,10 +64,22 @@ class CONTENT_EXPORT DevToolsAgentHostClient {
    // Local DevTools frontends keep the default false value.
    virtual bool IsRemoteDebuggingClient();
  
@@ -2958,6 +2900,3 @@ index c80e32ca0ff3e31e31ae3348770c18c6864953ce..7cef47830ff60cf3b2375bcd4d069450
    // Returns the favicon url for this agent host.
    virtual GURL GetFaviconURL() = 0;
  
--- 
-2.52.0
-

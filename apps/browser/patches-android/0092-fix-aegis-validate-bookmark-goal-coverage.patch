@@ -1,16 +1,9 @@
-From 9ebd886e1234b0fb93f1058c6233f725e7e58b65 Mon Sep 17 00:00:00 2001
+From f05430f33b72f330197422b47c66d92db66c5aae Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 04:13:24 +0800
 Subject: [PATCH] fix(aegis): validate bookmark goal coverage
 
 ---
- .../aegis/agent/aegis_agent_service.cc        |  3 +
- .../agent/aegis_agent_service_unittest.cc     | 82 ++++++++++++++++++-
- chrome/browser/aegis/agent/agent_planner.cc   | 76 +++++++++++++++--
- chrome/browser/aegis/agent/agent_planner.h    |  7 ++
- .../aegis/agent/agent_planner_unittest.cc     | 68 +++++++++++++++
- chrome/browser/resources/aegis_agent/agent.ts |  8 +-
- 6 files changed, 232 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index 95ac4e7a3dd8607c398e683e8ae45c23ad2cbcba..141065ed4e1241741d63715715da3cafe948b9db 100644
@@ -365,6 +358,3 @@ index b333c7d74465e5a9248328f5d1694facb639ad63..135ac52779be917ac3d62ddc4439414a
        .test(goal);
  }
  
--- 
-2.52.0
-

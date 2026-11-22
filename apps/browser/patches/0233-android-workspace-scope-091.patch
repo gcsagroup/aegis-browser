@@ -1,4 +1,4 @@
-From bf6e47976446d953b4f924f202289950a30482d3 Mon Sep 17 00:00:00 2001
+From 6a81c43236839aac7ca7c4809d826833da97145d Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 20:06:41 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Android=20=E5=B7=A5?=
@@ -9,10 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/agent/agent_core_unittest.cc  | 2 ++
- chrome/browser/aegis/agent/agent_workflow.cc       | 3 +--
- chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
- 3 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
 index da413f749410b49c27bf5905f55ae03952bd73fb..cc16f0fbca769a1148cb946a75f0d5102e3331ee 100644
@@ -56,6 +52,3 @@ index 9e9728714c380620adcc92d0b550382a66ad8b75..e4b22650d9db52df7be131546f99d93d
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

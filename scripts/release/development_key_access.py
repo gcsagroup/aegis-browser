@@ -80,18 +80,48 @@ def prepare(evidence, native, directory, *, configuration_directory=None):
             if len(paths) > 64:
                 raise ValueError('Development keychain inventory exceeds the limit')
             matches = []
+            scan = {
+                'inventory': len(paths), 'unretainable': 0, 'noCert': 0, 'certHit': 0,
+                'ownershipFailed': 0, 'matchNames': [],
+            }
             for value in paths:
                 path = Path(value)
                 if native.unretainable_keychain(path):
+                    scan['unretainable'] += 1
                     continue
                 certificates = native.run('/usr/bin/security', 'find-certificate', '-a', '-Z', str(path)).decode()
                 if re.search(r'SHA-1 hash: ' + re.escape(evidence['certificateSha1']) + r'\b', certificates):
-                    check_keychain(path, selection)
+                    scan['certHit'] += 1
+                    try:
+                        check_keychain(path, selection)
+                    except ValueError:
+                        scan['ownershipFailed'] += 1
+                        result['keychainScan'] = {
+                            'inventory': scan['inventory'], 'unretainable': scan['unretainable'],
+                            'noCert': scan['noCert'], 'certHit': scan['certHit'],
+                            'ownershipFailed': scan['ownershipFailed'], 'matchCount': len(matches),
+                            'matchNames': list(scan['matchNames']),
+                        }
+                        raise
                     if native.keychain_has_distribution(str(path)):
                         raise ValueError('Configured Development keychain contains a Distribution identity')
                     matches.append(path)
+                    scan['matchNames'].append(path.name)
+                else:
+                    scan['noCert'] += 1
+            result['keychainScan'] = {
+                'inventory': scan['inventory'], 'unretainable': scan['unretainable'],
+                'noCert': scan['noCert'], 'certHit': scan['certHit'],
+                'ownershipFailed': scan['ownershipFailed'], 'matchCount': len(matches),
+                'matchNames': list(scan['matchNames']),
+            }
             if len(matches) != 1:
-                raise ValueError('Unique owned dedicated Development keychain required')
+                raise ValueError(
+                    'Unique owned dedicated Development keychain required'
+                    f' (matchCount={len(matches)} inventory={scan["inventory"]}'
+                    f' unretainable={scan["unretainable"]} certHit={scan["certHit"]}'
+                    f' noCert={scan["noCert"]}; keep the dedicated Development keychain'
+                    ' in `security list-keychains -d user`, not only login)')
             keychain = matches[0]
             result['keychain'] = keychain.name
             unlock = native.module('development_access_unlock', 'local-ios-signing.py')

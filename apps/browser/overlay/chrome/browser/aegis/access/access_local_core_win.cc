@@ -1,9 +1,11 @@
 // Copyright 2026 GCSA
+// 管理 Windows Access 核心的私有目录和进程。只有子进程成功加入作业后，调用方才接管句柄。
 #include "chrome/browser/aegis/access/access_local_core_win.h"
 
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <string>
 #include <utility>
 
@@ -44,7 +46,7 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
   if (!owned_job.is_valid() ||
       !base::SetJobObjectLimitFlags(owned_job.get(),
                                   JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)) {
-    return {};
+    return base::Process();
   }
   SECURITY_ATTRIBUTES inherited{sizeof(inherited), nullptr, TRUE};
   base::win::ScopedHandle input(::CreateFileW(L"NUL", GENERIC_READ,
@@ -67,7 +69,9 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
     output.Set(::CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ |
         FILE_SHARE_WRITE, &inherited, OPEN_EXISTING, 0, nullptr));
   }
-  if (!input.is_valid() || !output.is_valid()) return {};
+  if (!input.is_valid() || !output.is_valid()) {
+    return base::Process();
+  }
   HANDLE stdio[] = {input.get(), output.get()};
   HANDLE job_handle = owned_job.get();
   base::win::StartupInformation startup;
@@ -76,7 +80,7 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
                                          &job_handle, sizeof(job_handle)) ||
       !startup.UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
                                          stdio, sizeof(stdio))) {
-    return {};
+    return base::Process();
   }
 
   startup.startup_info()->dwFlags |= STARTF_USESTDHANDLES;
@@ -85,14 +89,25 @@ base::Process LaunchOwnedCore(const base::CommandLine& command,
   startup.startup_info()->hStdError = output.get();
   PROCESS_INFORMATION child = {};
   std::wstring command_line = command.GetCommandLineString();
-  wchar_t empty_environment[2] = {};
+  // Winsock 提供程序依赖 SystemRoot；完全空环境会使 Xray 创建套接字失败。
+  // 从 Windows API 获取可信目录，不继承父进程的 PATH、代理、密钥或伪造的 SystemRoot。
+  std::array<wchar_t, MAX_PATH> windows_directory{};
+  const UINT length = ::GetWindowsDirectoryW(windows_directory.data(),
+                                             windows_directory.size());
+  if (length == 0 || length >= windows_directory.size()) {
+    return base::Process();
+  }
+  std::wstring environment = L"SystemRoot=";
+  environment.append(windows_directory.data(), length);
+  // CreateProcessW 的 Unicode 环境块由两个 NUL 结束，不能传入普通单字符串。
+  environment.append(2, L'\0');
   if (!::CreateProcessW(command.GetProgram().value().c_str(), command_line.data(),
                         nullptr, nullptr, TRUE,
                         EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT |
                             CREATE_NO_WINDOW,
-                        empty_environment, directory.value().c_str(),
+                        environment.data(), directory.value().c_str(),
                         startup.startup_info(), &child)) {
-    return {};
+    return base::Process();
   }
   base::win::ScopedProcessInformation child_handles(child);
   job = std::move(owned_job);

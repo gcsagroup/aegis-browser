@@ -51,9 +51,7 @@ async function requireDeliveryBot(user, run, environment, identityApi, token, co
   requireValue(user.type === 'Bot' && user.id === policy.actorId && user.login === policy.slug+'[bot]', 'Bot actor identity differs');
   const releaseInputsValid = inputs && typeof inputs === 'object' && !Array.isArray(inputs) &&
     Object.keys(inputs).sort().join(',') === 'approved_source_sha,build,controller_actor_id,controller_actor_login,controller_run_id,operation,release_type,status_run_id,version' &&
-    ['Preview', 'Publish Beta', 'Publish stable'].includes(inputs.operation) &&
-    (inputs.operation === 'Publish Beta' ? inputs.release_type === 'beta' :
-      inputs.operation === 'Publish stable' ? inputs.release_type === 'stable' : ['beta', 'stable'].includes(inputs.release_type)) &&
+    ['Preview', 'Publish prerelease', 'Promote stable'].includes(inputs.operation) && inputs.release_type === 'stable' &&
     validIosVersion(inputs.version) &&
     /^[1-9][0-9]{0,9}$/u.test(inputs.build || '') && /^[1-9][0-9]{0,15}$/u.test(inputs.status_run_id || '') &&
     /^[1-9][0-9]{0,15}$/u.test(inputs.controller_run_id || '') && /^[1-9][0-9]{0,15}$/u.test(inputs.controller_actor_id || '') &&
@@ -122,9 +120,7 @@ export async function requireReleaseControllerAuthorization({environment = proce
   let inputs;
   try { inputs = JSON.parse(environment.RELEASE_INPUTS || '{}'); }
   catch { throw new OperatorError('Invalid release workflow inputs'); }
-  requireValue(inputs && ((inputs.operation === 'Preview' && ['beta', 'stable'].includes(inputs.release_type)) ||
-    (inputs.operation === 'Publish Beta' && inputs.release_type === 'beta') ||
-    (inputs.operation === 'Publish stable' && inputs.release_type === 'stable')),
+  requireValue(inputs && ['Preview', 'Publish prerelease', 'Promote stable'].includes(inputs.operation) && inputs.release_type === 'stable',
   'Controller release operation/channel mismatch');
   const runId = Number(inputs.controller_run_id);
   const actorId = Number(inputs.controller_actor_id);
@@ -144,8 +140,11 @@ export async function requireReleaseControllerAuthorization({environment = proce
   }
   requireValue(run?.status === 'completed' && run.conclusion === 'success',
     'Parent Admin controller has not completed successfully');
-  const controllerOperation = inputs.operation === 'Preview' ? 'Preview GitHub release' :
-    inputs.operation === 'Publish Beta' ? 'Publish Beta release' : 'Publish stable release';
+  const controllerOperation = {
+    Preview: 'Preview GitHub release',
+    'Publish prerelease': 'Publish prerelease',
+    'Promote stable': 'Promote to stable',
+  }[inputs.operation];
   requireValue(run.display_title === `iOS Bot ${controllerOperation} ${inputs.version}(${inputs.build})`,
     'Parent Admin controller does not identify the requested operation/version/build');
   const original = run.actor;
@@ -257,7 +256,13 @@ export async function requireIosAdministrator({environment = process.env, api = 
     const humans = principals.filter(user => user.type !== 'Bot');
     if (humans.length) {
       const admins = await administratorInventory(repository, token, api);
-      requireValue(humans.every(user => admins.some(a => sameUser(a, user))), 'Repository Admin grant required for original actor and rerunner');
+      for (const user of humans) {
+        if (admins.some(a => sameUser(a, user))) continue;
+        // 安装令牌的列表可见范围可能遗漏组织授权；仍需实时 Admin 权限和同一身份。
+        const grant = await api(repository, `/collaborators/${encodeURIComponent(user.login)}/permission`, {token}).catch(() => null);
+        requireValue(grant?.permission === 'admin' && sameUser(grant.user, user),
+          `Repository Admin grant required for original actor and rerunner: ${user.login}`);
+      }
     }
     return {authorized: true, repository, mode: 'actions_run', runId: id, attempt, principals: principals.map(({id: userId, login}) => ({id: userId, login}))};
   } catch (error) {

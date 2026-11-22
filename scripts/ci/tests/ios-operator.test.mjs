@@ -27,7 +27,7 @@ test('candidate tag policy admits only active canonical namespace restrictions w
     await assert.rejects(verifyCandidateTagPolicy({environment, api: async (_repo, path) => path.startsWith('/rulesets?') ? [{id:300,name:desired.name}] : {...policy,...change}}), /policy|ruleset/iu);
   }
 });
-function fixture({admins = [admin(original)], trigger = original, runChanges = {}, repoChanges = {}, failure, pages} = {}) {
+function fixture({admins = [admin(original)], trigger = original, runChanges = {}, repoChanges = {}, failure, pages, grants = {}} = {}) {
   const calls = [];
   const run = {id: 200, run_attempt: 1, head_sha: sha, event: 'workflow_dispatch', head_branch: 'main',
     path: '.github/workflows/ios-delivery.yml', repository: {full_name: repository, id: 1348409663},
@@ -42,6 +42,9 @@ function fixture({admins = [admin(original)], trigger = original, runChanges = {
       assert(path.includes('affiliation=all') && path.includes('permission=admin') && path.includes('per_page=100'));
       const page = Number(new URLSearchParams(path.split('?')[1]).get('page'));
       return pages ? pages(page) : admins;
+    }
+    if (path.startsWith('/collaborators/') && path.endsWith('/permission')) {
+      return grants[path.split('/')[2]] ?? {permission: 'none'};
     }
     throw new Error('Unexpected endpoint '+path);
   };
@@ -62,6 +65,31 @@ test('all lower, misleading custom and unknown grants deny before privileged wor
     const f = fixture({admins: [{...original, role_name: role, permissions: {admin: false}}]});
     await assert.rejects(requireIosAdministrator({environment, api: f.api}), /admin|permission|grant/iu);
   }
+});
+test('列表不可见的管理员须由用户权限接口重新确认身份和 Admin 授权', async () => {
+  const {requireIosAdministrator} = await load();
+  const f = fixture({admins: [], grants: {original: {permission: 'admin', user: original}}});
+  assert.equal((await requireIosAdministrator({environment, api: f.api})).authorized, true);
+  assert(f.calls.includes('/collaborators/original/permission'));
+  for (const grant of [{permission: 'write', role_name: 'admin', user: original},
+    {permission: 'admin', user: {...original, id: 999}}, {permission: 'admin', user: {...original, login: 'other'}},
+    {permission: 'admin'}, null]) {
+    await assert.rejects(requireIosAdministrator({environment,
+      api: fixture({admins: [], grants: {original: grant}}).api}), /Admin grant/u);
+  }
+  const denied = fixture({admins: [], failure: path => path.endsWith('/permission')});
+  await assert.rejects(requireIosAdministrator({environment, api: denied.api}), /Admin grant/u);
+});
+test('补查权限不能让无权限的原发起者或重跑者借用另一人的 Admin 身份', async () => {
+  const {requireIosAdministrator} = await load();
+  const env = {...environment, GITHUB_TRIGGERING_ACTOR: rerunner.login, GITHUB_RUN_ATTEMPT: '2'};
+  const check = grants => requireIosAdministrator({environment: env,
+    api: fixture({admins: [], grants, trigger: rerunner, runChanges: {run_attempt: 2}}).api});
+  const originalGrant = {permission: 'admin', user: original};
+  const rerunnerGrant = {permission: 'admin', user: rerunner};
+  await assert.rejects(check({original: originalGrant}), /Admin grant/u);
+  await assert.rejects(check({rerunner: rerunnerGrant}), /Admin grant/u);
+  assert.equal((await check({original: originalGrant, rerunner: rerunnerGrant})).principals.length, 2);
 });
 test('both original actor and actual rerunner require Admin', async () => {
   const {requireIosAdministrator} = await load();
@@ -149,7 +177,7 @@ test('the configured App can dispatch an exact-source Beta without an Admin user
 });
 test('release versions must be text with two or three decimal components', async () => {
   const {requireIosAdministrator} = await load();
-  const releaseInputs = {operation: 'Preview', release_type: 'beta', version: '1.2', build: '9',
+  const releaseInputs = {operation: 'Preview', release_type: 'stable', version: '1.2', build: '9',
     status_run_id: '210', controller_run_id: '300', controller_actor_id: '7',
     controller_actor_login: 'original', approved_source_sha: sha};
   const check = version => requireIosAdministrator({...botFixture({
@@ -191,14 +219,14 @@ test('controller entrypoint retains human Admin admission and cannot be started 
 });
 
 function releaseControllerFixture({runChanges = {}, admins = [admin(original)], inputChanges = {}, controllerJobChanges = {}, receiptChanges = {}} = {}) {
-  const inputs = {operation: 'Publish Beta', release_type: 'beta', version: '1.2.0', build: '9',
+  const inputs = {operation: 'Promote stable', release_type: 'stable', version: '1.2.0', build: '9',
     status_run_id: '210', controller_run_id: '300', controller_actor_id: String(original.id),
     controller_actor_login: original.login, approved_source_sha: sha, ...inputChanges};
   const environment = {...environmentBase(), GITHUB_RUN_ID: '301', GITHUB_RUN_ATTEMPT: '1',
     GITHUB_SHA: sha, CONTROLLER_ACTOR_LOGIN: original.login, RELEASE_INPUTS: JSON.stringify(inputs)};
   const run = {id: 300, run_attempt: 1, status: 'completed', conclusion: 'success', head_sha: sha,
     head_branch: 'main', event: 'workflow_dispatch', path: '.github/workflows/ios-delivery-bot.yml',
-    display_title: 'iOS Bot Publish Beta release 1.2.0(9)', repository: {id: 1348409663, full_name: repository},
+    display_title: 'iOS Bot Promote to stable 1.2.0(9)', repository: {id: 1348409663, full_name: repository},
     head_repository: {id: 1348409663, full_name: repository}, actor: original, triggering_actor: original, ...runChanges};
   const api = async (repo, path) => {
     assert.equal(repo, repository);
@@ -254,7 +282,7 @@ test('release workflow rejects a lower-role rerunner, altered controller title a
         {name: 'Require current administrator for this controller request', status: 'completed', conclusion: 'failure'},
         {name: 'Dispatch and monitor exact App-owned delivery runs', status: 'in_progress', conclusion: null},
       ]}}),
-    releaseControllerFixture({inputChanges: {release_type: 'stable'}}),
+    releaseControllerFixture({inputChanges: {release_type: 'beta'}}),
     releaseControllerFixture({inputChanges: {controller_actor_id: '8'}}),
   ]) {
     await assert.rejects(requireReleaseControllerAuthorization({...fixture, sleep: async () => {}}), /Admin|controller|succeed|initiator/iu);

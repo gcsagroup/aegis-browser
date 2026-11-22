@@ -1,15 +1,9 @@
-From 96578118242f6440b78e3575657914d504044b0a Mon Sep 17 00:00:00 2001
+From 5b88aeece960d8ddd389f56030b1c434012e6453 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 1 Sep 2026 21:42:39 +0800
 Subject: [PATCH] fix(aegis): correct cross-platform build and branding
 
 ---
- chrome/app/theme/gcsa_aegis/BRANDING          | 16 +++++++--------
- chrome/browser/aegis/BUILD.gn                 |  6 +++---
- .../ui/webui/aegis/aegis_ui_handler.cc        | 10 ++++++++++
- .../browser/ui/webui/aegis/aegis_ui_handler.h | 11 ++++++++++
- .../aegis_torrent/public/mojom/BUILD.gn       | 20 +++++++++++++------
- 5 files changed, 46 insertions(+), 17 deletions(-)
 
 diff --git a/chrome/app/theme/gcsa_aegis/BRANDING b/chrome/app/theme/gcsa_aegis/BRANDING
 index f8363d5b294fe210ebfdd18374e95b54d6ff5c17..dfebe2211b3594ef813399d73355509976c0140e 100644
@@ -242,6 +236,3 @@ index 2bf88013bcc456ffa92742ed78e7958ccb09c6c4..5a3c54c3c0246fc6931c4eb44c4e0958
 +    ]
 +  }
  }
--- 
-2.52.0
-

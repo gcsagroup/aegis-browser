@@ -1687,7 +1687,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
           ->GetTaskFromTab(*tab);
   ASSERT_TRUE(monitor_actor);
   // 通过真实 Actor 用户暂停入口接管，不能用删除监控冒充用户接管。
-  monitor_actor->Pause(/*from_actor=*/false, /*cancel_existing_action=*/true);
+  monitor_actor->Pause(/*from_actor=*/false);
   ASSERT_NO_FATAL_FAILURE(WaitForCheck(task->id()));
   ASSERT_EQ(browser()->GetTabStripModel()->count(), initial_tabs + 1);
   response.Send(net::HTTP_OK, "text/html", "<p>接管后的迟到正文</p>");
@@ -2569,6 +2569,24 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       SettingsCommandsPreserveRoutes) {
+  // 验证命令实际打开目标页，防止只注册启用状态而漏接执行回调。
+  for (const auto& [command, url] : {
+           std::pair(IDC_SHOW_AEGIS, "chrome://settings/aegis"),
+           std::pair(IDC_AEGIS_ENHANCEMENTS, "chrome://settings/aegisEnhancements"),
+           std::pair(IDC_AEGIS_MARKDOWN, "chrome://settings/aegisReading")}) {
+    ASSERT_TRUE(chrome::IsCommandEnabled(browser(), command));
+    ASSERT_TRUE(chrome::ExecuteCommand(browser(), command));
+    ASSERT_TRUE(base::test::RunUntil([&]() {
+      return browser()->GetActiveTabInterface()->GetContents()->GetLastCommittedURL() ==
+             GURL(url);
+    }));
+    ASSERT_TRUE(content::WaitForLoadStop(
+        browser()->GetActiveTabInterface()->GetContents()));
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ProfileIsolationAndRestrictedProfiles) {
   Profile* regular = browser()->GetProfile();
   ASSERT_TRUE(regular->IsRegularProfile());
@@ -2628,7 +2646,10 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   ASSERT_TRUE(guest_browser->GetProfile()->IsGuestSession());
   EXPECT_FALSE(IsAegisAgentSidePanelSupported(guest_browser->GetProfile()));
   EXPECT_FALSE(AgentEntry(guest_browser));
-  EXPECT_FALSE(chrome::IsCommandEnabled(guest_browser, IDC_SHOW_AEGIS));
+  for (int command : {IDC_SHOW_AEGIS, IDC_SHOW_AEGIS_AGENT,
+                      IDC_AEGIS_ENHANCEMENTS, IDC_AEGIS_MARKDOWN}) {
+    EXPECT_FALSE(chrome::IsCommandEnabled(guest_browser, command));
+  }
   EXPECT_EQ(
       AegisAgentServiceFactory::GetForProfile(guest_browser->GetProfile()),
       nullptr);
@@ -6841,7 +6862,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalAiWorkerInWebUI) {
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("chrome-untrusted://aegis-agent/")));
   content::WebContents* page = browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(page);
-  const base::FilePath profile = browser()->profile()->GetPath();
+  const base::FilePath profile = browser()->GetProfile()->GetPath();
   if (publish) {
     ASSERT_TRUE(user_data_dir.IsParent(profile));
     ASSERT_TRUE(Mac03PhysicalPath(profile, true));

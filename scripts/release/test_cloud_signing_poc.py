@@ -19,6 +19,7 @@ def load(name, filename):
 
 
 poc = load('cloud_poc', 'cloud-signing-poc.py')
+archive_transfer = load('cloud_archive_arguments', 'cloud-archive.py')
 verifier = load('cloud_verifier', 'verify-signed-ios.py')
 
 
@@ -111,15 +112,20 @@ class CloudSigningTests(unittest.TestCase):
             poc.build_inline_archive(Path('/work'), Path('/output'), options, 'development', {}, {}, Mock())
         run.assert_not_called()
 
-    def test_explicit_ad_hoc_experiment_does_not_load_development_configuration(self):
+    def test_ad_hoc_and_unsigned_archives_skip_the_development_keychain(self):
         options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
-        evidence = {}
-        with patch.object(poc, 'module', side_effect=AssertionError('Unexpected Development configuration')), \
-                patch.object(poc, 'run') as run, patch.object(poc, 'verify_ad_hoc_archive') as verify:
-            poc.build_inline_archive(Path('/work'), Path('/output'), options, 'ad-hoc', {}, evidence, Mock())
-        self.assertIn('CODE_SIGN_IDENTITY=-', run.call_args.args)
-        verify.assert_called_once()
-        self.assertIs(evidence['adHocArchiveSignaturesVerified'], True)
+        for mode, marker in (('ad-hoc', 'CODE_SIGN_IDENTITY=-'), ('unsigned', 'CODE_SIGNING_ALLOWED=NO')):
+            with self.subTest(mode=mode):
+                evidence = {}
+                transfer = SimpleNamespace(signing_arguments=archive_transfer.signing_arguments,
+                                           verify_recorded_archive=Mock())
+                with patch.object(poc, 'module', side_effect=AssertionError('Development configuration is not used')), \
+                        patch.object(poc, 'run') as run:
+                    poc.build_inline_archive(Path('/work'), Path('/output'), options, mode, {}, evidence, transfer)
+                self.assertIn(marker, run.call_args.args)
+                transfer.verify_recorded_archive.assert_called_once()
+                self.assertEqual(evidence['archiveSignaturesVerified'], mode)
+                self.assertNotIn('developmentSigning', evidence)
 
     def test_transfer_requires_independent_digest_and_cannot_be_combined_with_reuse(self):
         for values in [dict(archive_input=Path('/fixture'), archive_manifest_sha256=None),

@@ -1,0 +1,88 @@
+From 2beb65952406ad56a972a7e98745db379360b554 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sat, 7 Nov 2026 09:30:04 +0800
+Subject: [PATCH] =?UTF-8?q?build:=20=E6=8E=A5=E9=80=9A=20Chromium=20157=20?=
+ =?UTF-8?q?=E6=A0=87=E7=AD=BE=E9=A1=B5=E5=8A=9F=E8=83=BD=E4=BE=9D=E8=B5=96?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+
+diff --git a/chrome/browser/android/BUILD.gn b/chrome/browser/android/BUILD.gn
+index 058b8e23f8a087f2784c0c552f1f8f728cbd1e17..2680ccf698a652d54ced948f27b9ed383dfaa6b6 100644
+--- a/chrome/browser/android/BUILD.gn
++++ b/chrome/browser/android/BUILD.gn
+@@ -155,6 +155,7 @@ source_set("tabs_impl") {
+   sources = [ "tab_features.cc" ]
+ 
+   deps = [
++    "//chrome/browser/aegis",
+     ":media_state_observer",
+     ":oom_intervention",
+     ":persisted_tab_data",
+diff --git a/chrome/browser/renderer_context_menu/BUILD.gn b/chrome/browser/renderer_context_menu/BUILD.gn
+index 2f0393a0b9e8f990cc7cb216aac5ec04eb0f2bb1..e78c2c99a9f0c444efd57ca1191272705783fd06 100644
+--- a/chrome/browser/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/renderer_context_menu/BUILD.gn
+@@ -113,7 +113,6 @@ source_set("impl") {
+     ]
+ 
+     deps += [
+-      "//chrome/browser/aegis",
+       "//chrome/app:command_ids",
+       "//chrome/app:generated_resources",
+       "//chrome/browser:browser_features",
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 151e7ce5cafa77a5b80f933dbc46bda9d58c82be..efe9a3c531b42ef263a765e2247267aba6769e4b 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -296,7 +296,6 @@ if (!is_android) {
+     sources = [ "browser_actions.cc" ]
+     public_deps = [ "//base" ]
+     deps = [
+-      "//chrome/common/aegis",
+       ":browser_actions",
+       ":browser_command_controller",
+       ":browser_commands",
+@@ -1342,7 +1341,7 @@ if (!is_android) {
+       "//cc/paint",
+       "//chrome/app:command_ids",
+       "//chrome/browser/profiles:profile",
+-      "//chrome/browser/ui/browser_window/public",
++      "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/tabs:tab_strip",
+       "//chrome/common",
+       "//components/input",
+@@ -1352,6 +1351,7 @@ if (!is_android) {
+     ]
+   }
+ }
++
+ # Browser is the desktop implementation of BrowserWindowInterface. It is
+ # deliberately kept out of reach of new code: features must go through
+ # BrowserWindowInterface instead. The visibility list below is intentionally
+diff --git a/chrome/browser/ui/tabs/BUILD.gn b/chrome/browser/ui/tabs/BUILD.gn
+index 78f1d93ceb24b76cc4483d1844457f168df1fb4e..be8d237d05cce7642b22e556b27fdca15688f7f8 100644
+--- a/chrome/browser/ui/tabs/BUILD.gn
++++ b/chrome/browser/ui/tabs/BUILD.gn
+@@ -544,6 +544,7 @@ if (!is_android) {
+     }
+ 
+     deps = [
++      "//chrome/browser/aegis",
+       "//chrome/browser/ui:aegis_mouse_gesture_tab_helper",
+       ":tab_group",
+       ":tab_model",
+diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+index 1f7f09745e57e1fb114b6b162606d4c0a0ea7fd3..2641909c049cf027b10935bcb15dee5ee443122f 100644
+--- a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+@@ -55,7 +55,6 @@ source_set("impl") {
+   }
+ 
+   if (!is_android) {
+-    deps += [ "//chrome/common/aegis" ]
+   }
+ }
+ 

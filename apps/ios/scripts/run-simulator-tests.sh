@@ -16,9 +16,9 @@ ONLY_TESTING=()
 RUNTIME_ID="${AEGIS_IOS_RUNTIME_ID:-}"
 OUTPUT_DIR="${AEGIS_IOS_OUTPUT_DIR:-/tmp/aegis-ios-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 
-PHONE_NAME="Aegis QA iPhone 17"
+PHONE_NAME="Aegis CI com.gcsa.aegis iPhone 17"
 PHONE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
-TABLET_NAME="Aegis QA iPad Air 11-inch (M4)"
+TABLET_NAME="Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)"
 TABLET_TYPE="com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4"
 
 usage() {
@@ -466,12 +466,15 @@ trap cleanup EXIT
 
 fixture_ready() {
   python3 - <<'PYTHON'
-import json, urllib.request
+import json, sys, urllib.request
 try:
-    with urllib.request.urlopen('http://127.0.0.1:8768/v1/models', timeout=2) as response:
+    # 本机验收探测不应进入环境变量或 macOS 系统代理。
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open('http://127.0.0.1:8768/v1/models', timeout=2) as response:
         value = json.load(response)
     assert value['data'][0]['id'] == 'aegis-simulator-fixture'
-except Exception:
+except Exception as error:
+    print(f'本机验收服务检查失败：{error}', file=sys.stderr)
     raise SystemExit(1)
 PYTHON
 }

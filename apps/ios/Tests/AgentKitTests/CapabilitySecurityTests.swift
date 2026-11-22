@@ -117,7 +117,7 @@ final class CapabilitySecurityTests: XCTestCase {
         XCTAssertTrue(reachedLatestConsent)
         try? await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(model.selectedKind, .shopping)
-        XCTAssertEqual(model.consent?.goal, "比较报价并停在最终提交前")
+        XCTAssertEqual(model.consent?.goal, Aegis.AegisLocalization.string("比较报价并停在最终提交前"))
         XCTAssertEqual(model.consent?.origins, ["https://latest.example"])
         XCTAssertNil(model.errorMessage)
     }

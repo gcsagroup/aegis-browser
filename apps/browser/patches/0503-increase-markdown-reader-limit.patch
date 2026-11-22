@@ -1,0 +1,245 @@
+From c32ae4f267544ff34406315763885213baa2f7cb Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Tue, 17 Nov 2026 20:33:00 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=89=A9=E5=A4=A7=20Markdown=20=E9=98=85?=
+ =?UTF-8?q?=E8=AF=BB=E5=99=A8=E6=96=87=E6=A1=A3=E4=B8=8A=E9=99=90=E8=87=B3?=
+ =?UTF-8?q?=2016=20MiB?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+
+diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+index a2e8c3258d5c74f5b3e611e47434ff2b8a2cb152..99bf072d645c0cef75498dbbd24594b3412df366 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+@@ -335,9 +335,18 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+             content::EvalJs(
+                 frame,
+                 "document.querySelector('#document img').getAttribute('src')"));
+-  EXPECT_EQ(
+-      false,
+-      content::EvalJs(frame, "AegisMarkdown.load({text:'x'.repeat(2097153)})"));
++  EXPECT_EQ(true, content::EvalJs(
++                      frame, "AegisMarkdown.load({text:'# 长文\\n\\n' + "
++                             "'x'.repeat(3 * 1024 * 1024) + "
++                             "'\\n\\n## 末尾'})"));
++  EXPECT_EQ("末尾", content::EvalJs(
++                        frame, "document.querySelector('#document h2').textContent"));
++  EXPECT_EQ(false, content::EvalJs(
++                       frame, "AegisMarkdown.load({text:'é'.repeat(8 * 1024 * "
++                              "1024) + 'x'})"));
++  EXPECT_EQ(true, content::EvalJs(
++                      frame, "document.getElementById('notice').textContent"
++                             ".includes('16 MiB')"));
+ }
+ 
+ // Use the in-process browser test's trusted WebContents access. The production
+diff --git a/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc b/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
+index 32ad8d9a7f48f3889b6457c0b4fe494c2c5d6d6b..ebdb2f51ed74733d67b33b589e399a5097bef6fa 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
+@@ -9,6 +9,7 @@
+ #include "base/no_destructor.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
++#include "base/strings/stringprintf.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
+@@ -28,6 +29,8 @@
+ #include "url/origin.h"
+ namespace aegis {
+ namespace {
++constexpr int kMarkdownMaximumBytes = 16 * 1024 * 1024;
++
+ std::map<std::string, EnhancementTabHelper*>& Helpers() {
+   static base::NoDestructor<std::map<std::string, EnhancementTabHelper*>> h;
+   return *h;
+@@ -615,7 +618,14 @@ void EnhancementTabHelper::ReadPage(bool markdown, Reply reply) {
+   }
+   const std::string expression =
+       markdown
+-          ? R"JS((()=>{if(!/^(text\/(plain|markdown|x-markdown))($|;)/i.test(document.contentType))throw Error('当前响应不是 Markdown 或纯文本');const text=document.body?.innerText||'';if(new TextEncoder().encode(text).length>2097152)throw Error('文档超过 2 MiB');return {text,title:document.title||location.pathname,baseURL:location.href};})())JS"
++          ? base::StringPrintf(R"JS(((maximumBytes) => {
++              if (!/^(text\/(plain|markdown|x-markdown))($|;)/i.test(document.contentType))
++                throw Error('当前响应不是 Markdown 或纯文本');
++              const text = (document.querySelector('body > pre') || document.body)?.textContent || '';
++              if (text.length > maximumBytes || new TextEncoder().encode(text).length > maximumBytes)
++                return {tooLarge: true};
++              return {text, title: document.title || location.pathname, baseURL: location.href};
++            })(%d))JS", kMarkdownMaximumBytes)
+           : R"JS((()=>({url:location.href,title:document.title,structure:[...document.querySelectorAll('main,article,aside,nav,h1,h2,h3,button')].slice(0,120).map(e=>({tag:e.tagName,id:e.id,classes:String(e.className).slice(0,100),text:/^(H[123]|BUTTON)$/.test(e.tagName)?e.textContent.slice(0,150):''}))}))())JS";
+   Send("Runtime.evaluate",
+        base::DictValue()
+@@ -670,10 +680,10 @@ void EnhancementTabHelper::ReadMarkdownFile(base::FilePath path,
+           [](base::FilePath path, GURL source, bool local) {
+             std::string text;
+             auto size = base::GetFileSize(path);
+-            if (!size || *size > 2097152 ||
+-                !base::ReadFileToStringWithMaxSize(path, &text, 2097152) ||
++            if (!size || *size > kMarkdownMaximumBytes ||
++                !base::ReadFileToStringWithMaxSize(path, &text, kMarkdownMaximumBytes) ||
+                 !base::IsStringUTF8(text) || text.contains('\0'))
+-              return Failure("文档超过 2 MiB、不是 UTF-8，或已无法读取。");
++              return Failure("文档超过 16 MiB、不是 UTF-8，或已无法读取。");
+             return base::DictValue()
+                 .Set("text", text)
+                 .Set("title", path.BaseName().AsUTF8Unsafe())
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/core.js b/chrome/browser/resources/aegis/enhancements_shared/core.js
+index 9b6abec77a9fcc217dfc3df805b2664647478b65..28c2383a06f04825f4b9535231f1ce770fc9f863 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/core.js
++++ b/chrome/browser/resources/aegis/enhancements_shared/core.js
+@@ -8,7 +8,7 @@
+     sites: 200,
+     value: 4096,
+     storage: 65536,
+-    markdown: 2097152,
++    markdown: 16 * 1024 * 1024,
+   });
+   const grants = Object.freeze([
+     "GM_addStyle",
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/i18n.js b/chrome/browser/resources/aegis/enhancements_shared/i18n.js
+index 960ae5e9ffa425b5d9fc416f79a95c9873f5e61e..c3b09ccb4af2a389ed7c5b9c6b7764fce81bac4f 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/i18n.js
++++ b/chrome/browser/resources/aegis/enhancements_shared/i18n.js
+@@ -1231,9 +1231,9 @@
+     "The document changed. Select the image folder again.",
+     "文檔已變化，請重新選擇圖片目錄。"
+   ],
+-  "文档超过 2 MiB，请使用原文件查看。": [
+-    "Document exceeds 2 MiB. View the original file instead.",
+-    "文檔超過 2 MiB，請使用原文件查看。"
++  "文档超过 16 MiB，请查看原文件。": [
++    "The document exceeds 16 MiB. View the original file.",
++    "文件超過 16 MiB，請查看原始檔案。"
+   ],
+   "未配置模型服务": [
+     "No model service configured",
+@@ -1275,9 +1275,9 @@
+     "No readable text found on this page.",
+     "頁面沒有可讀取的文本。"
+   ],
+-  "文档超过 2 MiB 或格式无效，请查看原始文件。": [
+-    "The document exceeds 2 MiB or is invalid. View the original file.",
+-    "文檔超過 2 MiB 或格式無效，請查看原始文件。"
++  "文档超过 16 MiB 或格式无效，请查看原始文件。": [
++    "The document exceeds 16 MiB or is invalid. View the original file.",
++    "文檔超過 16 MiB 或格式無效，請查看原始文件。"
+   ],
+   "第 {current} / {total} 处匹配": [
+     "Match {current} of {total}",
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.html b/chrome/browser/resources/aegis/enhancements_shared/viewer.html
+index 367d3d8d953cbaa5723f70604c2da8e76fd2450e..59a4dccc404e9230905870c90a4bb0546fd8ea8c 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/viewer.html
++++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.html
+@@ -15,6 +15,7 @@
+     <script src="vendor/highlight.min.js" defer></script>
+     <script src="vendor/purify.min.js" defer></script>
+     <script src="i18n.js" defer></script>
++    <script src="core.js" defer></script>
+     <script src="viewer.js" defer></script>
+   </head>
+   <body>
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.js b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+index 8186f907d19269b5c0e84bae6f3f88274ebe8875..81245ce7fdd611c74cf05c52a6d784651b0e9804 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/viewer.js
++++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+@@ -4,6 +4,7 @@
+   "use strict";
+   const uiText = value => globalThis.AegisI18n?.t(value) || value;
+   globalThis.AegisI18n?.translate(document);
++  const maximumBytes = globalThis.AegisEnhancementsCore.limits.markdown;
+   const $ = (id) => document.getElementById(id);
+   let current = { text: "", title: uiText("Markdown 阅读"), baseURL: "", resources: {} },
+     remote = false,
+@@ -90,7 +91,6 @@
+       ALLOW_DATA_ATTR: false,
+     });
+     $("document").innerHTML = clean;
+-    $("source").textContent = current.text;
+     $("outline").replaceChildren();
+     const used = new Map();
+     for (const header of $("document").querySelectorAll("h1,h2,h3,h4,h5,h6")) {
+@@ -168,9 +168,10 @@
+     if (
+       !payload ||
+       typeof payload.text !== "string" ||
+-      new TextEncoder().encode(payload.text).length > 2097152
++      payload.text.length > maximumBytes ||
++      new TextEncoder().encode(payload.text).length > maximumBytes
+     ) {
+-      $("notice").textContent = uiText("文档超过 2 MiB 或格式无效，请查看原始文件。");
++      $("notice").textContent = uiText("文档超过 16 MiB 或格式无效，请查看原始文件。");
+       return false;
+     }
+     current = {
+@@ -182,6 +183,7 @@
+     remote = false;
+     $("remote-images").textContent = "加载外部图片";
+     $("source").hidden = true;
++    $("source").textContent = "";
+     $("document").hidden = false;
+     $("source-toggle").setAttribute("aria-pressed", "false");
+     $("findbar").hidden = true;
+@@ -247,7 +249,9 @@
+     viewState();
+   };
+   $("source-toggle").onclick = () => {
+-    $("source").hidden = !$("source").hidden;
++    const source = $("source");
++    source.hidden = !source.hidden;
++    if (!source.hidden && !source.hasChildNodes()) source.textContent = current.text;
+     $("document").hidden = !$("source").hidden;
+     $("source-toggle").setAttribute("aria-pressed", String(!$("source").hidden));
+     viewState();
+diff --git a/chrome/browser/resources/aegis/markdown.js b/chrome/browser/resources/aegis/markdown.js
+index 0069380e6c906cb25e62e43a438c5644e092722d..5686a736dd0edd6c93d665ee9e6014eb08242620 100644
+--- a/chrome/browser/resources/aegis/markdown.js
++++ b/chrome/browser/resources/aegis/markdown.js
+@@ -1,6 +1,8 @@
+ import "/strings.m.js";
+ import { loadTimeData } from "chrome://resources/js/load_time_data.js";
+ import "./enhancements_shared/i18n.js";
++import "./enhancements_shared/core.js";
++const maximumBytes = globalThis.AegisEnhancementsCore.limits.markdown;
+ const uiText = value => globalThis.AegisI18n.t(value);
+ globalThis.AegisI18n.setLocale(loadTimeData.getString("aegisLocale"));
+ globalThis.AegisI18n.translate(document);
+@@ -26,7 +28,7 @@ const send = (type, value) => {
+ };
+ async function request(value) {
+   const r = await sendWithPromise("aegisEnhancements", value);
+-  if (r.error) throw Error(typeof r.error === "string" ? r.error : r.error.message);
++  if (r.error) throw Error(uiText(typeof r.error === "string" ? r.error : r.error.message));
+   if (r.result?.exceptionDetails)
+     throw Error(
+       r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text,
+@@ -71,7 +73,7 @@ function load(document, isLocal) {
+ async function file(f) {
+   if (!f || !/\.(md|markdown)$/i.test(f.name))
+     throw Error(uiText("请选择 .md 或 .markdown 文件。"));
+-  if (f.size > 2097152) throw Error(uiText("文档超过 2 MiB，请使用原文件查看。"));
++  if (f.size > maximumBytes) throw Error(uiText("文档超过 16 MiB，请查看原文件。"));
+   const text = new TextDecoder("utf-8", { fatal: true }).decode(await f.arrayBuffer());
+   load({ text, title: f.name, baseURL: "", resources: {} }, true);
+ }
+@@ -86,7 +88,8 @@ window.addEventListener("message", (event) => {
+     ready = true;
+     send("configure", {embedded: true, locale: loadTimeData.getString("aegisLocale"), preferences: state.readingPreferences});
+     if (current) send("load", current);
+-  } else if (type === "copy" && typeof value === "string" && value.length <= 2097152)
++  } else if (type === "copy" && typeof value === "string" && value.length <= maximumBytes &&
++             new TextEncoder().encode(value).length <= maximumBytes)
+     navigator.clipboard.writeText(value).then(
+       () => notify(uiText("已复制。")),
+       () => notify(uiText("复制失败，请重试。")),
+@@ -187,6 +190,7 @@ action("read-page", async () => {
+   if (!t) throw Error(uiText("请先打开在线 Markdown 原文页。"));
+   const r = await request({ op: "read-markdown", tab: t.id, url: t.url, document: t.document });
+   const payload = r.result?.result?.value;
++  if (payload?.tooLarge) throw Error(uiText("文档超过 16 MiB，请查看原文件。"));
+   if (!payload?.text) throw Error(uiText("页面没有可读取的文本。"));
+   load(payload, false);
+ });

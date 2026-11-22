@@ -1,17 +1,9 @@
-From ce4744caab59c98f2bf0124070eaef6b7fc590a5 Mon Sep 17 00:00:00 2001
+From 65e26a5b65136838c52db0deeba88c2741f67edc Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 17:41:40 +0800
 Subject: [PATCH] fix(agent): support explicit local fixture URL checks
 
 ---
- .../agent/aegis_agent_service_unittest.cc     | 18 ++++++
- .../aegis/agent/aegis_browser_tools.cc        | 60 +++++++++++++++----
- .../browser/aegis/agent/aegis_browser_tools.h |  3 +-
- .../browser/resources/aegis_agent/agent.css   | 18 ++++++
- .../browser/resources/aegis_agent/agent.html  |  4 ++
- chrome/browser/resources/aegis_agent/agent.ts | 13 ++++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 15 +++++
- 7 files changed, 117 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 index 4553f860ae8df914b40fe0e6e343956e332cb961..75c6128c6df244bf69acf5b672586b4a6470d3e6 100644
@@ -291,6 +283,3 @@ index 8a1bb5a17a658807795692d6e344b8a551ef9d40..8ae6c04086f3beaaf9012ad2f8c8e0f3
    add("goalRoutingError",
        "The AI could not determine a safe browser entry. Nothing was opened. "
        "Please clarify the goal and try again.",
--- 
-2.52.0
-

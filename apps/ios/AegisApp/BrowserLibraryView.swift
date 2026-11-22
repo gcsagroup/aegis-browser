@@ -147,7 +147,7 @@ struct BrowserLibraryView: View {
                 }
             }
             .localizedNavigationTitle("浏览资料")
-            .searchable(text: $query, prompt: "搜索标题或网址")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索标题或网址")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.keyboardShortcut(.escape, modifiers: []) }
                 ToolbarItem(placement: .topBarLeading) {

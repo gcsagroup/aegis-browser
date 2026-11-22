@@ -133,8 +133,13 @@ export AEGIS_MACOS_APP_ROOT="$APP_ROOT"
 export AEGIS_IOS_RUNNER_LABEL="${AEGIS_IOS_RUNNER_LABEL:-aegis-ios-fork-migration}"
 export MACOS_ACTUAL_ARCH="$(uname -m)"
 export MACOS_OUTPUT_DIR="$OUTPUT"
+signing="${MACOS_SIGNING_MODE:-ad-hoc}"
+if [[ "$signing" != ad-hoc && "$signing" != developer-id ]]; then
+  printf 'Unsupported DMG signing mode: %s\n' "$signing" >&2
+  exit 2
+fi
 export MACOS_NOTARIZE=false
-export MACOS_SIGNING_MODE=ad-hoc
+export MACOS_SIGNING_MODE="$signing"
 
 python3 scripts/release/macos-dmg.py package
 echo "MACOS_INTERNAL_DMG=$OUTPUT"
