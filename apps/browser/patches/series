@@ -551,3 +551,4 @@
 0551-track-owned-permission-focus-transitions.patch
 0552-use-const-manager-for-prompt-widget-lookup.patch
 0553-check-permission-window-activation-in-test.patch
+0554-restore-aim-focus-after-owned-permission-close.patch
