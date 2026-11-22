@@ -13,6 +13,7 @@ const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const hash = digest('合成 APK');
 const apk = '/data/app/~~safe/com.gcsa.aegis-build/base.apk';
 const profile = '/data/user/0/com.gcsa.aegis/aegis-test-user-data-recovery-r1';
+const mismatchedPackages = ['app.gcsa.aegis', 'com-gcsa.aegis', 'com.gcsa-aegis'];
 const unlocked = {known: true, unlocked: true, screenOn: true};
 const good = () => ({package: PACKAGE, androidUser: '0', installedSha256: hash,
   keyguard: unlocked, processStable: true, profileRoots: [profile]});
@@ -37,6 +38,10 @@ test('只用打开的 Profile 文件证明目录，不根据参数或缓存推�
   assert.deepEqual(activeProfileRoots('1 -> /data/data/com.gcsa.aegis/app_chrome/Default/History'),
     ['/data/user/0/com.gcsa.aegis/app_chrome']);
   assert.deepEqual(activeProfileRoots('1 -> /data/user/0/com.gcsa.aegis/../other/Default/History'), []);
+  for (const packageId of mismatchedPackages) {
+    const wrongProfile = profile.replace(PACKAGE, packageId);
+    assert.deepEqual(activeProfileRoots(`1 -> ${wrongProfile}/Default/History`), []);
+  }
 });
 
 test('未知、锁定或灭屏状态不能当作可交互', () => {
@@ -68,6 +73,11 @@ for (const [name, change] of [
 test('期望参数也必须为独立测试目录和有效摘要', () => {
   for (const value of ['/data/user/0/com.gcsa.aegis/app_chrome', profile + '/..', profile + '/Default', '', '/sdcard/test']) {
     assert.throws(() => verifyTarget(good(), hash, value));
+  }
+  for (const packageId of mismatchedPackages) {
+    const wrongProfile = profile.replace(PACKAGE, packageId);
+    const report = {...good(), profileRoots: [wrongProfile]};
+    assert.throws(() => verifyTarget(report, hash, wrongProfile));
   }
   assert.throws(() => verifyTarget(good(), 'wrong', profile));
 });
