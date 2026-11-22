@@ -651,6 +651,10 @@ class AndroidReleaseTest(unittest.TestCase):
   const activeSubtest = `        with self.subTest(case="active"):
             self.assertTrue(True)`;
   const mixedSubtests = [`${skippedSubtest}\n${activeSubtest}`, `${activeSubtest}\n${skippedSubtest}`];
+  const asyncCase = `import asyncio
+import unittest
+
+class AndroidReleaseTest(unittest.IsolatedAsyncioTestCase):`;
   try {
     const nested = join(release, 'non_package');
     mkdirSync(nested, {recursive: true});
@@ -688,14 +692,33 @@ class AndroidReleaseTest(unittest.TestCase):
       ...mixedSubtests.map((body) => [
         passing.replace('        self.assertTrue(True)', body), 0, /OK \(skipped=1\)/u,
       ]),
-      [`import asyncio
-import unittest
-
-class AndroidReleaseTest(unittest.IsolatedAsyncioTestCase):
+      ...mixedSubtests.map((body) => [`${asyncCase}
     async def test_release(self):
         await asyncio.sleep(0)
-${mixedSubtests[0]}
-`, 0, /OK \(skipped=1\)/u],
+${body}
+`, 0, /OK \(skipped=1\)/u]),
+      [`${asyncCase}
+    async def asyncSetUp(self):
+        async def report_subtest():
+            await asyncio.sleep(0)
+            with self.subTest(case="setup-task"):
+                self.assertTrue(True)
+
+        self.setup_task = asyncio.create_task(report_subtest())
+
+    async def test_release(self):
+        await self.setup_task
+${skippedSubtest}
+`, 1, /No active Android release tests ran/u],
+      [`${asyncCase}
+    async def test_release(self):
+        async def report_subtest():
+            with self.subTest(case="child-task"):
+                self.assertTrue(True)
+
+        await asyncio.create_task(report_subtest(), context=self._asyncioTestContext)
+${skippedSubtest}
+`, 1, /No active Android release tests ran/u],
     ]) {
       writeFileSync(join(release, fixture), source);
       const result = execute();
