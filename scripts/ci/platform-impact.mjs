@@ -60,7 +60,32 @@ const explanationPaths = new Set([
 ]);
 const routerPath = 'scripts/ci/platform-impact.mjs';
 const conventionalTypes = new Set(['build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'release', 'revert', 'style', 'test']);
-const conventionalTitle = /^(?<type>[a-z][a-z0-9-]*)(?:\([^()\r\n]*\))?!?: (?<subject>\S.*)$/u;
+const isTypeName = value => {
+  if (value.length === 0 || value.charCodeAt(0) < 97 || value.charCodeAt(0) > 122) return false;
+  for (let index = 1; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    const lower = code >= 97 && code <= 122;
+    const digit = code >= 48 && code <= 57;
+    if (!lower && !digit && code !== 45) return false;
+  }
+  return conventionalTypes.has(value);
+};
+const parseConventionalType = subject => {
+  const mark = subject.indexOf(': ');
+  if (mark <= 0) return null;
+  const body = subject.slice(mark + 2);
+  if (body.length === 0 || body.charCodeAt(0) <= 32) return null;
+  let head = subject.slice(0, mark);
+  if (head.endsWith('!')) head = head.slice(0, -1);
+  const open = head.indexOf('(');
+  if (open !== -1) {
+    if (!head.endsWith(')')) return null;
+    const scope = head.slice(open + 1, -1);
+    if (scope.length === 0 || scope.includes('(') || scope.includes(')')) return null;
+    head = head.slice(0, open);
+  }
+  return isTypeName(head) ? head : null;
+};
 const integrateTypes = new Set(['feat', 'fix', 'perf', 'refactor', 'build', 'test', 'revert']);
 const deepTypes = new Set(['feat', 'fix', 'perf', 'refactor', 'build', 'revert']);
 const blankPlatforms = () => ({ios: false, android: false, macos: false, windows: false, linux: false});
@@ -114,9 +139,9 @@ const subjects = log ? log.split('\n') : [];
 const types = new Set();
 let nonConventional = false;
 for (const subject of subjects) {
-  const match = conventionalTitle.exec(subject);
-  if (!match || !conventionalTypes.has(match.groups.type)) nonConventional = true;
-  else types.add(match.groups.type);
+  const type = parseConventionalType(subject);
+  if (!type) nonConventional = true;
+  else types.add(type);
 }
 if (!legacyFull && changes.length > 0 && subjects.length === 0) nonConventional = true;
 const contentEdit = change => change.status === 'M' && change.beforeMode === '100644' && change.afterMode === '100644';
@@ -131,7 +156,11 @@ if (docs) reason = 'verified-document-content';
 else if (event === 'pull_request' && explanationOnly && !strict) reason = 'document-content-unadmitted';
 else if (selfEdit) {
   reason = 'router-self-edit';
-  for (const key of Object.keys(platforms)) platforms[key] = true;
+  platforms.ios = true;
+  platforms.android = true;
+  platforms.macos = true;
+  platforms.windows = true;
+  platforms.linux = true;
 } else if (legacyFull) {
   reason = 'full-platform-fallback';
   platforms.ios = true;
@@ -139,7 +168,11 @@ else if (selfEdit) {
 } else if (!explanationOnly) {
   for (const change of changes) {
     const selected = classifyPath(change.path);
-    for (const [key, value] of Object.entries(selected)) if (value) platforms[key] = true;
+    if (selected.ios) platforms.ios = true;
+    if (selected.android) platforms.android = true;
+    if (selected.macos) platforms.macos = true;
+    if (selected.windows) platforms.windows = true;
+    if (selected.linux) platforms.linux = true;
   }
   if (strict) reason = 'strict-change';
 }
@@ -152,9 +185,8 @@ const plan = {
   types: [...types].sort(), strict, docs, ...platforms, gate: true, integrate, deep, reason,
 };
 console.log(JSON.stringify(plan, null, 2));
-// eslint-disable-next-line security/detect-non-literal-fs-filename -- The runner supplies its own job output file and only boolean decisions are written.
 if (process.env.GITHUB_OUTPUT) {
-  const lines = ['docs', 'ios', 'android', 'macos', 'windows', 'linux', 'integrate', 'deep']
-    .map(key => `${key}=${plan[key]}`);
-  appendFileSync(process.env.GITHUB_OUTPUT, `${lines.join('\n')}\n`);
+  const lines = `docs=${plan.docs}\nios=${plan.ios}\nandroid=${plan.android}\nmacos=${plan.macos}\nwindows=${plan.windows}\nlinux=${plan.linux}\nintegrate=${plan.integrate}\ndeep=${plan.deep}\n`;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The runner supplies its own job output file and only boolean decisions are written.
+  appendFileSync(process.env.GITHUB_OUTPUT, lines);
 }
