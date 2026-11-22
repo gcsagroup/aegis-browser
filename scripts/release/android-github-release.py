@@ -523,6 +523,13 @@ def _release_by_tag(tag, *, include_drafts=True):
         return drafts[0] if drafts else None
 
 
+def _read_release_by_id(plan, release_id):
+    fresh = _api(f'releases/{release_id}')
+    require(fresh.get('id') == release_id and fresh.get('tag_name') == plan['tag'],
+            'Release ID or tag changed before publication')
+    return fresh
+
+
 def require_candidate_tag_source(tag, source_sha):
     require(is_sha(source_sha) and isinstance(tag, str) and tag.startswith('candidate/android/'),
             'Candidate draft needs an exact tag and source')
@@ -733,12 +740,12 @@ def _promote_to_stable(plan):
         return release
     require(release.get('prerelease') is True, 'Only a public prerelease can be promoted')
     _check_approval(plan, os.environ['GITHUB_RUN_ID'])
-    staged = _api(f'releases/{release_id}')
-    require(staged.get('id') == release_id and staged.get('draft') is False and staged.get('prerelease') is True,
-            'Prerelease changed before promotion')
     _verify_release_tag(plan, plan['tag'])
-    _verify_release_assets(plan, staged)
     _assert_release_write_allowed(plan)
+    staged = _read_release_by_id(plan, release_id)
+    require(staged.get('draft') is False and staged.get('prerelease') is True,
+            'Prerelease changed before promotion')
+    _verify_release_assets(plan, staged)
     _api(f'releases/{release_id}', {'name': plan['name'], 'body': plan['body'], 'draft': False,
                                     'prerelease': False, 'make_latest': 'false'}, method='PATCH')
     reread = _release_by_tag(plan['tag'])
@@ -771,8 +778,8 @@ def publish_release(plan, assets):
 
     def read_draft(*, complete=False):
         _verify_release_tag(plan, plan['tag'])
-        fresh = _api(f'releases/{release_id}')
-        require(fresh.get('id') == release_id and fresh.get('draft') is True, 'Exact release draft moved during staging')
+        fresh = _read_release_by_id(plan, release_id)
+        require(fresh.get('draft') is True, 'Exact release draft moved during staging')
         _verify_release_metadata(plan, fresh)
         _verify_release_assets(plan, fresh, complete=complete)
         return fresh

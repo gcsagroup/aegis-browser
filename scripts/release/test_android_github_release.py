@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+from urllib.parse import quote
 import zipfile
 
 
@@ -169,6 +170,35 @@ class ReleaseEvidenceTests(unittest.TestCase):
         finally:
             release._api = original
         self.assertIn('prerelease', str(caught.exception).lower())
+
+    def test_stable_promotion_rejects_retagged_prerelease_before_patch(self):
+        plan = release.build_release_plan(release.validate_delivery_evidence(evidence(), 'stable', 'stable'))
+        prerelease = {'id': 37, 'tag_name': plan['tag'], 'draft': False, 'prerelease': True,
+                      'assets': [{'name': name, 'state': 'uploaded', 'digest': 'sha256:' + digest}
+                                 for name, digest in plan['assets'].items()]}
+        original_tag = quote(plan['tag'], safe='')
+        tag_sha = 'c' * 40
+        responses = {
+            f'releases/tags/{original_tag}': prerelease,
+            f'git/ref/tags/{original_tag}': {'object': {'type': 'tag', 'sha': tag_sha}},
+            f'git/tags/{tag_sha}': {'object': {'type': 'commit', 'sha': SHA},
+                                   'message': release._expected_tag_message(plan)},
+            'releases/37': {**prerelease, 'tag_name': 'android/retagged'},
+        }
+
+        with (mock.patch.dict(release.os.environ, {'GITHUB_RUN_ID': '51'}),
+              mock.patch.object(release, '_current_repository', return_value=({}, SHA, TREE)),
+              mock.patch.object(release, '_check_approval'),
+              mock.patch.object(release, '_api', side_effect=responses.__getitem__) as api):
+            with self.assertRaisesRegex(ValueError, 'Release ID or tag changed'):
+                release._promote_to_stable(plan)
+
+        self.assertEqual(api.call_args_list, [
+            mock.call(f'releases/tags/{original_tag}'),
+            mock.call(f'git/ref/tags/{original_tag}'), mock.call(f'git/tags/{tag_sha}'),
+            mock.call(f'git/ref/tags/{original_tag}'), mock.call(f'git/tags/{tag_sha}'),
+            mock.call('releases/37'),
+        ])
 
     def test_seal_round_trip(self):
         with tempfile.TemporaryDirectory() as temp:

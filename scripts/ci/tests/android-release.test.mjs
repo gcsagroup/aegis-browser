@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {parse} from 'yaml';
 
@@ -78,6 +78,35 @@ test('Android delivery runs on canonical main and records the sealed package bef
   assert(!JSON.stringify(releaseWorkflow.jobs).includes('secrets.'));
   assert(!simple.on.workflow_dispatch.inputs.operation.options.includes('Promote to stable'));
   assert(!full.on.workflow_dispatch.inputs.operation.options.some(option => option.includes('package-upload')));
+});
+
+test('producer retirement reports failure without blocking the sealed package', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/android-delivery-backend.yml', 'utf8'));
+  const producer = jobs.package;
+  const upload = producer.steps.findIndex(step => step.uses?.startsWith('actions/upload-artifact@'));
+  const record = producer.steps.findIndex(step => step.run === 'python3 scripts/release/android-delivery.py record-package');
+  const retire = producer.steps.findIndex(step => step.run?.includes('android-delivery.py retire-producer-output'));
+  assert(upload >= 0 && record > upload && retire > record);
+  const retirement = producer.steps[retire];
+  assert.match(retirement.name, /Retire/u);
+  assert.equal(retirement.if, undefined);
+  assert.equal(retirement.env.CHROMIUM_ROOT, '${{ vars.AEGIS_CHROMIUM_ROOT }}');
+  assert.equal(producer['continue-on-error'], undefined);
+  assert.deepEqual(producer.steps.filter(step => step['continue-on-error'] !== undefined), [retirement]);
+  assert.equal(retirement['continue-on-error'], true);
+  assert(jobs.draft.if.includes("needs.package.result == 'success'"));
+  assert(jobs.store.if.includes("operation != 'package-upload' || needs.package.result == 'success'"));
+
+  for (const status of [0, 1]) {
+    const result = spawnSync('bash', ['-e', '-c', `python3() { return ${status}; }\n${retirement.run}`],
+      {encoding: 'utf8'});
+    assert.equal(result.status, status);
+    if (status === 1) {
+      assert.match(result.stdout, /::warning title=Android producer output retirement failed::/u);
+    } else {
+      assert.equal(result.stdout, '');
+    }
+  }
 });
 
 test('preflight stays closed until Android release is enabled on current main', async () => {

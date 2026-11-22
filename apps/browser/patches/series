@@ -546,3 +546,4 @@
 0546-test-activation-after-aim-permission-dismissal.patch
 0547-finish-permission-focus-restore.patch
 0548-test-unfocused-full-permission-guard.patch
+0549-preserve-owned-permission-activation.patch

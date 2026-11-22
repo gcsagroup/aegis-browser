@@ -134,9 +134,14 @@ jobs:
       - name: Record the sealed package artifact after upload
         run: python3 scripts/release/android-delivery.py record-package
       - name: Retire the recorded producer's build output
+        continue-on-error: true
         env:
           CHROMIUM_ROOT: ${{ vars.AEGIS_CHROMIUM_ROOT }}
-        run: python3 scripts/release/android-delivery.py retire-producer-output
+        run: |
+          if ! python3 scripts/release/android-delivery.py retire-producer-output; then
+            echo '::warning title=Android producer output retirement failed::Review the producer log and remaining output on the build runner.'
+            exit 1
+          fi
   store:
     needs: [admission, package]
     if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.package.result == 'success' || needs.package.result == 'skipped') && contains(fromJSON('["upload","status","distribute","submit","package-upload"]'), fromJSON(needs.admission.outputs.plan).operation) && fromJSON(needs.admission.outputs.plan).destination != 'github-draft' && (fromJSON(needs.admission.outputs.plan).operation != 'package-upload' || needs.package.result == 'success') }}
