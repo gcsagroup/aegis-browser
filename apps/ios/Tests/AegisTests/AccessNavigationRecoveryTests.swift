@@ -1409,10 +1409,10 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         let firstItem = try XCTUnwrap(history.currentItem)
         let initialBack = history.backList
         tab.load(second)
-        await waitUntil { tab.committedMainFrameURL == second && !tab.isLoading }
+        await waitUntil({ history.currentItem !== firstItem && history.currentItem?.url == second && !view.isLoading && !tab.isLoading }, timeout: 10)
         let secondItem = try XCTUnwrap(history.currentItem)
         tab.load(first) // A different item with the same URL must not be mistaken for firstItem.
-        await waitUntil { tab.committedMainFrameURL == first && !tab.isLoading }
+        await waitUntil({ history.currentItem !== secondItem && history.currentItem?.url == first && !view.isLoading && !tab.isLoading }, timeout: 10)
         let duplicate = try XCTUnwrap(history.currentItem)
         XCTAssertFalse(duplicate === firstItem)
         let coordinator = OptionalHistoryPreparation()
@@ -1430,7 +1430,8 @@ final class AccessNavigationRecoveryTests: XCTestCase {
             let pending = try XCTUnwrap(coordinator.held.last)
             XCTAssertEqual(pending.navigationID, identity, "Preparation must retain the history operation's identity")
             tab.continueWithoutDefaultRoute(pending)
-            await waitUntil { tab.committedMainFrameURL == step.item.url && !tab.isLoading }
+            // URL 相同不能证明已经回到目标历史项；等待 WebKit 的真实游标。
+            await waitUntil({ history.currentItem === step.item && !view.isLoading && !tab.isLoading }, timeout: 10)
             XCTAssertTrue(tab.webView === view)
             XCTAssertTrue(history.currentItem === step.item, "Fallback must traverse the original item rather than append its URL")
             XCTAssertEqual(history.backList, step.previous); XCTAssertEqual(history.forwardList, step.next)
@@ -1480,10 +1481,10 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         view.allowsBackForwardNavigationGestures = true
         let firstItem = try XCTUnwrap(history.currentItem)
         tab.load(second)
-        await waitUntil { tab.committedMainFrameURL == second && !tab.isLoading }
+        await waitUntil({ history.currentItem !== firstItem && history.currentItem?.url == second && !view.isLoading && !tab.isLoading }, timeout: 10)
         let secondItem = try XCTUnwrap(history.currentItem)
         tab.load(first)
-        await waitUntil { tab.committedMainFrameURL == first && !tab.isLoading }
+        await waitUntil({ history.currentItem !== secondItem && history.currentItem?.url == first && !view.isLoading && !tab.isLoading }, timeout: 10)
         let duplicate = try XCTUnwrap(history.currentItem)
         let coordinator = OptionalHistoryPreparation()
         tab.hostCoordinator = coordinator

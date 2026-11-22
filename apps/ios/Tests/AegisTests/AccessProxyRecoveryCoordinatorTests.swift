@@ -749,7 +749,7 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(readySnap.attachment, .notAttached)
         XCTAssertEqual(
             AccessSiteProxyToggleModel.attachmentLine(for: readySnap.attachment, intent: readySnap.intent),
-            Aegis.AegisLocalization.string("当前页面仍使用原连接")
+            "当前页面仍使用原连接"
         )
         coordinator.setProxyEnabled(false, for: tab)
         XCTAssertTrue(tab.websiteDataStore === original)
