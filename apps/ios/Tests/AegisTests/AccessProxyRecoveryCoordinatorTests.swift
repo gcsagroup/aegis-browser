@@ -726,6 +726,8 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         let original = tab.websiteDataStore
         tab.load(URLRequest(url: URL(string: "https://example.invalid/prepare-only")!))
         tab.commitPendingMainFrameForTests()
+        // 此用例模拟已完成的页面，不能让未发出的真实请求在切换意图后继续导航。
+        tab.stop()
         XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
         coordinator.setProxyEnabled(true, for: tab)
         await settle {
@@ -747,7 +749,7 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(readySnap.attachment, .notAttached)
         XCTAssertEqual(
             AccessSiteProxyToggleModel.attachmentLine(for: readySnap.attachment, intent: readySnap.intent),
-            "当前页面仍使用原连接"
+            Aegis.AegisLocalization.string("当前页面仍使用原连接")
         )
         coordinator.setProxyEnabled(false, for: tab)
         XCTAssertTrue(tab.websiteDataStore === original)

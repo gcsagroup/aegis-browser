@@ -427,7 +427,7 @@ private struct BrowserPane: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if !isCollapsed && !addressFocused {
                 Button { tab.goBack() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                     .disabled(!tab.canGoBack)

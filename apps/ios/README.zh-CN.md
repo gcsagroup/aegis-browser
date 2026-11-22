@@ -73,7 +73,7 @@ bash apps/ios/scripts/run-simulator-tests.sh \
 
 输入哈希覆盖 `apps/ios`、`packages/core` 以及 iOS 工程引用的浏览器 `enhancements_shared` 资源，分别保留原始源码、工程生成后的构建输入及测试后的清单。元数据记录原始 Git 状态和工程生成后的状态。测试前核对 App 的 `CFBundleVersion` 与本次递增的构建号，Swift coverage 报告也记录该构建号。
 
-脚本复用 `Aegis QA iPhone 17` 和 `Aegis QA iPad Air 11-inch (M4)`。本机验收服务仅监听 `127.0.0.1:8768`，网页、文件和模型回答都是明确的合成资料。真实 HTTP、WebKit 和文件操作用于验证链路；合成模型通过不代表远端模型质量通过。脚本自动启动并关闭自己创建的服务，已有的同类服务会复用。
+旧 QA 设备可能同时装有历史 Bundle ID，共用外链协议会把链接交给旧 App。CI 使用当前 Bundle ID 对应的固定专用设备，原设备和数据保留。脚本复用 `Aegis CI com.gcsa.aegis iPhone 17` 和 `Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)`。本机验收服务仅监听 `127.0.0.1:8768`，网页、文件和模型回答都是明确的合成资料。真实 HTTP、WebKit 和文件操作用于验证链路；合成模型通过不代表远端模型质量通过。脚本自动启动并关闭自己创建的服务，已有的同类服务会复用。
 
 手动体验合成网页与模型链路：
 

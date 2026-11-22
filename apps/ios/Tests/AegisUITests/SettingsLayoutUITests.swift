@@ -104,14 +104,21 @@ final class SettingsLayoutUITests: XCTestCase {
         let page = app.descendants(matching: .any).matching(identifier: "access-usage-page").firstMatch
         XCTAssertTrue(page.waitForExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars[language == "en" ? "IP location privacy" : "隐藏地理位置服务"].exists)
-        // This build has no bundled test subscription or bound account. Unknown is not zero.
+        // 当前产品使用订阅用量页；没有配置时显示查询不可用，不能把未知额度当成零。
         XCTAssertFalse(app.descendants(matching: .any)["access-usage-progress"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["access-usage-used"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["access-proxy-configured-node"].exists)
-        let emptyState = app.descendants(matching: .any).matching(identifier: "access-usage-unlinked").firstMatch
+        let emptyState = app.staticTexts[language == "en"
+            ? "Allowance query unavailable; this does not mean the balance is zero"
+            : "额度查询不可用，不代表余额为零"]
         XCTAssertTrue(emptyState.waitForExistence(timeout: 5))
+        XCTAssertTrue(reveal(emptyState, app))
         assertInsideWindow(emptyState, app)
-        XCTAssertFalse(app.buttons["access-usage-refresh"].exists)
+        let refresh = app.buttons["access-usage-refresh"]
+        XCTAssertTrue(reveal(refresh, app)); XCTAssertTrue(refresh.isEnabled)
+        refresh.tap()
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["access-usage-used"].exists)
         capture("账号与用量-\(language)-\(largeText ? "最大字体" : "普通字体")", app)
     }
 
@@ -447,7 +454,8 @@ final class SettingsLayoutUITests: XCTestCase {
         address.typeText("http://127.0.0.1:8768/article\n")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 10))
         openSettings(app)
-        app.buttons["website-settings"].tap()
+        let website = app.buttons["website-settings"]
+        XCTAssertTrue(reveal(website, app)); website.tap()
         app.buttons["current-site-settings"].tap()
         for title in ["网页缩放", "网站模式", "JavaScript", "系统加固", "严格指纹限制（实验）", "相机", "麦克风"] {
             // SwiftUI 菜单在不同系统快照中可报告为按钮或弹出菜单。
@@ -455,7 +463,7 @@ final class SettingsLayoutUITests: XCTestCase {
                 format: "(elementType == %d OR elementType == %d) AND label BEGINSWITH %@",
                 XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.popUpButton.rawValue, title
             )).firstMatch
-            XCTAssertTrue(reveal(control, app), title)
+            XCTAssertTrue(reveal(control, app, dragOffsetX: 0.96), title)
             assertInsideWindow(control, app)
             capture("网站权限-" + title, app)
         }
@@ -575,34 +583,70 @@ final class SettingsLayoutUITests: XCTestCase {
         app.buttons["browser-more"].tap()
         let settings = app.buttons[title]
         _ = settings.waitForExistence(timeout: 5)
-        // iPad 的大字号菜单会分页，手势必须落在右侧菜单内。
+        // 原生菜单的行可能被裁剪，或以虚拟节点报告；按实际容器定位后点击坐标。
+        func viewport() -> CGRect {
+            guard settings.exists, !settings.identifier.isEmpty else { return app.frame }
+            return app.otherElements.containing(.button, identifier: settings.identifier).allElementsBoundByIndex
+                .map { $0.frame.intersection(app.frame) }
+                .filter { !$0.isEmpty && $0.width >= settings.frame.width && $0.height >= 44 }
+                .min { $0.width * $0.height < $1.width * $1.height } ?? app.frame
+        }
         for _ in 0..<8 {
-            if settings.exists, settings.isHittable { break }
-            let menu = app.collectionViews.firstMatch
-            XCTAssertTrue(menu.exists)
-            menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-                .press(forDuration: 0.1, thenDragTo: menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)))
+            let bounds = viewport()
+            if settings.exists, settings.isHittable, bounds.contains(settings.frame) { break }
+            let down = !settings.exists || settings.frame.midY < bounds.midY
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.3 : 0.7) - app.frame.minY))
+            let end = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.7 : 0.3) - app.frame.minY))
+            start.press(forDuration: 0.05, thenDragTo: end)
         }
         XCTAssertTrue(settings.exists)
-        settings.tap()
+        XCTAssertTrue(settings.isHittable)
+        XCTAssertTrue(viewport().contains(settings.frame))
+        let frame = settings.frame
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+            dx: frame.midX - app.frame.minX, dy: frame.midY - app.frame.minY)).tap()
+        XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
     }
 
     private func reveal(_ element: XCUIElement, _ app: XCUIApplication, scrollDown: Bool? = nil,
-                        dragOffsetX: CGFloat = 0.5) -> Bool {
+                        dragOffsetX: CGFloat = 0.96) -> Bool {
         _ = element.waitForExistence(timeout: 3)
         for _ in 0..<14 {
-            // 导航动画期间集合视图会被替换，滚动坐标固定绑定应用窗口。
-            let form = app.collectionViews.firstMatch
-            let surface = form.exists ? form : app
-            let bounds = surface.frame
-            let top = max(bounds.minY, app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? bounds.minY) + 8
-            let bottom = bounds.maxY - 8
-            if element.exists, element.isHittable, element.frame.midY >= top, element.frame.midY <= bottom { return true }
-            // Virtualized rows may have no frame. A caller returning to an earlier row
-            // can supply the known direction instead of scrolling farther away.
-            let down = scrollDown ?? (element.exists && !element.frame.isEmpty && element.frame.midY < top)
-            surface.coordinate(withNormalizedOffset: CGVector(dx: dragOffsetX, dy: down ? 0.35 : 0.75))
-                .press(forDuration: 0.1, thenDragTo: surface.coordinate(withNormalizedOffset: CGVector(dx: dragOffsetX, dy: down ? 0.75 : 0.35)))
+            // iPad 可同时保留背景表单和前台编辑器，优先选目标所属的列表。
+            let lists = app.collectionViews.allElementsBoundByIndex
+            let containing = element.exists && !element.identifier.isEmpty
+                ? app.collectionViews.containing(.any, identifier: element.identifier).allElementsBoundByIndex : []
+            let surface = containing.last ?? lists.last ?? app
+            let bounds = surface.frame.intersection(app.frame)
+            let top = max(bounds.minY, app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? bounds.minY)
+            var bottom = bounds.maxY
+            // 系统底部搜索栏覆盖列表时，AX 仍可能把被遮住的行报告为可点击。
+            let search = app.searchFields.firstMatch
+            if search.exists, search.isHittable, search.frame.minY > top {
+                bottom = min(bottom, search.frame.minY - 8)
+            }
+            let frame = element.exists ? element.frame : .null
+            if element.exists, element.isHittable {
+                if frame.height <= bottom - top {
+                    if frame.minY >= top - 1, frame.maxY <= bottom + 1 { return true }
+                } else if frame.midY >= top, frame.midY <= bottom { return true }
+            }
+            let down = scrollDown ?? (!frame.isNull && !frame.isEmpty && frame.minY < top)
+            let height = max(1, bottom - top)
+            var distance = height * 0.4
+            if !frame.isNull, !frame.isEmpty {
+                let clipped = down ? top - frame.minY : frame.maxY - bottom
+                if clipped > 0 { distance = min(distance, max(32, clipped + 16)) }
+            }
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let startX = bounds.minX + bounds.width * dragOffsetX - app.frame.minX
+            let startY = top + height * (down ? 0.3 : 0.7) - app.frame.minY
+            origin.withOffset(CGVector(dx: startX, dy: startY)).press(forDuration: 0.1,
+                thenDragTo: origin.withOffset(CGVector(dx: startX, dy: startY + (down ? distance : -distance))))
+
         }
         capture("无法定位设置控件", app)
         let hierarchy = XCTAttachment(string: app.debugDescription)
