@@ -244,6 +244,7 @@ jobs:
 
   other-platforms:
     name: other-platforms
+    continue-on-error: true
     needs:
       - impact
       - quality

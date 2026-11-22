@@ -310,7 +310,7 @@ test('paths select platforms and commit types select stage depth', () => {
       git('checkout', 'develop'); git('merge', '--no-ff', 'topic', '-m', 'candidate');
       const tested = git('rev-parse', 'HEAD');
       const event = join(root, 'event.json');
-      writeFileSync(event, JSON.stringify({pull_request: {base: {sha: before}, head: {sha: head}}}));
+      writeFileSync(event, JSON.stringify({pull_request: {draft: false, base: {sha: before}, head: {sha: head}}}));
       const plan = planFor({GITHUB_EVENT_NAME: 'pull_request', GITHUB_SHA: tested, GITHUB_EVENT_PATH: event});
       rmSync(event); git('reset', '--hard', before);
       return plan;
@@ -323,6 +323,31 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.equal(chore.ios, true); assert.equal(chore.integrate, false); assert.equal(chore.deep, false);
     const android = pr(() => save('apps/browser/patches-android/change.patch', 'android'), 'fix: repair android');
     assert.equal(android.android, true); assert.equal(android.ios, false); assert.equal(android.macos, false); assert.equal(android.deep, true);
+    const route = ({ios, android, macos, windows, linux, integrate, deep}) => ({ios, android, macos, windows, linux, integrate, deep});
+    const iosRoute = {ios: true, android: false, macos: false, windows: false, linux: false, integrate: true, deep: true};
+    const androidRoute = {...iosRoute, ios: false, android: true};
+    for (const file of [
+      'build-ios-access-core.sh', 'development_key_access.py', 'development_signing.py',
+      'ios_embedded_core.py', 'ios_linked_core.py', 'prepare-ios-access-core.sh', 'record-ios-access-core-digests.sh',
+      'safari_manifest.py', 'test_development_key_access.py', 'test_development_signing.py',
+      'test_ios_linked_bundle.py', 'test_ios_profile_trust.py', 'verify-ios-archive.py', 'verify-signed-ios.py',
+    ]) {
+      assert.deepEqual(route(pr(() => save(`scripts/release/${file}`, 'ios'), 'fix: repair archive')), iosRoute, file);
+    }
+    for (const path of [
+      'scripts/release/android-delivery.py', 'scripts/release/android_product_delivery.py',
+      'scripts/release/test_android_release_matrix.py', 'scripts/release/runner.rb', 'scripts/release/verify-aab.py',
+      'scripts/ci/tests/android-release.test.mjs',
+    ]) {
+      assert.deepEqual(route(pr(() => save(path, 'android'), 'fix: repair android release')), androidRoute, path);
+    }
+    const unknownRelease = pr(() => save('scripts/release/prepare-ios-access-core-extra.sh', 'unknown'), 'fix: repair helper');
+    assert.deepEqual(route(unknownRelease), {...iosRoute, ios: false, macos: true});
+    const mixedRelease = pr(() => {
+      save('scripts/release/verify-ios-archive.py', 'ios');
+      save('scripts/release/android-delivery.py', 'android');
+    }, 'fix: repair both release paths');
+    assert.deepEqual(route(mixedRelease), {...iosRoute, android: true});
     const windows = pr(() => save('scripts/ci/platform-tests/windows-acceptance.ps1', 'win'), 'perf: speed windows');
     assert.equal(windows.windows, true); assert.equal(windows.macos, false); assert.equal(windows.deep, true);
     const linux = pr(() => save('scripts/ci/platform-tests/kcov-child.sh', 'kcov'), 'refactor: reshape coverage');
@@ -340,6 +365,15 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.equal(mixed.deep, true, 'mixed types take the stricter stage');
     assert.deepEqual(mixed.types, ['chore', 'feat']);
     rmSync(mixedEvent); git('reset', '--hard', before);
+    const emptyOldest = pr(() => {
+      save('apps/ios/Feature.swift', 'initial change');
+      git('add', '-A'); git('commit', '--allow-empty-message', '-m', '');
+      save('apps/ios/Feature.swift', 'follow-up');
+    }, 'chore: tidy');
+    assert.deepEqual(emptyOldest.types, ['chore']);
+    assert.equal(emptyOldest.strict, true);
+    assert.equal(emptyOldest.reason, 'strict-change');
+    assert.deepEqual(route(emptyOldest), iosRoute);
     const loose = pr(() => save('apps/ios/Feature.swift', 'loose'), 'update the feature');
     assert.equal(loose.strict, true); assert.equal(loose.deep, true); assert.equal(loose.ios, true);
     git('checkout', 'develop');

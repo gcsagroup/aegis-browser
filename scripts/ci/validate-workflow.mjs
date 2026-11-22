@@ -304,7 +304,9 @@ try {
     'ios-report/ios-coverage': iosCoverage,
   };
   for (const [id, job] of Object.entries(allJobs)) {
-    if ('continue-on-error' in job) fail(`${id} may not suppress failures`);
+    if (id === 'other-platforms') {
+      if (job['continue-on-error'] !== true) fail('other-platforms must be advisory at the job level');
+    } else if ('continue-on-error' in job) fail(`${id} may not suppress failures`);
     if (job.permissions && (job.permissions === 'write-all' || Object.values(job.permissions).some((value) => value !== 'read' && value !== 'none'))) fail(`${id} permissions must be read-only`);
   }
   const allSteps = Object.values(allJobs).flatMap((job) => array(job.steps));

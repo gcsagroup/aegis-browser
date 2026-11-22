@@ -539,6 +539,10 @@ test('workflow validator enforces automatic platform reporting and its execution
       [0, (w) => { w.jobs['quality-summary'].steps[1].env.REQUIRED_RESULTS = value; }]),
     [0, (w) => { w.jobs['quality-summary'].steps[1].run += ' || true'; }],
     [0, (w) => { w.jobs['quality-summary'].steps[1].if = '${{ false }}'; }],
+    [0, (w) => { delete w.jobs['other-platforms']['continue-on-error']; }, 'advisory job can fail the workflow'],
+    [0, (w) => { w.jobs['other-platforms'].steps.at(-1)['continue-on-error'] = true; }, 'advisory step must retain its failure'],
+    ...['impact', 'quality', 'quality-summary'].map(job =>
+      [0, (w) => { w.jobs[job]['continue-on-error'] = true; }, `${job} ignores failure`]),
     ...[2, 3].flatMap((index) => [
       [index, (w) => { delete w.on.push; }, 'reporting loses post-merge coverage'],
       [index, (w) => { delete w.on.workflow_dispatch; }, 'reporting loses manual diagnostics'],
@@ -612,11 +616,15 @@ test('workflow validator enforces automatic platform reporting and its execution
 test('Mac quality chain retains shared tests and isolates platform-specific execution', () => {
   const rootScripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts;
   const browserScripts = JSON.parse(readFileSync(join(root, 'apps/browser/package.json'), 'utf8')).scripts;
+  const fullQuality = readFileSync(join(scripts, 'run-quality.mjs'), 'utf8');
   const browserScriptQualityChecks = readFileSync(
     join(root, 'apps/browser/scripts/run-script-quality-checks.sh'),
     'utf8',
   );
   assert.doesNotMatch(rootScripts['quality:fast'], /test:android|test:model-relay|test:winrm/u);
+  assert.match(fullQuality, /await command\('android-release-python-tests', 'python3', \['-B', '-m', 'unittest', 'discover',\s*'-s', 'scripts\/release', '-p', 'test_android\*\.py'\]\)/u);
+  assert.match(fullQuality, /await command\('ci-tests', 'corepack', \['pnpm', 'run', 'ci:test'\]/u);
+  assert.match(rootScripts['ci:test'], /scripts\/ci\/tests\/\*\.test\.mjs/u);
   for (const name of ['test:scripts', 'test:agent-ui', 'test:local-model']) assert.ok(rootScripts['quality:fast'].includes(name));
   assert.match(browserScripts['test:local-model'], /verify-agent-local-model_test/u);
   assert.equal(browserScripts['test:scripts'], 'bash ./scripts/run-script-quality-checks.sh');

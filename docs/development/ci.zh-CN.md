@@ -80,6 +80,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 入口依次执行工具链预检、`pnpm install --frozen-lockfile`、`pnpm run quality:fast`、分语言覆盖率生成与校验、许可证元数据记录、修订 4 冻结文件校验、临时副本中的 13 项离线预览检查、CI 门禁回归、工作流验证与源码前后摘要比对。任一阶段非零即整体失败；报告写入被忽略的 `.artifacts/ci/`，不得提交该目录。
 
+完整门必跑无凭据 Android 发布回归。`android-release-python-tests` 发现 `scripts/release/test_android*.py`，`ci:test` 执行 `scripts/ci/tests/android-*.test.mjs`。仅改 Android 的 Ready PR 也走完整门。
+
 `ci:test` 按文件串行执行 Node 回归套件，避免多个创建真实子进程的 fixture 同时争用 runner CPU。V8 覆盖率退出回归仍使用真实 Vitest worker、原有的 500ms SIGKILL 兜底和全部退出码/覆盖率断言；串行调度不延长超时，也不接受失败结果。
 
 ## Lint、单元测试与覆盖率口径
@@ -244,8 +246,8 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 
 路径决定平台，取并集。Conventional Commit 的主题类型只决定阶段，不能清掉路径已经选中的平台，也不读取 scope。非 Conventional、空主题、删除、重命名、模式变化、符号链接，以及分类器自身被修改，进入最严自动阶段。分类器自身被修改时五个平台都打开。白名单说明文档的普通内容修改仍只走已准入的 Linux 文档门；push 不走这条轻量路径。
 
-- iOS：`apps/ios/**`、`.github/workflows/ios-*`、`scripts/ci/ios-*`、`scripts/ci/run-ios-*`
-- Android：`apps/browser/patches-android/**`、`apps/browser/scripts/**` 中路径含 android 的文件、`.github/workflows/android-*`、`scripts/ci/android-*`、`scripts/ci/run-android-*`
+- iOS：`apps/ios/**`、`.github/workflows/ios-*`、`scripts/ci/ios-*`、`scripts/ci/run-ios-*`、分类器列明的 `scripts/release/` unsigned archive 输入
+- Android：`apps/browser/patches-android/**`、`apps/browser/scripts/**` 中路径含 android 的文件、`.github/workflows/android-*`、`scripts/ci/android-*`、`scripts/ci/run-android-*`、Android 发布脚本及回归测试
 - macOS：`scripts/release/**` 中路径含 macos 的文件、`.github/workflows/macos-*`，以及共享或未知路径
 - Windows：`**/*.ps1`、`apps/browser/scripts/**` 中路径含 winrm 的文件、`scripts/ci/platform-tests/windows-*`、`apps/browser/scripts/ci/windows*`
 - Linux：`scripts/ci/run-shell-coverage.sh`、`scripts/ci/platform-tests/kcov-*`。只有这些路径时不打开 macOS 合同
@@ -259,4 +261,4 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 - 深度：在集成之上，类型属于 `feat`、`fix`、`perf`、`refactor`、`build`、`revert`，或者事件是 push。`test` 的 PR 停在合同，不编 unsigned archive
 - 提升：签名、公证、TestFlight、Play 和 GitHub Release 仍只接受手动 dispatch
 
-iOS 先跑短的路由作业。合同要求路由成功且 `ios && integrate`；archive 再要求合同成功且 `deep`。手动 dispatch 仍跑合同和 archive。macOS 自动合同要求 `macos && integrate`。quality 成功之后，仅当 Android 或 Windows 被选中且 `integrate` 为真时，在 Linux 上跑 `pnpm run quality:other-platforms`。这个作业不进入必需结果。模拟器、kcov 和 Pester 的独立覆盖率 workflow 继续由指向 `develop` 或 `main` 的 Ready PR、这两条分支的 push 和手动 `workflow_dispatch` 触发。前一阶段失败则后续作业不分配 runner。
+iOS 先跑短的路由作业。合同要求路由成功且 `ios && integrate`；archive 再要求合同成功且 `deep`。手动 dispatch 仍跑合同和 archive。macOS 自动合同要求 `macos && integrate`。quality 成功之后，仅当 Android 或 Windows 被选中且 `integrate` 为真时，在 Linux 上跑 `pnpm run quality:other-platforms`。该作业通过 job 级 `continue-on-error: true` 提供诊断，步骤失败和日志仍可在 Actions 查看，必需结果和 push workflow 结论独立于该作业的失败。模拟器、kcov 和 Pester 的独立覆盖率 workflow 继续由指向 `develop` 或 `main` 的 Ready PR、这两条分支的 push 和手动 `workflow_dispatch` 触发。前一阶段失败则后续作业不分配 runner。
