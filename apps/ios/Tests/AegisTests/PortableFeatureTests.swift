@@ -11,6 +11,8 @@ final class PortableFeatureTests: XCTestCase {
     private var folder: URL!
     private var defaults: UserDefaults!
     private var suite: String!
+    private var browsers: [BrowserSession] = []
+    private let windows = WebKitTestWindows()
 
     override func setUp() async throws {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -19,13 +21,17 @@ final class PortableFeatureTests: XCTestCase {
         defaults = UserDefaults(suiteName: suite)!
     }
     override func tearDown() async throws {
+        browsers.forEach { $0.closeWindow() }; browsers.removeAll()
+        windows.close()
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: folder)
     }
     private func session(_ preferences: BrowserPreferences? = nil) -> BrowserSession {
-        BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil),
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil),
             workspaceStore: WorkspaceStore(persistenceURL: folder.appendingPathComponent("workspaces.json")),
             preferences: preferences ?? BrowserPreferences(defaults: defaults))
+        browsers.append(browser)
+        return browser
     }
     private func loaded(_ browser: BrowserSession, path: String = "/article") async throws -> BrowserTab {
         let tab = try XCTUnwrap(browser.activeTab)
@@ -35,7 +41,13 @@ final class PortableFeatureTests: XCTestCase {
     }
     private func waitUntil(_ predicate: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(20)
-        while !predicate(), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        repeat {
+            for browser in browsers {
+                for tab in browser.visibleTabs where !tab.isDisposed && tab.protectionIncident == nil { windows.attach(tab.webView) }
+            }
+            if predicate() { break }
+            try await Task.sleep(for: .milliseconds(50))
+        } while Date() < deadline
         XCTAssertTrue(predicate(), "真实浏览器操作未在限定时间内完成")
     }
 

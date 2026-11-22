@@ -172,7 +172,7 @@ final class WebsiteEnhancementUITests: XCTestCase {
     XCTAssertEqual(privateToggle.value as? String, "0")
     capture("私密代理意图没有继承")
   }
-  func testPaidDownloadSelectionIsIndependentOfWebsiteRecovery() {
+  func testUnavailableAccountDownloadStaysHiddenWhenWebsiteRecoveryChanges() {
     let app = launch(accountOrigin: "http://127.0.0.1:8768")
     navigate(app, "http://127.0.0.1:8768/enhancements/page")
     XCTAssertTrue(app.webViews.staticTexts["网站增强验收文章"].firstMatch.waitForExistence(timeout: 12))
@@ -181,14 +181,16 @@ final class WebsiteEnhancementUITests: XCTestCase {
     tapVisible(app.buttons["连接选项"], app)
     let recovery = app.switches["access-site-auto-recovery-toggle"]
     let download = app.switches["access-account-site-download-toggle"]
-    XCTAssertTrue(download.waitForExistence(timeout: 5))
-    XCTAssertEqual(recovery.value as? String, "0")
-    download.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-    XCTAssertEqual(download.value as? String, "1")
+    // 当前产品不提供账户下载授权，网站恢复选项不能重新暴露该入口。
+    XCTAssertTrue(recovery.waitForExistence(timeout: 5))
+    XCTAssertFalse(download.exists)
     XCTAssertEqual(recovery.value as? String, "0")
     recovery.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     XCTAssertEqual(recovery.value as? String, "1")
-    XCTAssertEqual(download.value as? String, "1")
+    XCTAssertFalse(download.exists)
+    recovery.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+    XCTAssertEqual(recovery.value as? String, "0")
+    XCTAssertFalse(download.exists)
   }
 
   func testScriptDraftTrialEnableAndRecovery() {

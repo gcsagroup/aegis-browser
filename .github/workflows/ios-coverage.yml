@@ -11,7 +11,8 @@ jobs:
   ios-coverage:
     name: ios-coverage
     runs-on: macos-26
-    timeout-minutes: 60
+    # 两台设备依次执行完整原生与 UI 套件，保留完成结果和覆盖率的时间。
+    timeout-minutes: 180
     env:
       IOS_REPORT_DIR: /tmp/aegis-ios-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -33,6 +34,16 @@ jobs:
         with:
           go-version: '1.27.3'
           cache: false
+      - name: 安装并校验固定版本 XcodeGen
+        timeout-minutes: 5
+        run: |
+          archive="$RUNNER_TEMP/xcodegen-2.46.0.zip"
+          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+            --output "$archive" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          printf '%s  %s\n' 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806 "$archive" | shasum -a 256 --check --status
+          unzip -q "$archive" -d "$RUNNER_TEMP/xcodegen-2.46.0"
+          "$RUNNER_TEMP/xcodegen-2.46.0/xcodegen/bin/xcodegen" --version
+          printf '%s\n' "$RUNNER_TEMP/xcodegen-2.46.0/xcodegen/bin" >> "$GITHUB_PATH"
       - name: Run iPhone and iPad tests with Swift coverage
         env:
           DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
@@ -45,6 +56,8 @@ jobs:
           path: |
             ${{ env.IOS_REPORT_DIR }}/*.xcresult
             ${{ env.IOS_REPORT_DIR }}/*-xcodebuild.log
+            ${{ env.IOS_REPORT_DIR }}/build.log
+            ${{ env.IOS_REPORT_DIR }}/fixture.log
             ${{ env.IOS_REPORT_DIR }}/*-summary.json
             ${{ env.IOS_REPORT_DIR }}/*-coverage.json
             ${{ env.IOS_REPORT_DIR }}/*-coverage.txt

@@ -3,6 +3,9 @@ import WebKit
 @testable import BrowserKit
 
 @MainActor final class ContentFilterTests: XCTestCase {
+    private let windows = WebKitTestWindows()
+    override func tearDown() async throws { windows.close() }
+
     func testCompilerPreservesScopeAndSkipsUnsupportedModifiers() throws {
         let compiled = try ContentFilterCompiler.compile(["""
         [Adblock Plus 2.0]
@@ -32,6 +35,7 @@ import WebKit
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(list)
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        windows.attach(webView)
         webView.load(URLRequest(url: URL(string: "http://127.0.0.1:8768/article")!))
         try await waitUntil { webView.url?.path == "/article" && !webView.isLoading }
         _ = try await webView.evaluateJavaScript("document.body.insertAdjacentHTML('beforeend', '<div class=test-ad>广告样本</div><div id=normal-content>正文保留</div>')")
@@ -58,7 +62,9 @@ import WebKit
         defer { TrackingProtection.enabled = wasEnabled; TrackingProtection.setException(wasExcepted, for: url) }
         TrackingProtection.enabled = true; TrackingProtection.setException(false, for: url)
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        defer { browser.closeWindow() }
         let tab = try XCTUnwrap(browser.activeTab)
+        windows.attach(tab.webView)
         tab.load(url)
         try await waitUntil { tab.url == url && !tab.isLoading }
         XCTAssertTrue(tab.trackingProtectionReady)

@@ -11,6 +11,41 @@ const scripts = path.dirname(fileURLToPath(import.meta.url));
 const vectorPath = 'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json';
 const resourcePath = 'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared/fixture.js';
 
+test('真实本机就绪探测绕过失效代理，并拒绝错误服务身份', () => {
+  const result = spawnSync('python3', ['-c', `
+import importlib.util, json, os, pathlib, subprocess, sys, threading
+from http.server import BaseHTTPRequestHandler
+spec = importlib.util.spec_from_file_location('fixture_server', sys.argv[2])
+fixture_server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fixture_server)
+source = pathlib.Path(sys.argv[1]).read_text()
+probe = source.split("fixture_ready() {\\n  python3 - <<'PYTHON'\\n", 1)[1].split('\\nPYTHON', 1)[0]
+class Handler(BaseHTTPRequestHandler):
+    model = 'aegis-simulator-fixture'
+    def log_message(self, *_): pass
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({'data': [{'id': self.model}]}).encode())
+server = fixture_server.FixtureHTTPServer(('127.0.0.1', 0), Handler)
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+thread.start()
+probe = probe.replace('127.0.0.1:8768', '127.0.0.1:' + str(server.server_port))
+environment = {**os.environ, 'http_proxy': 'http://127.0.0.1:1', 'HTTP_PROXY': 'http://127.0.0.1:1', 'no_proxy': '', 'NO_PROXY': ''}
+try:
+    good = subprocess.run([sys.executable, '-c', probe], env=environment, capture_output=True, text=True, timeout=10)
+    assert good.returncode == 0, good.stderr
+    Handler.model = 'unrelated-service'
+    bad = subprocess.run([sys.executable, '-c', probe], env=environment, capture_output=True, text=True, timeout=10)
+    assert bad.returncode != 0, '错误服务身份被接受'
+finally:
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=5)
+`, path.join(scripts, 'run-simulator-tests.sh'), path.join(scripts, 'simulator-fixture-server.py')], {encoding: 'utf8', timeout: 30000});
+  assert.equal(result.status, 0, result.stderr);
+});
+
 function write(root, relative, content) {
   const destination = path.join(root, relative);
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
@@ -107,8 +142,8 @@ if (tool === 'python3') {
 } else if (tool === 'xcrun') {
   const runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5';
   const devices = [
-    {name: 'Aegis QA iPhone 17', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', udid: 'phone'},
-    {name: 'Aegis QA iPad Air 11-inch (M4)', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4', udid: 'tablet'},
+    {name: 'Aegis CI com.gcsa.aegis iPhone 17', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', udid: 'phone'},
+    {name: 'Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4', udid: 'tablet'},
   ];
   if (args[0] === 'simctl' && args[2] === 'runtimes') {
     output({runtimes: [{identifier: runtime, version: '26.5', isAvailable: true}]});
