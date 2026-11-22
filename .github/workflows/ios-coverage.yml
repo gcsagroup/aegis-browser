@@ -11,8 +11,8 @@ jobs:
   ios-coverage:
     name: ios-coverage
     runs-on: macos-26
-    # 两台设备依次执行完整原生与 UI 套件，保留完成结果和覆盖率的时间。
-    timeout-minutes: 180
+    # 远端单设备完整套件已超过两小时；串行双设备还需保留覆盖率和证据上传时间。
+    timeout-minutes: 360
     env:
       IOS_REPORT_DIR: /tmp/aegis-ios-${{ github.run_id }}-${{ github.run_attempt }}
     steps:

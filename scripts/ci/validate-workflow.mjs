@@ -220,7 +220,7 @@ try {
   }
   if (iosCoverage?.name !== 'ios-coverage') fail('iOS report job check name must be ios-coverage');
   if (iosCoverage?.['runs-on'] !== 'macos-26') fail('iOS report job must use macos-26');
-  if (iosCoverage?.['timeout-minutes'] !== 180) fail('iOS 双设备完整报告的执行时限必须为 180 分钟');
+  if (iosCoverage?.['timeout-minutes'] !== 360) fail('iOS 双设备完整报告的执行时限必须为 360 分钟');
   if ('if' in iosCoverage) fail('iOS report job may not be conditional within its manual workflow');
   if ('continue-on-error' in iosCoverage) fail('iOS report job must preserve test failures');
   if (gate.name !== summaryName) fail('Required summary check name must be quality-gate only for non-PR or explicit Ready PR; otherwise use the deferred label');
