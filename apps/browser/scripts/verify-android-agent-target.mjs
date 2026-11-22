@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-export const PACKAGE = 'app.gcsa.aegis';
+export const PACKAGE = 'com.gcsa.aegis';
 const HASH = /^[a-f0-9]{64}$/;
 const fail = message => { throw new Error(message); };
 const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');

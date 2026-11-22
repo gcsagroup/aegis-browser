@@ -46,16 +46,16 @@ class MemoryApi:
 
 class RecordTests(unittest.TestCase):
     def test_allocation_is_stable_and_application_bound(self):
-        first = records.allocation('app.gcsa.aegis', '7.2.0.339', '2007000339')
-        self.assertEqual(first, records.allocation('app.gcsa.aegis', '7.2.0.339', '2007000339'))
+        first = records.allocation('com.gcsa.aegis', '7.2.0.339', '2007000339')
+        self.assertEqual(first, records.allocation('com.gcsa.aegis', '7.2.0.339', '2007000339'))
         self.assertEqual(len(first), 64)
         with self.assertRaises(ValueError):
             records.allocation('app.other', '7.2.0.339', '2007000339')
 
     def test_create_is_once_and_readback_matches(self):
         api = MemoryApi()
-        store = records.Records(api, 1348409663, 'app.gcsa.aegis')
-        key = records.allocation('app.gcsa.aegis', '7.2.0.339', '2007000339')
+        store = records.Records(api, 1348409663, 'com.gcsa.aegis')
+        key = records.allocation('com.gcsa.aegis', '7.2.0.339', '2007000339')
         payload = {'version': '7.2.0.339', 'build': '2007000339'}
         self.assertIsNone(store.read('package', key))
         self.assertEqual(store.create('package', key, payload), payload)

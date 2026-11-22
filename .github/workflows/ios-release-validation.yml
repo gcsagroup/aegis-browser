@@ -119,7 +119,10 @@ jobs:
     if: ${{ inputs.exercise != 'cloud-poc' && needs.contracts.outputs.ios == 'true' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
     runs-on: >-
       ${{ vars.AEGIS_IOS_RUNNER_LABEL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) || 'macos-26' }}
-    timeout-minutes: 30
+    # Archive compile often finishes near 20m; artifact upload on the self-hosted
+    # link can need another 10–15m. Keep headroom so green archives are not
+    # cancelled mid-upload.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

@@ -4,7 +4,7 @@
 
 ## 边界
 
-- 包名固定为 `app.gcsa.aegis.qa.driver`。没有网络权限、启动器入口、常驻服务或常驻无障碍授权；只通过 Android instrumentation 运行。使用不抑制用户现有无障碍服务的选项。
+- 包名固定为 `com.gcsa.aegis.qa.driver`。没有网络权限、启动器入口、常驻服务或常驻无障碍授权；只通过 Android instrumentation 运行。使用不抑制用户现有无障碍服务的选项。
 - `self-test` 仅在自己的夹具 Activity 输入合成中文、点击并读取结果。不操作浏览器，不算 Agent 通过。
 - 浏览器操作前核对本次成功构建、源码清单、实际 APK 哈希、Android 用户、亮屏解锁状态和唯一独立 Profile。设备端还会再次检查 APK 与已打开的 Profile 文件路径，不读取浏览数据库正文。
 - 只允许快照、点击和文本输入。不支持任意 shell、坐标点击、系统授权、密码框、其他应用或自动解锁。点击/输入需要 60 秒内同一候选的快照；设备端在操作前再次比较界面摘要，变化即停止，不盲目重试。
@@ -72,7 +72,7 @@ node apps/browser/scripts/android-agent-ui.mjs snapshot \
   --adb ${ANDROID_SDK_ROOT}/platform-tools/adb \
   --serial ${ANDROID_DEVICE_SERIAL} \
   --driver-build /绝对路径/工具构建目录 \
-  --profile /data/user/0/app.gcsa.aegis/aegis-test-user-data-recovery-r1 \
+  --profile /data/user/0/com.gcsa.aegis/aegis-test-user-data-recovery-r1 \
   --source-root ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-chromium-linux-amd64/src \
   --manifest /绝对路径/候选清单.json \
   --build-dir /绝对路径/候选构建记录目录 \

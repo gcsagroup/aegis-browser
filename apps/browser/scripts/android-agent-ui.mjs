@@ -7,7 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {PACKAGE, inspectDevice, parseKeyguard, verifyCandidateFiles, verifyTarget} from './verify-android-agent-target.mjs';
 
-export const HELPER = 'app.gcsa.aegis.qa.driver';
+export const HELPER = 'com.gcsa.aegis.qa.driver';
 export const SELF_TEST_CASES = Object.freeze([
   'unicode-input',
   'stale-snapshot-rejected',
