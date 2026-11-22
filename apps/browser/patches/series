@@ -542,3 +542,4 @@
 0542-declare-omnibox-interactive-aegis-dependency.patch
 0543-bind-popup-lock-to-requesting-permission-manager.patch
 0544-restore-permission-focus-to-owning-popup.patch
+0545-prepare-passive-omnibox-permission-fixture.patch
