@@ -8,7 +8,7 @@ import stat
 import zipfile
 
 REPOSITORY = 'gcsagroup/aegis-browser'
-APPLICATION_ID = 'app.gcsa.aegis'
+APPLICATION_ID = 'com.gcsa.aegis'
 MAX_MEMBER = 1024 ** 3
 SEALED_NAMES = {'android-manifest.json', 'android-manifest.json.sha256', 'package-origin.json',
                 'signature-verification.json'}

@@ -39,7 +39,7 @@ try {
   }
   if (!response.ok) throw new Error(`Android CDP 版本查询失败（${response.status}）`);
   const version = await response.json();
-  if (version['Android-Package'] !== 'app.gcsa.aegis') throw new Error('CDP 目标不是 Aegis Android');
+  if (version['Android-Package'] !== 'com.gcsa.aegis') throw new Error('CDP 目标不是 Aegis Android');
   // Android Chromium 的浏览器 socket 可使用固定路径，部分版本会提供具体 target ID。
   const endpoint = new URL(version.webSocketDebuggerUrl ?? `ws://127.0.0.1:${port}/devtools/browser/`);
   if (endpoint.protocol !== 'ws:' || endpoint.hostname !== '127.0.0.1' || endpoint.port !== port ||

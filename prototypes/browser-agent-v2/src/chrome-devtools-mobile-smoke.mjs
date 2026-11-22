@@ -71,8 +71,8 @@ function browserForwards() {
 async function recordIdentity() {
   let identity;
   if (android) {
-    const packageInfo = adb('shell', 'dumpsys', 'package', 'app.gcsa.aegis');
-    const apk = adb('shell', 'pm', 'path', 'app.gcsa.aegis').split('\n')
+    const packageInfo = adb('shell', 'dumpsys', 'package', 'com.gcsa.aegis');
+    const apk = adb('shell', 'pm', 'path', 'com.gcsa.aegis').split('\n')
       .find(line => line.startsWith('package:') && line.endsWith('/base.apk'))?.slice('package:'.length);
     assert.ok(apk && /^[/A-Za-z0-9._=~-]+$/.test(apk), '测试 APK 路径无效');
     identity = {
@@ -117,7 +117,7 @@ try {
   if (android) {
     adb('reverse', '--no-rebind', forwardedFixture, forwardedFixture);
     reverseActive = true;
-    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url, '-p', 'app.gcsa.aegis');
+    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url, '-p', 'com.gcsa.aegis');
     const deadline = Date.now() + 8000;
     while (!hits.has('/devtools/api') && Date.now() < deadline) await delay(100);
     assert.ok(hits.has('/devtools/api'), 'Android 验收页未收到真实网络响应');
@@ -203,7 +203,7 @@ try {
     await client.close();
     stage = 'Android 网页应用检查';
     const appUrl = fixture.origin + '/mobile-web-app';
-    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', appUrl, '-p', 'app.gcsa.aegis');
+    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', appUrl, '-p', 'com.gcsa.aegis');
     const appDeadline = Date.now() + 8000;
     while (!hits.has('/mobile-web-app.webmanifest') && Date.now() < appDeadline) await delay(100);
     assert.ok(hits.has('/mobile-web-app.webmanifest'), '网页应用测试页未完成加载');
@@ -228,7 +228,7 @@ try {
     journal.assertion('读取 Android Manifest 和安装条件，并拒绝未打开网页', true);
 
     stage = 'Android 同网址双标签';
-    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', appUrl, '-p', 'app.gcsa.aegis');
+    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', appUrl, '-p', 'com.gcsa.aegis');
     let ambiguous;
     const targetDeadline = Date.now() + 8000;
     do {

@@ -11,8 +11,8 @@ import {PACKAGE, packageApkPath, activeProfileRoots, parseKeyguard,
 
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const hash = digest('合成 APK');
-const apk = '/data/app/~~safe/app.gcsa.aegis-build/base.apk';
-const profile = '/data/user/0/app.gcsa.aegis/aegis-test-user-data-recovery-r1';
+const apk = '/data/app/~~safe/com.gcsa.aegis-build/base.apk';
+const profile = '/data/user/0/com.gcsa.aegis/aegis-test-user-data-recovery-r1';
 const unlocked = {known: true, unlocked: true, screenOn: true};
 const good = () => ({package: PACKAGE, androidUser: '0', installedSha256: hash,
   keyguard: unlocked, processStable: true, profileRoots: [profile]});
@@ -22,21 +22,21 @@ test('安装路径只接受指定包的单一 APK', () => {
   for (const value of [
     'package:/data/app/other.app-build/base.apk',
     'package:' + apk + '\npackage:/data/app/split.apk',
-    'package:/data/app/../app.gcsa.aegis-build/base.apk',
-    'package:/data/app/app.gcsa.aegis-build;echo-bad/base.apk',
-    'package:/data/app/app.gcsa.aegis-build/base.apk\n额外内容',
+    'package:/data/app/../com.gcsa.aegis-build/base.apk',
+    'package:/data/app/com.gcsa.aegis-build;echo-bad/base.apk',
+    'package:/data/app/com.gcsa.aegis-build/base.apk\n额外内容',
   ]) assert.throws(() => packageApkPath(value));
 });
 
 test('只用打开的 Profile 文件证明目录，不根据参数或缓存推断', () => {
   const listing = `1 -> ${profile}/Default/History\n2 -> ${profile}/Default/Session Storage/LOCK\n` +
-    '3 -> /data/user/0/app.gcsa.aegis/app_chrome/paks/resources.pak\n' +
-    '4 -> /data/user/0/app.gcsa.aegis/cache/opaque-file\n';
+    '3 -> /data/user/0/com.gcsa.aegis/app_chrome/paks/resources.pak\n' +
+    '4 -> /data/user/0/com.gcsa.aegis/cache/opaque-file\n';
   assert.deepEqual(activeProfileRoots(listing), [profile]);
   assert.deepEqual(activeProfileRoots('--user-data-dir=' + profile), []);
-  assert.deepEqual(activeProfileRoots('1 -> /data/data/app.gcsa.aegis/app_chrome/Default/History'),
-    ['/data/user/0/app.gcsa.aegis/app_chrome']);
-  assert.deepEqual(activeProfileRoots('1 -> /data/user/0/app.gcsa.aegis/../other/Default/History'), []);
+  assert.deepEqual(activeProfileRoots('1 -> /data/data/com.gcsa.aegis/app_chrome/Default/History'),
+    ['/data/user/0/com.gcsa.aegis/app_chrome']);
+  assert.deepEqual(activeProfileRoots('1 -> /data/user/0/com.gcsa.aegis/../other/Default/History'), []);
 });
 
 test('未知、锁定或灭屏状态不能当作可交互', () => {
@@ -57,16 +57,16 @@ test('目标通过不提升为界面、运行或发布通过', () => {
 
 for (const [name, change] of [
   ['旧 APK 即使版本号一致也拒绝', {installedSha256: digest('旧 APK'), versionName: '151.0.7922.77'}],
-  ['默认资料目录拒绝', {profileRoots: ['/data/user/0/app.gcsa.aegis/app_chrome']}],
+  ['默认资料目录拒绝', {profileRoots: ['/data/user/0/com.gcsa.aegis/app_chrome']}],
   ['没有可观察的 Profile 不能猜测', {profileRoots: []}],
-  ['多个 Profile 混用拒绝', {profileRoots: [profile, '/data/user/0/app.gcsa.aegis/app_chrome']}],
+  ['多个 Profile 混用拒绝', {profileRoots: [profile, '/data/user/0/com.gcsa.aegis/app_chrome']}],
   ['检查中进程或用户切换拒绝', {processStable: false}],
   ['其他 Android 用户拒绝', {androidUser: '10'}],
   ['其他应用拒绝', {package: 'other.app'}],
 ]) test(name, () => assert.throws(() => verifyTarget({...good(), ...change}, hash, profile)));
 
 test('期望参数也必须为独立测试目录和有效摘要', () => {
-  for (const value of ['/data/user/0/app.gcsa.aegis/app_chrome', profile + '/..', profile + '/Default', '', '/sdcard/test']) {
+  for (const value of ['/data/user/0/com.gcsa.aegis/app_chrome', profile + '/..', profile + '/Default', '', '/sdcard/test']) {
     assert.throws(() => verifyTarget(good(), hash, value));
   }
   assert.throws(() => verifyTarget(good(), 'wrong', profile));

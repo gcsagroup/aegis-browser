@@ -13,7 +13,7 @@ require_version_code = _receipt.require_version_code
 
 EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 SCHEMA = 'android-product-delivery-v1'
-APPLICATION_ID = 'app.gcsa.aegis'
+APPLICATION_ID = 'com.gcsa.aegis'
 
 
 def canonical(value):

@@ -1,4 +1,4 @@
-package app.gcsa.aegis.qa.driver;
+package com.gcsa.aegis.qa.driver;
 
 import android.app.Activity;
 import android.app.Instrumentation;
@@ -34,8 +34,8 @@ import org.json.JSONObject;
 
 /** 一次性真机验收驱动，不是产品 Agent，也不能证明模型任务完成。 */
 public final class Driver extends Instrumentation {
-  private static final String BROWSER = "app.gcsa.aegis";
-  private static final String HELPER = "app.gcsa.aegis.qa.driver";
+  private static final String BROWSER = "com.gcsa.aegis";
+  private static final String HELPER = "com.gcsa.aegis.qa.driver";
   private static final String PROFILE = "/data/user/0/app\\.gcsa\\.aegis/aegis-test-user-data-[a-z0-9-]+";
   private UiAutomation automation;
   private JSONObject request;
