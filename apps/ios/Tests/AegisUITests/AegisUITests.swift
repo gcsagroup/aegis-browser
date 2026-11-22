@@ -930,6 +930,8 @@ final class AegisUITests: XCTestCase {
     func testExternalLinkKeepsPrivateModeUntilExplicitConfirmation() {
         let app = launchApp()
         tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        XCTAssertEqual(app.buttons["page-protection"].value as? String, "私密浏览：不记录历史，保存和发送资料前需确认")
+        // 在专用 CI 设备上通过系统投递，保留当前进程和私密会话。
         let link = URL(string: "gcsa-aegis://open?url=http%3A%2F%2F127.0.0.1%3A8768%2Farticle")!
         XCUIDevice.shared.system.open(link)
         XCTAssertTrue(app.alerts["在普通浏览中打开分享页面？"].waitForExistence(timeout: 8))
@@ -964,9 +966,16 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '恢复后保存'")).firstMatch.waitForExistence(timeout: 5))
         app.buttons["完成"].tap()
         app.buttons["browser-more"].tap(); app.buttons["下载"].tap()
-        XCTAssertTrue(scrollUntilVisible(app.buttons["下载设置与存储"], in: app))
-        app.buttons["下载设置与存储"].tap()
-        XCTAssertTrue(scrollUntilVisible(app.buttons["download-recovery"], in: app))
+        let storage = app.buttons["下载设置与存储"]
+        // 底部搜索栏会覆盖可访问性树中仍标为可点击的行。
+        for _ in 0..<6 {
+            if storage.exists, storage.isHittable, storage.frame.maxY < app.frame.maxY - 120 { break }
+            app.collectionViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(storage.isHittable)
+        XCTAssertLessThan(storage.frame.maxY, app.frame.maxY - 120)
+        storage.tap()
+        XCTAssertTrue(scrollPortableControl(app.buttons["download-recovery"], in: app, shortScroll: true))
         app.buttons["download-recovery"].tap()
         app.buttons["reset-records"].tap(); app.buttons["确认备份并重置"].tap()
         XCTAssertTrue(app.staticTexts["记录已更新，可以继续使用。"].waitForExistence(timeout: 5))
@@ -985,7 +994,8 @@ final class AegisUITests: XCTestCase {
     func testLibrarySearchAndDownloadPreview() throws {
         let app = launchApp()
         tapBrowserButton("data-button", in: app)
-        app.swipeDown()
+        // 搜索栏位于底部；对整张表单下拉会关闭界面。
+        XCTAssertTrue(app.navigationBars["浏览资料"].waitForExistence(timeout: 5))
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("does-not-exist")
         XCTAssertTrue(app.staticTexts["没有匹配的资料"].waitForExistence(timeout: 5))
@@ -1629,8 +1639,10 @@ final class AegisUITests: XCTestCase {
         navigate(app, to: "http://127.0.0.1:8768/security/canvas")
         XCTAssertTrue(app.webViews.staticTexts["绘图与读取验收"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["fingerprint-observation"].waitForExistence(timeout: 5))
-        app.buttons["browser-more"].tap(); app.buttons["设置"].tap()
-        let protection = app.buttons["保护选项"]
+        tapBrowserButton("open-browser-settings", in: app)
+        app.buttons["aegis-feature-settings"].tap()
+        app.buttons["aegis-privacy-settings"].tap()
+        let protection = app.buttons["protection-options"]
         XCTAssertTrue(scrollPortableControl(protection, in: app, shortScroll: true)); protection.tap()
         let mining = app.switches["mining-protection"]
         XCTAssertTrue(scrollPortableControl(mining, in: app)); XCTAssertEqual(mining.value as? String, "1")
@@ -1641,7 +1653,8 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(scrollPortableControl(strict, in: app)); tapPortableSwitch(strict)
         XCTAssertEqual(strict.value as? String, "1")
         attachScreenshot("WebKit-保护设置", app)
-        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        for _ in 0..<3 { app.navigationBars.buttons.element(boundBy: 0).tap() }
+        app.buttons["settings-done"].tap()
         navigate(app, to: "http://127.0.0.1:8768/security/canvas")
         XCTAssertTrue(app.webViews.staticTexts["绘图与读取验收"].waitForExistence(timeout: 8))
         attachScreenshot("WebKit-严格模式正常绘图", app)

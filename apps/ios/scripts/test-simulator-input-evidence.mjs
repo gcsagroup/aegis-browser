@@ -142,8 +142,8 @@ if (tool === 'python3') {
 } else if (tool === 'xcrun') {
   const runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5';
   const devices = [
-    {name: 'Aegis QA iPhone 17', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', udid: 'phone'},
-    {name: 'Aegis QA iPad Air 11-inch (M4)', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4', udid: 'tablet'},
+    {name: 'Aegis CI com.gcsa.aegis iPhone 17', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', udid: 'phone'},
+    {name: 'Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4', udid: 'tablet'},
   ];
   if (args[0] === 'simctl' && args[2] === 'runtimes') {
     output({runtimes: [{identifier: runtime, version: '26.5', isAvailable: true}]});

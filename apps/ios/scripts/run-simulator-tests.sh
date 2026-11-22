@@ -16,9 +16,9 @@ ONLY_TESTING=()
 RUNTIME_ID="${AEGIS_IOS_RUNTIME_ID:-}"
 OUTPUT_DIR="${AEGIS_IOS_OUTPUT_DIR:-/tmp/aegis-ios-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 
-PHONE_NAME="Aegis QA iPhone 17"
+PHONE_NAME="Aegis CI com.gcsa.aegis iPhone 17"
 PHONE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
-TABLET_NAME="Aegis QA iPad Air 11-inch (M4)"
+TABLET_NAME="Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)"
 TABLET_TYPE="com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4"
 
 usage() {
