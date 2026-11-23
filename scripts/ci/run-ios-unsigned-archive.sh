@@ -47,10 +47,8 @@ if [[ "${1:-}" == --verify-archive ]]; then
   exec python3 -I -B "$REPO_ROOT/scripts/ci/ios-ci-storage.py" seal --root "$IOS_CI_ROOT"
 fi
 
-# shellcheck source=apps/browser/scripts/common.sh
-source "$REPO_ROOT/apps/browser/scripts/common.sh"
-# Suppress informational stdout before the best-effort console is installed.
-configure_git_for_chromium_fetch >/dev/null
+# SwiftPM's system Git uses the runner's Git and proxy configuration.
+export GIT_TERMINAL_PROMPT=0
 
 export TMPDIR="$IOS_CI_ROOT/tmp"
 export CLANG_MODULE_CACHE_PATH="$IOS_CI_ROOT/ModuleCache"

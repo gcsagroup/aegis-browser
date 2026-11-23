@@ -84,7 +84,7 @@ function prepareFixture(root, compilerScript = compiler, verifierScript = '') {
   const source = join(root, 'Source');
   const python = execFileSync('python3', ['-c', 'import sys; print(sys.executable)'], {encoding: 'utf8'}).trim();
   mkdirSync(bin);
-  for (const path of [archiveScript, supervisorScript, 'apps/browser/scripts/common.sh']) {
+  for (const path of [archiveScript, supervisorScript]) {
     mkdirSync(join(source, path, '..'), {recursive: true});
     copyFileSync(path, join(source, path));
   }
@@ -96,7 +96,6 @@ if [[ "$2" == */ios_embedded_core.py ]]; then printf 'embedded core verified\\n'
 ${verifierScript}
 exit 0
 `, {mode: 0o755});
-  writeFileSync(join(bin, 'scutil'), '#!/bin/bash\nexit 0\n', {mode: 0o755});
   writeFileSync(join(bin, 'xcodebuild'), compilerScript, {mode: 0o755});
   const env = {...process.env, PATH: `${bin}:${process.env.PATH}`, IOS_CI_ROOT: root, IOS_CI_SOURCE: source,
     RUNNER_TRACKING_ID: 'archive-fixture', ARCHIVE_TEST_PYTHON: python};

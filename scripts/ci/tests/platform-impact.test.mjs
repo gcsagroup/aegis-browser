@@ -305,10 +305,12 @@ test('paths select platforms and commit types select stage depth', () => {
     git('init', '-b', 'develop'); git('config', 'user.name', 'Routing Test'); git('config', 'user.email', 'routing@example.invalid');
     const commonScript = 'apps/browser/scripts/common.sh';
     const iosArchiveTests = ['scripts/release/test_verify_ios_archive.py', 'scripts/release/test_ios_embedded_core.py'];
+    const iosCliTest = 'fastlane/tests/cli_test.rb';
     const aabCertificate = 'scripts/release/VerifiedAabCertificate.java';
     save('README.md', 'base');
     save('docs/ios-webkit-protection.en.md', 'initial');
-    for (const path of [commonScript, ...iosArchiveTests, aabCertificate]) save(path, 'initial');
+    const defaultsPath = 'scripts/ci/fill-platform-route-defaults.mjs';
+    for (const path of [commonScript, ...iosArchiveTests, iosCliTest, aabCertificate, defaultsPath]) save(path, 'initial');
     git('add', '.'); git('commit', '-m', 'base');
     const before = git('rev-parse', 'HEAD');
     const pr = (mutate, message) => {
@@ -338,6 +340,8 @@ test('paths select platforms and commit types select stage depth', () => {
     for (const path of iosArchiveTests) {
       assert.deepEqual(route(pr(() => save(path, 'updated'), 'test: cover archive input')), {...iosRoute, deep: false}, path);
     }
+    const cliTestOnly = pr(() => save(iosCliTest, 'updated'), 'test: cover iOS release CLI');
+    assert.deepEqual(route(cliTestOnly), {...iosRoute, deep: false});
     for (const file of [
       'build-ios-access-core.sh', 'development_key_access.py', 'development_signing.py',
       'ios_embedded_core.py', 'ios_linked_core.py', 'prepare-ios-access-core.sh', 'record-ios-access-core-digests.sh',
@@ -353,8 +357,27 @@ test('paths select platforms and commit types select stage depth', () => {
     ]) {
       assert.deepEqual(route(pr(() => save(path, 'android'), 'fix: repair android release')), androidRoute, path);
     }
+    const releaseContracts = pr(() => {
+      for (const path of [
+        'scripts/release/ios-delivery-plan.py', 'scripts/release/ios_access_test_gate.py',
+        'scripts/release/test_ios_publish.py', 'scripts/release/prepare-ios-package-core.sh',
+        'scripts/release/cli.rb', 'scripts/release/test_product_delivery.py',
+        'scripts/release/verify-ipa.py', 'scripts/release/product_delivery.py',
+        'scripts/release/test_cloud_signing_poc.py', 'scripts/release/fixtures/safari-icon-xcode.png',
+        'scripts/ci/tests/ios-release.test.mjs',
+      ]) save(path, 'changed');
+    }, 'test(android): cover release helpers');
+    assert.deepEqual(route(releaseContracts), {...iosRoute, deep: false});
+    const allPlatforms = {...iosRoute, android: true, windows: true, linux: true, macos: true};
+    for (const [type, integrate, deep] of [['ci', false, false], ['test', true, false], ['fix', true, true]]) {
+      const defaults = pr(() => save(defaultsPath, '// edit'), `${type}: update routing defaults`);
+      assert.deepEqual(route(defaults), {...allPlatforms, integrate, deep});
+      assert.equal(defaults.strict, false);
+    }
     const unknownRelease = pr(() => save('scripts/release/prepare-ios-access-core-extra.sh', 'unknown'), 'fix: repair helper');
     assert.deepEqual(route(unknownRelease), {...iosRoute, ios: false, macos: true});
+    const unknownFastlane = pr(() => save('fastlane/tests/support/helper_test.rb', 'unknown'), 'test: cover helper');
+    assert.deepEqual(route(unknownFastlane), {...iosRoute, ios: false, macos: true, deep: false});
     const mixedRelease = pr(() => {
       save('scripts/release/verify-ios-archive.py', 'ios');
       save('scripts/release/android-delivery.py', 'android');
@@ -364,6 +387,12 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.equal(windows.windows, true); assert.equal(windows.macos, false); assert.equal(windows.deep, true);
     const linux = pr(() => save('scripts/ci/platform-tests/kcov-child.sh', 'kcov'), 'refactor: reshape coverage');
     assert.equal(linux.linux, true); assert.equal(linux.macos, false); assert.equal(linux.deep, true);
+    const mixedContracts = pr(() => {
+      save('scripts/ci/tests/shell-coverage.test.mjs', 'linux');
+      save('scripts/release/android-status.py', 'android');
+      save('scripts/ci/platform-tests/windows-acceptance.ps1', 'windows');
+    }, 'test(ios): exercise portable contracts');
+    assert.deepEqual(route(mixedContracts), {...androidRoute, windows: true, linux: true, deep: false});
     const shared = pr(() => save('packages/core/src/core.ts', 'core'), 'build: refresh core');
     assert.equal(shared.macos, true); assert.equal(shared.ios, false); assert.equal(shared.android, false); assert.equal(shared.windows, false);
     git('checkout', '-B', 'topic', before);
@@ -509,12 +538,18 @@ test('quality preflight selects Linux docs and preserves full checks on all othe
   assert.equal(other['runs-on'], 'ubuntu-24.04');
   assert.deepEqual(other.needs, ['impact', 'quality']);
   assert.match(other.if, /needs.quality.result == 'success'/u);
-  assert.match(other.if, /needs.impact.outputs.android == 'true'/u);
-  assert.match(other.if, /needs.impact.outputs.windows == 'true'/u);
+  assert.equal(other['continue-on-error'], true);
   assert.match(other.if, /needs.impact.outputs.integrate == 'true'/u);
-  assert.match(other.steps.find(step => step.name === 'Run Android and Windows contract checks').run, /pnpm run quality:other-platforms/u);
+  for (const platform of ['android', 'windows', 'linux']) {
+    assert.equal(impact.outputs[platform], '${{ steps.impact.outputs.' + platform + ' }}');
+    const guard = `needs.impact.outputs.${platform} == 'true'`;
+    assert.ok(other.if.includes(guard));
+    const suite = other.steps.filter(step => step.run === `corepack pnpm run quality:${platform}`);
+    assert.equal(suite.length, 1, platform);
+    assert.equal(suite[0].if, "${{ !cancelled() && steps.node.outcome == 'success' && " + guard + ' }}');
+  }
+  assert(other.steps.find(step => step.id === 'node')?.uses.startsWith('actions/setup-node@'));
   assert.equal(summary.steps.find(step => step.name === 'Require every mandatory job to succeed').env.REQUIRED_RESULTS, '{"quality":"${{ needs.quality.result }}"}');
-  assert.equal(impact.outputs.android, '${{ steps.impact.outputs.android }}');
   assertTrustedRouteDefaults(impact.steps.find(step => step.id === 'impact').run);
 });
 
@@ -529,7 +564,7 @@ esac
 
 function prepareArchiveFixture(root) {
   const source = join(root, 'Source');
-  for (const path of [archiveScript, 'scripts/ci/ios-archive-supervisor.py', 'apps/browser/scripts/common.sh']) {
+  for (const path of [archiveScript, 'scripts/ci/ios-archive-supervisor.py']) {
     mkdirSync(join(source, path, '..'), {recursive: true});
     copyFileSync(path, join(source, path));
   }
@@ -634,7 +669,7 @@ exit "$ARCHIVE_TEST_EXIT"
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('archive package resolution inherits the existing GitHub transport policy', () => {
+test('archive package resolution preserves runner proxy and Git configuration', () => {
   const workflow = YAML.parse(readFileSync('.github/workflows/ios-release-validation.yml', 'utf8'));
   const step = workflow.jobs['ios-archive'].steps.find(item => item.name === 'Compile uncredentialed native archive');
   assert.match(step.run, /run-ios-unsigned-archive\.sh/u);
@@ -646,16 +681,18 @@ test('archive package resolution inherits the existing GitHub transport policy',
   const args = join(root, 'xcode-args.txt');
   const config = join(root, 'gitconfig');
   const python = execFileSync('python3', ['-c', 'import sys; print(sys.executable)'], {encoding: 'utf8'}).trim();
-  writeFileSync(config, '[http]\n proxy = http://127.0.0.1:9\n[credential]\n helper = retained-fixture-helper\n');
+  const gitConfig = '[http]\n proxy = http://127.0.0.1:9\n version = HTTP/2\n[credential]\n helper = retained-fixture-helper\n';
+  writeFileSync(config, gitConfig);
   const executables = {
     python3: `#!/bin/bash\n${delegateArchiveSupervisor}exit 0\n`,
-    scutil: '#!/bin/bash\nexit 0\n',
     xcodebuild: `#!/bin/bash
 printf 'proxy=%s\\n' "$(git config --get-urlmatch http.proxy https://github.com/firebase/firebase-ios-sdk.git)" > "$ARCHIVE_TEST_TRACE"
 printf 'http=%s\\n' "$(git config --get http.version)" >> "$ARCHIVE_TEST_TRACE"
 printf 'credential=%s\\n' "$(git config --get credential.helper)" >> "$ARCHIVE_TEST_TRACE"
 printf 'prompt=%s\\n' "\${GIT_TERMINAL_PROMPT-}" >> "$ARCHIVE_TEST_TRACE"
-printf 'bypass=%s\\n' "\${NO_PROXY-}" >> "$ARCHIVE_TEST_TRACE"
+printf 'https_proxy=%s\\n' "\${https_proxy-}" >> "$ARCHIVE_TEST_TRACE"
+printf 'no_proxy=%s\\n' "\${no_proxy-}" >> "$ARCHIVE_TEST_TRACE"
+printf 'NO_PROXY=%s\\n' "\${NO_PROXY-}" >> "$ARCHIVE_TEST_TRACE"
 printf '%s\\n' "$*" > "$ARCHIVE_TEST_ARGS"
 exit 65
 `,
@@ -669,16 +706,20 @@ exit 65
       ...environment, PATH: `${bin}:${process.env.PATH}`, IOS_CI_ROOT: root,
       IOS_CI_SOURCE: source,
       GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1',
+      https_proxy: 'http://127.0.0.1:10', HTTPS_PROXY: 'http://127.0.0.1:10',
+      no_proxy: 'localhost', NO_PROXY: 'localhost',
       ARCHIVE_TEST_PYTHON: python, ARCHIVE_TEST_TRACE: trace, ARCHIVE_TEST_ARGS: args,
     }});
     assert.equal(result.status, 65, result.stderr);
     const policy = readFileSync(trace, 'utf8');
-    assert.match(policy, /^proxy=$/mu);
-    assert.match(policy, /^http=HTTP\/1\.1$/mu);
+    assert.match(policy, /^proxy=http:\/\/127\.0\.0\.1:9$/mu);
+    assert.match(policy, /^http=HTTP\/2$/mu);
     assert.match(policy, /^credential=retained-fixture-helper$/mu);
     assert.match(policy, /^prompt=0$/mu);
-    assert.match(policy, /bypass=.*github\.com/u);
+    assert.match(policy, /^https_proxy=http:\/\/127\.0\.0\.1:10$/mu);
+    assert.match(policy, /^no_proxy=localhost$/mu);
+    assert.match(policy, /^NO_PROXY=localhost$/mu);
     assert.match(readFileSync(args, 'utf8'), /-scmProvider system/u);
-    assert.equal(readFileSync(config, 'utf8'), '[http]\n proxy = http://127.0.0.1:9\n[credential]\n helper = retained-fixture-helper\n');
+    assert.equal(readFileSync(config, 'utf8'), gitConfig);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });

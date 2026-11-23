@@ -83,7 +83,7 @@ try {
         : iosImpact ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') }}'
           : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') && needs.impact.result == \'success\' && (github.event_name == \'workflow_dispatch\' || (needs.impact.outputs.ios == \'true\' && needs.impact.outputs.integrate == \'true\')) }}'
             : iosArchive ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') && needs.impact.result == \'success\' && needs.contracts.result == \'success\' && (github.event_name == \'workflow_dispatch\' || needs.impact.outputs.deep == \'true\') }}'
-              : otherPlatforms ? '${{ (' + ready + ') && needs.quality.result == \'success\' && needs.impact.result == \'success\' && (needs.impact.outputs.android == \'true\' || needs.impact.outputs.windows == \'true\') && needs.impact.outputs.integrate == \'true\' }}'
+              : otherPlatforms ? '${{ (' + ready + ') && needs.quality.result == \'success\' && needs.impact.result == \'success\' && (needs.impact.outputs.android == \'true\' || needs.impact.outputs.windows == \'true\' || needs.impact.outputs.linux == \'true\') && needs.impact.outputs.integrate == \'true\' }}'
                 : automatic === workflow && id === 'quality-summary' ? summaryCondition
                   : androidCoverage ? androidCoverageCondition : readyCondition;
       if (job.if !== expectedCondition) {

@@ -47,7 +47,10 @@
     "lint": "eslint \"packages/core/src/**/*.ts\" \"scripts/ci/**/*.mjs\" --max-warnings 0",
     "lint:static": "eslint \"packages/core/src/**/*.ts\" \"scripts/ci/**/*.mjs\" \"scripts/dev/**/*.mjs\" \"scripts/check-repo-contracts.mjs\" \"apps/browser/scripts/**/*.mjs\" \"apps/ios/scripts/**/*.mjs\" \"apps/ios/Tests/**/*.mjs\" \"apps/ios/SharedWebExtension/*.js\" \"packages/core/scripts/**/*.mjs\" \"packages/core/src/script-risk/evaluation/*.mjs\" --max-warnings 0",
     "typecheck": "pnpm --filter @gcsa-aegis/core typecheck",
-    "quality:other-platforms": "corepack pnpm --filter @gcsa-aegis/browser test:android-target && corepack pnpm --filter @gcsa-aegis/browser test:android-ui && corepack pnpm --filter @gcsa-aegis/browser test:scripts:android && corepack pnpm --filter @gcsa-aegis/browser test:winrm-model-relay"
+    "quality:android": "corepack pnpm --filter @gcsa-aegis/browser test:android-target && corepack pnpm --filter @gcsa-aegis/browser test:android-ui && corepack pnpm --filter @gcsa-aegis/browser test:scripts:android",
+    "quality:windows": "corepack pnpm --filter @gcsa-aegis/browser test:winrm-model-relay",
+    "quality:linux": "node --test scripts/ci/platform-tests/kcov-fixture.test.mjs scripts/ci/tests/shell-coverage.test.mjs",
+    "quality:other-platforms": "corepack pnpm run quality:android && corepack pnpm run quality:windows"
   },
   "engines": {
     "node": ">=20"
