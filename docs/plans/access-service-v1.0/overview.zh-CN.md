@@ -11,6 +11,7 @@
 
 | 阅读目的 | 文档 |
 |---|---|
+| 评审 2026-11-20 应用级回环、三端 Options、DEV / 内部 Alpha 的 3X-UI 文本与扫码、服务端交接及冻结修订差异 | [双无认证合同](app-inbound-contract.zh-CN.md) · [三端 Options](app-access-options-sdd.zh-CN.md) · [iOS SDD](ios-app-inbound-sdd.zh-CN.md) · [macOS SDD](macos-app-inbound-sdd.zh-CN.md) · [Android SDD 与可行性](android-app-inbound-options-sdd.zh-CN.md) |
 | 了解产品、架构、实施与商用边界 | 本文 |
 | 查看请求级路由、计量实验及首阶段部署技术决策 | [2026-09-22 架构复核与实施方案](architecture-review-20260922.zh-CN.md) |
 | 从当前主线继续开发、看依赖与验收顺序 | [当前开发计划](development-plan.zh-CN.md) |
