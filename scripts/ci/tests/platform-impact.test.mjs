@@ -376,7 +376,14 @@ test('paths select platforms and commit types select stage depth', () => {
     rmSync(mixedEvent); git('reset', '--hard', before);
     const emptyOldest = pr(() => {
       save('apps/ios/Feature.swift', 'initial change');
-      git('add', '-A'); git('commit', '--allow-empty-message', '-m', '');
+      git('add', '-A');
+      const parent = git('rev-parse', 'HEAD');
+      const tree = git('write-tree');
+      const emptyCommit = execFileSync('git', ['commit-tree', '--no-gpg-sign', tree, '-p', parent], {
+        cwd: root, encoding: 'utf8', input: '',
+      }).trim();
+      git('update-ref', 'HEAD', emptyCommit, parent);
+      assert.equal(git('show', '-s', '--format=[%s]', 'HEAD'), '[]', 'fixture subject is empty');
       save('apps/ios/Feature.swift', 'follow-up');
     }, 'chore: tidy');
     assert.deepEqual(emptyOldest.types, ['chore']);
