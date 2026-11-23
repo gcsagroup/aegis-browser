@@ -301,6 +301,32 @@ public final class Driver extends Instrumentation {
     results.put(item);
   }
 
+  private JSONObject stableFixtureSnapshot(String property, Object value) throws Exception {
+    String previousDigest = null;
+    String lastFailure = "快照尚未稳定";
+    long deadline = SystemClock.uptimeMillis() + 5000;
+    do {
+      try {
+        check(Fixture.focused, "自测窗口尚未聚焦");
+        JSONObject state = snapshot(HELPER);
+        // A settled accessibility tree may still predate the fixture's UI update.
+        find(state, property, value);
+        // The fixture always includes one password field, which must be observed and redacted.
+        find(state, "password", true);
+        String digest = state.getString("snapshotSha256");
+        if (digest.equals(previousDigest)) return state;
+        previousDigest = digest;
+        lastFailure = "快照尚未稳定";
+      } catch (GuardFailure error) {
+        previousDigest = null;
+        lastFailure = error.getMessage();
+      }
+      SystemClock.sleep(50);
+    } while (SystemClock.uptimeMillis() < deadline);
+    throw new GuardFailure("界面未就绪；" + Fixture.lifecycle() +
+        ";category=" + lastFailure + ";activePackage=" + activeWindowPackage());
+  }
+
   private JSONObject selfTest() throws Exception {
     Fixture.resetLifecycle();
     Activity[] fixture = new Activity[1];
@@ -315,34 +341,29 @@ public final class Driver extends Instrumentation {
     }
     check(fixture[0] != null, "自测 Activity 未创建");
     Activity activity = fixture[0];
+    String phase = "首次观察";
     try {
       waitForIdleSync();
       JSONArray results = new JSONArray();
-      JSONObject initial = null;
-      String lastFailure = "尚未观察";
-      long deadline = SystemClock.uptimeMillis() + 5000;
-      do {
-        try { initial = snapshot(HELPER); break; }
-        catch (GuardFailure error) {
-          lastFailure = error.getMessage();
-          SystemClock.sleep(50);
-        }
-      } while (SystemClock.uptimeMillis() < deadline);
-      check(initial != null, "自测界面未就绪；" + Fixture.lifecycle() + ";category=" + lastFailure +
-          ";activePackage=" + activeWindowPackage());
-      String input = find(initial, "label", "中文目标输入");
+      String inputLabel = "中文目标输入";
+      JSONObject initial = stableFixtureSnapshot("label", inputLabel);
+      String input = find(initial, "label", inputLabel);
       String text = "帮我总结页面内容：电池续航18小时 🔋";
+      phase = "Unicode 输入";
       perform(HELPER, initial, initial.getString("snapshotSha256"), input, "set-text", text);
-      JSONObject edited = snapshot(HELPER);
-      find(edited, "text", text);
+      phase = "核对输入与密码框";
+      JSONObject edited = stableFixtureSnapshot("text", text);
       passed(results, "unicode-input");
+      phase = "过期快照";
       boolean refused = false;
       try { perform(HELPER, edited, initial.getString("snapshotSha256"), input, "set-text", "不应写入"); }
       catch (GuardFailure expected) { refused = true; }
       check(refused, "过期快照没有被拒绝");
       passed(results, "stale-snapshot-rejected");
+      phase = "错误应用";
+      AccessibilityNodeInfo fixtureRoot = root(HELPER);
       refused = false;
-      try { requirePackage(root(HELPER), BROWSER); }
+      try { requirePackage(fixtureRoot, BROWSER); }
       catch (GuardFailure expected) { refused = true; }
       check(refused, "错误应用没有被拒绝");
       String fixtureDirectory = "/aegis-test-user-data-fixture";
@@ -360,14 +381,19 @@ public final class Driver extends Instrumentation {
             "接受了不同应用的 Profile");
       }
       passed(results, "wrong-package-rejected");
+      phase = "密码框";
+      String password = find(edited, "password", true);
       refused = false;
-      try { perform(HELPER, edited, edited.getString("snapshotSha256"), find(edited, "password", true), "set-text", "不应写入"); }
-      catch (GuardFailure expected) { refused = true; }
+      try { perform(HELPER, edited, edited.getString("snapshotSha256"), password, "set-text", "不应写入"); }
+      catch (GuardFailure expected) { refused = expected.getMessage().equals("节点不可操作，或属于密码框"); }
       check(refused, "密码框写入没有被拒绝");
       passed(results, "password-edit-rejected");
-      perform(HELPER, edited, edited.getString("snapshotSha256"), find(edited, "text", "确认中文输入"), "click", "");
-      JSONObject finalState = snapshot(HELPER);
-      find(finalState, "text", "已收到：" + text);
+      phase = "点击";
+      String clickLabel = "确认中文输入";
+      JSONObject beforeClick = stableFixtureSnapshot("text", clickLabel);
+      perform(HELPER, beforeClick, beforeClick.getString("snapshotSha256"), find(beforeClick, "text", clickLabel), "click", "");
+      phase = "核对点击结果";
+      JSONObject finalState = stableFixtureSnapshot("text", "已收到：" + text);
       passed(results, "click-updates-result");
       check(!finalState.toString().contains("fixture-password"), "密码框内容没有正确隐藏");
       passed(results, "password-value-hidden");
@@ -375,6 +401,8 @@ public final class Driver extends Instrumentation {
       finalState.put("selfTestResults", results);
       finalState.put("browserTested", false);
       return finalState;
+    } catch (GuardFailure error) {
+      throw new GuardFailure("自测" + phase + "：" + error.getMessage());
     } finally {
       runOnMainSync(activity::finish);
     }
@@ -409,9 +437,12 @@ public final class Driver extends Instrumentation {
       EditText input = new EditText(this);
       input.setContentDescription("中文目标输入");
       input.setSingleLine(false);
+      // Only accessibility actions drive this synthetic fixture's text fields.
+      input.setShowSoftInputOnFocus(false);
       EditText password = new EditText(this);
       password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
       password.setText("fixture-password");
+      password.setShowSoftInputOnFocus(false);
       Button button = new Button(this);
       button.setText("确认中文输入");
       TextView result = new TextView(this);
