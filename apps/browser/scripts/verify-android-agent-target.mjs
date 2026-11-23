@@ -26,22 +26,25 @@ export function packageApkPath(output) {
   return value;
 }
 
-export function activeProfileRoots(fdListing) {
+export function inspectProfileDescriptors(fdListing) {
   // 只识别已打开的 Profile 文件路径，不把 Java 公用缓存目录当作资料目录。
   const roots = new Set();
+  let profileFileOpen = false;
   for (const line of fdListing.split(/\r?\n/u)) {
     const arrow = line.indexOf(' -> ');
-    if (arrow < 0) continue;
+    if (arrow < 0 || !/^[0-9]+$/u.test(line.slice(0, arrow).split(/\s+/u).at(-1))) continue;
     const file = line.slice(arrow + 4).replace(/^\/data\/data\//u, '/data/user/0/');
     if (!file.startsWith(PROFILE_DIRECTORY_PREFIX)) continue;
-    const profile = /\/(?:Default|Profile [0-9]+)\//u.exec(file);
+    const deleted = file.endsWith(' (deleted)');
+    const target = deleted ? file.slice(0, -' (deleted)'.length) : file;
+    const profile = /\/(?:Default|Profile [0-9]+)(?:\/|$)/u.exec(target);
     if (!profile) continue;
-    const root = file.slice(0, profile.index);
-    if (!root.split('/').some(part => part === '..' || part === '.')) {
-      roots.add(root);
-    }
+    const root = target.slice(0, profile.index);
+    if (root.split('/').some(part => part === '..' || part === '.')) continue;
+    roots.add(root);
+    if (!deleted && profile.index + profile[0].length < target.length) profileFileOpen = true;
   }
-  return [...roots].sort();
+  return {profileRoots: [...roots].sort(), profileFileOpen};
 }
 
 export function parseKeyguard(policy) {
@@ -64,7 +67,8 @@ export function verifyTarget(report, expectedHash, expectedProfile) {
   if (!report.keyguard.known || !report.keyguard.unlocked || !report.keyguard.screenOn) {
     fail('真机尚未确认解锁并亮屏');
   }
-  if (!report.processStable || report.profileRoots.length !== 1 || report.profileRoots[0] !== expectedProfile) {
+  if (!report.processStable || report.profileFileOpen !== true ||
+      report.profileRoots.length !== 1 || report.profileRoots[0] !== expectedProfile) {
     fail('运行中的独立 Profile 尚未证实；不得在默认资料中继续验收');
   }
   return {targetVerified: true, uiTested: false, runtimeTested: false,
@@ -95,8 +99,7 @@ export function inspectDevice({serial, adb}, run = command) {
   const metadata = shell('dumpsys', 'package', PACKAGE);
   const pid = shell('pidof', PACKAGE).trim();
   if (!/^\d+$/.test(pid)) fail('未找到唯一浏览器进程，未自动启动 App');
-  const descriptors = run(adb, ['-s', serial, 'exec-out', 'run-as', PACKAGE,
-    'ls', '-l', '/proc/' + pid + '/fd']);
+  const descriptors = shell('-n', '-T', 'run-as', PACKAGE, 'ls', '-l', '/proc/' + pid + '/fd');
   const keyguard = parseKeyguard(shell('dumpsys', 'window', 'policy'));
   const endPid = shell('pidof', PACKAGE).trim();
   const endApk = packageApkPath(shell('pm', 'path', PACKAGE));
@@ -104,7 +107,7 @@ export function inspectDevice({serial, adb}, run = command) {
   return {package: PACKAGE, serial, androidUser, installedSha256,
     versionName: metadata.match(/\bversionName=([^\s]+)/)?.[1] ?? null,
     versionCode: metadata.match(/\bversionCode=(\d+)/)?.[1] ?? null,
-    profileRoots: activeProfileRoots(descriptors), keyguard,
+    ...inspectProfileDescriptors(descriptors), keyguard,
     processStable: pid === endPid && apk === endApk && androidUser === endUser,
     targetVerified: false, uiTested: false, runtimeTested: false, releaseEligible: false,
     checkedAt: new Date().toISOString()};

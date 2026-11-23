@@ -6,7 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {test} from 'node:test';
-import {PACKAGE, packageApkPath, activeProfileRoots, parseKeyguard,
+import {PACKAGE, packageApkPath, inspectProfileDescriptors, parseKeyguard,
   verifyTarget, inspectDevice, verifyBuildRecords, verifyCandidateFiles} from './verify-android-agent-target.mjs';
 
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -15,7 +15,8 @@ const apk = '/data/app/~~safe/com.gcsa.aegis-build/base.apk';
 const profile = '/data/user/0/com.gcsa.aegis/aegis-test-user-data-recovery-r1';
 const unlocked = {known: true, unlocked: true, screenOn: true};
 const good = () => ({package: PACKAGE, androidUser: '0', installedSha256: hash,
-  keyguard: unlocked, processStable: true, profileRoots: [profile]});
+  keyguard: unlocked, processStable: true, profileRoots: [profile], profileFileOpen: true});
+const activeProfileRoots = listing => inspectProfileDescriptors(listing).profileRoots;
 
 test('安装路径只接受指定包的单一 APK', () => {
   assert.equal(packageApkPath('package:' + apk + '\n'), apk);
@@ -58,6 +59,29 @@ test('包根目录直属的 Profile 与独立资料混用时拒绝目标', () =>
     const profileRoots = activeProfileRoots(`1 -> ${profile}/Default/History\n${defaultDescriptor}`);
     assert.deepEqual(profileRoots, [packageRoot, profile]);
     assert.throws(() => verifyTarget({...good(), profileRoots}, hash, profile), /独立 Profile 尚未证实/);
+  }
+});
+
+test('Profile 目录和已删除条目只能作为冲突证据', () => {
+  const goodFile = `1 -> ${profile}/Default/History`;
+  const other = '/data/user/0/' + PACKAGE + '/app_chrome';
+  for (const listing of [
+    `1 -> ${profile}/Default`,
+    `1 -> ${profile}/Default/History (deleted)`,
+    `${goodFile}\r\n2 -> ${other}/Default`,
+    `${goodFile}\n2 -> ${other}/Default/History (deleted)`,
+  ]) {
+    const evidence = inspectProfileDescriptors(listing);
+    assert.throws(() => verifyTarget({...good(), ...evidence}, hash, profile), /独立 Profile 尚未证实/);
+  }
+  assert.equal(verifyTarget({...good(), ...inspectProfileDescriptors(goodFile)}, hash, profile).targetVerified, true);
+});
+
+test('只识别数字 FD 的完整目标，不解析目标内的分隔符', () => {
+  const fullListing = `lr-x------ 1 u0_a81 u0_a81 64 2026-11-23 09:00 12 -> ${profile}/Default/History`;
+  assert.deepEqual(inspectProfileDescriptors(fullListing), {profileRoots: [profile], profileFileOpen: true});
+  for (const listing of [`label -> ${profile}/Default/History`, `1 -> /fixture/2 -> ${profile}/Default/History`]) {
+    assert.deepEqual(inspectProfileDescriptors(listing), {profileRoots: [], profileFileOpen: false});
   }
 });
 
@@ -106,7 +130,7 @@ test('未完成、失败、被中断、源码变化或错配构建不能验收�
   assert.throws(() => verifyBuildRecords({manifest_sha256: hash}, status, manifest, hash));
 });
 
-function deviceStub({switchUser = false} = {}) {
+function deviceStub({switchUser = false, fdReadFails = false} = {}) {
   const calls = [];
   let userReads = 0;
   const run = (program, args) => {
@@ -120,7 +144,8 @@ function deviceStub({switchUser = false} = {}) {
     if (cmd === 'shell sha256sum ' + apk) return hash + '  ' + apk + '\n';
     if (cmd === 'shell dumpsys package ' + PACKAGE) return 'versionCode=792207704\nversionName=151.0.7922.77\n';
     if (cmd === 'shell pidof ' + PACKAGE) return '123\n';
-    if (cmd === 'exec-out run-as ' + PACKAGE + ' ls -l /proc/123/fd') {
+    if (cmd === 'shell -n -T run-as ' + PACKAGE + ' ls -l /proc/123/fd') {
+      if (fdReadFails) throw new Error('只读命令失败');
       return `1 -> ${profile}/Default/History\n2 -> /data/user/0/${PACKAGE}/cache/敏感文件名-不输出\n`;
     }
     if (cmd === 'shell dumpsys window policy') return 'KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_ON';
@@ -140,6 +165,12 @@ test('实机检查命令只读且不输出原始目录清单', () => {
   assert.equal(stub.calls.some(args => args.includes('install') || args.includes('input') || args.includes('start') || args.includes('clear')), false);
   assert.throws(() => inspectDevice({serial: 'fixture123;bad', adb: '/test/adb'}, stub.run));
   assert.throws(() => inspectDevice({serial: 'missing123', adb: '/test/adb'}, stub.run));
+});
+
+test('远端 FD 枚举失败时拒绝收集目标证据', () => {
+  const stub = deviceStub({fdReadFails: true});
+  assert.throws(() => inspectDevice({serial: 'fixture123', adb: '/test/adb'}, stub.run), /只读命令失败/);
+  assert.equal(stub.calls.some(args => args.includes('policy')), false);
 });
 
 test('只读检查末尾重验 Android 用户', () => {
