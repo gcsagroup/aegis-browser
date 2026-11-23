@@ -35,8 +35,9 @@ export const JACOCO_ARTIFACTS = Object.freeze({
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(here, '../../..');
 const sources = ['android-ui-driver/AndroidManifest.xml', 'android-ui-driver/Driver.java',
-  'android-ui-driver/jacoco-agent.properties'];
+  'android-ui-driver/jacoco-agent.properties', 'android-ui-driver/read-profile-fds.sh'];
 const coverageConfiguration = sources[2];
+const profileReader = sources[3];
 const fail = message => { throw new Error(message); };
 const hash = (file, algorithm = 'sha256') => crypto.createHash(algorithm).update(fs.readFileSync(file)).digest('hex');
 const hashText = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -236,7 +237,10 @@ function build(options) {
   const dexHasJacoco = hasJacocoMarker(path.join(dex, 'classes.dex'));
   if (dexHasJacoco !== coverageEnabled) fail(coverageEnabled ? 'coverage DEX 缺少 JaCoCo runtime/probe' : 'normal DEX 意外包含 JaCoCo');
   const unsigned = path.join(output, 'unsigned.apk');
-  run(tool('aapt2'), ['link', '-I', android, '--manifest', path.join(here, sources[0]), '-o', unsigned]);
+  const assets = path.join(output, 'assets');
+  fs.mkdirSync(assets);
+  fs.copyFileSync(path.join(here, profileReader), path.join(assets, 'read-profile-fds.sh'));
+  run(tool('aapt2'), ['link', '-I', android, '--manifest', path.join(here, sources[0]), '-A', assets, '-o', unsigned]);
   run('/usr/bin/zip', ['-q', unsigned, 'classes.dex'], {cwd: dex});
   if (coverageEnabled) run('/usr/bin/zip', ['-q', '-j', unsigned, path.join(here, coverageConfiguration)]);
   const aligned = path.join(output, 'aligned.apk');
@@ -261,6 +265,10 @@ function build(options) {
   }
   run(tool('apksigner'), ['verify', '--verbose', apk]);
   const apkEntries = new Set(run('/usr/bin/unzip', ['-Z1', apk]).trim().split(/\r?\n/));
+  if (!apkEntries.has('assets/read-profile-fds.sh') ||
+      run('/usr/bin/unzip', ['-p', apk, 'assets/read-profile-fds.sh']) !== fs.readFileSync(path.join(here, profileReader), 'utf8')) {
+    fail('APK 内的描述符读取脚本与宿主检查不一致');
+  }
   if (apkEntries.has('jacoco-agent.properties') !== coverageEnabled ||
       (coverageEnabled && run('/usr/bin/unzip', ['-p', apk, 'jacoco-agent.properties']) !==
         fs.readFileSync(path.join(here, coverageConfiguration), 'utf8'))) {

@@ -27,13 +27,16 @@ export function packageApkPath(output) {
 }
 
 export function inspectProfileDescriptors(fdListing) {
-  // 只识别已打开的 Profile 文件路径，不把 Java 公用缓存目录当作资料目录。
+  const entries = fdListing.split('\0');
+  if (entries.pop() !== '' || entries.pop() !== 'end' || entries.length % 2 !== 0) {
+    fail('文件描述符清单不完整');
+  }
   const roots = new Set();
   let profileFileOpen = false;
-  for (const line of fdListing.split(/\r?\n/u)) {
-    const arrow = line.indexOf(' -> ');
-    if (arrow < 0 || !/^[0-9]+$/u.test(line.slice(0, arrow).split(/\s+/u).at(-1))) continue;
-    const file = line.slice(arrow + 4).replace(/^\/data\/data\//u, '/data/user/0/');
+  for (let index = 0; index < entries.length; index += 2) {
+    const [mode, link] = entries.slice(index, index + 2);
+    if (!/^[0-9a-f]{1,4}$/iu.test(mode) || !link) fail('文件描述符记录无效');
+    const file = link.replace(/^\/data\/data\//u, '/data/user/0/');
     if (!file.startsWith(PROFILE_DIRECTORY_PREFIX)) continue;
     const deleted = file.endsWith(' (deleted)');
     const target = deleted ? file.slice(0, -' (deleted)'.length) : file;
@@ -42,7 +45,8 @@ export function inspectProfileDescriptors(fdListing) {
     const root = target.slice(0, profile.index);
     if (root.split('/').some(part => part === '..' || part === '.')) continue;
     roots.add(root);
-    if (!deleted && profile.index + profile[0].length < target.length) profileFileOpen = true;
+    const regularFile = (Number.parseInt(mode, 16) & 0xf000) === 0x8000;
+    if (regularFile && !deleted && profile.index + profile[0].length < target.length) profileFileOpen = true;
   }
   return {profileRoots: [...roots].sort(), profileFileOpen};
 }
@@ -75,8 +79,8 @@ export function verifyTarget(report, expectedHash, expectedProfile) {
     releaseEligible: false, qualification: 'target-only'};
 }
 
-function command(program, args) {
-  const result = spawnSync(program, args, {encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024});
+function command(program, args, options = {}) {
+  const result = spawnSync(program, args, {encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024, ...options});
   if (result.status !== 0 || result.error || result.signal) {
     // 不输出远端原始 stdout/stderr，避免将路径、界面或资料内容写入诊断错误。
     fail('只读命令失败：' + path.basename(program));
@@ -99,7 +103,8 @@ export function inspectDevice({serial, adb}, run = command) {
   const metadata = shell('dumpsys', 'package', PACKAGE);
   const pid = shell('pidof', PACKAGE).trim();
   if (!/^\d+$/.test(pid)) fail('未找到唯一浏览器进程，未自动启动 App');
-  const descriptors = shell('-n', '-T', 'run-as', PACKAGE, 'ls', '-l', '/proc/' + pid + '/fd');
+  const input = fs.readFileSync(new URL('./android-ui-driver/read-profile-fds.sh', import.meta.url));
+  const descriptors = run(adb, ['-s', serial, 'shell', '-T', 'run-as', PACKAGE, 'sh', '-s', '--', pid], {input});
   const keyguard = parseKeyguard(shell('dumpsys', 'window', 'policy'));
   const endPid = shell('pidof', PACKAGE).trim();
   const endApk = packageApkPath(shell('pm', 'path', PACKAGE));

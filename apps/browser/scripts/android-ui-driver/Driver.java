@@ -22,8 +22,10 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,7 +42,7 @@ public final class Driver extends Instrumentation {
   private static final Pattern TEST_PROFILE = Pattern.compile(
       Pattern.quote(BROWSER_DATA) + "aegis-test-user-data-[a-z0-9-]+");
   private static final Pattern PROFILE_ENTRY = Pattern.compile("/(?:Default|Profile [0-9]+)(?:/|$)");
-  private static final Pattern FD_NUMBER = Pattern.compile("(?:^|\\s)[0-9]+$");
+  private static final Pattern FD_MODE = Pattern.compile("[0-9a-fA-F]{1,4}");
   private static final String DELETED = " (deleted)";
   private UiAutomation automation;
   private JSONObject request;
@@ -148,8 +150,13 @@ public final class Driver extends Instrumentation {
   private String shell(String command) throws Exception {
     // 只接受本类构造的固定只读命令。
     try (ParcelFileDescriptor descriptor = automation.executeShellCommand(command);
-         FileInputStream input = new FileInputStream(descriptor.getFileDescriptor());
-         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+         FileInputStream input = new FileInputStream(descriptor.getFileDescriptor())) {
+      return readText(input);
+    }
+  }
+
+  private static String readText(InputStream input) throws Exception {
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       byte[] buffer = new byte[4096];
       for (int size; (size = input.read(buffer)) != -1;) {
         check(output.size() + size <= 2 * 1024 * 1024, "目标元数据超出读取上限");
@@ -159,9 +166,16 @@ public final class Driver extends Instrumentation {
     }
   }
 
-  private static String withShellCompletion(String command, String completion) {
-    // UiAutomation splits on whitespace. Keep the shell program in one argument and pass the command as argv.
-    return "sh -c \"$@\"&&echo${IFS}" + completion + " aegis-fd-check " + command;
+  private String profileReader() throws Exception {
+    try (InputStream input = getTargetContext().getAssets().open("read-profile-fds.sh")) {
+      return readText(input);
+    }
+  }
+
+  private String shellWithScript(String script, String command) throws Exception {
+    // UiAutomation splits on whitespace. Pass an encoded script as a single argument and decode it to stdin.
+    String encoded = Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_8));
+    return shell("sh -c echo${IFS}\"$0\"|base64${IFS}-d|\"$@\" " + encoded + " " + command);
   }
 
   private void browserGuard() throws Exception {
@@ -180,20 +194,23 @@ public final class Driver extends Instrumentation {
     check(hex(digest.digest()).equals(expectedHash), "运行中的 APK 不属于指定候选");
     String pid = shell("pidof " + BROWSER).trim();
     check(pid.matches("[0-9]+"), "未找到唯一浏览器进程");
-    String completion = "AEGIS_FD_COMPLETE_" + java.util.UUID.randomUUID();
-    String readDescriptors = "run-as " + BROWSER + " ls -l /proc/" + pid + "/fd";
-    check(hasActiveProfile(shell(withShellCompletion(readDescriptors, completion)), completion, profile),
+    String readDescriptors = "run-as " + BROWSER + " sh -s -- " + pid;
+    check(hasActiveProfile(shellWithScript(profileReader(), readDescriptors), profile),
         "拒绝默认资料、不完整清单或未经证实的独立 Profile");
     check(shell("pidof " + BROWSER).trim().equals(pid), "浏览器进程已变化，请重新检查");
   }
 
-  private static boolean hasActiveProfile(String descriptors, String completion, String expectedProfile) {
-    if (!descriptors.endsWith("\n" + completion + "\n")) return false;
+  private static boolean hasActiveProfile(String descriptors, String expectedProfile) {
+    String[] rows = descriptors.split("\0", -1);
+    int length = rows.length;
+    if (length < 2 || length % 2 != 0 || !rows[length - 2].equals("end") || !rows[length - 1].isEmpty()) {
+      return false;
+    }
     boolean profileFileOpen = false;
-    for (String line : descriptors.split("\\r?\\n")) {
-      int arrow = line.indexOf(" -> ");
-      if (arrow < 0 || !FD_NUMBER.matcher(line.substring(0, arrow)).find()) continue;
-      String target = line.substring(arrow + 4);
+    for (int index = 0; index < length - 2; index += 2) {
+      String mode = rows[index];
+      String target = rows[index + 1];
+      if (!FD_MODE.matcher(mode).matches() || target.isEmpty()) return false;
       if (target.startsWith(DATA_ALIAS)) target = DATA_ROOT + target.substring(DATA_ALIAS.length());
       if (!target.startsWith(BROWSER_DATA)) continue;
       boolean deleted = target.endsWith(DELETED);
@@ -201,7 +218,8 @@ public final class Driver extends Instrumentation {
       Matcher entry = PROFILE_ENTRY.matcher(target);
       if (!entry.find()) continue;
       if (!target.substring(0, entry.start()).equals(expectedProfile)) return false;
-      if (!deleted && entry.end() < target.length()) profileFileOpen = true;
+      boolean regularFile = (Integer.parseInt(mode, 16) & 0xf000) == 0x8000;
+      if (regularFile && !deleted && entry.end() < target.length()) profileFileOpen = true;
     }
     return profileFileOpen;
   }
@@ -353,25 +371,27 @@ public final class Driver extends Instrumentation {
     String packageRoot = DATA_ROOT + BROWSER;
     String profile = packageRoot + fixture;
     String alias = DATA_ALIAS + BROWSER + fixture;
-    String complete = "AEGIS_FD_COMPLETE_FIXTURE";
-    String end = "\n" + complete + "\n";
-    String opened = "1 -> " + profile + "/Default/History";
-    String aliasEntry = "2 -> " + alias + "/Profile 1/History";
+    String end = "end\0";
+    String opened = "81a4\0" + profile + "/Default/History\0";
+    String aliasEntry = "81a4\0" + alias + "/Profile 1/History\0";
+    String reader = profileReader();
+    String observed = shellWithScript("sleep 2 &\nset -- $!\nsleep 0.1\n" + reader, "sh -s");
     check(TEST_PROFILE.matcher(profile).matches(), "当前浏览器的独立 Profile 被拒绝");
-    check(shell(withShellCompletion("echo AEGIS_FD_TEST", complete)).equals("AEGIS_FD_TEST" + end)
-        && shell(withShellCompletion("false", complete)).isEmpty(), "描述符命令完成标记不可靠");
-    check(hasActiveProfile(opened + "\n" + aliasEntry + end, complete, profile),
+    check(observed.endsWith("\0" + end) && !shellWithScript("set -- 0\n" + reader, "sh -s").endsWith(end),
+        "描述符命令完成标记不可靠");
+    check(hasActiveProfile(opened + aliasEntry + end, profile),
         "未将 /data/data 别名绑定到同一个 Profile");
-    check(!hasActiveProfile(opened + "\n", complete, profile), "接受了未完成的文件描述符清单");
     for (String invalid : new String[] {
-        "1 -> " + profile + "/Default",
-        opened + DELETED,
-        "fixture -> " + profile + "/Default/History",
-        "1 -> /fixture/2 -> " + profile + "/Default/History",
-        "1 -> /data/user/0/app.gcsa.aegis" + fixture + "/Default/History",
-        "1 -> " + packageRoot + ".other" + fixture + "/Default/History",
+        opened,
+        opened + "?\0unknown\0" + end,
+        "41ed\0" + profile + "/Default\0" + end,
+        "41ed\0" + profile + "/Default/Local Storage\0" + end,
+        "81a4\0" + profile + "/Default/History\n" + DELETED + "\0" + end,
+        "81a4\0/fixture/2 -> " + profile + "/Default/History\0" + end,
+        "81a4\0/data/user/0/app.gcsa.aegis" + fixture + "/Default/History\0" + end,
+        "81a4\0" + packageRoot + ".other" + fixture + "/Default/History\0" + end,
     }) {
-      check(!hasActiveProfile(invalid + end, complete, profile), "接受了未经证实的独立 Profile");
+      check(!hasActiveProfile(invalid, profile), "接受了未经证实的独立 Profile");
     }
     for (String other : new String[] {
         packageRoot + "/Default/History",
@@ -379,7 +399,7 @@ public final class Driver extends Instrumentation {
         packageRoot + "/app_chrome/Default",
         packageRoot + "/app_chrome/Default/History" + DELETED,
     }) {
-      check(!hasActiveProfile(opened + "\n2 -> " + other + end, complete, profile),
+      check(!hasActiveProfile(opened + "41ed\0" + other + "\0" + end, profile),
           "未拒绝与默认 Profile 混用的独立资料");
     }
   }
