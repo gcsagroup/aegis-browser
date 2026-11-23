@@ -386,8 +386,10 @@ public final class Driver extends Instrumentation {
     check(TEST_PROFILE.matcher(profile).matches(), "当前浏览器的独立 Profile 被拒绝");
     check(observed.endsWith("\0" + end) && !shellWithScript("set -- 0\n" + reader, "sh -s").endsWith(end),
         "描述符命令完成标记不可靠");
-    check(hasActiveProfile(opened + aliasEntry + end, profile),
+    check(hasActiveProfile(aliasEntry + end, profile) && hasActiveProfile(opened + aliasEntry + end, profile),
         "未将 /data/data 别名绑定到同一个 Profile");
+    check(!TEST_PROFILE.matcher(alias).matches() && !TEST_PROFILE.matcher(packageRoot + "/app_chrome").matches(),
+        "接受了别名或默认 Profile 作为请求目录");
     for (String invalid : new String[] {
         opened,
         opened + "?\0unknown\0" + end,
@@ -406,13 +408,13 @@ public final class Driver extends Instrumentation {
       check(!hasActiveProfile(invalid, profile), "接受了未经证实的独立 Profile");
     }
     for (String other : new String[] {
-        packageRoot + "/Default/History",
-        DATA_ALIAS + BROWSER + "/Profile 1/History",
-        packageRoot + "/app_chrome/Default",
-        packageRoot + "/app_chrome/Default/History" + DELETED,
-        packageRoot + "/aegis-test-user-data-other/Default/History",
+        "81a4\0" + packageRoot + "/Default/History\0",
+        "81a4\0" + DATA_ALIAS + BROWSER + "/Profile 1/History\0",
+        "41ed\0" + packageRoot + "/app_chrome/Default\0",
+        "81a4\0" + packageRoot + "/app_chrome/Default/History" + DELETED + "\0",
+        "81a4\0" + packageRoot + "/aegis-test-user-data-other/Default/History\0",
     }) {
-      check(!hasActiveProfile(opened + "41ed\0" + other + "\0" + end, profile),
+      check(!hasActiveProfile(opened + other + end, profile),
           "未拒绝与默认 Profile 混用的独立资料");
     }
   }

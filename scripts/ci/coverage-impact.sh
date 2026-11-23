@@ -13,6 +13,7 @@ paths=(
   apps/browser/scripts/android-agent-ui_test.mjs
   apps/browser/scripts/android-ui-driver/AndroidManifest.xml
   apps/browser/scripts/android-ui-driver/Driver.java
+  apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh
   apps/browser/scripts/android-ui-driver/jacoco-agent.properties
   apps/browser/scripts/common.sh
   apps/browser/scripts/package-android.sh
