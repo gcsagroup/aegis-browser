@@ -18,8 +18,8 @@ importers:
         specifier: 10.14.0
         version: 10.14.0
       eslint-plugin-security:
-        specifier: 3.0.1
-        version: 3.0.1
+        specifier: 4.2.1
+        version: 4.2.1
       eslint-plugin-security-node:
         specifier: 1.1.4
         version: 1.1.4
@@ -1014,8 +1014,8 @@ packages:
     resolution: {integrity: sha512-8+agTMb2glNbP1zFhqo/Ixwtz16Hn0TvJW5KgpoHkAzGjDUhQf9iT+D6OgbhvZCMWRKMjc+5FbJ2Lh0UEUz7fQ==}
     engines: {node: '>=0.10.0'}
 
-  eslint-plugin-security@3.0.1:
-    resolution: {integrity: sha512-XjVGBhtDZJfyuhIxnQ/WMm385RbX3DBu7H1J7HNNhmB2tnGxMeqVSnYv79oAj992ayvIBZghsymwkYFS6cGH4Q==}
+  eslint-plugin-security@4.2.1:
+    resolution: {integrity: sha512-iF95SSqdSUVTvB7srNXoNeTQIqwfALTn9nmoqJyixSIKqEydlW01Cqb7xNveqE4Zd6YWBoQICQ4FH9NkR1byDg==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   eslint-scope@9.1.2:
@@ -2443,7 +2443,7 @@ snapshots:
 
   eslint-plugin-security-node@1.1.4: {}
 
-  eslint-plugin-security@3.0.1:
+  eslint-plugin-security@4.2.1:
     dependencies:
       safe-regex: 2.1.1
 
