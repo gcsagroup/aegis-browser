@@ -108,11 +108,12 @@ test('工具自测必须逐项返回固定六个 fixture 且不冒充浏览器�
 });
 
 test('JaCoCo XML 只用完整 Driver class 集和真实源码行计数生成百分比', () => {
-  const packagePath = HELPER.replaceAll('.', '/');
+  const packagePath = 'com/gcsa/aegis/qa/driver';
+  assert.equal(HELPER.replaceAll('.', '/'), packagePath);
   const classes = ['Driver', 'Driver$Fixture', 'Driver$GuardFailure'].map(name => packagePath + '/' + name);
   const xml = [
     '<report>',
-    '<package name="' + packagePath + '">',
+    '<package name="com/gcsa/aegis/qa/driver">',
     ...classes.map(name => '<class name="' + name + '" sourcefilename="Driver.java"/>'),
     '<sourcefile name="Driver.java"><counter type="LINE" missed="3" covered="5"/></sourcefile>',
     '</package>',
