@@ -399,6 +399,9 @@ public final class Driver extends Instrumentation {
         "81a4\0/fixture/2 -> " + profile + "/Default/History\0" + end,
         "81a4\0/data/user/0/app.gcsa.aegis" + fixture + "/Default/History\0" + end,
         "81a4\0" + packageRoot + ".other" + fixture + "/Default/History\0" + end,
+        "81a4\0/data/user/0/com-gcsa.aegis" + fixture + "/Default/History\0" + end,
+        "81a4\0/data/user/0/com.gcsa-aegis" + fixture + "/Default/History\0" + end,
+        "81a4\0/data/user/10/" + BROWSER + fixture + "/Default/History\0" + end,
     }) {
       check(!hasActiveProfile(invalid, profile), "接受了未经证实的独立 Profile");
     }
@@ -407,6 +410,7 @@ public final class Driver extends Instrumentation {
         DATA_ALIAS + BROWSER + "/Profile 1/History",
         packageRoot + "/app_chrome/Default",
         packageRoot + "/app_chrome/Default/History" + DELETED,
+        packageRoot + "/aegis-test-user-data-other/Default/History",
     }) {
       check(!hasActiveProfile(opened + "41ed\0" + other + "\0" + end, profile),
           "未拒绝与默认 Profile 混用的独立资料");

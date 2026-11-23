@@ -830,7 +830,7 @@ class SchemaNodesGenerator:
     )
 
   def GetEnumIntegerType(self, schema, is_sensitive_value, name):
-    if not (all(type(x) == int for x in schema['enum'])):
+    if not (all(type(x) == int for x in schema['enum'])):  # noqa: E721
       raise AssertionError("政策定义不满足生成约束")
     possible_values = schema['enum']
     if self.IsConsecutiveInterval(possible_values):
@@ -852,7 +852,7 @@ class SchemaNodesGenerator:
     )
 
   def GetEnumStringType(self, schema, is_sensitive_value, name):
-    if not (all(type(x) == str for x in schema['enum'])):
+    if not (all(type(x) == str for x in schema['enum'])):  # noqa: E721
       raise AssertionError("政策定义不满足生成约束")
     offset_begin = len(self.string_enums)
     self.string_enums += schema['enum']
@@ -1004,7 +1004,7 @@ class SchemaNodesGenerator:
       required_properties = schema.get('required', [])
       if not (type(required_properties) is list):
         raise AssertionError("政策定义不满足生成约束")
-      if not (all(type(x) == str for x in required_properties)):
+      if not (all(type(x) == str for x in required_properties)):  # noqa: E721
         raise AssertionError("政策定义不满足生成约束")
       self.required_properties += required_properties
       required_end = len(self.required_properties)

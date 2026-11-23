@@ -51,10 +51,20 @@ try {
   if (!prTitleWorkflow || typeof prTitleWorkflow !== 'object') fail('PR title workflow must be a YAML object');
   const ready = "github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false'";
   const readyCondition = '${{ ' + ready + ' }}';
+  const androidCoverageCondition = "${{ needs.impact.outputs.run == 'true' && (" + ready + ') }}';
   const summaryCondition = '${{ always() && (' + ready + ') }}';
   const summaryName = '${{ (' + ready + ") && 'quality-gate' || 'quality-deferred-draft-or-missing-metadata' }}";
+  const integrationBranches = ['develop', 'main'];
+  const automaticEvents = ['pull_request', 'push'];
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'].sort();
-  for (const [label, automatic] of [['Quality', workflow], ['C++', cppWorkflow], ['iOS validation', iosValidationWorkflow]]) {
+  const expectedConcurrency = "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}-{1}', github.ref, github.sha) || format('dispatch-{0}', github.run_id) }}";
+  const cancelStalePR = "${{ github.event_name == 'pull_request' }}";
+  const reportingWorkflows = [
+    ['Other platform coverage', otherWorkflow], ['Android coverage', androidWorkflow],
+  ];
+  for (const [label, automatic] of [
+    ['Quality', workflow], ['C++', cppWorkflow], ['iOS validation', iosValidationWorkflow], ...reportingWorkflows,
+  ]) {
     if (JSON.stringify(array(automatic?.on?.pull_request?.types).sort()) !== JSON.stringify(prTypes)) {
       fail(`${label} PR event types must be exactly opened, reopened, synchronize, ready_for_review and converted_to_draft`);
     }
@@ -63,6 +73,7 @@ try {
         fail(`${label}/${id} may not use the required check name or ID for a skipped Draft job`);
       }
       const cloudExercise = automatic === iosValidationWorkflow && id === 'cloud-poc';
+      const androidCoverage = automatic === androidWorkflow && id === 'android-java-coverage';
       const iosImpact = automatic === iosValidationWorkflow && id === 'impact';
       const iosContracts = automatic === iosValidationWorkflow && id === 'contracts';
       const iosArchive = automatic === iosValidationWorkflow && id === 'ios-archive';
@@ -73,7 +84,8 @@ try {
           : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') && needs.impact.result == \'success\' && (github.event_name == \'workflow_dispatch\' || (needs.impact.outputs.ios == \'true\' && needs.impact.outputs.integrate == \'true\')) }}'
             : iosArchive ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') && needs.impact.result == \'success\' && needs.contracts.result == \'success\' && (github.event_name == \'workflow_dispatch\' || needs.impact.outputs.deep == \'true\') }}'
               : otherPlatforms ? '${{ (' + ready + ') && needs.quality.result == \'success\' && needs.impact.result == \'success\' && (needs.impact.outputs.android == \'true\' || needs.impact.outputs.windows == \'true\') && needs.impact.outputs.integrate == \'true\' }}'
-                : automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
+                : automatic === workflow && id === 'quality-summary' ? summaryCondition
+                  : androidCoverage ? androidCoverageCondition : readyCondition;
       if (job.if !== expectedCondition) {
         fail(`${label}/${id} must require explicit Ready PR metadata, preserve non-PR execution and summary always()`);
       }
@@ -88,24 +100,39 @@ try {
   if (JSON.stringify(triggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {
     fail(`Unexpected workflow triggers: ${triggerNames.join(', ')}`);
   }
-  for (const event of ['pull_request', 'push']) {
+  for (const event of automaticEvents) {
     const config = triggers[event] ?? {};
-    const expectedBranches = event === 'push' ? qualityBranchNames().sort() : ['develop', 'main'];
+    const expectedBranches = event === 'push' ? qualityBranchNames().sort() : integrationBranches;
     if (JSON.stringify(array(config.branches).sort()) !== JSON.stringify(expectedBranches)) fail(`${event} must target exactly its admitted quality branches`);
     if ('branches-ignore' in config) fail(`${event} may not exclude branches`);
     if ('paths' in config || 'paths-ignore' in config) fail(`${event} may not filter paths`);
   }
-  for (const [label, manual] of [['iOS', iosWorkflow], ['Other platform', otherWorkflow], ['Android', androidWorkflow]]) {
-    if (JSON.stringify(Object.keys(manual?.on ?? {})) !== JSON.stringify(['workflow_dispatch'])) {
-      fail(`${label} workflow must be manual-only`);
+  for (const [label, report] of reportingWorkflows) {
+    if (JSON.stringify(Object.keys(report?.on ?? {}).sort()) !== JSON.stringify([...automaticEvents, 'workflow_dispatch'])) {
+      fail(`${label} must support PRs, integration pushes and manual dispatch`);
     }
-    if (manual.permissions?.contents !== 'read' || Object.values(manual.permissions ?? {}).includes('write')) {
+    for (const event of automaticEvents) {
+      const config = report.on[event] ?? {};
+      const expectedKeys = event === 'pull_request' ? ['branches', 'types'] : ['branches'];
+      if (
+        JSON.stringify(Object.keys(config).sort()) !== JSON.stringify(expectedKeys) ||
+        JSON.stringify(array(config.branches).sort()) !== JSON.stringify(integrationBranches)
+      ) fail(`${label} ${event} must cover exactly the admitted branches without event-level path filters`);
+    }
+    if (report.permissions?.contents !== 'read' || Object.values(report.permissions ?? {}).includes('write')) {
       fail(`${label} workflow permissions must be read-only`);
     }
-    if (!manual.concurrency || manual.concurrency['cancel-in-progress'] == null) {
-      fail(`${label} workflow must define concurrency and cancellation policy`);
+    if (report.concurrency?.group !== expectedConcurrency || report.concurrency?.['cancel-in-progress'] !== cancelStalePR) {
+      fail(`${label} must isolate each target SHA and dispatch, and cancel only stale PR runs`);
     }
   }
+  if (JSON.stringify(Object.keys(iosWorkflow.on ?? {})) !== JSON.stringify(['workflow_dispatch'])) {
+    fail('iOS coverage must remain manual-only');
+  }
+  if (iosWorkflow.permissions?.contents !== 'read' || Object.values(iosWorkflow.permissions ?? {}).includes('write')) {
+    fail('iOS coverage workflow permissions must be read-only');
+  }
+  if (iosWorkflow.concurrency?.['cancel-in-progress'] == null) fail('iOS coverage must define concurrency and cancellation');
   const prTitleTriggers = prTitleWorkflow.on ?? {};
   if (JSON.stringify(Object.keys(prTitleTriggers)) !== JSON.stringify(['pull_request_target'])) {
     fail('PR title workflow must use only pull_request_target');
@@ -171,8 +198,7 @@ try {
   for (const [name, permission] of Object.entries(iosWorkflow.permissions ?? {})) {
     if (permission === 'write') fail(`iOS workflow permission ${name} may not be write`);
   }
-  const expectedConcurrency = "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}-{1}', github.ref, github.sha) || format('dispatch-{0}', github.run_id) }}";
-  if (workflow.concurrency?.group !== expectedConcurrency || workflow.concurrency?.['cancel-in-progress'] !== "${{ github.event_name == 'pull_request' }}") {
+  if (workflow.concurrency?.group !== expectedConcurrency || workflow.concurrency?.['cancel-in-progress'] !== cancelStalePR) {
     fail('Workflow concurrency must isolate branch pushes, PRs and diagnostic runs; cancel only stale PR runs');
   }
   if (!iosWorkflow.concurrency || iosWorkflow.concurrency['cancel-in-progress'] == null) {
@@ -185,11 +211,14 @@ try {
   const iosCoverage = iosJobs['ios-coverage'];
   const shellCoverage = otherWorkflow.jobs?.['shell-coverage'];
   const powershellCoverage = otherWorkflow.jobs?.['powershell-coverage'];
+  const androidCoverage = androidWorkflow.jobs?.['android-java-coverage'];
   const gate = jobs['quality-summary'];
   const expectedJobs = ['impact', 'other-platforms', 'quality', 'quality-summary'];
   if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
-  if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {})) !== JSON.stringify(['android-java-coverage'])) fail('Android job set must be exactly android-java-coverage');
-  const androidSteps = array(androidWorkflow.jobs['android-java-coverage'].steps);
+  if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['android-java-coverage', 'impact'])) {
+    fail('Android job set must be exactly impact and android-java-coverage');
+  }
+  const androidSteps = array(androidCoverage.steps);
   if (androidSteps.filter((step) => step.run === 'bash apps/browser/scripts/run-android-java-coverage-emulator.sh').length !== 1) {
     fail('Android coverage must run the owned AVD launcher exactly once');
   }
@@ -197,7 +226,27 @@ try {
     fail(`Workflow job set must be exactly: ${expectedJobs.join(', ')}`);
   }
   if (JSON.stringify(Object.keys(iosJobs)) !== JSON.stringify(['ios-coverage'])) {
-    fail('iOS workflow job set must be exactly: ios-coverage');
+    fail('iOS workflow job set must be exactly ios-coverage');
+  }
+  if ('if' in iosCoverage) fail('iOS report job may not be conditional within its manual workflow');
+  const androidImpact = androidWorkflow.jobs.impact;
+  const route = array(androidImpact.steps).find((step) => step.id === 'route');
+  if (
+    androidCoverage.needs !== 'impact' || androidImpact['runs-on'] !== 'ubuntu-24.04' ||
+    androidImpact['timeout-minutes'] !== 5 || androidImpact.outputs?.run !== '${{ steps.route.outputs.run }}' ||
+    !route?.run || route.shell !== 'bash' || 'if' in route ||
+    route.env?.EVENT_PR_BASE !== '${{ github.event.pull_request.base.sha }}' ||
+    route.env?.EVENT_PR_HEAD !== '${{ github.event.pull_request.head.sha }}' ||
+    route.env?.EVENT_PUSH_BEFORE !== '${{ github.event.before }}' ||
+    !route.run.includes('git merge-base --is-ancestor "$EVENT_PR_BASE" "$pr_base"') ||
+    !route.run.includes('git show "$pr_base:$router"') ||
+    !route.run.includes('[[ "$decision" == \'run=true\' || "$decision" == \'run=false\' ]]')
+  ) fail('Android coverage must wait for the Git identity and base-owned routing decision');
+  for (const [field, env] of [['pr_base', 'AEGIS_PR_BASE_SHA'], ['pr_head', 'AEGIS_PR_HEAD_SHA']]) {
+    if (
+      androidWorkflow.jobs.impact.outputs?.[field] !== '${{ steps.route.outputs.' + field + ' }}' ||
+      androidCoverage.env?.[env] !== '${{ needs.impact.outputs.' + field + ' }}'
+    ) fail(`Android coverage evidence must use the verified ${field}`);
   }
   if (quality.name !== 'quality') fail('Quality job check name must be quality');
   const testRunner = "${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"macOS\", \"ARM64\", \"aegis-test\"]') || 'macos-15' }}";
@@ -210,19 +259,15 @@ try {
   }
   if (quality['timeout-minutes'] !== 40) fail('Quality job timeout must be 40 minutes');
   for (const [id, job, runner, timeout] of [
+    ['android-java-coverage', androidCoverage, 'ubuntu-24.04', 35],
+    ['ios-coverage', iosCoverage, 'macos-26', 180],
     ['shell-coverage', shellCoverage, 'ubuntu-24.04', 30],
     ['powershell-coverage', powershellCoverage, 'windows-2025', 20],
   ]) {
     if (job?.name !== id) fail(`${id} job check name must be ${id}`);
     if (job?.['runs-on'] !== runner) fail(`${id} job must use ${runner}`);
     if (job?.['timeout-minutes'] !== timeout) fail(`${id} timeout must be ${timeout} minutes`);
-    if ('if' in job) fail(`Manual ${id} job may not be conditional`);
   }
-  if (iosCoverage?.name !== 'ios-coverage') fail('iOS report job check name must be ios-coverage');
-  if (iosCoverage?.['runs-on'] !== 'macos-26') fail('iOS report job must use macos-26');
-  if (iosCoverage?.['timeout-minutes'] !== 180) fail('iOS 双设备完整报告的执行时限必须为 180 分钟');
-  if ('if' in iosCoverage) fail('iOS report job may not be conditional within its manual workflow');
-  if ('continue-on-error' in iosCoverage) fail('iOS report job must preserve test failures');
   if (gate.name !== summaryName) fail('Required summary check name must be quality-gate only for non-PR or explicit Ready PR; otherwise use the deferred label');
   const expectedNeeds = ['quality'];
   if (JSON.stringify(array(gate.needs).sort()) !== JSON.stringify(expectedNeeds)) {
@@ -253,9 +298,15 @@ try {
       fail(`${id} must verify pinned preinstalled Python on self-hosted runners`);
     }
   }
-  const allJobs = {...jobs, ...otherWorkflow.jobs, ...androidWorkflow.jobs, 'ios-report/ios-coverage': iosCoverage};
+  const allJobs = {
+    ...jobs, ...otherWorkflow.jobs,
+    'android-report/impact': androidWorkflow.jobs.impact, 'android-report/android-java-coverage': androidCoverage,
+    'ios-report/ios-coverage': iosCoverage,
+  };
   for (const [id, job] of Object.entries(allJobs)) {
-    if ('continue-on-error' in job) fail(`${id} may not suppress failures`);
+    if (id === 'other-platforms') {
+      if (job['continue-on-error'] !== true) fail('other-platforms must be advisory at the job level');
+    } else if ('continue-on-error' in job) fail(`${id} may not suppress failures`);
     if (job.permissions && (job.permissions === 'write-all' || Object.values(job.permissions).some((value) => value !== 'read' && value !== 'none'))) fail(`${id} permissions must be read-only`);
   }
   const allSteps = Object.values(allJobs).flatMap((job) => array(job.steps));
@@ -271,7 +322,7 @@ try {
     }
   }
   const checkoutSteps = allSteps.filter((step) => String(step.uses ?? '').startsWith('actions/checkout@'));
-  if (checkoutSteps.length !== 8) fail('Every job must use the approved checkout action exactly once');
+  if (checkoutSteps.length !== Object.keys(allJobs).length) fail('Every job must use the approved checkout action exactly once');
   for (const step of checkoutSteps) {
     if (step.with?.['persist-credentials'] !== false) fail('Checkout must disable persisted credentials');
     if (step.with?.['fetch-depth'] !== 0) fail('Checkout must fetch history for identity validation');

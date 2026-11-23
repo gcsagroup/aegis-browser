@@ -1,0 +1,116 @@
+From 4971b2de71fa274c0c8cea7831f5619e93bc0625 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sun, 22 Nov 2026 03:34:21 +0800
+Subject: [PATCH] fix(mac): preserve AIM prompt ownership when window focus is
+ restored
+
+---
+ .../views/location_bar/location_bar_view.cc   | 14 ++++++++++++
+ .../omnibox_popup_visibility_browsertest.cc   | 16 ++++++++++++++
+ .../full_webui_omnibox_interactive_uitest.cc  | 22 ++++++++++++++-----
+ 3 files changed, 46 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/ui/views/location_bar/location_bar_view.cc b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+index c4d60fb5d1b1b16dc899c323d6970602bb80f790..04d8c714c04fbef298e22b4fd8dd2f475f5b49d1 100644
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -1747,6 +1747,20 @@ void LocationBarView::RestoreOmniboxStateIfDrawn() {
+ 
+ void LocationBarView::OnFocus() {
+   if (is_full_webui_omnibox_) {
++#if BUILDFLAG(IS_MAC)
++    // Ordering out a child window restores the parent window's focus. Keep
++    // the AIM popup that owns a permission prompt through that restoration.
++    const auto* focus_manager = GetFocusManager();
++    auto* aim = GetOmniboxPopupAimPresenter();
++    if (focus_manager &&
++        focus_manager->focus_change_reason() ==
++            views::FocusManager::FocusChangeReason::kFocusRestore &&
++        aim && aim->IsPermissionPromptPreventingClose() &&
++        GetOmniboxController()->popup_state_manager()->popup_state() ==
++            OmniboxPopupState::kAim) {
++      return;
++    }
++#endif
+     // In Full WebUI mode, `LocationBarView` is the focusable Views proxy for
+     // the WebUI omnibox. When `FocusManager` moves focus here on its own (tab
+     // traversal, focus restoration), forward to WebUI without triggering an
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+index 55ce913662c24acead44b8722b20733f7298f9ac..2f71a189a53bb55956ccf991439506eb8a8a72b9 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+@@ -193,6 +193,12 @@ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+   ASSERT_TRUE(contents);
+   ASSERT_TRUE(content::WaitForLoadStop(contents));
+   content::SimulateEndOfPaintHoldingOnPrimaryMainFrame(contents);
++  if (bar->is_full_webui_omnibox()) {
++    ASSERT_TRUE(base::test::RunUntil(
++        [&] { return bar->IsFullWebUiOmniboxReady(); }));
++    bar->FocusLocation(/*is_user_initiated=*/true,
++                       /*clear_focus_if_failed=*/false);
++  }
+   controller->popup_state_manager()->SetPopupState(OmniboxPopupState::kAim);
+   // IsShown() includes a pending first frame. Wait until the presenter has
+   // actually issued its show and AppKit reports that native window visible.
+@@ -203,6 +209,9 @@ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+ 
+   // Keep the popup logically open across focus loss while the native window
+   // is ordered out independently of the presenter.
++  aim->RequestFocus();
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return aim->HasOpenWidget() && aim->GetWidget()->IsActive(); }));
+   bar->SetPermissionPromptShowing(true);
+   ASSERT_TRUE(aim->IsPermissionPromptPreventingClose());
+   const auto widget = aim->GetWidget()->GetWeakPtr();
+@@ -211,11 +220,18 @@ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+       [&] { return !widget || !widget->IsVisible(); }));
+   ASSERT_TRUE(aim->HasOpenWidget());
+   EXPECT_EQ(aim->GetWidget(), widget.get());
++  EXPECT_TRUE(aim->IsPermissionPromptPreventingClose());
+   EXPECT_FALSE(aim->IsShown());
+   EXPECT_TRUE(controller->IsPopupOpen());
+ 
+   bar->SetPermissionPromptShowing(false);
+   EXPECT_FALSE(aim->IsPermissionPromptPreventingClose());
++  if (bar->is_full_webui_omnibox()) {
++    bar->FocusLocation(/*is_user_initiated=*/true,
++                       /*clear_focus_if_failed=*/false);
++    EXPECT_EQ(OmniboxPopupState::kFull,
++              controller->popup_state_manager()->popup_state());
++  }
+   controller->popup_state_manager()->SetPopupState(OmniboxPopupState::kNone);
+   EXPECT_FALSE(controller->IsPopupOpen());
+   EXPECT_FALSE(aim->HasOpenWidget());
+diff --git a/chrome/browser/ui/webui/searchbox/full_webui_omnibox_interactive_uitest.cc b/chrome/browser/ui/webui/searchbox/full_webui_omnibox_interactive_uitest.cc
+index 571c53dd3376375aee4024c3c88f2c3cb528ba8b..0ab772f384ca94c94c130b5908d6267e235dce67 100644
+--- a/chrome/browser/ui/webui/searchbox/full_webui_omnibox_interactive_uitest.cc
++++ b/chrome/browser/ui/webui/searchbox/full_webui_omnibox_interactive_uitest.cc
+@@ -7138,12 +7138,22 @@ class FullWebUIOmniboxAimInteractiveTest
+ IN_PROC_BROWSER_TEST_F(FullWebUIOmniboxAimInteractiveTest,
+                        ExitAimRestoresFocusAndInput_Escape) {
+   const std::string kQuery = "my test query";
+-  RunTestSequence(OpenAimPopup(), InputAimPopupText(kQuery),
+-                  InAnyContext(SendKeyPress(kBrowserViewElementId,
+-                                            ui::VKEY_ESCAPE, ui::EF_NONE)),
+-                  WaitForAimPopupHidden(), WaitForWebUIInputValue(kQuery),
+-                  WaitForOmniboxFocus(true),
+-                  CheckWebUIInputSelection(kQuery.length(), kQuery.length()));
++  RunTestSequence(
++      OpenAimPopup(), InputAimPopupText(kQuery),
++      // Dispatch to the composebox input. Closing the popup may detach its
++      // WebContents before the script replies.
++      InSameContext(ExecuteJsAt(kAimPopupWebView, kAimInput, R"JS(
++        el => el.dispatchEvent(new KeyboardEvent('keydown', {
++          key: 'Escape',
++          code: 'Escape',
++          bubbles: true,
++          composed: true,
++          cancelable: true,
++        }))
++      )JS", ExecuteJsMode::kFireAndForget)),
++      WaitForAimPopupHidden(), WaitForWebUIInputValue(kQuery),
++      WaitForOmniboxFocus(true),
++      CheckWebUIInputSelection(kQuery.length(), kQuery.length()));
+ }
+ 
+ // Dismissing the AIM popup with the "X" button when there is no input in the

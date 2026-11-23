@@ -3,7 +3,8 @@ import {appendFileSync, readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 
 // This file is extracted from the merge candidate's first parent before use.
-const git = (...args) => execFileSync('git', args, {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024}).trimEnd();
+const gitRaw = (...args) => execFileSync('git', args, {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024});
+const git = (...args) => gitRaw(...args).trimEnd();
 const sha = value => {
   if (!/^[0-9a-f]{40}$/u.test(value ?? '')) throw new Error('Full commit SHA required');
   return git('rev-parse', '--verify', `${value}^{commit}`);
@@ -89,16 +90,47 @@ const parseConventionalType = subject => {
 const integrateTypes = new Set(['feat', 'fix', 'perf', 'refactor', 'build', 'test', 'revert']);
 const deepTypes = new Set(['feat', 'fix', 'perf', 'refactor', 'build', 'revert']);
 const blankPlatforms = () => ({ios: false, android: false, macos: false, windows: false, linux: false});
+const browserCommonScript = 'apps/browser/scripts/common.sh';
+// Exact release inputs for iOS contracts and the unsigned archive.
+const iosArchiveInputs = new Set([
+  'scripts/release/build-ios-access-core.sh',
+  'scripts/release/development_key_access.py',
+  'scripts/release/development_signing.py',
+  'scripts/release/ios_embedded_core.py',
+  'scripts/release/ios_linked_core.py',
+  'scripts/release/prepare-ios-access-core.sh',
+  'scripts/release/record-ios-access-core-digests.sh',
+  'scripts/release/safari_manifest.py',
+  'scripts/release/test_development_key_access.py',
+  'scripts/release/test_development_signing.py',
+  'scripts/release/test_ios_embedded_core.py',
+  'scripts/release/test_ios_linked_bundle.py',
+  'scripts/release/test_ios_profile_trust.py',
+  'scripts/release/test_verify_ios_archive.py',
+  'scripts/release/verify-ios-archive.py',
+  'scripts/release/verify-signed-ios.py',
+]);
 const selectsIos = path => path.startsWith('apps/ios/')
   || path.startsWith('.github/workflows/ios-')
   || path.startsWith('scripts/ci/ios-')
-  || path.startsWith('scripts/ci/run-ios-');
+  || path.startsWith('scripts/ci/run-ios-')
+  || path === browserCommonScript
+  || iosArchiveInputs.has(path);
 const selectsAndroid = path => path.startsWith('apps/browser/patches-android/')
   || (path.startsWith('apps/browser/scripts/') && path.toLowerCase().includes('android'))
+  || path === browserCommonScript
   || path.startsWith('.github/workflows/android-')
   || path.startsWith('scripts/ci/android-')
-  || path.startsWith('scripts/ci/run-android-');
+  || path.startsWith('scripts/ci/run-android-')
+  || path.startsWith('scripts/ci/tests/android-')
+  || path.startsWith('scripts/release/android-')
+  || path.startsWith('scripts/release/android_')
+  || (path.startsWith('scripts/release/test_android') && path.endsWith('.py'))
+  || path === 'scripts/release/runner.rb'
+  || path === 'scripts/release/verify-aab.py'
+  || path === 'scripts/release/VerifiedAabCertificate.java';
 const selectsMacos = path => path.startsWith('.github/workflows/macos-')
+  || path === browserCommonScript
   || (path.startsWith('scripts/release/') && path.toLowerCase().includes('macos'));
 const selectsWindows = path => path.endsWith('.ps1')
   || path.startsWith('scripts/ci/platform-tests/windows-')
@@ -134,8 +166,9 @@ for (const header of entries) {
   if (!match || !path) throw new Error('Incomplete or unsupported Git diff');
   changes.push({path, beforeMode: match[1], afterMode: match[2], status: match[5]});
 }
-const log = !legacyFull && base !== head ? git('log', '--format=%s', `${base}..${head}`) : '';
-const subjects = log ? log.split('\n') : [];
+const log = !legacyFull && base !== head ? gitRaw('log', '-z', '--format=tformat:%s', `${base}..${head}`) : '';
+const subjects = log.split('\0');
+if (subjects.pop() !== '') throw new Error('Incomplete Git subject log');
 const types = new Set();
 let nonConventional = false;
 for (const subject of subjects) {

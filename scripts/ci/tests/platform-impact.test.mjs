@@ -1,13 +1,186 @@
 import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, symlinkSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, chmodSync, symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
-import {readFileSync} from 'node:fs';
 
 const script = resolve('scripts/ci/platform-impact.mjs');
+
+test('Android coverage uses the complete tested diff and the actual PR parents', () => {
+  const root = mkdtempSync(join(tmpdir(), 'coverage-impact-'));
+  const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']}).trim();
+  const save = (path, text) => {
+    mkdirSync(join(root, path, '..'), {recursive: true});
+    writeFileSync(join(root, path), text);
+  };
+  const commit = (message) => {
+    git('add', '-A');
+    git('commit', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
+  const outputFile = join(root, '.git', 'coverage-output');
+  const routeSource = readFileSync('scripts/ci/coverage-impact.sh', 'utf8');
+  const workflow = YAML.parse(readFileSync('.github/workflows/android-java-coverage.yml', 'utf8'));
+  const runShell = (run, env) => spawnSync('bash', ['-e', '-o', 'pipefail', '-c', run], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {...process.env, RUNNER_TEMP: join(root, '.git'), GITHUB_OUTPUT: outputFile, ...env},
+  });
+  const route = (event) => {
+    writeFileSync(outputFile, '');
+    const step = workflow.jobs.impact.steps.find(item => item.id === 'route');
+    const result = runShell(step.run, event);
+    return {result, output: readFileSync(outputFile, 'utf8')};
+  };
+  try {
+    git('init', '-b', 'develop');
+    git('config', 'user.name', 'Coverage Test');
+    git('config', 'user.email', 'coverage@example.invalid');
+    save('apps/ios/Feature.swift', 'old');
+    const eventBase = commit('initial');
+    save('apps/ios/Feature.swift', 'new');
+    save('scripts/ci/coverage-impact.sh', routeSource);
+    const actualBase = commit('iOS change already on develop');
+
+    git('checkout', '-b', 'candidate', eventBase);
+    save('apps/ios/Feature.swift', 'new');
+    save('scripts/ci/ios-release-preflight.mjs', '// release only');
+    save('apps/browser/scripts/windows-installer-fixture.py', '# Windows only');
+    save('apps/browser/scripts/android-ui-driver/README.md', 'documentation only');
+    save('apps/browser/scripts/write-build-identity.mjs', '// stubbed by the package guard');
+    for (let index = 0; index < 305; index += 1) save(`aaa/docs/file-${index}.md`, 'unrelated');
+    const head = commit('same iOS change plus docs and release preflight');
+    git('checkout', 'develop');
+    git('merge', '--no-ff', 'candidate', '-m', 'first tested merge');
+    const tested = git('rev-parse', 'HEAD');
+    const event = {GITHUB_EVENT_NAME: 'pull_request', GITHUB_SHA: tested, EVENT_PR_BASE: eventBase, EVENT_PR_HEAD: head};
+    save('scripts/ci/coverage-impact.sh', 'exit 42');
+    const first = route(event);
+    assert.equal(first.result.status, 0, first.result.stderr);
+    assert.equal(first.output, `run=false\npr_base=${actualBase}\npr_head=${head}\n`);
+    assert.notEqual(route({...event, EVENT_PR_HEAD: eventBase}).result.status, 0);
+    assert.notEqual(route({...event, GITHUB_SHA: head}).result.status, 0);
+
+    const exerciseSingleInput = (file, selected) => {
+      git('reset', '--hard', actualBase);
+      git('checkout', '-B', 'candidate', head);
+      save(file, 'new platform input after the other 305 paths');
+      const changedHead = commit('add single platform input');
+      git('checkout', 'develop');
+      git('merge', '--no-ff', 'candidate', '-m', 'tested single-platform merge');
+      const changedTested = git('rev-parse', 'HEAD');
+      const pr = route({...event, GITHUB_SHA: changedTested, EVENT_PR_HEAD: changedHead});
+      assert.equal(pr.result.status, 0, pr.result.stderr);
+      assert.equal(pr.output, `run=${selected}\npr_base=${actualBase}\npr_head=${changedHead}\n`);
+      const push = route({GITHUB_EVENT_NAME: 'push', GITHUB_SHA: changedTested, EVENT_PUSH_BEFORE: actualBase});
+      assert.equal(push.result.status, 0, push.result.stderr);
+      assert.equal(push.output, `run=${selected}\npr_base=\npr_head=\n`);
+      return {changedHead, changedTested};
+    };
+    exerciseSingleInput('apps/ios/Later.swift', false);
+    exerciseSingleInput('apps/browser/CHROMIUM_VERSION', true);
+    const {changedHead, changedTested} = exerciseSingleInput(
+      'apps/browser/scripts/android-ui-driver/Driver.java', true);
+    const manual = route({GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_SHA: changedTested});
+    assert.equal(manual.result.status, 0, manual.result.stderr);
+    assert.equal(manual.output, 'run=true\npr_base=\npr_head=\n');
+
+    const evidence = join(root, '.git', 'android-report');
+    const verify = workflow.jobs['android-java-coverage'].steps.find(step =>
+      step.name === 'Bind report to exact SHA and scope');
+    save('.git/android-report/coverage/summary.json', JSON.stringify({
+      testedSha: changedTested, repositoryDirtyAtBuild: false, selfTestCases: 6,
+      browserTested: false, passed: true, line: {covered: 1, missed: 1, total: 2},
+    }));
+    const verifyParents = (base, head) => {
+      save('.git/android-report/ci-context.json', JSON.stringify({
+        eventName: 'pull_request', testedSha: changedTested, pullRequestBaseSha: base, pullRequestHeadSha: head,
+      }));
+      return runShell(verify.run, {EVIDENCE_DIR: evidence, AEGIS_TESTED_SHA: changedTested, GITHUB_EVENT_NAME: 'pull_request'});
+    };
+    const correct = verifyParents(actualBase, changedHead);
+    assert.equal(correct.status, 0, correct.stderr);
+    assert.notEqual(verifyParents(changedHead, actualBase).status, 0, 'swapped PR parents must fail');
+
+    git('checkout', '--detach', eventBase);
+    git('merge', '--no-ff', 'candidate', '-m', 'first rollout before baseline has routing');
+    const rolloutEvent = {...event, GITHUB_SHA: git('rev-parse', 'HEAD'), EVENT_PR_HEAD: changedHead};
+    const rollout = route(rolloutEvent);
+    assert.equal(rollout.result.status, 0, rollout.result.stderr);
+    assert.equal(rollout.output, `run=true\npr_base=${eventBase}\npr_head=${changedHead}\n`);
+
+    git('checkout', '--detach', eventBase);
+    save('scripts/ci/coverage-impact.sh', 'exit 0');
+    commit('trusted router with no decision');
+    git('merge', '--no-ff', 'candidate', '-m', 'routing must fail rather than skip');
+    const silent = route({...rolloutEvent, GITHUB_SHA: git('rev-parse', 'HEAD')});
+    assert.notEqual(silent.result.status, 0);
+    assert.equal(silent.output, '');
+
+    git('checkout', '-b', 'candidate-router', actualBase);
+    save('scripts/ci/coverage-impact.sh', 'echo run=false >> "$GITHUB_OUTPUT"\n');
+    save('apps/browser/scripts/android-ui-driver/Driver.java', 'changed Android driver');
+    const changedRouterHead = commit('change the Android driver and replace the router');
+    git('checkout', '--detach', actualBase);
+    git('merge', '--no-ff', 'candidate-router', '-m', 'tested merge with a replaced router');
+    const trusted = route({...event, GITHUB_SHA: git('rev-parse', 'HEAD'), EVENT_PR_HEAD: changedRouterHead});
+    assert.equal(trusted.result.status, 0, trusted.result.stderr);
+    assert.equal(trusted.output, `run=true\npr_base=${actualBase}\npr_head=${changedRouterHead}\n`);
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
+});
+
+test('Windows fixture verifies Gitiles headers against the selected Chromium pin', () => {
+  const result = spawnSync('python3', ['-B', '-c', `
+import base64
+import hashlib
+import io
+import runpy
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import TestCase
+from unittest.mock import patch
+
+fixture = runpy.run_path("apps/browser/scripts/windows-installer-fixture.py")
+pinned_headers = fixture["pinned_headers"]
+download = fixture["download"]
+header = fixture["UTIL_CONSTANTS"]
+gitiles_digests = {
+    "43a195105613ac83c21d3f14de279f4a045c7da0":
+        "f40b2e5872bb326970857f23949b411964a902fa76f9feabe07b40bfaec2c749",
+    "b8c2be851f62f6a394ec57955d7f31335d7cb6d4":
+        "a0afe0f69ad9165af8d2f21680568df9eac95294ef8d493e1a6c4b07f121a859",
+}
+case = TestCase()
+for pin, expected in gitiles_digests.items():
+    case.assertEqual(pinned_headers(pin)[header], expected, pin)
+with case.assertRaisesRegex(RuntimeError, "Update pinned fixture inputs"):
+    pinned_headers("f" * 40)
+
+contents = {pin: f"fixture header for {pin}".encode("ascii") for pin in gitiles_digests}
+fixture_digests = {pin: hashlib.sha256(data).hexdigest() for pin, data in contents.items()}
+with TemporaryDirectory() as root, patch.dict(fixture["UTIL_CONSTANTS_SHA256"], fixture_digests, clear=True):
+    for pin, source in contents.items():
+        expected = pinned_headers(pin)[header]
+        assert expected == fixture_digests[pin]
+        url = f"https://fixture.invalid/{pin}/{header}?format=TEXT"
+        destination = Path(root) / pin / "util_constants.h"
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(base64.b64encode(source))):
+            assert download(url, destination, expected, gitiles_text=True) == expected
+        assert destination.read_bytes() == source
+        other = next(data for other_pin, data in contents.items() if other_pin != pin)
+        rejected = destination.with_name("rejected.h")
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(base64.b64encode(other))):
+            with case.assertRaisesRegex(RuntimeError, "Pinned download mismatch"):
+                download(url, rejected, expected, gitiles_text=True)
+        assert not rejected.exists()
+`], {encoding: 'utf8'});
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+});
+
 const routeDefaultSource = readFileSync('scripts/ci/fill-platform-route-defaults.mjs', 'utf8');
 const assertTrustedRouteDefaults = run => {
   assert.match(run, /git show "\$ROUTE_BASE_SHA:scripts\/ci\/platform-impact\.mjs"/u);
@@ -18,6 +191,7 @@ const assertTrustedRouteDefaults = run => {
   assert.ok(fallback, 'workflow must embed the trusted fallback');
   assert.equal(`${fallback[1]}\n`, routeDefaultSource);
 };
+
 test('platform routing binds real merge parents and rejects hidden product changes', () => {
   const root = mkdtempSync(join(tmpdir(), 'platform-impact-'));
   const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
@@ -126,8 +300,12 @@ test('paths select platforms and commit types select stage depth', () => {
   };
   try {
     git('init', '-b', 'develop'); git('config', 'user.name', 'Routing Test'); git('config', 'user.email', 'routing@example.invalid');
+    const commonScript = 'apps/browser/scripts/common.sh';
+    const iosArchiveTests = ['scripts/release/test_verify_ios_archive.py', 'scripts/release/test_ios_embedded_core.py'];
+    const aabCertificate = 'scripts/release/VerifiedAabCertificate.java';
     save('README.md', 'base');
     save('docs/ios-webkit-protection.en.md', 'initial');
+    for (const path of [commonScript, ...iosArchiveTests, aabCertificate]) save(path, 'initial');
     git('add', '.'); git('commit', '-m', 'base');
     const before = git('rev-parse', 'HEAD');
     const pr = (mutate, message) => {
@@ -136,7 +314,7 @@ test('paths select platforms and commit types select stage depth', () => {
       git('checkout', 'develop'); git('merge', '--no-ff', 'topic', '-m', 'candidate');
       const tested = git('rev-parse', 'HEAD');
       const event = join(root, 'event.json');
-      writeFileSync(event, JSON.stringify({pull_request: {base: {sha: before}, head: {sha: head}}}));
+      writeFileSync(event, JSON.stringify({pull_request: {draft: false, base: {sha: before}, head: {sha: head}}}));
       const plan = planFor({GITHUB_EVENT_NAME: 'pull_request', GITHUB_SHA: tested, GITHUB_EVENT_PATH: event});
       rmSync(event); git('reset', '--hard', before);
       return plan;
@@ -149,6 +327,36 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.equal(chore.ios, true); assert.equal(chore.integrate, false); assert.equal(chore.deep, false);
     const android = pr(() => save('apps/browser/patches-android/change.patch', 'android'), 'fix: repair android');
     assert.equal(android.android, true); assert.equal(android.ios, false); assert.equal(android.macos, false); assert.equal(android.deep, true);
+    const route = ({ios, android, macos, windows, linux, integrate, deep}) => ({ios, android, macos, windows, linux, integrate, deep});
+    const iosRoute = {ios: true, android: false, macos: false, windows: false, linux: false, integrate: true, deep: true};
+    const androidRoute = {...iosRoute, ios: false, android: true};
+    const sharedSetup = pr(() => save(commonScript, 'updated'), 'fix: repair browser setup');
+    assert.deepEqual(route(sharedSetup), {...iosRoute, android: true, macos: true});
+    for (const path of iosArchiveTests) {
+      assert.deepEqual(route(pr(() => save(path, 'updated'), 'test: cover archive input')), {...iosRoute, deep: false}, path);
+    }
+    for (const file of [
+      'build-ios-access-core.sh', 'development_key_access.py', 'development_signing.py',
+      'ios_embedded_core.py', 'ios_linked_core.py', 'prepare-ios-access-core.sh', 'record-ios-access-core-digests.sh',
+      'safari_manifest.py', 'test_development_key_access.py', 'test_development_signing.py',
+      'test_ios_linked_bundle.py', 'test_ios_profile_trust.py', 'verify-ios-archive.py', 'verify-signed-ios.py',
+    ]) {
+      assert.deepEqual(route(pr(() => save(`scripts/release/${file}`, 'ios'), 'fix: repair archive')), iosRoute, file);
+    }
+    for (const path of [
+      'scripts/release/android-delivery.py', 'scripts/release/android_product_delivery.py',
+      'scripts/release/test_android_release_matrix.py', 'scripts/release/runner.rb', 'scripts/release/verify-aab.py',
+      aabCertificate, 'scripts/ci/run-android-release-tests.py', 'scripts/ci/tests/android-release.test.mjs',
+    ]) {
+      assert.deepEqual(route(pr(() => save(path, 'android'), 'fix: repair android release')), androidRoute, path);
+    }
+    const unknownRelease = pr(() => save('scripts/release/prepare-ios-access-core-extra.sh', 'unknown'), 'fix: repair helper');
+    assert.deepEqual(route(unknownRelease), {...iosRoute, ios: false, macos: true});
+    const mixedRelease = pr(() => {
+      save('scripts/release/verify-ios-archive.py', 'ios');
+      save('scripts/release/android-delivery.py', 'android');
+    }, 'fix: repair both release paths');
+    assert.deepEqual(route(mixedRelease), {...iosRoute, android: true});
     const windows = pr(() => save('scripts/ci/platform-tests/windows-acceptance.ps1', 'win'), 'perf: speed windows');
     assert.equal(windows.windows, true); assert.equal(windows.macos, false); assert.equal(windows.deep, true);
     const linux = pr(() => save('scripts/ci/platform-tests/kcov-child.sh', 'kcov'), 'refactor: reshape coverage');
@@ -166,6 +374,22 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.equal(mixed.deep, true, 'mixed types take the stricter stage');
     assert.deepEqual(mixed.types, ['chore', 'feat']);
     rmSync(mixedEvent); git('reset', '--hard', before);
+    const emptyOldest = pr(() => {
+      save('apps/ios/Feature.swift', 'initial change');
+      git('add', '-A');
+      const parent = git('rev-parse', 'HEAD');
+      const tree = git('write-tree');
+      const emptyCommit = execFileSync('git', ['commit-tree', '--no-gpg-sign', tree, '-p', parent], {
+        cwd: root, encoding: 'utf8', input: '',
+      }).trim();
+      git('update-ref', 'HEAD', emptyCommit, parent);
+      assert.equal(git('show', '-s', '--format=[%s]', 'HEAD'), '[]', 'fixture subject is empty');
+      save('apps/ios/Feature.swift', 'follow-up');
+    }, 'chore: tidy');
+    assert.deepEqual(emptyOldest.types, ['chore']);
+    assert.equal(emptyOldest.strict, true);
+    assert.equal(emptyOldest.reason, 'strict-change');
+    assert.deepEqual(route(emptyOldest), iosRoute);
     const loose = pr(() => save('apps/ios/Feature.swift', 'loose'), 'update the feature');
     assert.equal(loose.strict, true); assert.equal(loose.deep, true); assert.equal(loose.ios, true);
     git('checkout', 'develop');

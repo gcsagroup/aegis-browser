@@ -1383,6 +1383,38 @@ TEST(AccessRuleStoreTest, PreparedSnapshotRejectsForgedOrSupersededRecord) {
             StoreStatus::kConflict);
 }
 
+TEST(AccessRuleStoreTest, IndependentRulesRestoreWithoutSiteGroups) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const auto binding = AccessRuleStoreTestPeer::Persistent(temp.GetPath());
+  const auto proxy = IndependentRule(
+      "a-proxy", AccessMode::kProxy, "proxy.example", "https://page.example",
+      {RequestScheme::kHttps}, {PortScope::kAllBrowserPermitted, {}}, 7);
+  const auto reject = IndependentRule(
+      "z-reject", AccessMode::kReject, "blocked.example", "https://page.example",
+      {RequestScheme::kHttps}, {PortScope::kAllBrowserPermitted, {}}, 3);
+  {
+    AccessRuleStore store(binding);
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, reject), StoreStatus::kValid);
+    ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, proxy), StoreStatus::kValid);
+  }
+  AccessRuleStore reopened(binding);
+  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
+  auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(snapshot.value) << snapshot.detail;
+  EXPECT_TRUE(snapshot.value->site_groups.empty());
+  EXPECT_EQ(snapshot.value->policy_generation, 7u);
+  auto adapted = AccessRuleStore::AdaptMatcherSnapshot(*snapshot.value);
+  ASSERT_TRUE(adapted.value) << adapted.detail;
+  EXPECT_EQ(adapted.value->rules,
+            (std::vector<AccessPolicyRule>{proxy.policy, reject.policy}));
+  auto published = reopened.ReserveCommittedPolicyForPublication("partition-A");
+  ASSERT_TRUE(published.value) << published.detail;
+  EXPECT_GT(published.value->policy_generation, snapshot.value->policy_generation);
+  EXPECT_EQ(published.value->rules, adapted.value->rules);
+}
+
 TEST(AccessRuleStoreTest, ClosingReplacesOnlyGroupOwnedRows) {
   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
       ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));

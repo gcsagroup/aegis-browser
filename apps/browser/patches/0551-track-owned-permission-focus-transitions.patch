@@ -1,0 +1,782 @@
+From c641728349061b7fdd55fa8d34c87ed6349e83c4 Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 23:51:05 +0800
+Subject: [PATCH] Track owned permission popup focus transitions
+
+---
+ chrome/browser/ui/views/omnibox/BUILD.gn      |   1 +
+ .../omnibox/omnibox_aim_popup_browsertest.cc  | 250 +++++++++++++++---
+ .../omnibox/omnibox_popup_aim_presenter.cc    |  50 ++++
+ .../omnibox/omnibox_popup_aim_presenter.h     |   7 +
+ .../omnibox/omnibox_popup_full_presenter.cc   |  47 +++-
+ .../omnibox/omnibox_popup_full_presenter.h    |   4 +
+ .../omnibox/omnibox_popup_presenter_base.cc   |  90 ++++---
+ .../omnibox/omnibox_popup_presenter_base.h    |  11 +-
+ .../omnibox_popup_presenter_base_unittest.cc  |   8 +-
+ 9 files changed, 386 insertions(+), 82 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/BUILD.gn b/chrome/browser/ui/views/omnibox/BUILD.gn
+index fbc92b7325574016e4033046a125c61f1fd5ce10..7a3a7e67e1462d1e2a69e0809b092906c47d288b 100644
+--- a/chrome/browser/ui/views/omnibox/BUILD.gn
++++ b/chrome/browser/ui/views/omnibox/BUILD.gn
+@@ -330,6 +330,7 @@ source_set("browser_tests") {
+     "//chrome/browser/ui/views/frame",
+     "//chrome/browser/ui/views/frame:browser_view_header",
+     "//chrome/browser/ui/views/location_bar",
++    "//chrome/browser/ui/views/permissions",
+     "//chrome/browser/ui/views/toolbar",
+     "//chrome/common",
+     "//chrome/common:chrome_features",
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index 0e88841deea27b3baa26066ee0d4fabb90d07ee7..6a30ed1bc423ad8204d78b951726d784c471ecf7 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -38,17 +38,21 @@
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_closer.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_presenter_delegate.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
++#include "chrome/browser/ui/views/permissions/embedded_permission_prompt_base_view.h"
+ #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+ #include "chrome/test/permissions/permission_request_manager_test_api.h"
++#include "components/content_settings/core/common/content_settings_types.h"
+ #include "components/keyed_service/content/browser_context_dependency_manager.h"
+ #include "components/omnibox/browser/aim_eligibility_service.h"
+ #include "components/omnibox/browser/mock_aim_eligibility_service.h"
++#include "components/omnibox/common/omnibox_feature_configs.h"
+ #include "components/omnibox/common/omnibox_features.h"
+ #include "components/permissions/permission_request_manager.h"
++#include "components/permissions/permission_util.h"
+ #include "components/permissions/test/mock_permission_prompt_factory.h"
+ #include "components/permissions/test/mock_permission_request.h"
+ #include "components/permissions/test/permission_request_observer.h"
+@@ -69,8 +73,10 @@
+ #include "ui/base/page_transition_types.h"
+ #include "ui/compositor/compositor.h"
+ #include "ui/gfx/geometry/point.h"
++#include "ui/gfx/geometry/rect.h"
+ #include "ui/shell_dialogs/fake_select_file_dialog.h"
+ #include "ui/views/controls/menu/menu_controller.h"
++#include "ui/views/view_utils.h"
+ #include "ui/views/widget/widget.h"
+ #include "ui/views/widget/widget_delegate.h"
+ #include "url/gurl.h"
+@@ -925,6 +931,57 @@ class OmniboxAimPopupFullWebUIBrowserTest : public OmniboxAimPopupBrowserTest {
+   }
+ 
+  protected:
++#if BUILDFLAG(IS_MAC)
++  void ShowFocusedFullPopupWithTabMicrophonePrompt() {
++    ASSERT_TRUE(ui_test_utils::NavigateToURL(
++        browser(), chrome::ChromeUINewTabURLAsGURL()));
++    ASSERT_TRUE(base::test::RunUntil(
++        [&] { return location_bar()->IsFullWebUiOmniboxReady(); }));
++
++    auto* controller = location_bar()->GetOmniboxController();
++    auto* state = controller->popup_state_manager();
++    auto* presenter = location_bar()->GetOmniboxPopupView()->presenter();
++    ASSERT_TRUE(presenter);
++
++    location_bar()->FocusLocation(/*is_user_initiated=*/true,
++                                  /*clear_focus_if_failed=*/false);
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return presenter->GetWidget() && presenter->GetWidget()->IsActive() &&
++             presenter->GetWebUIContent()->HasFocus() &&
++             !location_bar()->in_popup_state_transition();
++    }));
++    ASSERT_EQ(state->popup_state(), OmniboxPopupState::kFull);
++    ASSERT_TRUE(controller->edit_model()->has_focus());
++    ASSERT_FALSE(controller->edit_model()->HasDraft());
++    ASSERT_FALSE(presenter->IsPermissionPromptPreventingClose());
++
++    auto* contents = browser()->GetTabStripModel()->GetActiveWebContents();
++    auto* manager =
++        permissions::PermissionRequestManager::FromWebContents(contents);
++    ASSERT_TRUE(manager);
++    test::PermissionRequestManagerTestApi api(manager);
++    auto* frame = contents->GetPrimaryMainFrame();
++    api.SetOrigin(frame->GetLastCommittedOrigin().GetURL());
++    api.AddSimpleRequest(frame, permissions::RequestType::kMicStream,
++                         /*user_gesture=*/false);
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      const auto* prompt_widget = api.GetPromptWindow();
++      return prompt_widget && prompt_widget->IsActive();
++    }));
++
++    // Run the deferred blur while the tab prompt holds activation.
++    base::RunLoop().RunUntilIdle();
++
++    ASSERT_TRUE(presenter->IsShown());
++    ASSERT_TRUE(presenter->GetWidget());
++    EXPECT_FALSE(presenter->GetWidget()->IsActive());
++    EXPECT_FALSE(location_bar()->GetWidget()->GetTopLevelWidget()->IsActive());
++    EXPECT_EQ(state->popup_state(), OmniboxPopupState::kFull);
++    EXPECT_TRUE(presenter->IsPermissionPromptPreventingClose());
++    EXPECT_TRUE(controller->edit_model()->has_focus());
++  }
++#endif  // BUILDFLAG(IS_MAC)
++
+   void ShowUnfocusedFullPopupWithMicrophonePrompt() {
+     ASSERT_TRUE(embedded_test_server()->Start());
+     ASSERT_TRUE(ui_test_utils::NavigateToURL(
+@@ -1039,65 +1096,190 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+ #if BUILDFLAG(IS_MAC)
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+                        TabMicrophonePromptKeepsFocusedFullPopupOpen) {
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+-      browser(), chrome::ChromeUINewTabURLAsGURL()));
+-  ASSERT_TRUE(base::test::RunUntil(
+-      [&] { return location_bar()->IsFullWebUiOmniboxReady(); }));
+-
++  ASSERT_NO_FATAL_FAILURE(ShowFocusedFullPopupWithTabMicrophonePrompt());
+   auto* controller = location_bar()->GetOmniboxController();
+   auto* state = controller->popup_state_manager();
+   auto* presenter = location_bar()->GetOmniboxPopupView()->presenter();
+-  ASSERT_TRUE(presenter);
++  test::PermissionRequestManagerTestApi api(browser());
++  auto* manager = api.manager();
+ 
+-  location_bar()->FocusLocation(/*is_user_initiated=*/true,
+-                                /*clear_focus_if_failed=*/false);
++  manager->Dismiss(/*prompt_options=*/std::monostate());
+   ASSERT_TRUE(base::test::RunUntil([&] {
+-    return presenter->GetWidget() && presenter->GetWidget()->IsActive() &&
++    return !manager->IsRequestInProgress() && presenter->GetWidget() &&
++           presenter->GetWidget()->IsActive() &&
+            presenter->GetWebUIContent()->HasFocus() &&
++           !presenter->IsPermissionPromptPreventingClose();
++  }));
++  EXPECT_TRUE(presenter->IsShown());
++  EXPECT_EQ(state->popup_state(), OmniboxPopupState::kFull);
++  EXPECT_TRUE(controller->edit_model()->has_focus());
++}
++
++IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
++                       TabMicrophonePromptLosingActivationBlursFullPopup) {
++  ASSERT_NO_FATAL_FAILURE(ShowFocusedFullPopupWithTabMicrophonePrompt());
++  auto* controller = location_bar()->GetOmniboxController();
++  auto* presenter = location_bar()->GetOmniboxPopupView()->presenter();
++  test::PermissionRequestManagerTestApi api(browser());
++  auto* prompt = api.GetPromptWindow();
++  ASSERT_TRUE(prompt && prompt->IsActive());
++
++  auto* other_browser = CreateBrowser(browser()->GetProfile());
++  ASSERT_TRUE(other_browser);
++  ui_test_utils::WaitUntilBrowserBecomeActive(other_browser);
++  auto* other_widget =
++      BrowserView::GetBrowserViewForBrowser(other_browser)->GetWidget();
++  ASSERT_TRUE(other_widget->IsActive());
++
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return !controller->edit_model()->has_focus() &&
++           controller->popup_state_manager()->popup_state() ==
++               OmniboxPopupState::kNone &&
++           !presenter->IsPermissionPromptPreventingClose();
++  }));
++  ASSERT_EQ(api.GetPromptWindow(), prompt);
++  EXPECT_TRUE(prompt->IsVisible());
++  EXPECT_FALSE(prompt->IsActive());
++  EXPECT_TRUE(other_widget->IsActive());
++  api.manager()->Dismiss(/*prompt_options=*/std::monostate());
++}
++
++IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
++                       BackgroundTabPromptRemovalDoesNotActivateAim) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), chrome::ChromeUINewTabURLAsGURL()));
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return location_bar()->IsFullWebUiOmniboxReady(); }));
++  ASSERT_TRUE(ShowPopupAndGetWebUIContent());
++  auto* presenter = location_bar()->GetOmniboxPopupAimPresenter();
++  presenter->RequestFocus();
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return presenter->GetWidget() && presenter->GetWidget()->IsActive() &&
+            !location_bar()->in_popup_state_transition();
+   }));
+-  ASSERT_EQ(state->popup_state(), OmniboxPopupState::kFull);
+-  ASSERT_TRUE(controller->edit_model()->has_focus());
+-  ASSERT_FALSE(controller->edit_model()->HasDraft());
+-  ASSERT_FALSE(presenter->IsPermissionPromptPreventingClose());
+ 
+   auto* contents = browser()->GetTabStripModel()->GetActiveWebContents();
+-  auto* manager =
+-      permissions::PermissionRequestManager::FromWebContents(contents);
+-  ASSERT_TRUE(manager);
+-  test::PermissionRequestManagerTestApi api(manager);
+   auto* frame = contents->GetPrimaryMainFrame();
++  test::PermissionRequestManagerTestApi api(browser());
+   api.SetOrigin(frame->GetLastCommittedOrigin().GetURL());
+   api.AddSimpleRequest(frame, permissions::RequestType::kMicStream,
+                        /*user_gesture=*/false);
+   ASSERT_TRUE(base::test::RunUntil([&] {
+-    const auto* prompt_widget = api.GetPromptWindow();
+-    return prompt_widget && prompt_widget->IsActive();
++    const auto* prompt = api.GetPromptWindow();
++    return prompt && prompt->IsActive() &&
++           presenter->IsPermissionPromptPreventingClose();
+   }));
+-
+-  // Run the deferred blur while the tab prompt holds activation.
+-  base::RunLoop().RunUntilIdle();
+-
++  auto* prompt = api.GetPromptWindow();
++
++  auto* other_browser = CreateBrowser(browser()->GetProfile());
++  ASSERT_TRUE(other_browser);
++  ui_test_utils::WaitUntilBrowserBecomeActive(other_browser);
++  auto* other_widget =
++      BrowserView::GetBrowserViewForBrowser(other_browser)->GetWidget();
++  ASSERT_TRUE(other_widget->IsActive());
++  ASSERT_EQ(api.GetPromptWindow(), prompt);
++  ASSERT_TRUE(prompt->IsVisible());
++  ASSERT_FALSE(prompt->IsActive());
+   ASSERT_TRUE(presenter->IsShown());
+-  ASSERT_TRUE(presenter->GetWidget());
+-  EXPECT_FALSE(presenter->GetWidget()->IsActive());
++  ASSERT_TRUE(presenter->IsPermissionPromptPreventingClose());
++
++  api.manager()->Dismiss(/*prompt_options=*/std::monostate());
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return !api.manager()->IsRequestInProgress() &&
++           !presenter->IsPermissionPromptPreventingClose();
++  }));
++  EXPECT_TRUE(other_widget->IsActive());
+   EXPECT_FALSE(location_bar()->GetWidget()->GetTopLevelWidget()->IsActive());
+-  EXPECT_EQ(state->popup_state(), OmniboxPopupState::kFull);
+-  EXPECT_TRUE(presenter->IsPermissionPromptPreventingClose());
+-  EXPECT_TRUE(controller->edit_model()->has_focus());
++  if (presenter->GetWidget()) {
++    EXPECT_FALSE(presenter->GetWidget()->IsActive());
++  }
++}
++#endif  // BUILDFLAG(IS_MAC)
+ 
+-  manager->Dismiss(/*prompt_options=*/std::monostate());
++class OmniboxAimPopupEmbeddedPermissionBrowserTest
++    : public OmniboxAimPopupBrowserTest {
++ public:
++  OmniboxAimPopupEmbeddedPermissionBrowserTest() {
++    feature_list_.InitAndEnableFeature(
++        omnibox_feature_configs::kEmbeddedPermissionEnabled);
++  }
++
++ private:
++  base::test::ScopedFeatureList feature_list_;
++};
++
++IN_PROC_BROWSER_TEST_F(OmniboxAimPopupEmbeddedPermissionBrowserTest,
++                       EmbeddedPromptCloseButtonAllowsOrdinaryBlur) {
++  auto* content = ShowPopupAndGetWebUIContent();
++  ASSERT_TRUE(content);
++  auto* presenter = location_bar()->GetOmniboxPopupAimPresenter();
++  presenter->RequestFocus();
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return presenter->GetWidget() && presenter->GetWidget()->IsActive() &&
++           !location_bar()->in_popup_state_transition();
++  }));
++  ASSERT_NO_FATAL_FAILURE(VerifyFocusRestoredToWebUIInput(presenter, content));
++
++  auto* contents = content->GetWebContents();
++  auto* frame = contents->GetPrimaryMainFrame();
++  auto* manager =
++      permissions::PermissionRequestManager::FromWebContents(contents);
++  ASSERT_TRUE(manager);
++  const GURL popup_origin = frame->GetLastCommittedOrigin().GetURL();
++  const GURL requesting_origin = permissions::PermissionUtil::GetCanonicalOrigin(
++      ContentSettingsType::MEDIASTREAM_MIC, popup_origin, popup_origin);
++  test::PermissionRequestManagerTestApi api(manager);
++  api.SetOrigin(requesting_origin);
++  api.AddSimpleRequest(frame, permissions::RequestType::kMicStream);
++
++  auto* browser_widget = location_bar()->GetWidget()->GetTopLevelWidget();
++  base::WeakPtr<views::Widget> prompt;
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    if (!manager->GetCurrentPrompt()) {
++      return false;
++    }
++    for (views::Widget* widget :
++         views::Widget::GetAllOwnedWidgets(browser_widget->GetNativeView())) {
++      const auto* view = views::AsViewClass<EmbeddedPermissionPromptBaseView>(
++          widget->GetClientContentsView());
++      if (view && view->web_contents() == contents && widget->IsVisible() &&
++          !widget->IsClosed()) {
++        prompt = widget->GetWeakPtr();
++        return true;
++      }
++    }
++    return false;
++  }));
++  ASSERT_TRUE(presenter->IsPermissionPromptPreventingClose());
++  // The close callback notifies the popup contents identified during layout.
++  if (presenter->get_minimum_size().IsEmpty()) {
++    gfx::Rect bounds = prompt->GetWindowBoundsInScreen();
++    bounds.set_width(bounds.width() + 1);
++    prompt->SetBounds(bounds);
++    ASSERT_TRUE(base::test::RunUntil(
++        [&] { return !presenter->get_minimum_size().IsEmpty(); }));
++  }
++
++  ASSERT_TRUE(prompt && !prompt->IsClosed());
++  prompt->CloseWithReason(views::Widget::ClosedReason::kCloseButtonClicked);
+   ASSERT_TRUE(base::test::RunUntil([&] {
+     return !manager->IsRequestInProgress() && presenter->GetWidget() &&
+            presenter->GetWidget()->IsActive() &&
+-           presenter->GetWebUIContent()->HasFocus() &&
++           presenter->get_minimum_size().IsEmpty() &&
+            !presenter->IsPermissionPromptPreventingClose();
+   }));
+-  EXPECT_TRUE(presenter->IsShown());
+-  EXPECT_EQ(state->popup_state(), OmniboxPopupState::kFull);
+-  EXPECT_TRUE(controller->edit_model()->has_focus());
++  ASSERT_NO_FATAL_FAILURE(VerifyFocusRestoredToWebUIInput(presenter, content));
++
++  auto* other_browser = CreateBrowser(browser()->GetProfile());
++  ASSERT_TRUE(other_browser);
++  ui_test_utils::WaitUntilBrowserBecomeActive(other_browser);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return location_bar()
++               ->GetOmniboxController()
++               ->popup_state_manager()
++               ->popup_state() == OmniboxPopupState::kNone;
++  }));
+ }
+-#endif  // BUILDFLAG(IS_MAC)
+ 
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+                        PermissionDismissalReleasesUnfocusedFullPopup) {
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc
+index 806a7370b998d2559bc43413bc0f936d0beea215..f833157b3689b89e8f9075637f81e366f0e056f5 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc
+@@ -8,6 +8,7 @@
+ #include <string_view>
+ 
+ #include "base/feature_list.h"
++#include "base/functional/bind.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "chrome/browser/ui/location_bar/location_bar.h"
+ #include "chrome/browser/ui/omnibox/omnibox_controller.h"
+@@ -15,6 +16,7 @@
+ #include "chrome/browser/ui/omnibox/omnibox_popup_state_manager.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_aim_popup_webui_content.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_presenter_delegate.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
+ #include "chrome/browser/ui/webui/top_chrome/webui_contents_preload_manager.h"
+ #include "components/omnibox/common/omnibox_features.h"
+@@ -54,6 +56,7 @@ void OmniboxPopupAimPresenter::Show() {
+ }
+ 
+ void OmniboxPopupAimPresenter::Hide() {
++  pending_permission_focus_restore_.Cancel();
+   widget_observation_.Reset();
+   ResetFocusRestorationState();
+   OmniboxPopupPresenterBase::Hide();
+@@ -119,6 +122,52 @@ bool OmniboxPopupAimPresenter::ShouldDrawShadowInWebUI() const {
+   return omnibox::ShouldDrawAimShadowInWebUI();
+ }
+ 
++bool OmniboxPopupAimPresenter::
++    ShouldRestoreFocusAfterPermissionPromptDismissed() const {
++  const auto* widget = GetWidget();
++  return widget && HasOpenWidget() && widget->IsVisible() &&
++         widget->CanActivate() && ShouldReceiveFocus();
++}
++
++bool OmniboxPopupAimPresenter::IsBrowserOrPopupActive() const {
++  if (GetWidget()->IsActive()) {
++    return true;
++  }
++  auto* location_bar_widget = delegate().GetLocationBarWidget();
++  auto* browser_widget =
++      location_bar_widget ? location_bar_widget->GetTopLevelWidget() : nullptr;
++  return browser_widget && browser_widget->IsActive();
++}
++
++void OmniboxPopupAimPresenter::RequestFocusAfterPermissionPromptDismissed() {
++  pending_permission_focus_restore_.Cancel();
++  if (IsBrowserOrPopupActive()) {
++    RestorePermissionPromptFocusIfActive();
++    return;
++  }
++
++  // A closing native prompt can return activation to the owner asynchronously.
++  // Recheck actual activation after the close, including when another window
++  // already holds focus and the request was removed in the background.
++  pending_permission_focus_restore_.Reset(base::BindOnce(
++      [](base::WeakPtr<OmniboxPopupAimPresenter> presenter) {
++        if (presenter && presenter->IsPermissionPromptFocusRestorePending()) {
++          presenter->RestorePermissionPromptFocusIfActive();
++        }
++      },
++      weak_factory_.GetWeakPtr()));
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, pending_permission_focus_restore_.callback());
++}
++
++void OmniboxPopupAimPresenter::RestorePermissionPromptFocusIfActive() {
++  if (ShouldRestoreFocusAfterPermissionPromptDismissed() &&
++      IsBrowserOrPopupActive()) {
++    RequestFocus();
++  }
++  FinishPermissionPromptFocusRestore();
++}
++
+ void OmniboxPopupAimPresenter::OnWidgetActivationChanged(views::Widget* widget,
+                                                          bool active) {
+   if (active) {
+@@ -173,6 +222,7 @@ void OmniboxPopupAimPresenter::OnWidgetActivationChanged(views::Widget* widget,
+ }
+ 
+ void OmniboxPopupAimPresenter::WidgetDestroyed() {
++  pending_permission_focus_restore_.Cancel();
+   // Drop the observation before the widget goes away; `Show()` re-establishes
+   // it against the new widget.
+   widget_observation_.Reset();
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h b/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h
+index 75cf1fb979faa94f1abcd3f0ab3af9fb80e99294..5f1ba899fb563fdac761a0e91ea5f68698d6b7d1 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h
+@@ -5,6 +5,7 @@
+ #ifndef CHROME_BROWSER_UI_VIEWS_OMNIBOX_OMNIBOX_POPUP_AIM_PRESENTER_H_
+ #define CHROME_BROWSER_UI_VIEWS_OMNIBOX_OMNIBOX_POPUP_AIM_PRESENTER_H_
+ 
++#include "base/cancelable_callback.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/scoped_observation.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h"
+@@ -58,6 +59,8 @@ class OmniboxPopupAimPresenter
+   void LogResultToContentReadyMetric(base::TimeTicks result_ready_time,
+                                      bool is_first_show) override;
+   void WidgetDestroyed() override;
++  bool ShouldRestoreFocusAfterPermissionPromptDismissed() const override;
++  void RequestFocusAfterPermissionPromptDismissed() override;
+   std::unique_ptr<OmniboxPopupWebUIBaseContent> CreateWebUIContent() override;
+ 
+  private:
+@@ -72,6 +75,9 @@ class OmniboxPopupAimPresenter
+   void OnDidChangeFocus(views::View* focused_before,
+                         views::View* focused_now) override;
+ 
++  bool IsBrowserOrPopupActive() const;
++  void RestorePermissionPromptFocusIfActive();
++
+   // Finishing step for focus restoration after file picker selection. Restores
+   // focus to the popup WebUI and resets the focus restoration state.
+   void FinishFocusRestoration();
+@@ -94,6 +100,7 @@ class OmniboxPopupAimPresenter
+   // enabled).
+   bool is_restoring_focus_after_file_selection_ = false;
+ 
++  base::CancelableOnceClosure pending_permission_focus_restore_;
+   base::WeakPtrFactory<OmniboxPopupAimPresenter> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
+index 8ac617dc2e438b8bc7930077047b4ab6e0c95856..62116483610cf01e5678034a84030466a690237b 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
+@@ -170,6 +170,7 @@ void OmniboxPopupFullPresenter::Show() {
+ }
+ 
+ void OmniboxPopupFullPresenter::Hide() {
++  permission_prompt_widget_observation_.Reset();
+   pending_focus_task_.Cancel();
+   refocus_on_activation_ = false;
+   // The popup stops being observed before it's hidden.
+@@ -442,6 +443,17 @@ void OmniboxPopupFullPresenter::NotifyEscapeKeyPressed() {
+ 
+ void OmniboxPopupFullPresenter::OnWidgetActivationChanged(views::Widget* widget,
+                                                           bool active) {
++  if (permission_prompt_widget_observation_.IsObservingSource(widget)) {
++    if (!active) {
++      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++          FROM_HERE,
++          base::BindOnce(
++              &OmniboxPopupFullPresenter::OnPermissionPromptDeactivated,
++              weak_factory_.GetWeakPtr(), widget->GetWeakPtr()));
++    }
++    return;
++  }
++
+   if (active && refocus_on_activation_) {
+     // A focus request couldn't take activation (see `RequestFocus()`), and the
+     // browser window or the popup is now active, e.g. after the window-modal
+@@ -581,6 +593,12 @@ void OmniboxPopupFullPresenter::OnWidgetActivationChanged(views::Widget* widget,
+   }
+ }
+ 
++void OmniboxPopupFullPresenter::OnWidgetDestroying(views::Widget* widget) {
++  if (permission_prompt_widget_observation_.IsObservingSource(widget)) {
++    permission_prompt_widget_observation_.Reset();
++  }
++}
++
+ void OmniboxPopupFullPresenter::OnWidgetBoundsChanged(
+     views::Widget* widget,
+     const gfx::Rect& new_bounds) {
+@@ -606,11 +624,29 @@ void OmniboxPopupFullPresenter::RefocusAfterActivation() {
+ }
+ 
+ void OmniboxPopupFullPresenter::BlurIfBrowserOrPopupInactive() {
+-  // The permission manager has installed the prompt by the time this task
+-  // runs, so its browser-owned widget can hold activation.
+-  if (!IsBrowserOrPopupActive() &&
+-      !HasActivePermissionPromptWidget(GetBrowserWidget())) {
+-    BlurForWindowDeactivation();
++  if (IsBrowserOrPopupActive()) {
++    return;
++  }
++  // Once the prompt takes activation, neither the popup nor the browser can
++  // report a subsequent transfer from the prompt to another window.
++  if (auto* prompt = GetActivePermissionPromptWidget(GetBrowserWidget())) {
++    if (!permission_prompt_widget_observation_.IsObservingSource(prompt)) {
++      permission_prompt_widget_observation_.Reset();
++      permission_prompt_widget_observation_.Observe(prompt);
++    }
++    return;
++  }
++  BlurForWindowDeactivation();
++}
++
++void OmniboxPopupFullPresenter::OnPermissionPromptDeactivated(
++    base::WeakPtr<views::Widget> widget) {
++  // Closing a prompt also deactivates it. Let the manager restore focus on
++  // dismissal, and reconsider ordinary blur only while the prompt stays live.
++  if (widget &&
++      permission_prompt_widget_observation_.IsObservingSource(widget.get()) &&
++      IsOwnedPermissionPromptWidget(*widget)) {
++    BlurIfBrowserOrPopupInactive();
+   }
+ }
+ 
+@@ -834,6 +870,7 @@ void OmniboxPopupFullPresenter::OnWidgetPresentedChanged(bool presented) {
+ }
+ 
+ void OmniboxPopupFullPresenter::WidgetDestroyed() {
++  permission_prompt_widget_observation_.Reset();
+   event_monitor_.reset();
+   forward_events_timer_.Stop();
+   popup_widget_observation_.Reset();
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h
+index 2aa7ba57296f0ff03bc47345636fdd8ad015f043..26c55952374aaacaac9c0b7b8d7c58b90a9e4099 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h
+@@ -112,6 +112,7 @@ class OmniboxPopupFullPresenter : public OmniboxPopupPresenterBase,
+   // Either activating while `refocus_on_activation_` is set schedules
+   // `RefocusAfterActivation()`.
+   void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
++  void OnWidgetDestroying(views::Widget* widget) override;
+   // Keeps the popup over the location bar when the browser widget moves or
+   // resizes. The popup is its own top-level window, which doesn't always move
+   // with the browser window, e.g. a macOS child window stays put when its
+@@ -154,6 +155,7 @@ class OmniboxPopupFullPresenter : public OmniboxPopupPresenterBase,
+   // active. Any other window taking activation, including a bubble anchored to
+   // the browser window, blurs it, as with the Views omnibox.
+   void BlurIfBrowserOrPopupInactive();
++  void OnPermissionPromptDeactivated(base::WeakPtr<views::Widget> widget);
+   // If the omnibox is focused with the full popup open, blurs it after another
+   // window, such as a bubble, took activation, and sets what the browser window
+   // restores focus to when it's reactivated.
+@@ -202,6 +204,8 @@ class OmniboxPopupFullPresenter : public OmniboxPopupPresenterBase,
+ 
+   base::ScopedObservation<views::Widget, views::WidgetObserver>
+       popup_widget_observation_{this};
++  base::ScopedObservation<views::Widget, views::WidgetObserver>
++      permission_prompt_widget_observation_{this};
+   base::ScopedObservation<views::Widget, views::WidgetObserver>
+       browser_widget_observation_{this};
+   // Observes the browser window's focus while the popup is shown. See
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+index 4046ae9ce08740cbb83579924283c16d2cc47b55..dcbe74776896b85099d36dbb0a10c8b35de6b9f0 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+@@ -97,7 +97,7 @@ class OmniboxPopupPresenterBase::RequestingPromptObservation
+ 
+   bool IsLocked() const { return observation_.IsObserving(); }
+ 
+-  permissions::PermissionRequestManager* GetLockedManager() {
++  permissions::PermissionRequestManager* GetLockedManager() const {
+     return observation_.GetSource();
+   }
+ 
+@@ -762,14 +762,12 @@ void OmniboxPopupPresenterBase::PrimaryPageChanged(content::Page& page) {
+ void OmniboxPopupPresenterBase::OnEmbeddedPermissionDialogChanged(
+     bool is_showing,
+     const gfx::Size& prompt_size) {
+-  SetPermissionPromptShowing(is_showing);
+-  if (!is_showing) {
+-    // Set dismissal handling flag to ensure Omnibox popup does not close due to
+-    // `kBlur` while dismissal cleanup finishes running. (The prompt is not
+-    // showing during dismissal, so `is_showing` is false and does not prevent
+-    // Omnibox popup from closing via `SetPermissionPromptShowing`).
+-    // Do not call `FocusLocation()` here, as refocusing the omnibox on
+-    // PEPC dismissal re-triggers WebUI media access requests.
++  if (is_showing) {
++    SetPermissionPromptShowing(true);
++  } else if (is_prompt_showing_) {
++    // A hide before manager removal protects the popup during cleanup. The
++    // close button can also send a hide after the manager has restored focus.
++    SetPermissionPromptShowing(false);
+     is_handling_prompt_dismissal_ = true;
+   }
+ 
+@@ -898,8 +896,7 @@ void OmniboxPopupPresenterBase::HandlePermissionPromptDismissal() {
+ }
+ 
+ void OmniboxPopupPresenterBase::RestoreFocusAfterPermissionPromptDismissed() {
+-  if (is_prompt_showing_ || (requesting_prompt_observation_ &&
+-                             requesting_prompt_observation_->IsLocked())) {
++  if (IsPermissionPromptShowing()) {
+     return;
+   }
+   // Passive suggestions and an unfocused Full WebUI popup do not take focus
+@@ -912,6 +909,10 @@ void OmniboxPopupPresenterBase::RestoreFocusAfterPermissionPromptDismissed() {
+   is_handling_prompt_dismissal_ = !widget_->IsActive();
+   // Focus this popup directly. Focusing the location bar can open Full WebUI
+   // over an AIM popup that owned the permission lock.
++  RequestFocusAfterPermissionPromptDismissed();
++}
++
++void OmniboxPopupPresenterBase::RequestFocusAfterPermissionPromptDismissed() {
+   RequestFocus();
+ }
+ 
+@@ -950,18 +951,48 @@ bool OmniboxPopupPresenterBase::
+   return ShouldReceiveFocus();
+ }
+ 
++bool OmniboxPopupPresenterBase::IsPermissionPromptShowing() const {
++  return is_prompt_showing_ || (requesting_prompt_observation_ &&
++                                requesting_prompt_observation_->IsLocked());
++}
++
+ bool OmniboxPopupPresenterBase::IsPermissionPromptPreventingClose() const {
+-  return is_prompt_showing_ || is_handling_prompt_dismissal_ ||
+-         (requesting_prompt_observation_ &&
+-          requesting_prompt_observation_->IsLocked());
++  return IsPermissionPromptShowing() || is_handling_prompt_dismissal_;
+ }
+ 
+-bool OmniboxPopupPresenterBase::HasActivePermissionPromptWidget(
+-    const views::Widget* browser_widget) {
+-  if (!browser_widget) {
+-    return false;
++bool OmniboxPopupPresenterBase::IsPermissionPromptFocusRestorePending() const {
++  return is_handling_prompt_dismissal_ && !IsPermissionPromptShowing();
++}
++
++views::Widget* OmniboxPopupPresenterBase::GetActivePermissionPromptWidget(
++    const views::Widget* browser_widget) const {
++  if (!browser_widget || !IsPermissionPromptShowing()) {
++    return nullptr;
+   }
+ 
++  // Owned widgets include permission bubbles nested under a content scrim.
++  for (views::Widget* widget :
++       views::Widget::GetAllOwnedWidgets(browser_widget->GetNativeView())) {
++    if (widget->IsActive() && IsOwnedPermissionPromptWidget(*widget)) {
++      return widget;
++    }
++  }
++  return nullptr;
++}
++
++bool OmniboxPopupPresenterBase::IsOwnedPermissionPromptWidget(
++    const views::Widget& widget) const {
++  if (widget.IsClosed() || !widget.IsVisible()) {
++    return false;
++  }
++  // For a bubble, the root contents are the non-client frame.
++  const auto* prompt_view = views::AsViewClass<PermissionPromptBaseView>(
++      widget.GetClientContentsView());
++  const auto* prompt_contents =
++      prompt_view ? prompt_view->web_contents() : nullptr;
++  if (!prompt_contents) {
++    return false;
++  }
+   const auto* popup_contents =
+       is_prompt_showing_
+           ? GetWebContentsWithCurrentPrompt(
+@@ -972,25 +1003,6 @@ bool OmniboxPopupPresenterBase::HasActivePermissionPromptWidget(
+           ? GetWebContentsWithCurrentPrompt(
+                 requesting_prompt_observation_->GetLockedManager())
+           : nullptr;
+-  if (!popup_contents && !requesting_contents) {
+-    return false;
+-  }
+-
+-  // Owned widgets include permission bubbles nested under a content scrim.
+-  for (const views::Widget* widget :
+-       views::Widget::GetAllOwnedWidgets(browser_widget->GetNativeView())) {
+-    if (widget->IsClosed() || !widget->IsVisible() || !widget->IsActive()) {
+-      continue;
+-    }
+-    // For a bubble, the root contents are the non-client frame.
+-    const auto* prompt_view = views::AsViewClass<PermissionPromptBaseView>(
+-        widget->GetClientContentsView());
+-    const auto* prompt_contents =
+-        prompt_view ? prompt_view->web_contents() : nullptr;
+-    if (prompt_contents && (prompt_contents == popup_contents ||
+-                            prompt_contents == requesting_contents)) {
+-      return true;
+-    }
+-  }
+-  return false;
++  return prompt_contents == popup_contents ||
++         prompt_contents == requesting_contents;
+ }
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+index b33f05bf156fba8a1e30651cffec5e63acdcba7f..f200a0e51dbb7134547cddb21081904efaaf559c 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+@@ -328,12 +328,16 @@ class OmniboxPopupPresenterBase
+   void OnRequestsFinalized() override;
+   void OnPermissionRequestManagerDestructed() override;
+ 
+-  // Whether a permission prompt protected by this presenter holds activation.
+-  bool HasActivePermissionPromptWidget(const views::Widget* browser_widget);
++  // Returns the browser-owned Views widget holding activation for a protected
++  // permission request, if there is one.
++  views::Widget* GetActivePermissionPromptWidget(
++      const views::Widget* browser_widget) const;
++  bool IsOwnedPermissionPromptWidget(const views::Widget& widget) const;
+ 
+-  // Called by subclasses when widget activation changes to active = true.
+   void FinishPermissionPromptFocusRestore();
++  bool IsPermissionPromptFocusRestorePending() const;
+   virtual bool ShouldRestoreFocusAfterPermissionPromptDismissed() const;
++  virtual void RequestFocusAfterPermissionPromptDismissed();
+ 
+   // Whether focus has been explicitly requested since the popup was shown.
+   bool focus_requested_ = false;
+@@ -357,6 +361,7 @@ class OmniboxPopupPresenterBase
+   class RequestingPromptObservation;
+   std::unique_ptr<RequestingPromptObservation> requesting_prompt_observation_;
+ 
++  bool IsPermissionPromptShowing() const;
+   void RestoreFocusAfterPermissionPromptDismissed();
+ 
+   // Set to true when a permission prompt is added/showing.
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base_unittest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base_unittest.cc
+index 4f14a5b062e76c451bf361488474ff1551aca1a4..5727ee9c6fb36b9f2d5aaaf8e936454574b7a71c 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base_unittest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base_unittest.cc
+@@ -310,7 +310,13 @@ TEST_F(OmniboxPopupPresenterBaseTest, PermissionPromptShowingStateAndReset) {
+   presenter_->ResetPermissionPromptShowingState();
+   EXPECT_FALSE(presenter_->IsPermissionPromptPreventingClose());
+ 
+-  // `OnEmbeddedPermissionDialogChanged(false)` puts it in dismissal mode.
++  // A hide after the guard is cleared updates size without rearming it.
++  presenter_->OnEmbeddedPermissionDialogChanged(false, gfx::Size());
++  EXPECT_FALSE(presenter_->IsPermissionPromptPreventingClose());
++  EXPECT_TRUE(presenter_->get_minimum_size().IsEmpty());
++
++  // An early hide keeps the popup guarded until the manager restores focus.
++  presenter_->OnEmbeddedPermissionDialogChanged(true, gfx::Size(500, 400));
+   presenter_->OnEmbeddedPermissionDialogChanged(false, gfx::Size());
+   EXPECT_TRUE(presenter_->IsPermissionPromptPreventingClose());
+ 

@@ -32,6 +32,7 @@ class WebpageCaptureCommandBrowserTest
       public testing::WithParamInterface<bool> {
  public:
   WebpageCaptureCommandBrowserTest() {
+    EnablePixelOutput();
     features_.InitWithFeatureState(::features::kUseActionsForBrowserCommands,
                                    GetParam());
   }

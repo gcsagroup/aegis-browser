@@ -1,0 +1,22 @@
+From 423f47b81bc64529a705b7ce611a55bbcbb5e8f6 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sun, 22 Nov 2026 06:39:40 +0800
+Subject: [PATCH] test(omnibox): declare Aegis feature dependency for the
+ interactive fixture
+
+---
+ chrome/browser/ui/views/omnibox/BUILD.gn | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/chrome/browser/ui/views/omnibox/BUILD.gn b/chrome/browser/ui/views/omnibox/BUILD.gn
+index d70551a5067a739046f75c68c2ba31f2f924ec69..f871c5ba7a5ae221be0b8b96de46bb55110cb303 100644
+--- a/chrome/browser/ui/views/omnibox/BUILD.gn
++++ b/chrome/browser/ui/views/omnibox/BUILD.gn
+@@ -408,6 +408,7 @@ if (!is_chromeos_device) {
+       "//chrome/browser/ui/webui/omnibox_popup",
+       "//chrome/browser/ui/webui/searchbox",
+       "//chrome/common:chrome_features",
++      "//chrome/common/aegis",
+       "//chrome/test:test_support",
+       "//chrome/test:test_support_ui",
+       "//chrome/test/base:browser_test_waiters",

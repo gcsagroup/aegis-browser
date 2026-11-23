@@ -235,9 +235,9 @@ try {
         note: 'Proxy, vector generators, upstream and build-source tools only; prototype workers are not measured',
       },
       swift: {status: 'MANUAL_REPORTING_WORKFLOW', totals: null, note: 'Product-only xccov runs in the manual-only iOS Coverage workflow; it is outside the current Mac quality gate and Codacy conversion remains pending'},
-      bash: {status: 'MANUAL_REPORTING_WORKFLOW', totals: null, note: 'Behavior tests and syntax checks exist; line coverage is produced by the Linux coverage job'},
-      powershell: {status: 'MANUAL_REPORTING_WORKFLOW', totals: null, note: 'Windows Pester coverage runs separately and does not establish UI acceptance'},
-      java: {status: 'MANUAL_REPORTING_WORKFLOW', totals: null, note: 'Driver.java instrumentation-helper JaCoCo runs in the manual-only Android Java Coverage workflow; it is outside the Mac quality gate and does not measure browser runtime'},
+      bash: {status: 'SEPARATE_REPORTING_WORKFLOW', totals: null, note: 'Other Platform Coverage produces Bash line coverage on Linux'},
+      powershell: {status: 'SEPARATE_REPORTING_WORKFLOW', totals: null, note: 'Other Platform Coverage produces Pester coverage and targeted Windows installer fixture results'},
+      java: {status: 'SEPARATE_REPORTING_WORKFLOW', totals: null, note: 'Android Java Coverage produces JaCoCo for the Driver.java instrumentation helper on the API 36 emulator'},
     },
     nonCodeOrUninstrumented: ['HTML', 'CSS', 'JSON/data', 'GN/GNI'],
   };

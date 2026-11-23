@@ -1,0 +1,412 @@
+From 491745cb13fda97d5ef3a191b65c965dd2f6c4e6 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 18:12:57 +0800
+Subject: [PATCH] fix(browser): align redirect and popup regression coverage
+
+---
+ ...proxying_url_loader_factory_browsertest.cc | 176 ++++++++++++------
+ .../aegis/enhancements_shared/viewer.js       |   2 +-
+ chrome/browser/resources/aegis/markdown.js    |   2 +-
+ chrome/browser/ui/views/omnibox/BUILD.gn      |   9 +-
+ .../omnibox_popup_visibility_browsertest.cc   |  13 +-
+ 5 files changed, 137 insertions(+), 65 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 80de126c541dc76236c1036425a7b70a070b997f..415ba8b4c62f01e533349044dfc826fcf55e79ec 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -15,9 +15,11 @@
+ #include "base/check.h"
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
++#include "base/files/file_util.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/path_service.h"
+ #include "base/run_loop.h"
+ #include "base/synchronization/lock.h"
+ #include "base/unguessable_token.h"
+@@ -48,7 +50,9 @@
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/tabs/tab_enums.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/common/chrome_paths.h"
+ #include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/testing_profile.h"
+ #include "chrome/test/base/ui_test_utils.h"
+ #include "components/aegis_access/access_identity_generation_state.h"
+ #include "components/aegis_access/access_proxy_selection_generation_state.h"
+@@ -110,8 +114,32 @@ namespace {
+ constexpr char kTargetHost[] = "target.example";
+ constexpr char kTrailingDotTargetHost[] = "target.example.";
+ constexpr char kUnselectedRedirectHost[] = "redirect-unselected.example";
++constexpr char kRejectedRedirectHost[] = "redirect-rejected.example";
+ constexpr char kProxyGroup[] = "proxy-group-browser-test";
+ 
++StoredAccessRule MakeProfileRule(std::string id,
++                                 const OwnershipKey& owner,
++                                 std::string host,
++                                 AccessMode mode,
++                                 uint64_t generation) {
++  StoredAccessRule rule;
++  rule.policy.rule_id = std::move(id);
++  rule.policy.owner = owner;
++  rule.policy.scope = PolicyScope::kProfile;
++  rule.policy.destination_host = std::move(host);
++  rule.policy.schemes = {RequestScheme::kHttp};
++  rule.policy.ports.scope = PortScope::kAllBrowserPermitted;
++  rule.policy.mode = mode;
++  if (mode == AccessMode::kProxy)
++    rule.policy.proxy_group_id = kProxyGroup;
++  rule.policy.protection_override = ProtectionOverride::kNone;
++  rule.policy.row_revision = generation;
++  rule.policy.last_operation_sequence = generation;
++  rule.source = StoredRuleSource::kTestFixture;
++  rule.lifetime = StoredRuleLifetime::kPersistent;
++  return rule;
++}
++
+ SiteGroupMutationRequest PreparedNavigationRequest(const OwnershipKey& owner) {
+   SiteGroupMutationRequest request;
+   request.operation_id = "prepared-navigation";
+@@ -419,12 +447,14 @@ std::unique_ptr<net::test_server::HttpResponse> ProxyReply(
+     response->set_content_type("text/plain");
+     return response;
+   }
+-  if (request.relative_url.find("/redirect-unselected") !=
+-      std::string::npos) {
++  if (request.GetURL().path() == "/redirect-unselected" ||
++      request.GetURL().path() == "/redirect-rejected") {
++    const char* next_host = request.GetURL().path() == "/redirect-rejected"
++                                ? kRejectedRedirectHost
++                                : kUnselectedRedirectHost;
+     response->set_code(net::HTTP_FOUND);
+     response->AddCustomHeader(
+-        "Location",
+-        target_origin->GetURL(kUnselectedRedirectHost, "/resource").spec());
++        "Location", target_origin->GetURL(next_host, "/resource").spec());
+     return response;
+   }
+   if (request.relative_url.find("/redirect") != std::string::npos) {
+@@ -557,6 +587,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     host_resolver()->AddRule(kTargetHost, "127.0.0.1");
+     host_resolver()->AddRule(kTrailingDotTargetHost, "127.0.0.1");
+     host_resolver()->AddRule(kUnselectedRedirectHost, "127.0.0.1");
++    host_resolver()->AddRule(kRejectedRedirectHost, "127.0.0.1");
+ 
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &AccessProxyingURLLoaderFactoryBrowserTest::LifecycleReply,
+@@ -1139,33 +1170,20 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   void PublishCommittedRule(const std::string& destination_host,
+                             aegis_access::AccessMode mode,
+-                            uint64_t publication_sequence = 1) {
++                            uint64_t publication_sequence = 1,
++                            const char* rejected_host = nullptr) {
+     const uint64_t policy_generation =
+         bootstrap_policy_generation_ + publication_sequence;
+-    aegis_access::AccessPolicyRule rule;
+-    rule.rule_id = "rule-browser-test";
+-    rule.owner = *owner_;
+-    rule.scope = aegis_access::PolicyScope::kProfile;
+-    rule.destination_host = destination_host;
+-    rule.schemes = {aegis_access::RequestScheme::kHttp};
+-    rule.ports.scope = aegis_access::PortScope::kAllBrowserPermitted;
+-    rule.mode = mode;
+-    if (mode == aegis_access::AccessMode::kProxy) {
+-      rule.proxy_group_id = kProxyGroup;
+-    }
+-    rule.protection_override = aegis_access::ProtectionOverride::kNone;
+-    rule.row_revision = policy_generation;
+-    rule.last_operation_sequence = policy_generation;
+-
+-    StoredAccessRule stored_rule;
+-    stored_rule.policy = rule;
+-    stored_rule.source = StoredRuleSource::kTestFixture;
+-    stored_rule.lifetime = StoredRuleLifetime::kPersistent;
+-
+     StoredPolicySnapshot snapshot;
+     snapshot.owner = *owner_;
+     snapshot.policy_generation = policy_generation;
+-    snapshot.independent_rules.push_back(std::move(stored_rule));
++    snapshot.independent_rules.push_back(MakeProfileRule(
++        "rule-browser-test", *owner_, destination_host, mode, policy_generation));
++    if (rejected_host) {
++      snapshot.independent_rules.push_back(MakeProfileRule(
++          "rule-browser-redirect-reject", *owner_, rejected_host,
++          AccessMode::kReject, policy_generation));
++    }
+ 
+     auto* runtime =
+         AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
+@@ -1193,7 +1211,8 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+   }
+ 
+   void PublishProxyPolicy(bool publish_endpoint,
+-                          std::string destination_host = kTargetHost) {
++                          std::string destination_host = kTargetHost,
++                          const char* rejected_host = nullptr) {
+     const aegis_access::GenerationTuple generations{
+         bootstrap_policy_generation_ + 1,
+         CommitIdentityGenerationForProxyPolicy(),
+@@ -1202,7 +1221,8 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+         CurrentBaseProxyGeneration(),
+     };
+ 
+-    PublishCommittedRule(destination_host, aegis_access::AccessMode::kProxy);
++    PublishCommittedRule(destination_host, aegis_access::AccessMode::kProxy,
++                         /*publication_sequence=*/1, rejected_host);
+     if (publish_endpoint) {
+       PublishSelectedProxyEndpoint(generations);
+     }
+@@ -2076,24 +2096,50 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   EXPECT_EQ(prepared.value->committed_policy_generation, 0u);
+ }
+ 
+-IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++// Seed the test profile before Chrome opens its exclusive store. Startup
++// restores the rule under the new session's owner, as it does after a restart.
++class AccessRestoredProxyRuleBrowserTest
++    : public AccessProxyingURLLoaderFactoryBrowserTest {
++ protected:
++  bool SetUpUserDataDirectory() override {
++    if (!AccessProxyingURLLoaderFactoryBrowserTest::SetUpUserDataDirectory())
++      return false;
++    const auto profile_dir = base::PathService::CheckedGet(chrome::DIR_USER_DATA)
++                                 .AppendASCII(TestingProfile::kTestUserProfileDir);
++    if (!base::CreateDirectory(profile_dir))
++      return false;
++    const OwnershipKey prior_owner{ChannelNamespace::kDev, "previous-session",
++                                   "<default>"};
++    auto binding = TrustedAccessStoreBindingFactory::CreatePersistent(
++        prior_owner.channel, "aegis-access-profile:" + profile_dir.AsUTF8Unsafe(),
++        prior_owner.profile_token, profile_dir);
++    if (!binding)
++      return false;
++    AccessRuleStore store(std::move(*binding));
++    return store.Open() == StoreStatus::kValid &&
++           AccessRuleStoreTestPeer::Import(
++               &store, MakeProfileRule("restored-profile-proxy", prior_owner,
++                                       kTargetHost, AccessMode::kProxy, 1)) ==
++               StoreStatus::kValid;
++  }
++};
++
++IN_PROC_BROWSER_TEST_F(AccessRestoredProxyRuleBrowserTest,
+                        ConflictingSiteProxyGroupPreservesNavigationRoute) {
+-  PublishProxyPolicy(/*publish_endpoint=*/true);
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+   auto* runtime = AccessPublishedRequestRuntime::Get(browser()->GetProfile());
+   ASSERT_TRUE(runtime);
+   const auto* published = runtime->GetPublishedPolicySnapshot(*owner_);
+   ASSERT_TRUE(published);
++  ASSERT_EQ(published->rules.size(), 1u);
++  ASSERT_EQ(published->rules.front().rule_id, "restored-profile-proxy");
++  ASSERT_EQ(published->rules.front().owner, *owner_);
+   const auto published_before = *published;
+-  auto store = std::make_unique<AccessRuleStore>(
+-      AccessRuleStoreTestPeer::Ephemeral(*owner_));
+-  ASSERT_EQ(store->Open(), StoreStatus::kValid);
+-  StoredAccessRule independent;
+-  independent.policy = published_before.rules.front();
+-  independent.source = StoredRuleSource::kTestFixture;
+-  independent.lifetime = StoredRuleLifetime::kPersistent;
+-  ASSERT_EQ(AccessRuleStoreTestPeer::Import(store.get(), independent),
+-            StoreStatus::kValid);
++  PublishSelectedProxyEndpoint(
++      {published_before.policy_generation, CommitIdentityGenerationForProxyPolicy(),
++       CommitSelectionGenerationForProxyPolicy(), transport_->network_epoch(),
++       CurrentBaseProxyGeneration()});
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
++  ExpectRoutingDelta(0, 0, /*origin_delta=*/0u, /*proxy_delta=*/1u);
+   auto request = PreparedNavigationRequest(*owner_);
+   for (auto& member : request.candidate_members) {
+     member.proxy_group_id = "conflicting-group";
+@@ -2104,13 +2150,27 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   auto* coordinator = AccessServiceCoordinator::GetOrCreate(browser()->GetProfile());
+   ASSERT_TRUE(coordinator);
+   base::test::TestFuture<AccessMutationTransactionResult> result;
+-  coordinator->CommitSiteGroupMutation(std::move(store), request, *selector,
+-                                        result.GetCallback());
++  ASSERT_TRUE(coordinator->has_retained_store());
++  coordinator->CommitSiteGroupMutation(nullptr, request, *selector,
++                                       result.GetCallback());
+   ASSERT_TRUE(result.Wait());
+   base::RunLoop().RunUntilIdle();
+   EXPECT_EQ(result.Get().status,
+             AccessMutationTransactionStatus::kUnsupportedTransportScope);
+-  EXPECT_EQ(*runtime->GetPublishedPolicySnapshot(*owner_), published_before);
++  EXPECT_EQ(result.Get().store_status, StoreStatus::kValid);
++  const auto* restored = runtime->GetPublishedPolicySnapshot(*owner_);
++  ASSERT_TRUE(restored);
++  EXPECT_EQ(restored->owner, published_before.owner);
++  EXPECT_EQ(restored->rules, published_before.rules);
++  // Recovery reserves a new publication for the same committed rules.
++  EXPECT_GT(restored->policy_generation, published_before.policy_generation);
++  const auto persisted =
++      coordinator->ReadCommittedSnapshot(owner_->storage_partition_token);
++  ASSERT_TRUE(persisted.value);
++  EXPECT_TRUE(persisted.value->site_groups.empty());
++  ASSERT_EQ(persisted.value->independent_rules.size(), 1u);
++  EXPECT_EQ(persisted.value->independent_rules.front().policy,
++            published_before.rules.front());
+   EXPECT_EQ(transport_->CurrentSelection(*owner_), selection_before);
+   EXPECT_EQ(coordinator->state_generation(), 0u);
+   const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+@@ -2533,17 +2593,21 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ 
+ IN_PROC_BROWSER_TEST_F(
+     AccessProxyingURLLoaderFactoryBrowserTest,
+-    BrowserProcessPrefetchRedirectToUnselectedHostFailsClosed) {
++    BrowserProcessPrefetchRedirectUsesNextHostPolicy) {
+   const size_t origin_before =
+       origin_requests_.load(std::memory_order_relaxed);
+   const size_t proxy_before =
+       proxy_requests_.load(std::memory_order_relaxed);
+-  PublishProxyPolicy(/*publish_endpoint=*/true);
++  PublishProxyPolicy(/*publish_endpoint=*/true, kTargetHost, kRejectedRedirectHost);
+ 
+-  EXPECT_FALSE(
+-      FetchBrowserProcessPrefetch(unselected_redirect_url()).has_value());
+-  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++  EXPECT_EQ(FetchBrowserProcessPrefetch(unselected_redirect_url()), "origin");
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
+                      /*proxy_delta=*/1u);
++
++  EXPECT_FALSE(FetchBrowserProcessPrefetch(
++                   target_url().Resolve("/redirect-rejected")).has_value());
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/2u);
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(
+@@ -2871,12 +2935,18 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+-                       RedirectToUnselectedHostFailsClosed) {
+-  PublishProxyPolicy(/*publish_endpoint=*/true);
++                       RedirectUsesNextHostPolicy) {
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++  PublishProxyPolicy(/*publish_endpoint=*/true, kTargetHost, kRejectedRedirectHost);
+ 
+-  EXPECT_FALSE(Fetch(unselected_redirect_url()));
+-  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 1u);
+-  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
++  EXPECT_TRUE(Fetch(unselected_redirect_url()));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/1u);
++
++  EXPECT_FALSE(Fetch(target_url().Resolve("/redirect-rejected")));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/2u);
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.js b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+index f6934f426c61591d1f29e48c991d0d92bfaad55d..add4fdb2836b8b968d9e16126427eb366112ade5 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/viewer.js
++++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+@@ -321,7 +321,7 @@
+   window.addEventListener("message", (event) => {
+     if (event.source !== parent || event.origin !== "chrome://aegis") return;
+     if (event.data?.type === "load") load(event.data.value);
+-    else if (event.data?.type === "ready-request") send("ready", true);
++    else if (event.data?.type === "ready-request") send("ready-response", true);
+     else if (event.data?.type === "print") window.print();
+     else if (event.data?.type === "configure") configure(event.data.value);
+     else if (event.data?.type === "command") command(event.data.value);
+diff --git a/chrome/browser/resources/aegis/markdown.js b/chrome/browser/resources/aegis/markdown.js
+index b665420e83566171d7741bce6d718aee517672a2..92d05fd2b18f946eeaa1d800d3603addbae81568 100644
+--- a/chrome/browser/resources/aegis/markdown.js
++++ b/chrome/browser/resources/aegis/markdown.js
+@@ -84,7 +84,7 @@ window.addEventListener("message", (event) => {
+   )
+     return;
+   const { type, value } = event.data || {};
+-  if (type === "ready") {
++  if (type === "ready" || (type === "ready-response" && !ready)) {
+     ready = true;
+     send("configure", {embedded: true, locale: loadTimeData.getString("aegisLocale"), preferences: state.readingPreferences});
+     if (current) send("load", current);
+diff --git a/chrome/browser/ui/views/omnibox/BUILD.gn b/chrome/browser/ui/views/omnibox/BUILD.gn
+index abb4f942b8a17db5580373ee15fa71e1cb89d0ff..d70551a5067a739046f75c68c2ba31f2f924ec69 100644
+--- a/chrome/browser/ui/views/omnibox/BUILD.gn
++++ b/chrome/browser/ui/views/omnibox/BUILD.gn
+@@ -309,10 +309,6 @@ source_set("browser_tests") {
+     "omnibox_webui_popup_defer_creation_browsertest.cc",
+   ]
+ 
+-  if (is_mac) {
+-    sources += [ "omnibox_popup_visibility_browsertest.cc" ]
+-  }
+-
+   deps = [
+     ":omnibox",
+     ":test_support",
+@@ -378,6 +374,11 @@ if (!is_chromeos_device) {
+       "omnibox_view_views_interactive_uitest.cc",
+     ]
+ 
++    if (is_mac) {
++      # These cases exercise native window activation and compositor presentation.
++      sources += [ "omnibox_popup_visibility_browsertest.cc" ]
++    }
++
+     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+ 
+     deps = [
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+index a8a506c24ee10e4c6c432152ab8633b168804aa7..ffb7c159571e8997fbd4ba81c7a667b99e7acab2 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+@@ -2,6 +2,7 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "base/auto_reset.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/run_loop.h"
+ #include "base/test/run_until.h"
+@@ -9,6 +10,7 @@
+ #include "chrome/browser/ui/omnibox/omnibox_controller.h"
+ #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
+ #include "chrome/browser/ui/omnibox/omnibox_popup_state_manager.h"
++#include "chrome/browser/ui/omnibox/omnibox_popup_webui_creation.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h"
+@@ -17,6 +19,7 @@
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_webui_base_content.h"
+ #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+ #include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/interactive_test_utils.h"
+ #include "components/omnibox/common/omnibox_features.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/visibility.h"
+@@ -55,6 +58,9 @@ class OmniboxPopupVisibilityBrowserTest
+ 
+  private:
+   base::test::ScopedFeatureList feature_list_;
++  // Pre-warm both presenters before the first Show() in these tests.
++  base::AutoReset<bool> create_popup_webui_on_demand_ =
++      omnibox::SetCreatePopupWebUIOnDemandForTesting(false);
+ };
+ 
+ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+@@ -140,12 +146,7 @@ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+ 
+   for (int show = 0; show < 2; ++show) {
+     SCOPED_TRACE(show);
+-    auto* browser_widget =
+-        BrowserView::GetBrowserViewForBrowser(browser())->GetWidget();
+-    ASSERT_TRUE(browser_widget);
+-    browser_widget->Activate();
+-    ASSERT_TRUE(base::test::RunUntil(
+-        [&]() { return browser_widget->IsActive(); }));
++    ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+     ASSERT_TRUE(base::test::RunUntil(
+         [&]() { return !location_bar->in_popup_state_transition(); }));
+     location_bar->GetOmniboxController()->popup_state_manager()->SetPopupState(

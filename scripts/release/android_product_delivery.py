@@ -12,8 +12,9 @@ _spec.loader.exec_module(_receipt)
 require_version_code = _receipt.require_version_code
 
 EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
-SCHEMA = 'android-product-delivery-v1'
+SCHEMA = 'android-product-delivery-v2'
 APPLICATION_ID = 'com.gcsa.aegis'
+LEGACY_REFS = 'git/matching-refs/heads/android-delivery/'
 
 
 def canonical(value):
@@ -23,8 +24,8 @@ def canonical(value):
 def allocation(application, version, build):
     if application != APPLICATION_ID:
         raise ValueError('Invalid Android delivery allocation')
-    require_version_code(version, build)
-    return hashlib.sha256(canonical([application, 'ANDROID', version, build]).encode()).hexdigest()
+    version_code = require_version_code(version, build)
+    return hashlib.sha256(canonical([application, 'ANDROID', version_code]).encode()).hexdigest()
 
 
 class GitHub:
@@ -58,11 +59,18 @@ class Records:
         repo = api.request('')
         if repo.get('id') != repository_id:
             raise ValueError('Delivery repository identity differs')
+        self.require_clear_legacy()
+
+    def require_clear_legacy(self):
+        # Previously the product version was part of the key. Preserve any
+        # such records and require reconciliation before using the new keys.
+        if self.api.request(LEGACY_REFS) != []:
+            raise ValueError('Legacy Android delivery records require reconciliation before allocation')
 
     def path(self, kind, key):
         if kind not in {'package', 'upload-start', 'upload-result'} or not re.fullmatch(r'[0-9a-f]{64}', key):
             raise ValueError('Invalid Android delivery record path')
-        return 'heads/android-delivery/' + kind + '/' + key
+        return 'heads/android-delivery-v2/' + kind + '/' + key
 
     def read(self, kind, key):
         path = self.path(kind, key)
@@ -84,8 +92,9 @@ class Records:
             raise ValueError('Android delivery record identity differs')
         return value['payload']
 
-    def create(self, kind, key, payload):
+    def create(self, kind, key, payload, *, authorize_create=None):
         """Read, create without update, then compare the original committed bytes."""
+        self.require_clear_legacy()
         if self.read(kind, key) is not None:
             raise ValueError('Allocation already recorded; reconcile instead of replaying')
         value = dict(schema=SCHEMA, repository_id=self.repository_id, application=self.application,
@@ -96,6 +105,8 @@ class Records:
         commit = self.api.request('git/commits', dict(message=message, tree=EMPTY_TREE, parents=[]))
         if not re.fullmatch(r'[0-9a-f]{40}', commit.get('sha', '')):
             raise ValueError('Unknown Android record creation outcome')
+        if authorize_create is not None:
+            authorize_create()
         self.api.request('git/refs', dict(ref='refs/' + self.path(kind, key), sha=commit['sha']))
         if self.read(kind, key) != payload:
             raise ValueError('Unknown Android record readback; no side effect is authorized')

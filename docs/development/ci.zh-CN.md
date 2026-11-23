@@ -80,6 +80,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 入口依次执行工具链预检、`pnpm install --frozen-lockfile`、`pnpm run quality:fast`、分语言覆盖率生成与校验、许可证元数据记录、修订 4 冻结文件校验、临时副本中的 13 项离线预览检查、CI 门禁回归、工作流验证与源码前后摘要比对。任一阶段非零即整体失败；报告写入被忽略的 `.artifacts/ci/`，不得提交该目录。
 
+完整门必跑无凭据 Android 发布回归。`android-release-python-tests` 从 `scripts/release/test_android*.py` 发现至少一个用例，要求 `unittest` 判定套件成功，且至少一个完整用例触发 `addSuccess`。`ci:test` 执行 `scripts/ci/tests/android-*.test.mjs`。仅改 Android 的 Ready PR 也走完整门。
+
 `ci:test` 按文件串行执行 Node 回归套件，避免多个创建真实子进程的 fixture 同时争用 runner CPU。V8 覆盖率退出回归仍使用真实 Vitest worker、原有的 500ms SIGKILL 兜底和全部退出码/覆盖率断言；串行调度不延长超时，也不接受失败结果。
 
 ## Lint、单元测试与覆盖率口径
@@ -96,17 +98,15 @@ DEV 阶段另提供 `mise exec -- pnpm run quality:static` 作为本地只读静
 | JavaScript | `scripts/ci`、core 工具与 `apps/browser/scripts` 中受控的 Node `.js/.mjs/.cjs` | c8 从同次 Node 子进程的 V8 数据生成报告，并用 `--all` 纳入未执行生产脚本；renderer/WebUI JavaScript 未测。 |
 | C++ | `aegis_access` standalone 的 `access_route_planner.cc`、`site_proxy_rule_group.cc`、`request_ownership_registry.cc`、`request_dispatch_gate.cc` 与 `browser_request_metadata_seed.cc` | 同次 native binary 执行路由/协议组合同、RequestOwnershipRegistry、dispatch gate 以及 browser-owned metadata seed 的单元与回归合同，并使用匹配 clang/llvm profile 生成 LCOV；完整 Chromium、GURL/SQLite、GN/GTest 和浏览器集成证据仍单独记录。 |
 | Python | `local-pypi-proxy.py` 与两个 Access vector generators | 固定 coverage.py 隔离 venv；复用 proxy 4 项测试和 native 生成器调用，另有两个拒绝 fixture，combine 后生成 XML/JSON/LCOV/text；两个 prototype worker 未测。 |
-| Swift | `apps/ios` 的 25 个产品 Swift 文件 | 独立 `iOS Coverage` workflow 在双 Simulator 上生成 xccov JSON，状态为 `MANUAL_REPORTING_WORKFLOW`；它不属于当前 macOS 必需门，也不是实机、签名或发布证据，Codacy 转换仍待办。 |
-| Bash / PowerShell | 手动 Linux kcov 与 Windows Pester coverage jobs | 只代表列明脚本的行为/行覆盖；macOS 专属 shell 分支和真实 Windows UI 仍按报告列为未测。 |
-| Java | `Driver.java` Android instrumentation 验收工具 | 独立 `Android Java Coverage` workflow 在专用 API 36 emulator 上执行六项 fixture 并生成 JaCoCo exec/XML，状态为 `MANUAL_REPORTING_WORKFLOW`；它不属于 macOS `quality-gate`，也不代表浏览器 Java runtime、真机或发布验收。 |
+| Swift | `apps/ios` 的产品 Swift 文件 | 手动 `iOS Coverage` 在 iPhone 和 iPad Simulator 上测试并生成 xccov JSON。 |
+| Bash / PowerShell | Linux kcov 与 Windows Pester | `Other Platform Coverage` 记录列明脚本的行为和行覆盖，并保存 Windows 安装器 fixture 报告。 |
+| Java | `Driver.java` Android instrumentation 验收工具 | `Android Java Coverage` 在专用 API 36 emulator 上执行六项 fixture 并生成 JaCoCo exec/XML。 |
 
-当前只关注 macOS；Linux、Windows、iOS 和 Android 验证后置，仅保留手动入口。共享合同、静态产品拓扑与本机 fixture 继续验证。
+清单用 `SEPARATE_REPORTING_WORKFLOW` 标记 Bash、PowerShell 和 Java 的独立报告。Swift 标为 `MANUAL_REPORTING_WORKFLOW`。核验时分别查看各 workflow 的结论与测试 SHA。Chromium 原生集成、实机、签名和发布各自使用对应的验收证据。
 
 HTML、CSS、JSON/data 与 GN/GNI 按静态/数据输入单列，不伪造行覆盖率。native 分类仍可对未知产品路径给出 `REVIEW_REQUIRED`；本质量工作不会把它改成 `NOT_APPLICABLE`。
 
-`quality:fast` 保留 core、Mac 脚本、Agent UI、本地模型验证和共享合同。Android 工具/打包 fixture 及 Windows WinRM 自测移至显式 `pnpm run quality:other-platforms`；该入口不会被自动质量门调用。JavaScript c8 `--all` 仍保留完整生产脚本清单，未执行的平台脚本如实进入分母，不通过裁剪统计范围提高覆盖率。
-
-`.github/workflows/other-platform-coverage.yml` 仅支持 `workflow_dispatch`，保留原 Linux Bash 与 Windows PowerShell job 的固定工具、SHA 绑定、失败传播和 artifact。它们不作为自动 CI 的 skipped checks 出现。
+`quality:fast` 执行 core、Mac 脚本、Agent UI、本地模型验证和共享合同。Android 工具和打包 fixture 随 Android 覆盖率运行，WinRM 自测随 Windows 覆盖率运行。本地可用 `pnpm run quality:other-platforms` 执行这些 fixture。JavaScript c8 `--all` 保留完整生产脚本清单，未执行的平台脚本也计入分母。
 
 ## Codacy Production 准备状态
 
@@ -132,9 +132,13 @@ quality 汇总 job 使用中性 ID `quality-summary`，条件为 `always() && (�
 
 主机端准入按 workflow 文件名与 `GITHUB_JOB` 的组合匹配；`GITHUB_JOB` 是 YAML 中 `jobs` 的键，不是 job 的 `name` 显示名。例如 `cpp-unit-tests.yml` 使用键 `cpp-unit-tests`，检查显示名为 `c++-unit-tests`，不能互换。维护准入钩子时，验证合法 quality/C++ 作业可进入，同时验证错误仓库、外部 fork、错误 workflow/job 组合和不允许的 ref 仍被拒绝。
 
-`.github/workflows/ios-coverage.yml` 是独立报告 workflow。仅通过 `workflow_dispatch` 手动生成报告，PR/develop/main push 不自动运行。它继续严格绑定当次 GitHub tested SHA，测试失败仍为非零；当前分支保护的必需状态检查为 `quality-gate`，因此 iOS 报告不改变 macOS 优先的合并门。
+`Android Java Coverage` 和 `Other Platform Coverage` 支持指向 `develop` 或 `main` 的 Ready PR、这两条分支的 push，以及手动 `workflow_dispatch`。Draft 暂缓分配 runner，转为 Ready 会触发适用作业。同一 PR 的后续触发取消旧运行，每个 push SHA 和手动运行各有独立分组。协调者分别核对平台结果和服务端 required checks。
 
-`.github/workflows/android-java-coverage.yml` 也是独立报告 workflow，仅通过 `workflow_dispatch` 手动运行，PR 和 develop/main push 不再自动触发。当前仅推进 macOS，其余平台后置。它构建 normal 与 coverage 两种验收工具以证明普通 APK 不含 JaCoCo，仅在专用 emulator 运行 coverage APK 的六项 fixture，并把 JaCoCo exec/XML、原始 class 摘要与实际 GitHub tested SHA 写入 artifact。该作业冷启动独立 API 36 模拟器，在同一个 ADB transport 上校验当次 AVD 名称、处理亮屏和锁屏并运行验收，保留模拟器日志。固定检查名为 `android-java-coverage`，不并入 macOS `quality-gate`；`browserTested=false` 明确保留工具覆盖率与浏览器 runtime 验收的边界。
+Android 先在 Linux 用 Git 对象确认被测 SHA，并核验 PR 的两个合并父提交。PR 以第一父提交中的规则比较完整差异，首次接入时执行平台测试。Push 按前一个提交比较差异，手动运行直接执行平台测试。
+
+- `iOS Coverage` 通过仓库 Admin 手动启动。报告记录双模拟器测试和 Swift 覆盖率。
+- `Android Java Coverage` 按 Android instrumentation 工具、打包守卫、相关脚本和 CI 入口变更分配模拟器。作业核验 normal 与 coverage 两种 APK 的 JaCoCo 边界，在同一 API 36 ADB transport 确认 AVD 身份后运行六项 fixture，并保存 tested SHA、实际 PR 父提交、JaCoCo exec/XML、原始 class 摘要与模拟器日志。报告的 `browserTested=false` 表示覆盖率范围为 instrumentation 工具。
+- `Other Platform Coverage` 在上述 PR 与 push 运行 Linux Bash 和 Windows PowerShell 覆盖率。Windows 安装器 fixture 从被测提交读取 Chromium pin，并保存实际输入头文件的已核验哈希。
 
 报告区分四种身份：
 
@@ -242,8 +246,8 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 
 路径决定平台，取并集。Conventional Commit 的主题类型只决定阶段，不能清掉路径已经选中的平台，也不读取 scope。非 Conventional、空主题、删除、重命名、模式变化、符号链接，以及分类器自身被修改，进入最严自动阶段。分类器自身被修改时五个平台都打开。白名单说明文档的普通内容修改仍只走已准入的 Linux 文档门；push 不走这条轻量路径。
 
-- iOS：`apps/ios/**`、`.github/workflows/ios-*`、`scripts/ci/ios-*`、`scripts/ci/run-ios-*`
-- Android：`apps/browser/patches-android/**`、`apps/browser/scripts/**` 中路径含 android 的文件、`.github/workflows/android-*`、`scripts/ci/android-*`、`scripts/ci/run-android-*`
+- iOS：`apps/ios/**`、`.github/workflows/ios-*`、`scripts/ci/ios-*`、`scripts/ci/run-ios-*`、分类器列明的 `scripts/release/` unsigned archive 输入
+- Android：`apps/browser/patches-android/**`、`apps/browser/scripts/**` 中路径含 android 的文件、`.github/workflows/android-*`、`scripts/ci/android-*`、`scripts/ci/run-android-*`、Android 发布脚本及回归测试
 - macOS：`scripts/release/**` 中路径含 macos 的文件、`.github/workflows/macos-*`，以及共享或未知路径
 - Windows：`**/*.ps1`、`apps/browser/scripts/**` 中路径含 winrm 的文件、`scripts/ci/platform-tests/windows-*`、`apps/browser/scripts/ci/windows*`
 - Linux：`scripts/ci/run-shell-coverage.sh`、`scripts/ci/platform-tests/kcov-*`。只有这些路径时不打开 macOS 合同
@@ -257,4 +261,4 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 - 深度：在集成之上，类型属于 `feat`、`fix`、`perf`、`refactor`、`build`、`revert`，或者事件是 push。`test` 的 PR 停在合同，不编 unsigned archive
 - 提升：签名、公证、TestFlight、Play 和 GitHub Release 仍只接受手动 dispatch
 
-iOS 先跑短的路由作业。合同要求路由成功且 `ios && integrate`；archive 再要求合同成功且 `deep`。手动 dispatch 仍跑合同和 archive。macOS 自动合同要求 `macos && integrate`。quality 成功之后，仅当 Android 或 Windows 被选中且 `integrate` 为真时，在 Linux 上跑 `pnpm run quality:other-platforms`。这个作业不进入必需结果。模拟器、kcov 和 Pester 仍是手动覆盖率 workflow。前一阶段失败则后续作业不分配 runner。
+iOS 先跑短的路由作业。合同要求路由成功且 `ios && integrate`；archive 再要求合同成功且 `deep`。手动 dispatch 仍跑合同和 archive。macOS 自动合同要求 `macos && integrate`。quality 成功之后，仅当 Android 或 Windows 被选中且 `integrate` 为真时，在 Linux 上跑 `pnpm run quality:other-platforms`。该作业通过 job 级 `continue-on-error: true` 提供诊断，步骤失败和日志仍可在 Actions 查看，必需结果和 push workflow 结论独立于该作业的失败。模拟器、kcov 和 Pester 的独立覆盖率 workflow 继续由指向 `develop` 或 `main` 的 Ready PR、这两条分支的 push 和手动 `workflow_dispatch` 触发。前一阶段失败则后续作业不分配 runner。

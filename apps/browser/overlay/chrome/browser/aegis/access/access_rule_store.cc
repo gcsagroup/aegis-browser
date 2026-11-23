@@ -1098,6 +1098,12 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
     if (!ValidateStoredRule(rule, snapshot.owner, true)) {
       return SnapshotError(StoreStatus::kCorrupt, "invalid_independent_rule");
     }
+    if (snapshot.site_groups.empty()) {
+      // With no committed site group, the latest independent operation owns
+      // the snapshot version. An empty partition keeps generation zero.
+      snapshot.policy_generation = std::max(snapshot.policy_generation,
+                                            rule.policy.last_operation_sequence);
+    }
     snapshot.independent_rules.push_back(std::move(rule));
   }
   if (!rules.Succeeded()) {
