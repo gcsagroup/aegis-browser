@@ -40,7 +40,7 @@ public final class Driver extends Instrumentation {
   private static final String BROWSER_DATA = DATA_ROOT + BROWSER + "/";
   private static final Pattern TEST_PROFILE = Pattern.compile(
       Pattern.quote(BROWSER_DATA) + "aegis-test-user-data-[a-z0-9-]+");
-  private static final Pattern PROFILE_ENTRY = Pattern.compile("/(?:Default|Profile [0-9]+)(?:/|$)");
+  private static final Pattern PROFILE_ENTRY = Pattern.compile("/(?:Default|Profile [0-9]+)(?:/|\\z)");
   private static final Pattern FD_MODE = Pattern.compile("[0-9a-fA-F]{1,4}");
   private static final String DELETED = " (deleted)";
   private UiAutomation automation;
@@ -214,11 +214,16 @@ public final class Driver extends Instrumentation {
       if (!target.startsWith(BROWSER_DATA)) continue;
       boolean deleted = target.endsWith(DELETED);
       if (deleted) target = target.substring(0, target.length() - DELETED.length());
+      for (String part : target.substring(BROWSER_DATA.length()).split("/", -1)) {
+        if (part.isEmpty() || part.equals(".") || part.equals("..")) return false;
+      }
       Matcher entry = PROFILE_ENTRY.matcher(target);
       if (!entry.find()) continue;
       if (!target.substring(0, entry.start()).equals(expectedProfile)) return false;
       boolean regularFile = (Integer.parseInt(mode, 16) & 0xf000) == 0x8000;
-      if (regularFile && !deleted && entry.end() < target.length()) profileFileOpen = true;
+      if (regularFile && !deleted && entry.group().endsWith("/") && entry.end() < target.length()) {
+        profileFileOpen = true;
+      }
     }
     return profileFileOpen;
   }
@@ -374,7 +379,10 @@ public final class Driver extends Instrumentation {
     String opened = "81a4\0" + profile + "/Default/History\0";
     String aliasEntry = "81a4\0" + alias + "/Profile 1/History\0";
     String reader = profileReader();
-    String observed = shellWithScript("sleep 2 &\nset -- $!\nsleep 0.1\n" + reader, "sh -s");
+    String readerFixture = "sleep 30 </dev/null >/dev/null 2>&1 &\n"
+        + "holder=$!\ntrap 'kill \"$holder\" 2>/dev/null || :; wait \"$holder\" 2>/dev/null || :' EXIT\n"
+        + "set -- \"$holder\"\nsleep 0.1\n";
+    String observed = shellWithScript(readerFixture + reader, "sh -s");
     check(TEST_PROFILE.matcher(profile).matches(), "当前浏览器的独立 Profile 被拒绝");
     check(observed.endsWith("\0" + end) && !shellWithScript("set -- 0\n" + reader, "sh -s").endsWith(end),
         "描述符命令完成标记不可靠");
@@ -385,6 +393,8 @@ public final class Driver extends Instrumentation {
         opened + "?\0unknown\0" + end,
         "41ed\0" + profile + "/Default\0" + end,
         "41ed\0" + profile + "/Default/Local Storage\0" + end,
+        "81a4\0" + profile + "/Default\n\0" + end,
+        "81a4\0" + profile + "/Default/..\0" + end,
         "81a4\0" + profile + "/Default/History\n" + DELETED + "\0" + end,
         "81a4\0/fixture/2 -> " + profile + "/Default/History\0" + end,
         "81a4\0/data/user/0/app.gcsa.aegis" + fixture + "/Default/History\0" + end,

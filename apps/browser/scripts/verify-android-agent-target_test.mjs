@@ -43,7 +43,8 @@ test('只用打开的 Profile 文件证明目录，不根据参数或缓存推�
   assert.deepEqual(activeProfileRoots(fdRecords(openFile('--user-data-dir=' + profile))), []);
   assert.deepEqual(activeProfileRoots(fdRecords(openFile('/data/data/com.gcsa.aegis/app_chrome/Default/History'))),
     ['/data/user/0/com.gcsa.aegis/app_chrome']);
-  assert.deepEqual(activeProfileRoots(fdRecords(openFile('/data/user/0/com.gcsa.aegis/../other/Default/History'))), []);
+  assert.throws(() => activeProfileRoots(fdRecords(openFile('/data/user/0/com.gcsa.aegis/../other/Default/History'))),
+    /文件描述符目标路径无效/);
 });
 
 test('Profile 目录只接受当前 Android 应用 ID', () => {
@@ -74,6 +75,7 @@ test('目录和已删除条目只能作为冲突证据', () => {
   for (const listing of [
     fdRecords(openDirectory(profile + '/Default')),
     fdRecords(openDirectory(profile + '/Default/Local Storage')),
+    fdRecords(openFile(profile + '/Default\n')),
     fdRecords(openFile(profile + '/Default/History\n (deleted)')),
     fdRecords(goodFile, openDirectory(other + '/Default')),
     fdRecords(goodFile, openFile(other + '/Default/History (deleted)')),
@@ -90,6 +92,7 @@ test('拒绝截断或含未解析目标的描述符记录', () => {
     fdRecords(goodFile).slice(0, -4),
     fdRecords(goodFile, ['?', '']),
     fdRecords(goodFile, ['81a4']),
+    fdRecords(goodFile, openFile(profile + '/Default/..')),
   ]) assert.throws(() => inspectProfileDescriptors(listing), /文件描述符/);
   assert.deepEqual(inspectProfileDescriptors(fdRecords(openFile('/fixture/2 -> ' + profile + '/Default/History'))),
     {profileRoots: [], profileFileOpen: false});
@@ -142,8 +145,14 @@ test('未完成、失败、被中断、源码变化或错配构建不能验收�
 
 function deviceStub({switchUser = false, fdReadFails = false} = {}) {
   const calls = [];
+  const committedReader = '# Synthetic committed reader\n';
   let userReads = 0;
   const run = (program, args, options) => {
+    if (program === 'git') {
+      assert.equal(args[2], 'show');
+      assert.equal(args[3], 'HEAD:apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh');
+      return committedReader;
+    }
     assert.equal(program, '/test/adb');
     calls.push(args);
     if (args[0] === 'devices') return 'List of devices attached\nfixture123\tdevice\n';
@@ -155,7 +164,7 @@ function deviceStub({switchUser = false, fdReadFails = false} = {}) {
     if (cmd === 'shell dumpsys package ' + PACKAGE) return 'versionCode=792207704\nversionName=151.0.7922.77\n';
     if (cmd === 'shell pidof ' + PACKAGE) return '123\n';
     if (cmd === 'shell -T run-as ' + PACKAGE + ' sh -s -- 123') {
-      assert.ok(options.input.includes("printf 'end"));
+      assert.equal(options.input, committedReader);
       if (fdReadFails) throw new Error('只读命令失败');
       return fdRecords(openFile(profile + '/Default/History'),
         openFile('/data/user/0/' + PACKAGE + '/cache/敏感文件名-不输出'));

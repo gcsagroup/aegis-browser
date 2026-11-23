@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 
 export const PACKAGE = 'com.gcsa.aegis';
 const PROFILE_DIRECTORY_PREFIX = `/data/user/0/${PACKAGE}/`;
+const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const HASH = /^[a-f0-9]{64}$/;
 const fail = message => { throw new Error(message); };
 const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -40,13 +41,17 @@ export function inspectProfileDescriptors(fdListing) {
     if (!file.startsWith(PROFILE_DIRECTORY_PREFIX)) continue;
     const deleted = file.endsWith(' (deleted)');
     const target = deleted ? file.slice(0, -' (deleted)'.length) : file;
+    if (target.slice(PROFILE_DIRECTORY_PREFIX.length).split('/').some(part => !part || part === '..' || part === '.')) {
+      fail('文件描述符目标路径无效');
+    }
     const profile = /\/(?:Default|Profile [0-9]+)(?:\/|$)/u.exec(target);
     if (!profile) continue;
     const root = target.slice(0, profile.index);
-    if (root.split('/').some(part => part === '..' || part === '.')) continue;
     roots.add(root);
     const regularFile = (Number.parseInt(mode, 16) & 0xf000) === 0x8000;
-    if (regularFile && !deleted && profile.index + profile[0].length < target.length) profileFileOpen = true;
+    if (regularFile && !deleted && profile[0].endsWith('/') && profile.index + profile[0].length < target.length) {
+      profileFileOpen = true;
+    }
   }
   return {profileRoots: [...roots].sort(), profileFileOpen};
 }
@@ -88,6 +93,10 @@ function command(program, args, options = {}) {
   return result.stdout;
 }
 
+export function committedProfileReader(run = command) {
+  return run('git', ['-C', repository, 'show', 'HEAD:apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh']);
+}
+
 export function inspectDevice({serial, adb}, run = command) {
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(serial ?? '')) fail('需要明确的 USB 真机序列号');
   const device = run(adb, ['devices']).split(/\r?\n/)
@@ -103,7 +112,7 @@ export function inspectDevice({serial, adb}, run = command) {
   const metadata = shell('dumpsys', 'package', PACKAGE);
   const pid = shell('pidof', PACKAGE).trim();
   if (!/^\d+$/.test(pid)) fail('未找到唯一浏览器进程，未自动启动 App');
-  const input = fs.readFileSync(new URL('./android-ui-driver/read-profile-fds.sh', import.meta.url));
+  const input = committedProfileReader(run);
   const descriptors = run(adb, ['-s', serial, 'shell', '-T', 'run-as', PACKAGE, 'sh', '-s', '--', pid], {input});
   const keyguard = parseKeyguard(shell('dumpsys', 'window', 'policy'));
   const endPid = shell('pidof', PACKAGE).trim();
