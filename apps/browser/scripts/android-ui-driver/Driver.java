@@ -25,7 +25,6 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.Base64;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -174,7 +173,7 @@ public final class Driver extends Instrumentation {
 
   private String shellWithScript(String script, String command) throws Exception {
     // UiAutomation splits on whitespace. Pass an encoded script as a single argument and decode it to stdin.
-    String encoded = Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_8));
+    String encoded = Base64.encodeToString(script.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
     return shell("sh -c echo${IFS}\"$0\"|base64${IFS}-d|\"$@\" " + encoded + " " + command);
   }
 
