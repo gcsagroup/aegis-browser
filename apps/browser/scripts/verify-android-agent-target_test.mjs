@@ -48,6 +48,19 @@ test('Profile 目录只接受当前 Android 应用 ID', () => {
   }
 });
 
+test('包根目录直属的 Profile 与独立资料混用时拒绝目标', () => {
+  const packageRoot = '/data/user/0/' + PACKAGE;
+  for (const defaultDescriptor of [
+    '2 -> ' + packageRoot + '/Default/History',
+    '2 -> /data/data/' + PACKAGE + '/Profile 1/History',
+  ]) {
+    assert.deepEqual(activeProfileRoots(defaultDescriptor), [packageRoot]);
+    const profileRoots = activeProfileRoots(`1 -> ${profile}/Default/History\n${defaultDescriptor}`);
+    assert.deepEqual(profileRoots, [packageRoot, profile]);
+    assert.throws(() => verifyTarget({...good(), profileRoots}, hash, profile), /独立 Profile 尚未证实/);
+  }
+});
+
 test('未知、锁定或灭屏状态不能当作可交互', () => {
   assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_ON'), unlocked);
   assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=2\n interactiveState=2'), unlocked);

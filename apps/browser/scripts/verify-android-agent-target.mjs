@@ -6,7 +6,8 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 export const PACKAGE = 'com.gcsa.aegis';
-const PROFILE_DIRECTORY_PREFIX = `/data/user/0/${PACKAGE}/`;
+const PACKAGE_ROOT = `/data/user/0/${PACKAGE}`;
+const PROFILE_DIRECTORY_PREFIX = PACKAGE_ROOT + '/';
 const HASH = /^[a-f0-9]{64}$/;
 const fail = message => { throw new Error(message); };
 const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -29,10 +30,11 @@ export function packageApkPath(output) {
 export function activeProfileRoots(fdListing) {
   // 只识别已打开的 Profile 文件路径，不把 Java 公用缓存目录当作资料目录。
   const roots = new Set();
-  const pattern = / -> (\/data\/(?:user\/0|data)\/[^/\r\n]+\/[^\r\n]*?)\/(?:Default|Profile \d+)\//g;
+  const pattern = / -> (\/data\/(?:user\/0|data)\/[^/\r\n]+(?:\/[^\r\n]*?)?)\/(?:Default|Profile \d+)\//g;
   for (const match of fdListing.matchAll(pattern)) {
     const root = match[1].replace('/data/data/', '/data/user/0/');
-    if (root.startsWith(PROFILE_DIRECTORY_PREFIX) && !root.split('/').some(part => part === '..' || part === '.')) {
+    const belongsToPackage = root === PACKAGE_ROOT || root.startsWith(PROFILE_DIRECTORY_PREFIX);
+    if (belongsToPackage && !root.split('/').some(part => part === '..' || part === '.')) {
       roots.add(root);
     }
   }

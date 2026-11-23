@@ -39,7 +39,7 @@ public final class Driver extends Instrumentation {
   private static final Pattern TEST_PROFILE = Pattern.compile(
       "/data/user/0/" + Pattern.quote(BROWSER) + "/aegis-test-user-data-[a-z0-9-]+");
   private static final Pattern OPEN_PROFILE = Pattern.compile(
-      " -> (/data/(?:user/0|data)/" + Pattern.quote(BROWSER) + "/[^\\r\\n]*?)/(?:Default|Profile [0-9]+)/");
+      " -> (/data/(?:user/0|data)/" + Pattern.quote(BROWSER) + "(?:/[^\\r\\n]*?)?)/(?:Default|Profile [0-9]+)/");
   private UiAutomation automation;
   private JSONObject request;
   private boolean coverageRequested;
@@ -374,6 +374,14 @@ public final class Driver extends Instrumentation {
           "未识别当前浏览器打开的 Profile");
       check(hasActiveProfile("1 -> " + alias + "/Profile 1/History", profile),
           "未将 /data/data 别名绑定到同一个 Profile");
+      String testDescriptor = "1 -> " + profile + "/Default/History";
+      for (String defaultDescriptor : new String[] {
+          "2 -> /data/user/0/" + BROWSER + "/Default/History",
+          "2 -> /data/data/" + BROWSER + "/Profile 1/History",
+      }) {
+        check(!hasActiveProfile(testDescriptor + "\n" + defaultDescriptor, profile),
+            "未拒绝包根目录直属 Profile 与独立资料混用");
+      }
       for (String other : new String[] {"app.gcsa.aegis", BROWSER + ".other"}) {
         String otherProfile = "/data/user/0/" + other + fixtureDirectory;
         check(!TEST_PROFILE.matcher(otherProfile).matches() &&
