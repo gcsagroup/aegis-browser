@@ -345,15 +345,16 @@ public final class Driver extends Instrumentation {
       try { requirePackage(root(HELPER), BROWSER); }
       catch (GuardFailure expected) { refused = true; }
       check(refused, "错误应用没有被拒绝");
-      String profile = "/data/user/0/" + BROWSER + "/aegis-test-user-data-fixture";
+      String fixtureDirectory = "/aegis-test-user-data-fixture";
+      String profile = "/data/user/0/" + BROWSER + fixtureDirectory;
+      String alias = "/data/data/" + BROWSER + fixtureDirectory;
       check(TEST_PROFILE.matcher(profile).matches(), "当前浏览器的独立 Profile 被拒绝");
       check(hasActiveProfile("1 -> " + profile + "/Default/History", profile),
           "未识别当前浏览器打开的 Profile");
-      String alias = profile.replace("/data/user/0/", "/data/data/");
       check(hasActiveProfile("1 -> " + alias + "/Profile 1/History", profile),
           "未将 /data/data 别名绑定到同一个 Profile");
       for (String other : new String[] {"app.gcsa.aegis", BROWSER + ".other"}) {
-        String otherProfile = profile.replace(BROWSER, other);
+        String otherProfile = "/data/user/0/" + other + fixtureDirectory;
         check(!TEST_PROFILE.matcher(otherProfile).matches() &&
             !hasActiveProfile("1 -> " + otherProfile + "/Default/History", profile),
             "接受了不同应用的 Profile");

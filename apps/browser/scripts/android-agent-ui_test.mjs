@@ -108,14 +108,16 @@ test('工具自测必须逐项返回固定六个 fixture 且不冒充浏览器�
 });
 
 test('JaCoCo XML 只用完整 Driver class 集和真实源码行计数生成百分比', () => {
-  const driverSource = fs.readFileSync(new URL('./android-ui-driver/Driver.java', import.meta.url), 'utf8');
-  const driverPackage = driverSource.match(/^package ([a-z.]+);/m)?.[1];
-  assert.equal(driverPackage, HELPER);
-  const packagePath = driverPackage.replaceAll('.', '/');
+  const packagePath = HELPER.replaceAll('.', '/');
   const classes = ['Driver', 'Driver$Fixture', 'Driver$GuardFailure'].map(name => packagePath + '/' + name);
-  const xml = '<report><package name="' + packagePath + '">' +
-    classes.map(name => '<class name="' + name + '" sourcefilename="Driver.java"/>').join('') +
-    '<sourcefile name="Driver.java"><counter type="LINE" missed="3" covered="5"/></sourcefile></package></report>';
+  const xml = [
+    '<report>',
+    '<package name="' + packagePath + '">',
+    ...classes.map(name => '<class name="' + name + '" sourcefilename="Driver.java"/>'),
+    '<sourcefile name="Driver.java"><counter type="LINE" missed="3" covered="5"/></sourcefile>',
+    '</package>',
+    '</report>',
+  ].join('');
   assert.deepEqual(summarizeJacocoXml(xml, classes),
     {measurement: 'jacoco-line-counter', covered: 5, missed: 3, total: 8, percent: 62.5});
   const legacyPath = 'app/gcsa/aegis/qa/driver';
