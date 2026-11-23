@@ -1,0 +1,27 @@
+From ca9b1a0d59877bdab50bcc6d7182ebe45a32adab Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sun, 22 Nov 2026 12:11:59 +0800
+Subject: [PATCH] Test passive omnibox permission dismissal outside input
+ editing
+
+---
+ .../omnibox/omnibox_popup_view_webui_interactive_uitest.cc     | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_view_webui_interactive_uitest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_view_webui_interactive_uitest.cc
+index 7f6c07901b6fc2528708c9b93ca27e269c81bb82..b5f6a325cbb4020857d9675ec749a2f820630da0 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_view_webui_interactive_uitest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_view_webui_interactive_uitest.cc
+@@ -561,6 +561,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxPopupViewWebUITest,
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+       browser(), embedded_test_server()->GetURL("/empty.html")));
+   CreatePopupForTestQuery();
++  // Keep the suggestions open without a pending edit. On a web page, the
++  // prompt factory intentionally suppresses requests during an omnibox edit.
++  edit_model()->SetInputInProgress(false);
+ 
+   auto* popup_view = static_cast<OmniboxPopupViewWebUI*>(
+       location_bar()->GetOmniboxPopupView());
+-- 
+2.54.0 (Apple Git-157)
+

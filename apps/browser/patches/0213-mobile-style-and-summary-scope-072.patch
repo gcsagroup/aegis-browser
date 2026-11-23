@@ -1,4 +1,4 @@
-From 5445bb7617569081b60c884ea5ac0361fd3432d6 Mon Sep 17 00:00:00 2001
+From f1719da95c020aebfda4ea8860ade79d8652432b Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 29 Sep 2026 19:34:05 +0800
 Subject: [PATCH] =?UTF-8?q?=E8=A7=84=E8=8C=83=E7=A7=BB=E5=8A=A8=E7=AB=AF?=
@@ -9,13 +9,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/resources/aegis/aegis.css      | 161 ++++++++++++++----
- chrome/browser/resources/aegis/aegis.ts       |  10 +-
- .../browser/resources/aegis_agent/agent.css   |  64 +++++--
- .../ui/webui/help/aegis_github_update.h       |   4 +-
- .../webui/version/resources/about_version.css |  15 +-
- .../resources/about_version_mobile.css        |  51 +++++-
- 6 files changed, 252 insertions(+), 53 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
 index d65e019ed4a5ebd40ff8c4a80c586282a1de48f9..19cfdbb252af12539c120cf111626f3371e1c828 100644
@@ -421,6 +414,3 @@ index 0c2611de14d8a4cac1d44e1a79ecedf2fb0fa99e..4711b2b46cedc419d1d278fb6ce561c6
 +    min-height: 48px;
 +  }
  }
--- 
-2.52.0
-

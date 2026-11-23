@@ -1,0 +1,37 @@
+From bbbb5ad1fdd85c64ac97cb59cc16c387ba0ff730 Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 23:59:47 +0800
+Subject: [PATCH] Use the read-only permission manager accessor for widget
+ lookup
+
+---
+ .../ui/views/omnibox/omnibox_popup_presenter_base.cc     | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+index dcbe74776896b85099d36dbb0a10c8b35de6b9f0..60e86c7e7bbf59e24ebc2a0c8e506492aa5cf352 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+@@ -52,10 +52,9 @@ const void* kOmniboxWebUIPopupWidgetId = &kOmniboxWebUIPopupWidgetId;
+ namespace {
+ 
+ const content::WebContents* GetWebContentsWithCurrentPrompt(
+-    permissions::PermissionRequestManager* manager) {
+-  return manager && manager->GetCurrentPrompt()
+-             ? manager->GetAssociatedWebContents()
+-             : nullptr;
++    const permissions::PermissionRequestManager* manager) {
++  return manager && manager->GetCurrentPrompt() ? &manager->GetWebContents()
++                                                : nullptr;
+ }
+ 
+ std::string_view CreationReasonToString(
+@@ -97,7 +96,7 @@ class OmniboxPopupPresenterBase::RequestingPromptObservation
+ 
+   bool IsLocked() const { return observation_.IsObserving(); }
+ 
+-  permissions::PermissionRequestManager* GetLockedManager() const {
++  const permissions::PermissionRequestManager* GetLockedManager() const {
+     return observation_.GetSource();
+   }
+ 

@@ -9,11 +9,13 @@ final class WebKitProtectionTests: XCTestCase {
     private var suite: String!
     private var defaults: UserDefaults!
     private var tabs: [BrowserTab] = []
+    private let windows = WebKitTestWindows()
     override func setUp() async throws {
         suite = "webkit-protection-\(UUID().uuidString)"; defaults = UserDefaults(suiteName: suite)!
     }
     override func tearDown() async throws {
         tabs.forEach { $0.stop() }; tabs = []
+        windows.close()
         defaults.removePersistentDomain(forName: suite)
     }
     private func tab(strict: Bool = false, hardened: Bool = false, isPrivate: Bool = false) throws -> BrowserTab {
@@ -27,10 +29,15 @@ final class WebKitProtectionTests: XCTestCase {
     }
     private func wait(_ condition: () -> Bool, seconds: Double = 20) async throws {
         let deadline = Date().addingTimeInterval(seconds)
-        while !condition(), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        repeat {
+            for tab in tabs where !tab.isDisposed && tab.protectionIncident == nil { windows.attach(tab.webView) }
+            if condition() { break }
+            try await Task.sleep(for: .milliseconds(50))
+        } while Date() < deadline
         XCTAssertTrue(condition(), "未等到预期的真实 WebKit 状态")
     }
     private func load(_ tab: BrowserTab, _ path: String) async throws {
+        if !tabs.contains(where: { $0 === tab }) { tabs.append(tab) }
         tab.load(URL(string: "http://127.0.0.1:8768" + path)!)
         try await wait { !tab.isLoading && (tab.url?.path == path.components(separatedBy: "?")[0] || tab.protectionIncident != nil) }
         XCTAssertNil(tab.loadingError)
@@ -261,11 +268,13 @@ final class WebKitProtectionTests: XCTestCase {
         var values = prefs.values; values.hardenedSecurity = true; values.allowPopups = true
         try prefs.save(values)
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), workspaceStore: WorkspaceStore(), preferences: prefs)
+        defer { browser.closeWindow() }
         let parent = try XCTUnwrap(browser.activeTab)
         try await load(parent, "/article")
         _ = try await js(parent, "window.open('/security/safe','_blank'); return true;")
         try await wait { browser.standardTabs.count == 2 }
         let child = try XCTUnwrap(browser.activeTab)
+        tabs.append(child)
         XCTAssertNotEqual(parent.id, child.id); XCTAssertTrue(child.inheritedHardenedSecurity)
         try await wait { !child.isLoading }
         XCTAssertEqual(child.url?.path, "/security/safe")

@@ -1,0 +1,56 @@
+From f386b5fc759a068935d1653ff644482349d533f1 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <redacted@example.invalid>
+Date: Fri, 20 Nov 2026 19:08:03 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E4=BF=9D=E7=95=99=E6=96=B0=E7=89=88?=
+ =?UTF-8?q?=E5=88=86=E5=B1=8F=E6=8E=A5=E5=8F=A3=E7=9A=84=E9=BB=98=E8=AE=A4?=
+ =?UTF-8?q?=E9=98=85=E8=AF=BB=E5=B8=83=E5=B1=80?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/aegis_agent/reading_workspace.cc | 5 ++++-
+ chrome/browser/ui/webui/help/aegis_github_update.h       | 4 ++--
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index 7dc552fde58f6239b4ee39fade974a2c68a52f69..df0e76ce226dcddc1f774a2c9f2ad6bc27819bc1 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -27,6 +27,7 @@
+ #include "components/os_crypt/async/browser/os_crypt_async.h"
+ #include "components/os_crypt/async/common/encryptor.h"
+ #include "components/prefs/pref_service.h"
++#include "components/split_tabs/split_tab_visual_data.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+@@ -397,7 +398,9 @@ void AegisReadingWorkspace::Dispatch(
+       if (!exists) additions.Append(std::move(item));
+     }
+     if (op == "split") {
+-      const bool ok = tabs->CreateSplit(handles).has_value();
++      // 继续使用旧接口内部的默认并排布局。
++      const bool ok =
++          tabs->CreateSplit(handles, split_tabs::SplitTabVisualData()).has_value();
+       Reply(std::move(callback), {}, ok ? "" : "split_unavailable"); return;
+     }
+     auto next = records_.Clone();
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 27e295d752df27a12425299ac7c59474c3558ba1..c46066b6c012d965f5e38ed266d3f66c21676717 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "7.5.0.343";
+-inline constexpr char kProductVersionLabel[] = "Ver 7.5 (343)";
++inline constexpr char kProductVersion[] = "7.5.0.344";
++inline constexpr char kProductVersionLabel[] = "Ver 7.5 (344)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -11,7 +11,7 @@
 #include "chrome/browser/aegis/enhancements/enhancement_store.h"
 #include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -76,12 +76,16 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
     ASSERT_TRUE(base::test::RunUntil([&] { return store_->ready(); }));
   }
   void TearDownOnMainThread() override {
+    if (markdown_directory_.IsValid()) {
+      base::ScopedAllowBlockingForTesting allow_blocking;
+      EXPECT_TRUE(markdown_directory_.Delete());
+    }
     // Profile 随浏览器关闭而销毁，测试夹具必须提前释放对其存储的引用。
     store_ = nullptr;
     InProcessBrowserTest::TearDownOnMainThread();
   }
   content::WebContents* contents() {
-    return browser()->tab_strip_model()->GetActiveWebContents();
+    return browser()->GetTabStripModel()->GetActiveWebContents();
   }
   std::string Mutate(base::DictValue request) {
     base::test::TestFuture<std::string> result;
@@ -125,6 +129,7 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
     )JS"));
     EXPECT_EQ("undefined", content::EvalJs(frame, "typeof window.unsafe"));
   }
+  base::ScopedTempDir markdown_directory_;
   raw_ptr<EnhancementStore> store_ = nullptr;
 };
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
@@ -260,33 +265,43 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
 // 使用真实文件和浏览器导航，不能仅向预览框架直接注入待渲染文本。
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
                        MarkdownFirstBrowserOpenRendersWithoutReload) {
-  base::ScopedTempDir directory;
-  ASSERT_TRUE(directory.CreateUniqueTempDir());
-  const auto path = directory.GetPath().AppendASCII("first.MARKDOWN");
-  ASSERT_TRUE(base::WriteFile(path,
-      "# 首次打开\n\n<script>window.unsafe=1</script>"));
+  base::FilePath path;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
+    path = markdown_directory_.GetPath().AppendASCII("first.MARKDOWN");
+    ASSERT_TRUE(base::WriteFile(path,
+        "# 首次打开\n\n<script>window.unsafe=1</script>"));
+  }
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(path)));
   ExpectMarkdownPreview();
 }
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
                        MarkdownFirstLocalLinkRendersWithoutReload) {
-  base::ScopedTempDir directory;
-  ASSERT_TRUE(directory.CreateUniqueTempDir());
-  const auto path = directory.GetPath().AppendASCII("first.md");
-  const auto page = directory.GetPath().AppendASCII("open.html");
-  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
-  ASSERT_TRUE(base::WriteFile(page,
-      "<!doctype html><a id='open' href='first.md'>打开</a>"));
+  base::FilePath path;
+  base::FilePath page;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
+    path = markdown_directory_.GetPath().AppendASCII("first.md");
+    page = markdown_directory_.GetPath().AppendASCII("open.html");
+    ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+    ASSERT_TRUE(base::WriteFile(page,
+        "<!doctype html><a id='open' href='first.md'>打开</a>"));
+  }
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(page)));
   ASSERT_TRUE(content::ExecJs(contents(), "document.querySelector('#open').click()"));
   ExpectMarkdownPreview();
 }
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
                        MarkdownFirstFileDropRendersWithoutReload) {
-  base::ScopedTempDir directory;
-  ASSERT_TRUE(directory.CreateUniqueTempDir());
-  const auto path = directory.GetPath().AppendASCII("first.md");
-  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+  base::FilePath path;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
+    path = markdown_directory_.GetPath().AppendASCII("first.md");
+    ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+  }
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL("/page")));
   auto* widget = contents()->GetPrimaryMainFrame()->GetRenderWidgetHost();
@@ -408,13 +423,13 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
   ASSERT_FALSE(original_document.empty());
   ASSERT_FALSE(original_tab.empty());
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
-                browser(), b_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                browser(), b_url, WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   auto* b = contents();
   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
                 browser(), GURL("chrome://aegis/enhancements.html"),
-                WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                WindowOpenDisposition::kNewForegroundTab,
                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
             nullptr);
   auto* page = contents();
@@ -521,7 +536,7 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
               EnhancementField(a_helper->Snapshot(), "document"));
   } else if (change == "closed") {
     content::WebContentsDestroyedWatcher closed(a);
-    browser()->tab_strip_model()->CloseWebContents(a, /*close_types=*/0);
+    browser()->GetTabStripModel()->CloseWebContents(a, /*close_types=*/0);
     closed.Wait();
     a = nullptr;
     a_helper = nullptr;

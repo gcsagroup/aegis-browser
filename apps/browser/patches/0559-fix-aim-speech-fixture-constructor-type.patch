@@ -1,0 +1,37 @@
+From c0b08d9b00b2b9b807daec4c87c5e875289e2234 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 23 Nov 2026 04:50:40 +0800
+Subject: [PATCH] Fix the AIM test's speech constructor type
+
+---
+ chrome/test/data/webui/omnibox_popup/aim_app_test.ts | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/test/data/webui/omnibox_popup/aim_app_test.ts b/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
+index f4763cc14f955845661a1548f56558d6a7ed30c9..1a8cfd3ccf8b0f397dc696ff59d678d38b9afe35 100644
+--- a/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
++++ b/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
+@@ -571,8 +571,8 @@ suite('AimAppTest', function() {
+       }
+     }
+ 
+-    const speechWindow = window as Window&{
+-      webkitSpeechRecognition: typeof SpeechRecognition,
++    const speechWindow = window as unknown as {
++      webkitSpeechRecognition: new () => FakeSpeechRecognition,
+     };
+     const originalSpeechRecognition = speechWindow.webkitSpeechRecognition;
+     const systemVoiceSearchWasEnabled =
+@@ -587,8 +587,7 @@ suite('AimAppTest', function() {
+ 
+     let app: OmniboxAimAppElement|undefined;
+     try {
+-      speechWindow.webkitSpeechRecognition =
+-          FakeSpeechRecognition as unknown as typeof SpeechRecognition;
++      speechWindow.webkitSpeechRecognition = FakeSpeechRecognition;
+       if (systemVoiceSearchWasEnabled) {
+         loadTimeData.overrideValues({isSystemVoiceSearchEnabled: false});
+       }
+-- 
+2.54.0 (Apple Git-157)
+

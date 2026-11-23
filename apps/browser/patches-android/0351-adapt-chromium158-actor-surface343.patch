@@ -1,0 +1,192 @@
+From 59c946326ceba09e24d96074da1e02df16fd7bdc Mon Sep 17 00:00:00 2001
+From: MacBook Pro <redacted@example.invalid>
+Date: Fri, 20 Nov 2026 18:44:51 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E5=AF=B9=E9=BD=90=20Chromium158=20Actor?=
+ =?UTF-8?q?=20=E5=B7=A5=E5=85=B7=E8=B7=AF=E5=BE=84=E5=92=8C=E9=A1=B5?=
+ =?UTF-8?q?=E9=9D=A2=E5=8F=A5=E6=9F=84?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 46 +++++++++++--------
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 2 files changed, 28 insertions(+), 22 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 87a46a313c6ff7150f71619a363e5b074483cc2c..79f78b03cc3dbaeee2f384fd7e2f62a376db1b13 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -23,12 +23,13 @@
+ #include "base/unguessable_token.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_proto_conversion.h"
++#include "chrome/browser/actor/actor_surface_handle.h"
+ #include "chrome/browser/actor/actor_task.h"
+ #include "chrome/browser/actor/actor_task_metadata.h"
+ #include "chrome/browser/actor/enterprise_policy_checker.h"
+-#include "chrome/browser/actor/tools/attempt_form_filling_tool_request.h"
+-#include "chrome/browser/actor/tools/attempt_login_tool_request.h"
+-#include "chrome/browser/actor/tools/attempt_otp_filling_tool_request.h"
++#include "chrome/browser/actor/tools/autofill/attempt_form_filling/attempt_form_filling_tool_request.h"
++#include "chrome/browser/actor/tools/password_manager/attempt_login/attempt_login_tool_request.h"
++#include "chrome/browser/actor/tools/one_time_token/attempt_otp_filling_tool_request.h"
+ #include "chrome/browser/actor/tools/click_tool_request.h"
+ #include "chrome/browser/actor/tools/drag_and_release_tool_request.h"
+ #include "chrome/browser/actor/tools/history_tool_request.h"
+@@ -432,10 +433,15 @@ std::string SafeObservationUrl(std::string_view value) {
+ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+     tabs::TabInterface& tab,
+     const AgentToolCall& call) {
+-  const tabs::TabHandle tab_handle = tab.GetHandle();
++  // Chromium 的页面句柄与标签页 ID 不保证相同，必须通过受支持的映射获取。
++  const actor::ActorSurfaceHandle surface_handle =
++      actor::ActorSurfaceHandle::From(tab.GetHandle());
++  if (surface_handle.is_null()) {
++    return nullptr;
++  }
+   if (call.tool_name == "page.navigate") {
+     const std::string* url = call.arguments.FindString("url");
+-    return url ? std::make_unique<actor::NavigateToolRequest>(tab_handle,
++    return url ? std::make_unique<actor::NavigateToolRequest>(surface_handle,
+                                                               GURL(*url))
+                : nullptr;
+   }
+@@ -455,7 +461,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       click_type = actor::mojom::ClickType::kRight;
+     }
+     return std::make_unique<actor::ClickToolRequest>(
+-        tab_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
++        surface_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
+         click_type, actor::mojom::ClickCount::kSingle);
+   }
+   if (call.tool_name == "page.type") {
+@@ -466,7 +472,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+     }
+     const bool replace = call.arguments.FindBool("replace").value_or(true);
+     return std::make_unique<actor::TypeToolRequest>(
+-        tab_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
++        surface_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
+         *text, false,
+         replace ? actor::TypeToolRequest::Mode::kReplace
+                 : actor::TypeToolRequest::Mode::kAppend);
+@@ -478,7 +484,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       return nullptr;
+     }
+     return std::make_unique<actor::SelectToolRequest>(
+-        tab_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
++        surface_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
+         *value);
+   }
+   if (call.tool_name == "page.scroll") {
+@@ -497,7 +503,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       actor_direction = actor::ScrollToolRequest::Direction::kRight;
+     }
+     return std::make_unique<actor::ScrollToolRequest>(
+-        tab_handle,
++        surface_handle,
+         actor::PageTarget(
+             actor::DomNode{actor::kRootElementDomNodeId, document_token}),
+         actor_direction, static_cast<float>(*amount));
+@@ -509,7 +515,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       return nullptr;
+     }
+     return std::make_unique<actor::DragAndReleaseToolRequest>(
+-        tab_handle,
++        surface_handle,
+         actor::PageTarget(actor::DomNode{*from_node_id, document_token}),
+         actor::PageTarget(actor::DomNode{*to_node_id, document_token}));
+   }
+@@ -519,7 +525,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       return nullptr;
+     }
+     return std::make_unique<actor::WaitToolRequest>(
+-        base::Milliseconds(*timeout_ms), tab_handle);
++        base::Milliseconds(*timeout_ms), surface_handle);
+   }
+   if (call.tool_name == "page.history") {
+     const std::string* direction = call.arguments.FindString("direction");
+@@ -527,9 +533,9 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       return nullptr;
+     }
+     if (*direction == "back") {
+-      return std::make_unique<actor::HistoryBackToolRequest>(tab_handle);
++      return std::make_unique<actor::HistoryBackToolRequest>(surface_handle);
+     }
+-    return std::make_unique<actor::HistoryForwardToolRequest>(tab_handle);
++    return std::make_unique<actor::HistoryForwardToolRequest>(surface_handle);
+   }
+   if (call.tool_name == "page.media") {
+     const std::string* action = call.arguments.FindString("action");
+@@ -537,14 +543,14 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       return nullptr;
+     }
+     if (*action == "play") {
+-      return std::make_unique<actor::PlayMediaToolRequest>(tab_handle);
++      return std::make_unique<actor::PlayMediaToolRequest>(surface_handle);
+     }
+     if (*action == "pause") {
+-      return std::make_unique<actor::PauseMediaToolRequest>(tab_handle);
++      return std::make_unique<actor::PauseMediaToolRequest>(surface_handle);
+     }
+     std::optional<int> position_ms = call.arguments.FindInt("position_ms");
+     return position_ms ? std::make_unique<actor::SeekMediaToolRequest>(
+-                             tab_handle, base::Milliseconds(*position_ms))
++                             surface_handle, base::Milliseconds(*position_ms))
+                        : nullptr;
+   }
+   if (call.tool_name == "page.webmcp.invoke") {
+@@ -553,7 +559,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+     std::optional<base::UnguessableToken> token =
+         base::UnguessableToken::DeserializeFromString(document_token);
+     return name && input_json && token
+-               ? std::make_unique<actor::ScriptToolRequest>(tab_handle, *token,
++               ? std::make_unique<actor::ScriptToolRequest>(surface_handle, *token,
+                                                             *name, *input_json)
+                : nullptr;
+   }
+@@ -565,7 +571,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+           actor::PageTarget(actor::DomNode{*node_id, document_token});
+     }
+     return std::make_unique<actor::AttemptLoginToolRequest>(
+-        tab_handle, std::move(password_button), std::nullopt);
++        surface_handle, std::move(password_button), std::nullopt);
+   }
+   if (call.tool_name == "auth.fill_otp") {
+     const base::ListValue* node_ids = call.arguments.FindList("field_node_ids");
+@@ -577,7 +583,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       targets.emplace_back(actor::DomNode{node_id.GetInt(), document_token});
+     }
+     return std::make_unique<actor::AttemptOtpFillingToolRequest>(
+-        tab_handle, std::move(targets),
++        surface_handle, std::move(targets),
+         call.arguments.FindBool("for_signin").value_or(false));
+   }
+   if (call.tool_name == "form.fill") {
+@@ -616,7 +622,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+     requests.push_back(std::move(request));
+     // 当前只请求地址和联系信息，不传入预选信用卡令牌。
+     return std::make_unique<actor::AttemptFormFillingToolRequest>(
+-        tab_handle, std::move(requests), /*credit_card_opaque_token=*/"");
++        surface_handle, std::move(requests), /*credit_card_opaque_token=*/"");
+   }
+   return nullptr;
+ }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index dbe4023627ff6ab9bc81e207b3937bb241681838..27e295d752df27a12425299ac7c59474c3558ba1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "7.5.0.342";
+-inline constexpr char kProductVersionLabel[] = "Ver 7.5 (342)";
++inline constexpr char kProductVersion[] = "7.5.0.343";
++inline constexpr char kProductVersionLabel[] = "Ver 7.5 (343)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

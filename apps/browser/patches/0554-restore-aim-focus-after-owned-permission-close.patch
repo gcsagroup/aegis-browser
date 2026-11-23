@@ -1,0 +1,114 @@
+From 4c01a9928c65efa1a2a75d128ecc0b7b07c4e29a Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 02:22:51 +0800
+Subject: [PATCH] Restore AIM activation when its key embedded permission
+ prompt closes
+
+---
+ .../omnibox/omnibox_aim_popup_browsertest.cc  | 18 ++++++++--
+ .../embedded_permission_prompt_base_view.cc   | 34 +++++++++++++++++++
+ 2 files changed, 50 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index 933957c0d5f73ead0af82f405c7ea20f87b6e565..d48c0b308897f68b4de190e6dad9b60356f976a6 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -13,7 +13,9 @@
+ #include "base/test/bind.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
++#include "base/test/scoped_run_loop_timeout.h"
+ #include "base/test/test_future.h"
++#include "base/test/test_timeouts.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
+ #include "chrome/browser/browser_process.h"
+@@ -1315,6 +1317,14 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupEmbeddedPermissionBrowserTest,
+   }
+ 
+   ASSERT_TRUE(prompt && !prompt->IsClosed());
++  base::test::ScopedRunLoopTimeout timeout(FROM_HERE,
++                                           TestTimeouts::action_timeout());
++#if BUILDFLAG(IS_MAC)
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return prompt && !prompt->IsClosed() && prompt->IsVisible() &&
++           prompt->IsActive();
++  })) << "The embedded prompt must be key before clicking its close button";
++#endif
+   // BubbleFrameView's close button invokes the same DialogDelegate close path.
+   prompt->CloseWithReason(views::Widget::ClosedReason::kCloseButtonClicked);
+   const bool restored = base::test::RunUntil([&] {
+@@ -1344,8 +1354,12 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupEmbeddedPermissionBrowserTest,
+            << (popup_widget ? testing::PrintToString(popup_widget->IsActive())
+                             : "widget unavailable")
+            << "\nBrowser active (key on Mac) = "
+-           << (browser_widget ? testing::PrintToString(browser_widget->IsActive())
+-                              : "widget unavailable")
++           << (browser_widget
++                   ? testing::PrintToString(browser_widget->IsActive())
++                   : "widget unavailable")
++           << "\nEmbedded prompt active (key on Mac) = "
++           << (prompt ? testing::PrintToString(prompt->IsActive())
++                      : "widget destroyed")
+            << "\nAIM popup minimum size = "
+            << (current_presenter
+                    ? current_presenter->get_minimum_size().ToString()
+diff --git a/chrome/browser/ui/views/permissions/embedded_permission_prompt_base_view.cc b/chrome/browser/ui/views/permissions/embedded_permission_prompt_base_view.cc
+index cccd60f3db86975ac306721be92c916a25308f44..a730b5aa51cf6a117644fd234884f04e912bee24 100644
+--- a/chrome/browser/ui/views/permissions/embedded_permission_prompt_base_view.cc
++++ b/chrome/browser/ui/views/permissions/embedded_permission_prompt_base_view.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/ui/views/permissions/embedded_permission_prompt_base_view.h"
+ 
+ #include "base/functional/callback_helpers.h"
++#include "build/build_config.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
+ #include "chrome/browser/ui/views/chrome_widget_sublevel.h"
+@@ -35,6 +36,13 @@
+ #include "ui/views/widget/widget.h"
+ #include "ui/views/window/dialog_client_view.h"
+ 
++#if BUILDFLAG(IS_MAC)
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h"
++#include "chrome/browser/ui/views/omnibox/omnibox_popup_webui_base_content.h"
++#endif
++
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(EmbeddedPermissionPromptBaseView,
+                                       kMainViewId);
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(EmbeddedPermissionPromptBaseView,
+@@ -259,6 +267,32 @@ void EmbeddedPermissionPromptBaseView::OnWidgetVisibilityChanged(
+ 
+ // For clicking a button in the PEPC permission prompt:
+ void EmbeddedPermissionPromptBaseView::ClosingPermission() {
++#if BUILDFLAG(IS_MAC)
++  // Views has marked this widget closed, but it can still be the native key
++  // window. Hand activation back to its AIM popup before Dismiss() removes the
++  // prompt and scrim. The manager's dismissal callback restores WebUI focus.
++  auto* prompt_widget = GetWidget();
++  if (delegate() && web_contents() && prompt_widget->IsActive() &&
++      prompt_widget->IsVisible() &&
++      prompt_widget->closed_reason() ==
++          views::Widget::ClosedReason::kCloseButtonClicked) {
++    auto* browser_view =
++        BrowserView::GetBrowserViewForNativeWindow(GetNativeWindow());
++    auto* bar = browser_view ? browser_view->GetLocationBarView() : nullptr;
++    auto* aim = bar ? bar->GetOmniboxPopupAimPresenter() : nullptr;
++    if (aim && aim->HasOpenWidget()) {
++      auto* popup = aim->GetWidget();
++      auto* content = aim->GetWebUIContent();
++      if (content && content->GetWebContents() == web_contents() &&
++          popup->IsVisible() && popup->CanActivate() &&
++          views::Widget::GetAllOwnedWidgets(
++              browser_view->GetWidget()->GetNativeView())
++              .contains(prompt_widget)) {
++        popup->Activate();
++      }
++    }
++  }
++#endif
+   if (delegate()) {
+     delegate()->Dismiss();
+   }

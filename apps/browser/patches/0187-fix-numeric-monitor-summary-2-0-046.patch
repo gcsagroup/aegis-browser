@@ -1,4 +1,4 @@
-From f9ff505e2bcd3ac97a211cf2f5a56948f77270c4 Mon Sep 17 00:00:00 2001
+From 0af671be9710b6a8c2d904040533638d740e1019 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 04:12:26 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=95=B0=E5=AD=97?=
@@ -10,13 +10,6 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../aegis/agent/aegis_agent_service.cc        |  9 ++
- .../aegis/agent/agent_monitor_summary.cc      | 91 ++++++++++++++++---
- .../aegis/agent/agent_monitor_summary.h       |  7 ++
- .../agent/agent_monitor_summary_unittest.cc   | 57 ++++++++++++
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  3 +-
- .../ui/webui/help/aegis_github_update.h       |  4 +-
- 6 files changed, 152 insertions(+), 19 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index a885cd3370698999107c0da00a5744dfa924a32d..0037507b5ebc17cbbfb32b8b49a83c86f08c1969 100644
@@ -269,6 +262,3 @@ index 8862b138692f3a891dcb515b1c28b7207ddcbdf5..75a9700439523d842b0e35ecd6a0f535
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

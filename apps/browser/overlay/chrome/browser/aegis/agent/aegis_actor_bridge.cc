@@ -22,13 +22,14 @@
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
+#include "chrome/browser/actor/actor_surface_handle.h"
 #include "chrome/browser/actor/actor_proto_conversion.h"
 #include "chrome/browser/actor/actor_task.h"
 #include "chrome/browser/actor/actor_task_metadata.h"
 #include "chrome/browser/actor/enterprise_policy_checker.h"
-#include "chrome/browser/actor/tools/attempt_form_filling_tool_request.h"
-#include "chrome/browser/actor/tools/attempt_login_tool_request.h"
-#include "chrome/browser/actor/tools/attempt_otp_filling_tool_request.h"
+#include "chrome/browser/actor/tools/autofill/attempt_form_filling/attempt_form_filling_tool_request.h"
+#include "chrome/browser/actor/tools/password_manager/attempt_login/attempt_login_tool_request.h"
+#include "chrome/browser/actor/tools/one_time_token/attempt_otp_filling_tool_request.h"
 #include "chrome/browser/actor/tools/click_tool_request.h"
 #include "chrome/browser/actor/tools/drag_and_release_tool_request.h"
 #include "chrome/browser/actor/tools/history_tool_request.h"
@@ -430,12 +431,11 @@ std::string SafeObservationUrl(std::string_view value) {
 }
 
 std::unique_ptr<actor::ToolRequest> BuildActorRequest(
-    tabs::TabInterface& tab,
+    actor::ActorSurfaceHandle surface_handle,
     const AgentToolCall& call) {
-  const tabs::TabHandle tab_handle = tab.GetHandle();
   if (call.tool_name == "page.navigate") {
     const std::string* url = call.arguments.FindString("url");
-    return url ? std::make_unique<actor::NavigateToolRequest>(tab_handle,
+    return url ? std::make_unique<actor::NavigateToolRequest>(surface_handle,
                                                               GURL(*url))
                : nullptr;
   }
@@ -455,7 +455,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       click_type = actor::mojom::ClickType::kRight;
     }
     return std::make_unique<actor::ClickToolRequest>(
-        tab_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
+        surface_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
         click_type, actor::mojom::ClickCount::kSingle);
   }
   if (call.tool_name == "page.type") {
@@ -466,7 +466,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
     }
     const bool replace = call.arguments.FindBool("replace").value_or(true);
     return std::make_unique<actor::TypeToolRequest>(
-        tab_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
+        surface_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
         *text, false,
         replace ? actor::TypeToolRequest::Mode::kReplace
                 : actor::TypeToolRequest::Mode::kAppend);
@@ -478,7 +478,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       return nullptr;
     }
     return std::make_unique<actor::SelectToolRequest>(
-        tab_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
+        surface_handle, actor::PageTarget(actor::DomNode{*node_id, document_token}),
         *value);
   }
   if (call.tool_name == "page.scroll") {
@@ -497,7 +497,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       actor_direction = actor::ScrollToolRequest::Direction::kRight;
     }
     return std::make_unique<actor::ScrollToolRequest>(
-        tab_handle,
+        surface_handle,
         actor::PageTarget(
             actor::DomNode{actor::kRootElementDomNodeId, document_token}),
         actor_direction, static_cast<float>(*amount));
@@ -509,7 +509,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       return nullptr;
     }
     return std::make_unique<actor::DragAndReleaseToolRequest>(
-        tab_handle,
+        surface_handle,
         actor::PageTarget(actor::DomNode{*from_node_id, document_token}),
         actor::PageTarget(actor::DomNode{*to_node_id, document_token}));
   }
@@ -519,17 +519,17 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       return nullptr;
     }
     return std::make_unique<actor::WaitToolRequest>(
-        base::Milliseconds(*timeout_ms), tab_handle);
+        base::Milliseconds(*timeout_ms), surface_handle);
   }
   if (call.tool_name == "page.history") {
     const std::string* direction = call.arguments.FindString("direction");
     if (!direction) {
       return nullptr;
     }
-    return std::make_unique<actor::HistoryToolRequest>(
-        tab_handle, *direction == "back"
-                        ? actor::HistoryToolRequest::Direction::kBack
-                        : actor::HistoryToolRequest::Direction::kForward);
+    if (*direction == "back") {
+      return std::make_unique<actor::HistoryBackToolRequest>(surface_handle);
+    }
+    return std::make_unique<actor::HistoryForwardToolRequest>(surface_handle);
   }
   if (call.tool_name == "page.media") {
     const std::string* action = call.arguments.FindString("action");
@@ -537,16 +537,14 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       return nullptr;
     }
     if (*action == "play") {
-      return std::make_unique<actor::MediaControlToolRequest>(
-          tab_handle, actor::PlayMedia{});
+      return std::make_unique<actor::PlayMediaToolRequest>(surface_handle);
     }
     if (*action == "pause") {
-      return std::make_unique<actor::MediaControlToolRequest>(
-          tab_handle, actor::PauseMedia{});
+      return std::make_unique<actor::PauseMediaToolRequest>(surface_handle);
     }
     std::optional<int> position_ms = call.arguments.FindInt("position_ms");
-    return position_ms ? std::make_unique<actor::MediaControlToolRequest>(
-                             tab_handle, actor::SeekMedia{*position_ms})
+    return position_ms ? std::make_unique<actor::SeekMediaToolRequest>(
+                             surface_handle, base::Milliseconds(*position_ms))
                        : nullptr;
   }
   if (call.tool_name == "page.webmcp.invoke") {
@@ -555,7 +553,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
     std::optional<base::UnguessableToken> token =
         base::UnguessableToken::DeserializeFromString(document_token);
     return name && input_json && token
-               ? std::make_unique<actor::ScriptToolRequest>(tab_handle, *token,
+               ? std::make_unique<actor::ScriptToolRequest>(surface_handle, *token,
                                                             *name, *input_json)
                : nullptr;
   }
@@ -567,7 +565,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
           actor::PageTarget(actor::DomNode{*node_id, document_token});
     }
     return std::make_unique<actor::AttemptLoginToolRequest>(
-        tab_handle, std::move(password_button), std::nullopt);
+        surface_handle, std::move(password_button), std::nullopt);
   }
   if (call.tool_name == "auth.fill_otp") {
     const base::ListValue* node_ids = call.arguments.FindList("field_node_ids");
@@ -579,7 +577,7 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       targets.emplace_back(actor::DomNode{node_id.GetInt(), document_token});
     }
     return std::make_unique<actor::AttemptOtpFillingToolRequest>(
-        tab_handle, std::move(targets),
+        surface_handle, std::move(targets),
         call.arguments.FindBool("for_signin").value_or(false));
   }
   if (call.tool_name == "form.fill") {
@@ -616,8 +614,9 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
     std::vector<actor::AttemptFormFillingToolRequest::FormFillingRequest>
         requests;
     requests.push_back(std::move(request));
+    // 当前只请求地址和联系信息，不传入预选信用卡令牌。
     return std::make_unique<actor::AttemptFormFillingToolRequest>(
-        tab_handle, std::move(requests));
+        surface_handle, std::move(requests), /*credit_card_opaque_token=*/"");
   }
   return nullptr;
 }
@@ -1051,7 +1050,15 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
         task_fingerprints->second.at(*tab_id), std::move(callback));
   }
 
-  std::unique_ptr<actor::ToolRequest> request = BuildActorRequest(*tab, call);
+  const auto surface = actor::ActorSurfaceHandle::From(tab->GetHandle());
+  if (surface.is_null() || !surface.Get()) {
+    std::move(callback).Run(ErrorResult(
+        call.action_id, AgentErrorCode::kStaleDocument,
+        "tab is no longer available for page actions"));
+    return;
+  }
+  std::unique_ptr<actor::ToolRequest> request =
+      BuildActorRequest(surface, call);
   if (!request) {
     std::move(callback).Run(ErrorResult(call.action_id,
                                         AgentErrorCode::kToolUnavailable,

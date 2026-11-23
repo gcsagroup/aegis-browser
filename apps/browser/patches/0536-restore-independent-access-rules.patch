@@ -1,0 +1,71 @@
+From a77d40290eb43fda3d52dbb8fd404b6dd015cc32 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 18:22:43 +0800
+Subject: [PATCH] fix(access): restore independently stored rules without a
+ site group
+
+---
+ .../browser/aegis/access/access_rule_store.cc |  6 ++++
+ .../access/access_rule_store_unittest.cc      | 32 +++++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 69d5ee190b6ce73cd867870c1b441e6073b30f43..a2d4bf913f55bd2b5e38bdd5a36e88ed62cafcf2 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -1098,6 +1098,12 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
+     if (!ValidateStoredRule(rule, snapshot.owner, true)) {
+       return SnapshotError(StoreStatus::kCorrupt, "invalid_independent_rule");
+     }
++    if (snapshot.site_groups.empty()) {
++      // With no committed site group, the latest independent operation owns
++      // the snapshot version. An empty partition keeps generation zero.
++      snapshot.policy_generation = std::max(snapshot.policy_generation,
++                                            rule.policy.last_operation_sequence);
++    }
+     snapshot.independent_rules.push_back(std::move(rule));
+   }
+   if (!rules.Succeeded()) {
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index ae7bce036cf246176295976fc8feee68cef7ac54..a636a8c1941c375f7afc60922e55c13b724f714e 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -1383,6 +1383,38 @@ TEST(AccessRuleStoreTest, PreparedSnapshotRejectsForgedOrSupersededRecord) {
+             StoreStatus::kConflict);
+ }
+ 
++TEST(AccessRuleStoreTest, IndependentRulesRestoreWithoutSiteGroups) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const auto binding = AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++  const auto proxy = IndependentRule(
++      "a-proxy", AccessMode::kProxy, "proxy.example", "https://page.example",
++      {RequestScheme::kHttps}, {PortScope::kAllBrowserPermitted, {}}, 7);
++  const auto reject = IndependentRule(
++      "z-reject", AccessMode::kReject, "blocked.example", "https://page.example",
++      {RequestScheme::kHttps}, {PortScope::kAllBrowserPermitted, {}}, 3);
++  {
++    AccessRuleStore store(binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, reject), StoreStatus::kValid);
++    ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, proxy), StoreStatus::kValid);
++  }
++  AccessRuleStore reopened(binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(snapshot.value) << snapshot.detail;
++  EXPECT_TRUE(snapshot.value->site_groups.empty());
++  EXPECT_EQ(snapshot.value->policy_generation, 7u);
++  auto adapted = AccessRuleStore::AdaptMatcherSnapshot(*snapshot.value);
++  ASSERT_TRUE(adapted.value) << adapted.detail;
++  EXPECT_EQ(adapted.value->rules,
++            (std::vector<AccessPolicyRule>{proxy.policy, reject.policy}));
++  auto published = reopened.ReserveCommittedPolicyForPublication("partition-A");
++  ASSERT_TRUE(published.value) << published.detail;
++  EXPECT_GT(published.value->policy_generation, snapshot.value->policy_generation);
++  EXPECT_EQ(published.value->rules, adapted.value->rules);
++}
++
+ TEST(AccessRuleStoreTest, ClosingReplacesOnlyGroupOwnedRows) {
+   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+       ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));

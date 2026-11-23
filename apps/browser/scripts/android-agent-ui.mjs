@@ -7,7 +7,8 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {PACKAGE, inspectDevice, parseKeyguard, verifyCandidateFiles, verifyTarget} from './verify-android-agent-target.mjs';
 
-export const HELPER = 'app.gcsa.aegis.qa.driver';
+export const HELPER = 'com.gcsa.aegis.qa.driver';
+const HELPER_CLASS_PATH = HELPER.replaceAll('.', '/');
 export const SELF_TEST_CASES = Object.freeze([
   'unicode-input',
   'stale-snapshot-rejected',
@@ -216,7 +217,7 @@ function build(options) {
   const run = (program, args, extra = {}) => command(program, args, {env: environment, ...extra});
   run(path.join(jdk, 'bin/javac'), ['--release', '8', '-encoding', 'UTF-8', '-cp', android, '-d', classes, path.join(here, sources[1])]);
   const originals = classHashes(classes);
-  if (!originals.some(item => item.file === 'app/gcsa/aegis/qa/driver/Driver.class') ||
+  if (!originals.some(item => item.file === `${HELPER_CLASS_PATH}/Driver.class`) ||
       originals.some(item => hasJacocoMarker(path.join(classes, item.file)))) fail('原始 Driver class 缺失或已被插桩');
   let dexInputs = listClassFiles(classes);
   if (coverageEnabled) {
@@ -334,11 +335,13 @@ function expectedClassNames(record) {
 }
 
 export function summarizeJacocoXml(xml, expectedClasses) {
-  const packageMatch = xml.match(/<package name="app\/gcsa\/aegis\/qa\/driver">([\s\S]*?)<\/package>/);
+  const packageMatch = [...xml.matchAll(/<package name="([^"]+)">([\s\S]*?)<\/package>/g)]
+    .find(([, name]) => name === HELPER_CLASS_PATH);
   if (!packageMatch) fail('JaCoCo XML 缺少 Driver package');
-  const actualClasses = [...packageMatch[1].matchAll(/<class name="([^"]+)"/g)].map(match => match[1]).sort();
+  const contents = packageMatch[2];
+  const actualClasses = [...contents.matchAll(/<class name="([^"]+)"/g)].map(match => match[1]).sort();
   if (JSON.stringify(actualClasses) !== JSON.stringify([...expectedClasses].sort())) fail('JaCoCo XML 的 Driver class 集与原始 class 不一致');
-  const source = packageMatch[1].match(/<sourcefile name="Driver\.java">([\s\S]*?)<\/sourcefile>/);
+  const source = contents.match(/<sourcefile name="Driver\.java">([\s\S]*?)<\/sourcefile>/);
   if (!source) fail('JaCoCo XML 缺少 Driver.java');
   const line = source[1].match(/<counter type="LINE" missed="(\d+)" covered="(\d+)"\/>/);
   if (!line) fail('JaCoCo XML 缺少 Driver.java 行计数');

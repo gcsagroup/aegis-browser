@@ -1,0 +1,79 @@
+From 92a55508d36bef8db7e7da803ad987d28b59d85c Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Mon, 16 Nov 2026 02:40:58 +0800
+Subject: [PATCH] fix(macOS): handle ignored buttons retained by AppKit
+
+Use the AX tree leaf rules for an ignored button that AppKit can still query. Preserve unignored descendants and exercise the live Cocoa wrapper across the state change.
+
+---
+
+diff --git a/ui/accessibility/platform/browser_accessibility_mac.mm b/ui/accessibility/platform/browser_accessibility_mac.mm
+index 99abad145d0cecba5c784f44bb069599b162601e..e25b0b50ec6a8112d41b14670da512af9e81a84a 100644
+--- a/ui/accessibility/platform/browser_accessibility_mac.mm
++++ b/ui/accessibility/platform/browser_accessibility_mac.mm
+@@ -205,6 +205,13 @@ BrowserAccessibility* BrowserAccessibilityMac::PlatformGetChild(
+ }
+ 
+ bool BrowserAccessibilityMac::IsLeaf() const {
++  const bool is_button = GetRole() == ax::mojom::Role::kButton;
++  if (is_button && IsIgnored()) {
++    // AppKit can still query a wrapper after the button becomes ignored.
++    // The AX tree's leaf rules keep unignored descendants exposed.
++    return node()->IsLeaf();
++  }
++
+   if (BrowserAccessibility::IsLeaf()) {
+     return true;
+   }
+@@ -213,8 +220,7 @@ bool BrowserAccessibilityMac::IsLeaf() const {
+   // non-presentational descendants are detected and treated, and whether this
+   // behavior should be platform-agnostic, once the standards discussion is
+   // resolved.
+-  return GetRole() == ax::mojom::Role::kButton &&
+-         HasOnlyPresentationalButtonDescendants(*this);
++  return is_button && HasOnlyPresentationalButtonDescendants(*this);
+ }
+ 
+ BrowserAccessibility* BrowserAccessibilityMac::PlatformGetFirstChild() const {
+diff --git a/ui/accessibility/platform/browser_accessibility_mac_unittest.mm b/ui/accessibility/platform/browser_accessibility_mac_unittest.mm
+index 3215d362fdfcf851eb465487ad16b1b5cbd03d4b..26f30c5a5ed3f757e14ef274498df211350cd33f 100644
+--- a/ui/accessibility/platform/browser_accessibility_mac_unittest.mm
++++ b/ui/accessibility/platform/browser_accessibility_mac_unittest.mm
+@@ -332,6 +332,37 @@ class BrowserAccessibilityMacTest : public CocoaTest {
+   const base::test::SingleThreadTaskEnvironment task_environment_;
+ };
+ 
++TEST_F(BrowserAccessibilityMacTest, RetainedButtonCanExposeChildrenWhenIgnored) {
++  AXNodeData button = manager_->GetFromID(1001)->GetData();
++  AXNodeData link;
++  link.id = 1003;
++  link.role = ax::mojom::Role::kLink;
++  link.SetName("Link");
++  link.AddState(ax::mojom::State::kFocusable);
++  button.child_ids.push_back(link.id);
++
++  AXTreeUpdate update;
++  update.nodes = {button, link};
++  ASSERT_TRUE(manager_->ax_tree()->Unserialize(update));
++
++  BrowserAccessibility* ax_button = manager_->GetFromID(button.id);
++  BrowserAccessibilityCocoa* retained_button =
++      ObjCCastStrict<BrowserAccessibilityCocoa>(
++          ax_button->GetNativeViewAccessible().Get());
++  id cocoa_link =
++      manager_->GetFromID(link.id)->GetNativeViewAccessible().Get();
++  ASSERT_NSEQ(@[ cocoa_link ], [retained_button accessibilityChildren]);
++
++  // AppKit can still query an element retained before the tree changed.
++  button.AddState(ax::mojom::State::kIgnored);
++  update.nodes = {button};
++  ASSERT_TRUE(manager_->ax_tree()->Unserialize(update));
++  ASSERT_TRUE(ax_button->IsIgnored());
++  EXPECT_NSEQ(@[ cocoa_link ], [retained_button accessibilityChildren]);
++  ASSERT_EQ(2u, [accessibility_ accessibilityChildren].count);
++  EXPECT_NSEQ(cocoa_link, [accessibility_ accessibilityChildren][0]);
++}
++
+ // Standard hit test.
+ TEST_F(BrowserAccessibilityMacTest, HitTestTest) {
+   BrowserAccessibilityCocoa* firstChild =

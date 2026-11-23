@@ -42,12 +42,14 @@ env:
   FASTLANE_OPT_OUT_USAGE: "1"
   BUNDLE_FROZEN: "true"
 jobs:
-  contracts:
+  impact:
     if: ${{ inputs.exercise != 'cloud-poc' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     outputs:
       ios: ${{ steps.impact.outputs.ios }}
+      integrate: ${{ steps.impact.outputs.integrate }}
+      deep: ${{ steps.impact.outputs.deep }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -61,6 +63,8 @@ jobs:
         env:
           ROUTE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           ROUTE_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          ROUTE_PUSH_BEFORE: ${{ github.event.before }}
+          ROUTE_DEFAULT_MISSING_IOS: 'true'
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             parents="$(git show -s --format=%P HEAD)"
@@ -77,11 +81,108 @@ jobs:
             git show "$ROUTE_BASE_SHA:scripts/ci/platform-impact.mjs" > "$RUNNER_TEMP/platform-impact.mjs"
             node "$RUNNER_TEMP/platform-impact.mjs" > .artifacts/ci/ios-impact.json
           else
-            echo 'ios=true' >> "$GITHUB_OUTPUT"
             echo '{"ios":true,"reason":"trusted-baseline-predates-router"}' > .artifacts/ci/ios-impact.json
           fi
+          # Fill missing keys from the trusted base. Never run the helper checked out with the candidate.
+          if git cat-file -e "$ROUTE_BASE_SHA:scripts/ci/fill-platform-route-defaults.mjs"; then
+            git show "$ROUTE_BASE_SHA:scripts/ci/fill-platform-route-defaults.mjs" > "$RUNNER_TEMP/fill-platform-route-defaults.mjs"
+          else
+            cat > "$RUNNER_TEMP/fill-platform-route-defaults.mjs" <<'EOF'
+          #!/usr/bin/env node
+          import {appendFileSync, readFileSync, writeFileSync} from 'node:fs';
+          
+          // Fill keys an older trusted-base router did not print. A value that is already
+          // printed stays, including an explicit false. New platforms default off so an
+          // old router cannot fan a change out onto Android, Windows or Linux.
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const planPath = process.argv[2];
+          if (!outputPath || !planPath) throw new Error('GITHUB_OUTPUT and plan path required');
+          // eslint-disable-next-line security/detect-non-literal-fs-filename -- The runner supplies its own output file and the workflow names the plan artifact.
+          const output = readFileSync(outputPath, 'utf8');
+          // eslint-disable-next-line security/detect-non-literal-fs-filename -- The plan path is the artifact written by this same job.
+          const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+          const printed = new Map();
+          for (const line of output.split('\n')) {
+            const eq = line.indexOf('=');
+            if (eq > 0) printed.set(line.slice(0, eq), line.slice(eq + 1));
+          }
+          const additions = [];
+          const remember = (key, value) => {
+            additions.push(`${key}=${value}`);
+            if (key === 'docs') plan.docs = value;
+            else if (key === 'ios') plan.ios = value;
+            else if (key === 'android') plan.android = value;
+            else if (key === 'macos') plan.macos = value;
+            else if (key === 'windows') plan.windows = value;
+            else if (key === 'linux') plan.linux = value;
+            else if (key === 'integrate') plan.integrate = value;
+            else if (key === 'deep') plan.deep = value;
+          };
+          const current = key => {
+            if (printed.has(key)) return printed.get(key) === 'true';
+            if (key === 'docs') return plan.docs === true;
+            if (key === 'ios') return plan.ios === true;
+            if (key === 'android') return plan.android === true;
+            if (key === 'macos') return plan.macos === true;
+            if (key === 'windows') return plan.windows === true;
+            if (key === 'linux') return plan.linux === true;
+            if (key === 'integrate') return plan.integrate === true;
+            return plan.deep === true;
+          };
+          const apply = (key, value) => {
+            if (printed.has(key)) return;
+            printed.set(key, String(value));
+            remember(key, value);
+          };
+          const iosDefault = process.env.ROUTE_DEFAULT_MISSING_IOS;
+          const macosDefault = process.env.ROUTE_DEFAULT_MISSING_MACOS;
+          const docsDefault = process.env.ROUTE_DEFAULT_MISSING_DOCS;
+          if (iosDefault === 'true' || iosDefault === 'false') apply('ios', iosDefault === 'true');
+          if (macosDefault === 'true' || macosDefault === 'false') apply('macos', macosDefault === 'true');
+          if (docsDefault === 'true' || docsDefault === 'false') apply('docs', docsDefault === 'true');
+          apply('android', false);
+          apply('windows', false);
+          apply('linux', false);
+          const opened = current('ios') || current('macos');
+          apply('integrate', opened);
+          apply('deep', opened);
+          if (additions.length === 0) process.exit(0);
+          // eslint-disable-next-line security/detect-non-literal-fs-filename -- Same runner-owned output file as the read above.
+          appendFileSync(outputPath, `${output.endsWith('\n') || output.length === 0 ? '' : '\n'}${additions.join('\n')}\n`);
+          plan.platformReason = 'missing-platform-rule-default';
+          // eslint-disable-next-line security/detect-non-literal-fs-filename -- Same workflow-owned plan artifact as the read above.
+          writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`);
+          EOF
+          fi
+          node "$RUNNER_TEMP/fill-platform-route-defaults.mjs" .artifacts/ci/ios-impact.json
       - name: Check documentation consumers
         run: node scripts/check-repo-contracts.mjs
+      - name: Require repository Admin for manual operation
+        run: node scripts/ci/ios-operator.mjs --context validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+      - name: Upload iOS routing evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci/ios-impact.json
+          if-no-files-found: error
+          retention-days: 14
+  contracts:
+    needs: impact
+    if: ${{ inputs.exercise != 'cloud-poc' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') && needs.impact.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.impact.outputs.ios == 'true' && needs.impact.outputs.integrate == 'true')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
       - name: Require repository Admin for manual operation
         run: node scripts/ci/ios-operator.mjs --context validation
         env:
@@ -106,20 +207,17 @@ jobs:
         run: |
           # GitHub supports concurrency.queue; v1.7.12 predates it.
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -ignore '^unexpected key "queue" for "concurrency" section' .github/workflows/ios-*.yml
-      - name: Upload iOS routing evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: ios-impact-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/ci/ios-impact.json
-          if-no-files-found: error
-          retention-days: 14
   ios-archive:
-    needs: contracts
-    if: ${{ inputs.exercise != 'cloud-poc' && needs.contracts.outputs.ios == 'true' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
+    needs:
+      - impact
+      - contracts
+    if: ${{ inputs.exercise != 'cloud-poc' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') && needs.impact.result == 'success' && needs.contracts.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.impact.outputs.deep == 'true') }}
     runs-on: >-
       ${{ vars.AEGIS_IOS_RUNNER_LABEL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) || 'macos-26' }}
-    timeout-minutes: 30
+    # Archive compile often finishes near 20m; artifact upload on the self-hosted
+    # link can need another 10–15m. Keep headroom so green archives are not
+    # cancelled mid-upload.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

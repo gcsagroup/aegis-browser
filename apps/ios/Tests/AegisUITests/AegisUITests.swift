@@ -597,7 +597,8 @@ final class AegisUITests: XCTestCase {
             XCTAssertTrue(scrollUntilVisible(update, in: app)); update.tap()
             // 旧更新日期会保留，必须等本次请求结束，不能只断言日期标签存在。
             let finished = NSPredicate(format: "enabled == true AND label == %@", "更新过滤规则")
-            expectation(for: finished, evaluatedWith: update); waitForExpectations(timeout: 100)
+            // 两份下载各有 90 秒资源时限，另留转换与 WebKit 编译时间。
+            expectation(for: finished, evaluatedWith: update); waitForExpectations(timeout: 240)
             XCTAssertTrue(app.staticTexts["最近更新"].exists)
             attachScreenshot("在线更新广告规则成功", app)
         }
@@ -929,6 +930,8 @@ final class AegisUITests: XCTestCase {
     func testExternalLinkKeepsPrivateModeUntilExplicitConfirmation() {
         let app = launchApp()
         tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        XCTAssertEqual(app.buttons["page-protection"].value as? String, "私密浏览：不记录历史，保存和发送资料前需确认")
+        // 在专用 CI 设备上通过系统投递，保留当前进程和私密会话。
         let link = URL(string: "gcsa-aegis://open?url=http%3A%2F%2F127.0.0.1%3A8768%2Farticle")!
         XCUIDevice.shared.system.open(link)
         XCTAssertTrue(app.alerts["在普通浏览中打开分享页面？"].waitForExistence(timeout: 8))
@@ -963,9 +966,16 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '恢复后保存'")).firstMatch.waitForExistence(timeout: 5))
         app.buttons["完成"].tap()
         app.buttons["browser-more"].tap(); app.buttons["下载"].tap()
-        XCTAssertTrue(scrollUntilVisible(app.buttons["下载设置与存储"], in: app))
-        app.buttons["下载设置与存储"].tap()
-        XCTAssertTrue(scrollUntilVisible(app.buttons["download-recovery"], in: app))
+        let storage = app.buttons["下载设置与存储"]
+        // 底部搜索栏会覆盖可访问性树中仍标为可点击的行。
+        for _ in 0..<6 {
+            if storage.exists, storage.isHittable, storage.frame.maxY < app.frame.maxY - 120 { break }
+            app.collectionViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(storage.isHittable)
+        XCTAssertLessThan(storage.frame.maxY, app.frame.maxY - 120)
+        storage.tap()
+        XCTAssertTrue(scrollPortableControl(app.buttons["download-recovery"], in: app, shortScroll: true))
         app.buttons["download-recovery"].tap()
         app.buttons["reset-records"].tap(); app.buttons["确认备份并重置"].tap()
         XCTAssertTrue(app.staticTexts["记录已更新，可以继续使用。"].waitForExistence(timeout: 5))
@@ -984,7 +994,8 @@ final class AegisUITests: XCTestCase {
     func testLibrarySearchAndDownloadPreview() throws {
         let app = launchApp()
         tapBrowserButton("data-button", in: app)
-        app.swipeDown()
+        // 搜索栏位于底部；对整张表单下拉会关闭界面。
+        XCTAssertTrue(app.navigationBars["浏览资料"].waitForExistence(timeout: 5))
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("does-not-exist")
         XCTAssertTrue(app.staticTexts["没有匹配的资料"].waitForExistence(timeout: 5))
@@ -1272,6 +1283,30 @@ final class AegisUITests: XCTestCase {
 
     private func tapVisibleBrowserControl(_ choices: XCUIElementQuery, in app: XCUIApplication,
                                           timeout: TimeInterval = 5, ready: @escaping () -> Bool = { true }) {
+        // 原生菜单的 AX 行可能位于裁剪范围之外，isHittable 仍返回 true。
+        // 使用包含该行的最小菜单容器，先滚动到真实可见范围，再发送一次点击。
+        func viewport(for choice: XCUIElement) -> CGRect {
+            let identifier = choice.identifier
+            guard !identifier.isEmpty,
+                  app.collectionViews.containing(.button, identifier: identifier).firstMatch.exists else { return app.frame }
+            return app.otherElements.containing(.button, identifier: identifier).allElementsBoundByIndex
+                .map { $0.frame.intersection(app.frame) }
+                .filter { !$0.isEmpty && $0.width >= choice.frame.width && $0.height >= 44 }
+                .min { $0.width * $0.height < $1.width * $1.height } ?? app.frame
+        }
+        for _ in 0..<4 {
+            guard let choice = choices.allElementsBoundByIndex.first(where: { $0.exists && $0.isEnabled }) else { break }
+            let bounds = viewport(for: choice)
+            if choice.isHittable && bounds.contains(choice.frame) { break }
+            guard bounds != app.frame else { break }
+            let down = choice.frame.midY < bounds.midY
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.3 : 0.7) - app.frame.minY))
+            let end = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.7 : 0.3) - app.frame.minY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
         var previousFrame = CGRect.null
         var settledFrame = CGRect.null
         let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -1279,7 +1314,7 @@ final class AegisUITests: XCTestCase {
             let frames = choices.allElementsBoundByIndex.compactMap { choice -> CGRect? in
                 guard choice.exists, choice.isEnabled, choice.isHittable else { return nil }
                 let frame = choice.frame
-                return !frame.isEmpty && app.frame.contains(frame) ? frame : nil
+                return !frame.isEmpty && viewport(for: choice).contains(frame) ? frame : nil
             }
             // A native Menu can expose virtual and rendered nodes for one row.
             // Resolve one visible hit region, without depending on that AX topology.
@@ -1604,8 +1639,10 @@ final class AegisUITests: XCTestCase {
         navigate(app, to: "http://127.0.0.1:8768/security/canvas")
         XCTAssertTrue(app.webViews.staticTexts["绘图与读取验收"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["fingerprint-observation"].waitForExistence(timeout: 5))
-        app.buttons["browser-more"].tap(); app.buttons["设置"].tap()
-        let protection = app.buttons["保护选项"]
+        tapBrowserButton("open-browser-settings", in: app)
+        app.buttons["aegis-feature-settings"].tap()
+        app.buttons["aegis-privacy-settings"].tap()
+        let protection = app.buttons["protection-options"]
         XCTAssertTrue(scrollPortableControl(protection, in: app, shortScroll: true)); protection.tap()
         let mining = app.switches["mining-protection"]
         XCTAssertTrue(scrollPortableControl(mining, in: app)); XCTAssertEqual(mining.value as? String, "1")
@@ -1616,7 +1653,8 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(scrollPortableControl(strict, in: app)); tapPortableSwitch(strict)
         XCTAssertEqual(strict.value as? String, "1")
         attachScreenshot("WebKit-保护设置", app)
-        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        for _ in 0..<3 { app.navigationBars.buttons.element(boundBy: 0).tap() }
+        app.buttons["settings-done"].tap()
         navigate(app, to: "http://127.0.0.1:8768/security/canvas")
         XCTAssertTrue(app.webViews.staticTexts["绘图与读取验收"].waitForExistence(timeout: 8))
         attachScreenshot("WebKit-严格模式正常绘图", app)

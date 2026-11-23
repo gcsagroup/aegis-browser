@@ -1,3 +1,7 @@
+> **2026-11-21 · Chromium 158 原生回归候选**　准备 Ver 7.5 (344)，桌面 `158.0.8127.37`、Android `158.0.8127.42`。保留原补丁前缀，当前桌面542项、Android359项。修复预取工厂、Agent导航和原生测试前提，并保留升级前的Aegis菜单统计编号。补丁回放不代替原生验收，最终本地构建、回归、独立复查与CI仍须完成；Android本轮仅验证源码，Windows暂缓，未完成签名或发行。详见[验证记录](../../../docs/audit/upstream-158-2026-11-20.zh-CN.md)。
+
+> **2026-11-14**：本轮Android源码为正式 Stable `157.0.8103.78`，桌面为 `157.0.8103.79`；使用独立335项补丁，含310产品版本准备。原主线新增账户、本地核心及诊断功能按既定Mac平台设计验证，不宣称Android已实现。APK、原签名及真机验收仍待完成。
+
 [**English**](./android.md) | [简体中文](./android.zh-CN.md) | [繁體中文](./android.zh-TW.md)
 
 # Android status: No-Go
@@ -6,8 +10,10 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 
 ## Current evidence boundary
 
-- Android 源码候选使用正式 Stable `155.0.8059.79`；桌面为 `155.0.8059.80`。Android 保留独立的 `ci-pins/android.json` 与 `patches-android/`。Ver 5.0 (208) 的 versionCode 为 `2005000208`，高于既有 `2005000207`；本轮仅完成源码和流程检查，尚无新内核实机或签名产物验收。
-- The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
+- 2026-11-11 Android 源码候选为正式 Stable `157.0.8103.50`，桌面为 `157.0.8103.51`。334 个 Android 补丁已独立回放通过；APK 构建、原签名和真实设备验收仍未完成。
+- 2026-11-07 Android 正式 Stable 为 `157.0.8103.46`，桌面为 `157.0.8103.39`。Android 独立回放通过 328 个 Chromium 补丁和 3 个 V8 补丁。APK 构建、发行签名和实机验收待完成。
+- 2026-11-01 Android 源码候选使用正式 Stable `156.0.8078.79`；桌面为 `156.0.8078.80`。Android 保留独立 pin 与补丁目录，325 个 Chromium 和 3 个 V8 补丁回放通过。尚未编译 APK、签名或实机验收；真实构建前递增产品版本，不能使用历史产物冒充本版本验收。
+- The reserved application ID is `com.gcsa.aegis`; reservation does not establish a valid package or Play identity.
 - The 2026-10-09 source candidate is Ver 2.2 (144), versionCode `2002000144`, with 276 Chromium patches and 3 V8 patches. Full Chromium replay passed; its tree differs from the verified desktop source only in official `chrome/VERSION`. This preserves the shared Agent fixes and desktop-only gesture guards; it does not enable desktop gestures on Android. APK build, signing, package identity and physical-device acceptance remain pending.
 - There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.
 - v2 source resolves the public page behind the full-page Agent tab and binds current-page tasks to that document. Page capture, redaction, navigation invalidation, and results still require physical-device acceptance.
@@ -45,7 +51,7 @@ Expected candidate paths, which **do not currently exist as accepted outputs**, 
 
 - `$CHROMIUM_ROOT/src/out/AegisAndroid/apks/ChromePublic.apk`
 - `apps/browser/dist/GCSA-aegis.apk`
-- application ID: `app.gcsa.aegis`
+- application ID: `com.gcsa.aegis`
 - launcher name: `GCSA-aegis`
 
 An AAB path and Play signing identity must be defined and verified before store work.

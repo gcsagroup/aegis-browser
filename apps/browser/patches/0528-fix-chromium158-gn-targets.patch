@@ -1,0 +1,59 @@
+From f6685334fa928b076f4da1cb2e0ca1dc1dd6906b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <redacted@example.invalid>
+Date: Fri, 20 Nov 2026 16:44:54 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E9=80=82=E9=85=8D=20Chromium=20158=20?=
+ =?UTF-8?q?=E7=9A=84=20Agent=20=E4=B8=8E=E6=88=AA=E5=9B=BE=E6=9E=84?=
+ =?UTF-8?q?=E5=BB=BA=E4=BE=9D=E8=B5=96?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/access/access_options_browsertest.cc | 2 +-
+ chrome/browser/ui/BUILD.gn                                | 1 +
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn              | 2 +-
+ 3 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_options_browsertest.cc b/chrome/browser/aegis/access/access_options_browsertest.cc
+index bfd46b7d8e2f9f4a1ac743590f9fbebab2889d8c..1544d09ef0a37644491db7bfe0e92fe2c334c656 100644
+--- a/chrome/browser/aegis/access/access_options_browsertest.cc
++++ b/chrome/browser/aegis/access/access_options_browsertest.cc
+@@ -3,7 +3,7 @@
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "chrome/common/channel_info.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+-#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "base/files/file_util.h"
+ #include "base/threading/thread_restrictions.h"
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index e8644aa2bdadb93606630f9443dc7c83cc299177..046402ee0960e3d645c174fbd9e80c851c968c03 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -688,6 +688,7 @@ if (!is_android) {
+     sources = [ "browser_command_controller.cc" ]
+     public_deps = [ ":browser_command_controller" ]
+     deps = [
++      "//chrome/browser/aegis",
+       "//chrome/common/aegis",
+       ":accelerator_table",
+       ":browser_actions",
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+index 2e85395210a5bc16f72c1f2926d22c0eeafdbdcd..1c6bd6af23b19ceb0232ba28d1add8f48bbbc887 100644
+--- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -35,9 +35,9 @@ source_set("impl") {
+     "reading_workspace.cc",
+     "reading_workspace.h",
+   ]
+-  public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+   deps = [
+     ":aegis_agent",
++    "//chrome/browser:browser_process",
+     "//chrome/browser/aegis",
+     "//chrome/browser/aegis:agent_core",
+     "//chrome/browser/aegis:model_provider_policy",
+-- 
+2.52.0
+

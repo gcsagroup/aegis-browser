@@ -1,0 +1,30 @@
+From 85b969fc5451539e9352cf10a26b980a1386d934 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 18:38:24 +0800
+Subject: [PATCH] fix(access): validate async site mutations before publication
+
+---
+ .../browser/aegis/access/access_service_coordinator.cc | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index e37ac3bd1f7a6f1333042cec41239108a07792eb..fbc06cf441a257021671d13a5b9e2e9ea1f10547 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -312,12 +312,10 @@ void AccessServiceCoordinator::OnAsyncPrepared(
+     return;
+   }
+   transaction->candidate = std::move(*result.candidate);
+-  if (transaction->pending.candidate.group.website_context) {
+-    if (auto failure = ValidateTransportScope(*transaction,
+-            transaction->pending.candidate.members.front().policy.mode)) {
+-      FailTransaction(std::move(transaction), *failure);
+-      return;
+-    }
++  if (auto failure = ValidateTransportScope(
++          *transaction, transaction->pending.candidate.members.front().policy.mode)) {
++    FailTransaction(std::move(transaction), *failure);
++    return;
+   }
+   if (auto failure = BeginPublication(*transaction)) {
+     FailTransaction(std::move(transaction), *failure);

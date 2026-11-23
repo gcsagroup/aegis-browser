@@ -1,4 +1,4 @@
-package app.gcsa.aegis.qa.driver;
+package com.gcsa.aegis.qa.driver;
 
 import android.app.Activity;
 import android.app.Instrumentation;
@@ -34,9 +34,13 @@ import org.json.JSONObject;
 
 /** 一次性真机验收驱动，不是产品 Agent，也不能证明模型任务完成。 */
 public final class Driver extends Instrumentation {
-  private static final String BROWSER = "app.gcsa.aegis";
-  private static final String HELPER = "app.gcsa.aegis.qa.driver";
-  private static final String PROFILE = "/data/user/0/app\\.gcsa\\.aegis/aegis-test-user-data-[a-z0-9-]+";
+  private static final String BROWSER = "com.gcsa.aegis";
+  private static final String HELPER = "com.gcsa.aegis.qa.driver";
+  private static final String BROWSER_PACKAGE = Pattern.quote(BROWSER);
+  private static final Pattern PROFILE = Pattern.compile(
+      "/data/user/0/" + BROWSER_PACKAGE + "/aegis-test-user-data-[a-z0-9-]+");
+  private static final Pattern OPEN_PROFILE = Pattern.compile(
+      " -> (/data/(?:user/0|data)/" + BROWSER_PACKAGE + "(?:/[^\\r\\n]*?)?)/(?:Default|Profile [0-9]+)/");
   private UiAutomation automation;
   private JSONObject request;
   private boolean coverageRequested;
@@ -158,7 +162,7 @@ public final class Driver extends Instrumentation {
     unlocked();
     String profile = request.getString("profile");
     String expectedHash = request.getString("apkSha256");
-    check(profile.matches(PROFILE) && expectedHash.matches("[a-f0-9]{64}"), "候选或独立资料参数无效");
+    check(PROFILE.matcher(profile).matches() && expectedHash.matches("[a-f0-9]{64}"), "候选或独立资料参数无效");
     check(shell("am get-current-user").trim().equals("0"), "当前不是指定 Android 用户");
     String apk = getTargetContext().getPackageManager().getApplicationInfo(BROWSER, 0).sourceDir;
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -170,11 +174,16 @@ public final class Driver extends Instrumentation {
     String pid = shell("pidof " + BROWSER).trim();
     check(pid.matches("[0-9]+"), "未找到唯一浏览器进程");
     String descriptors = shell("run-as " + BROWSER + " ls -l /proc/" + pid + "/fd");
-    Matcher paths = Pattern.compile(" -> (/data/(?:user/0|data)/app\\.gcsa\\.aegis/[^\\r\\n]*?)/(?:Default|Profile [0-9]+)/").matcher(descriptors);
+    check(hasVerifiedProfile(profile, descriptors), "拒绝默认资料或未经证实的独立 Profile");
+    check(shell("pidof " + BROWSER).trim().equals(pid), "浏览器进程已变化，请重新检查");
+  }
+
+  static boolean hasVerifiedProfile(String profile, String descriptors) {
+    if (!PROFILE.matcher(profile).matches()) return false;
+    Matcher paths = OPEN_PROFILE.matcher(descriptors);
     Set<String> roots = new HashSet<>();
     while (paths.find()) roots.add(paths.group(1).replace("/data/data/", "/data/user/0/"));
-    check(roots.size() == 1 && roots.contains(profile), "拒绝默认资料或未经证实的独立 Profile");
-    check(shell("pidof " + BROWSER).trim().equals(pid), "浏览器进程已变化，请重新检查");
+    return roots.size() == 1 && roots.contains(profile);
   }
 
   private static String hex(byte[] data) {
@@ -319,6 +328,34 @@ public final class Driver extends Instrumentation {
         ";category=" + lastFailure + ";activePackage=" + activeWindowPackage());
   }
 
+  private static void profileGuardSelfTest() throws GuardFailure {
+    String profile = "/data/user/0/com.gcsa.aegis/aegis-test-user-data-fixture";
+    String opened = "42 -> " + profile + "/Default/History";
+    String aliasProfile = profile.replace("/data/user/0/", "/data/data/");
+    String alias = "43 -> " + aliasProfile + "/Profile 1/History";
+    check(hasVerifiedProfile(profile, opened) && hasVerifiedProfile(profile, alias)
+        && hasVerifiedProfile(profile, opened + "\n" + alias) && !hasVerifiedProfile(aliasProfile, alias),
+        "独立资料及其别名处理错误");
+    for (String wrong : new String[] {
+        profile.replace("com.gcsa.aegis", "app.gcsa.aegis"),
+        profile.replace("com.gcsa.aegis", "com.gcsa.aegis.debug"),
+        profile.replace("com.gcsa.aegis", "com-gcsa.aegis"),
+        profile.replace("com.gcsa.aegis", "com.gcsa-aegis"),
+        profile.replace("/user/0/", "/user/10/"),
+    }) {
+      String mismatched = "43 -> " + wrong + "/Profile 1/History";
+      check(!hasVerifiedProfile(wrong, mismatched) && !hasVerifiedProfile(profile, mismatched),
+          "不匹配的资料没有被拒绝");
+    }
+    String defaultRoot = "/data/user/0/com.gcsa.aegis/app_chrome";
+    String defaultProfile = "43 -> " + defaultRoot + "/Default/History";
+    String otherProfile = opened.replace("-fixture/", "-other/");
+    check(!hasVerifiedProfile(profile, "") && !hasVerifiedProfile(profile, otherProfile)
+        && !hasVerifiedProfile(defaultRoot, defaultProfile) && !hasVerifiedProfile(profile, defaultProfile)
+        && !hasVerifiedProfile(profile, opened + "\n" + defaultProfile)
+        && !hasVerifiedProfile(profile, opened + "\n" + otherProfile), "未拒绝未经证实或多个资料目录");
+  }
+
   private JSONObject selfTest() throws Exception {
     Fixture.resetLifecycle();
     Activity[] fixture = new Activity[1];
@@ -358,6 +395,7 @@ public final class Driver extends Instrumentation {
       try { requirePackage(fixtureRoot, BROWSER); }
       catch (GuardFailure expected) { refused = true; }
       check(refused, "错误应用没有被拒绝");
+      profileGuardSelfTest();
       passed(results, "wrong-package-rejected");
       phase = "密码框";
       String password = find(edited, "password", true);

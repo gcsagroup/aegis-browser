@@ -1,15 +1,10 @@
-From 9a959056a698822b5ff4b1213b7dce61f235289f Mon Sep 17 00:00:00 2001
+From 687fc44781ee34d6b2dce78437b4304345e33a46 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 01:03:28 +0800
 Subject: [PATCH] fix(settings): align Lit event handlers and CSS with M153
  lint
 
 ---
- .../settings/downloads_page/downloads_page.css     |  4 ++++
- .../settings/downloads_page/downloads_page.html.ts | 14 +++++++-------
- .../settings/downloads_page/downloads_page.ts      |  6 +++---
- chrome/browser/ui/webui/help/aegis_github_update.h |  6 +++---
- 4 files changed, 17 insertions(+), 13 deletions(-)
 
 diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.css b/chrome/browser/resources/settings/downloads_page/downloads_page.css
 index e43d63ce4f5a83d60dc9be545461946a29243180..3d281247297dda3db5897b3629be63cf99a22354 100644
@@ -149,6 +144,3 @@ index 4c5965f2f18f9771ec5a2b7d2a3131631b0725e0..9de22790626297464aad394f90c9cd9f
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

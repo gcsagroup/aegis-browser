@@ -1,19 +1,9 @@
-From 284aa5b16fa80df0907facf37bf53a3022e3c5b3 Mon Sep 17 00:00:00 2001
+From ed64782f582ea75b7c602ba23ade88d80ea4c9c1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 20:28:51 +0800
 Subject: [PATCH] feat(aegis): explain privacy actions before execution
 
 ---
- .../aegis/aegis_phish_blocking_page.cc        |  90 +++++-----
- .../aegis_phish_blocking_page_unittest.cc     |  16 +-
- chrome/browser/aegis/aegis_service.cc         |  13 ++
- chrome/browser/resources/aegis/aegis.css      | 157 ++++++++++++++++-
- chrome/browser/resources/aegis/aegis.html     |  62 ++++++-
- chrome/browser/resources/aegis/aegis.ts       |  92 +++++++++-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     | 164 ++++++++++++++----
- .../ui/webui/aegis/aegis_ui_handler.cc        |  23 ++-
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   1 +
- 9 files changed, 520 insertions(+), 98 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 index d9c6fe52d7f73fc2229282b5d728347e70a900ad..7c9fd77ff199d4084c63bed8d2841df9d94100c9 100644
@@ -1129,6 +1119,3 @@ index f304cee99d3122769fe67cbd14ab16a756bdb2a8..933f9248d851b6654a1fa8b697399945
    void HandleSetOllamaSettings(const base::ListValue& args);
    void HandleProbeOllama(const base::ListValue& args);
    void OnFilterListsUpdated(std::string callback_id, bool ok);
--- 
-2.52.0
-

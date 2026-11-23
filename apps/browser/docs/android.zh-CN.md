@@ -7,7 +7,7 @@
 ## 当前证据边界
 
 - Android 使用正式 Stable `155.0.8059.39`，桌面使用 `155.0.8059.40`。Android 保留独立的 `ci-pins/android.json` 与 `patches-android/` 输入。
-- 预留 application ID 为 `app.gcsa.aegis`；预留不证明已经形成有效包或 Play 身份。
+- 预留 application ID 为 `com.gcsa.aegis`；预留不证明已经形成有效包或 Play 身份。
 - 2026-10-09 源码候选为 Ver 2.2 (144)，versionCode `2002000144`，含276个Chromium补丁与3个V8补丁。完整Chromium重放通过，与已验证桌面源码仅有官方 `chrome/VERSION` 差异；共享Agent修复和桌面手势的平台限制均保留，不会在Android开启桌面手势。APK构建、签名、包身份及真机验收仍待完成。
 - 当前没有绑定身份的 APK 或 AAB。即使存在 `$HOME/Desktop/GCSA-aegis.apk` 之类的历史文件，也不能映射到当前源码，更不是 RC。
 - v2 源码会解析全页 Agent 标签背后的公开网页，并把当前页面任务绑定到该文档。页面采集、脱敏、导航失效和结果仍需真机验收。
@@ -45,7 +45,7 @@ pnpm --filter @gcsa-aegis/browser package:android
 
 - `$CHROMIUM_ROOT/src/out/AegisAndroid/apks/ChromePublic.apk`
 - `apps/browser/dist/GCSA-aegis.apk`
-- application ID：`app.gcsa.aegis`
+- application ID：`com.gcsa.aegis`
 - 启动器名称：`GCSA-aegis`
 
 开展商店工作前，还必须定义并验证 AAB 路径和 Play 签名身份。

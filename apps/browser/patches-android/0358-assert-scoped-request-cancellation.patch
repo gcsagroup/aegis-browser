@@ -1,0 +1,33 @@
+From 52b661d301b489029d9e561585a576a2dec57045 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 20:23:41 +0800
+Subject: [PATCH] test(access): check the cancelled request within shared
+ ownership
+
+---
+ .../access/access_proxying_url_loader_factory_browsertest.cc | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 415ba8b4c62f01e533349044dfc826fcf55e79ec..9d40bbc7cf13d45f979a2c3f74363af687f84473 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -2963,6 +2963,9 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   auto* dispatch_state =
+       AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+   ASSERT_NE(dispatch_state, nullptr);
++  // Other page requests may also be registered for this profile.
++  const size_t ownership_before = dispatch_state->ownership().size();
++  ASSERT_GE(ownership_before, 1u);
+   const AccessBlockAndCancelResult result =
+       dispatch_state->InstallBlockBarrierAndCancelMatching(
+           {"block-browser-0136", 1, std::move(selector)});
+@@ -2972,7 +2975,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+             aegis_access::RequestOwnershipStatus::kOk);
+   EXPECT_EQ(result.matched_requests, 1u);
+   EXPECT_EQ(result.terminated_requests, 1u);
+-  EXPECT_EQ(dispatch_state->ownership().size(), 0u);
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before - 1u);
+ 
+   EXPECT_TRUE(base::test::RunUntil(
+       [&] { return PendingFetchState() == "blocked"; }));

@@ -1,0 +1,52 @@
+From cf032e99866aaedf7652f4d629699a5de8d253a0 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Tue, 17 Nov 2026 20:55:17 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=90=8C=E6=AD=A5=E7=A7=BB=E5=8A=A8=E7=AB=AF?=
+ =?UTF-8?q?=E8=AE=BE=E7=BD=AE=E5=85=A5=E5=8F=A3=E8=A6=86=E7=9B=96=E6=96=87?=
+ =?UTF-8?q?=E4=BB=B6?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+
+diff --git a/chrome/browser/resources/aegis/mobile_settings.ts b/chrome/browser/resources/aegis/mobile_settings.ts
+index 42668a449813f680fefad3ca859c4dd610c5cd11..fcc98dbb556913416e3c653ae9553e4268ba73e6 100644
+--- a/chrome/browser/resources/aegis/mobile_settings.ts
++++ b/chrome/browser/resources/aegis/mobile_settings.ts
+@@ -13,12 +13,8 @@ export function initializeMobileSettings(
+     {id: 'privacy', title: text('隐私与防护', 'Privacy and protection', '隱私與防護'),
+       hint: text('跟踪拦截、广告过滤与网站防护', 'Trackers, filters and website protection', '追蹤攔截、廣告過濾與網站防護'),
+       selectors: '.overview, .activity, .modules, .diagnostics, .filters'},
+-    {id: 'enhancements', title: text('网站增强与脚本', 'Website enhancements and scripts', '網站增強與腳本'),
+-      hint: text('Android 版暂未提供', 'Not yet available on Android', 'Android 版暫未提供'), selectors: ''},
+-    {id: 'reading', title: text('阅读与 Markdown', 'Reading and Markdown', '閱讀與 Markdown'),
++    {id: 'reading', title: text('阅读与翻译', 'Reading and translation', '閱讀與翻譯'),
+       hint: text('阅读资料库、工作区与本机翻译', 'Reading library, workspaces and local translation', '閱讀資料庫、工作區與本機翻譯'), selectors: ''},
+-    {id: 'gestures', title: text('鼠标手势', 'Mouse gestures', '滑鼠手勢'),
+-      hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
+     {id: 'ai', title: text('AI 与模型', 'AI and models', 'AI 與模型'),
+       hint: text('模型服务、网页摘要与助手', 'Model services, page summaries and assistant', '模型服務、網頁摘要與助手'),
+       selectors: '.privacy, #browser-agent-section'},
+@@ -26,8 +22,6 @@ export function initializeMobileSettings(
+       hint: text('Metalink 下载任务与下载记录', 'Metalink tasks and download history', 'Metalink 下載工作與下載記錄'), selectors: '.downloads'},
+     {id: 'ocr', title: text('图片文字识别', 'Image text recognition', '圖片文字辨識'),
+       hint: text('设置本机识别与服务器兜底', 'Choose a server for OCR fallback', '設定本機辨識與伺服器備援'), selectors: '#image-ocr-settings'},
+-    {id: 'tools', title: text('本机工具连接', 'Local tool connections', '本機工具連線'),
+-      hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
+     {id: 'experiments', title: text('实验功能', 'Experiments', '實驗功能'),
+       hint: text('本机实验模型与使用说明', 'Local experimental models and usage notes', '本機實驗模型與使用說明'), selectors: ''},
+   ];
+@@ -72,9 +66,9 @@ export function initializeMobileSettings(
+       card.className = 'mobile-settings-card';
+       const description = document.createElement('p');
+       description.textContent = group.id === 'reading' ? text(
+-          '整理已打开网页、保存阅读资料和批注，或管理本机翻译语言包。Android 版暂未提供 Markdown 阅读器。',
+-          'Organize open pages, save reading material and notes, or manage local translation packs. The Markdown reader is not yet available on Android.',
+-          '整理已開啟網頁、儲存閱讀資料和批註，或管理本機翻譯語言包。Android 版暫未提供 Markdown 閱讀器。') : group.hint;
++          '整理已打开网页、保存阅读资料和批注，或管理本机翻译语言包。',
++          'Organize open pages, save reading material and notes, or manage local translation packs.',
++          '整理已開啟網頁、儲存閱讀資料和批註，或管理本機翻譯語言包。') : group.hint;
+       card.append(description);
+       const actions: Array<[string, string]> = group.id === 'reading' ? [
+         ['reading', text('本机翻译设置', 'Local translation settings', '本機翻譯設定')],

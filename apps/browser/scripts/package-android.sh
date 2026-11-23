@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 把 ChromePublic.apk 拷成可侧载的 GCSA-aegis.apk（包名 app.gcsa.aegis）。
+# 把 ChromePublic.apk 拷成可侧载的 GCSA-aegis.apk（包名 com.gcsa.aegis）。
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -200,4 +200,4 @@ done
 
 ls -lh "$APK_DST" "$APK_ALIAS" "$IDENTITY" "$IDENTITY.sha256"
 echo "侧载：adb install -r $APK_ALIAS"
-echo "包名：app.gcsa.aegis（Play 预留，见 apps/browser/docs/play-store.md）"
+echo "包名：com.gcsa.aegis（Play 预留，见 apps/browser/docs/play-store.md）"

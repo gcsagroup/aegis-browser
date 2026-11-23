@@ -9,6 +9,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.client import HTTPConnection
+from socketserver import TCPServer
 from urllib.parse import parse_qs, urlsplit
 
 PAYLOAD = b"Aegis Browser simulator download verification\n" * 1024
@@ -21,6 +22,13 @@ ARTICLE = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="wi
 </html>"""
 SECOND = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第二篇合成来源</title>
 <main><h1>绿地改造补充说明</h1><p>青林公园将增加 40 棵乔木，两个饮水点。施工期间部分步道临时关闭。该说明没有列出日期和预算。</p></main></html>"""
+
+
+class FixtureHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # 仅使用本机数字地址；HTTPServer 默认的反向 DNS 查询会阻塞部分 CI 主机。
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -261,7 +269,10 @@ window.addEventListener('copy',e=>{window.copyBlocked=true;e.preventDefault();})
 
 
 def self_test():
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    from unittest.mock import patch
+    # DNS 不可用时也必须立即启动；不能依赖 CI 主机的反向解析配置。
+    with patch("socket.getfqdn", side_effect=AssertionError("本机验收服务不得查询 DNS")):
+        server = FixtureHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     # 仅连接刚启动的本机服务，不接受 URL，也不自动跟随重定向。
@@ -341,6 +352,6 @@ if __name__ == "__main__":
     if args.self_test:
         self_test()
     else:
-        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+        server = FixtureHTTPServer(("127.0.0.1", args.port), Handler)
         print(json.dumps({"base_url": f"http://127.0.0.1:{server.server_port}", "download_sha256": hashlib.sha256(PAYLOAD).hexdigest(), "model": "aegis-simulator-fixture"}), flush=True)
         server.serve_forever()

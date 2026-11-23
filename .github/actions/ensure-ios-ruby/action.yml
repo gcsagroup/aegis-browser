@@ -17,25 +17,49 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: |
         set -euo pipefail
-        # mise Ruby ships a rubygems plugin that shells out to `mise reshim` on
-        # gem install; keep mise on PATH (runner tooling/bin or ~/.local/bin).
+        # Prefer a tooling bin that ships both Ruby 3.3.6 and mise. mise Ruby
+        # shells out to `mise reshim` on gem install, so mise must stay on PATH.
+        selected=""
         for candidate in \
           "${RUNNER_TOOLING_BIN:-}" \
           "${RUNNER_HOME:-}/tooling/bin" \
           "$HOME/.local/bin" \
           /opt/homebrew/bin
         do
-          if [ -n "$candidate" ] && [ -x "$candidate/mise" ]; then
-            export PATH="$candidate:$PATH"
+          if [ -n "$candidate" ] && [ -x "$candidate/ruby" ] && [ -x "$candidate/mise" ]; then
+            selected="$candidate"
             break
           fi
         done
+        if [ -z "$selected" ]; then
+          for candidate in \
+            "${RUNNER_TOOLING_BIN:-}" \
+            "${RUNNER_HOME:-}/tooling/bin" \
+            "$HOME/.local/bin" \
+            /opt/homebrew/bin
+          do
+            if [ -n "$candidate" ] && [ -x "$candidate/mise" ]; then
+              selected="$candidate"
+              break
+            fi
+          done
+        fi
+        if [ -n "$selected" ]; then
+          export PATH="$selected:$PATH"
+          printf '%s\n' "$selected" >> "$GITHUB_PATH"
+        fi
+        # Explicit mise install path wins over /usr/bin/ruby from the base PATH.
+        ruby336_bin="$HOME/.local/share/mise/installs/ruby/3.3.6/bin"
+        if [ -x "$ruby336_bin/ruby" ]; then
+          export PATH="$ruby336_bin:$PATH"
+          printf '%s\n' "$ruby336_bin" >> "$GITHUB_PATH"
+        fi
         if ! command -v ruby >/dev/null 2>&1; then
           echo "ruby missing on PATH for self-hosted runner" >&2
           exit 1
         fi
         ruby_v="$(ruby -v)"
-        echo "Using preinstalled $ruby_v"
+        echo "Using preinstalled $ruby_v ($(command -v ruby))"
         case "$ruby_v" in
           *"3.3.6"*) ;;
           *)
@@ -48,6 +72,47 @@ runs:
           exit 1
         fi
         echo "mise: $(command -v mise) ($(mise --version | head -1))"
+        # Bundler uses HTTP proxy variables for index requests. RubyGems
+        # selects the archive proxy by scheme. Recheck each fallback in order.
+        dead_proxies="$(ruby -ruri -e '
+          [%w[http_proxy HTTP_PROXY], %w[https_proxy HTTPS_PROXY]].each do |names|
+            removed = false
+            names.each do |name|
+              next unless ENV.key?(name)
+              value = ENV.fetch(name)
+              break if value.empty?
+
+              begin
+                proxy = URI.parse(value.include?("://") ? value : "http://#{value}")
+              rescue URI::InvalidURIError
+                break
+              end
+              host = proxy.is_a?(URI::HTTP) ? proxy.hostname&.downcase : nil
+              break unless %w[127.0.0.1 localhost ::1].include?(host) && (0..65535).cover?(proxy.port)
+              break if system("/usr/bin/nc", "-z", "-G", "2", host, proxy.port.to_s,
+                              out: File::NULL, err: File::NULL)
+
+              puts name
+              removed = true
+            end
+            # RubyGems and Bundler read credentials separately from the proxy
+            # URL. On fallback, keep only credentials carried in the new URL.
+            if removed
+              lower, upper = names
+              puts "#{lower}_user", "#{lower}_pass", "#{upper}_USER", "#{upper}_PASS"
+            end
+          end
+        ')"
+        if [ -n "$dead_proxies" ]; then
+          while IFS= read -r proxy_name; do
+            case "$proxy_name" in
+              http_proxy|HTTP_PROXY|https_proxy|HTTPS_PROXY|\
+              http_proxy_user|http_proxy_pass|HTTP_PROXY_USER|HTTP_PROXY_PASS|\
+              https_proxy_user|https_proxy_pass|HTTPS_PROXY_USER|HTTPS_PROXY_PASS) unset "$proxy_name" ;;
+            esac
+          done <<< "$dead_proxies"
+          echo "unreachable loopback proxy routes cleared for bundle install" >&2
+        fi
         bundle -v
         bundle config set --local path vendor/bundle
         bundle install --jobs 4 --retry 3

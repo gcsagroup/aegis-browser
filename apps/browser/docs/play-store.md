@@ -18,7 +18,7 @@ No Play action is authorized by this draft.
 
 | Item | Reserved target |
 |---|---|
-| Application ID | `app.gcsa.aegis` |
+| Application ID | `com.gcsa.aegis` |
 | Display name | GCSA-aegis |
 | Short name | Aegis |
 | Default listing language | Simplified Chinese |

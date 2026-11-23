@@ -18,8 +18,8 @@ import {
 
 const hash = 'a'.repeat(64);
 const now = Date.now();
-const options = {profile: '/data/user/0/app.gcsa.aegis/aegis-test-user-data-r1', apkSha256: hash, node: '0.2', text: '帮我总结页面内容 🔋'};
-const snapshot = () => ({package: 'app.gcsa.aegis', profile: options.profile, apkSha256: hash,
+const options = {profile: '/data/user/0/com.gcsa.aegis/aegis-test-user-data-r1', apkSha256: hash, node: '0.2', text: '帮我总结页面内容 🔋'};
+const snapshot = () => ({package: 'com.gcsa.aegis', profile: options.profile, apkSha256: hash,
   snapshotSha256: hash, observedAt: new Date(now).toISOString(),
   nodes: [{node: '0.2', visible: true, enabled: true, editable: true, clickable: true, password: false}]});
 
@@ -108,13 +108,17 @@ test('工具自测必须逐项返回固定六个 fixture 且不冒充浏览器�
 });
 
 test('JaCoCo XML 只用完整 Driver class 集和真实源码行计数生成百分比', () => {
-  const classes = ['app/gcsa/aegis/qa/driver/Driver', 'app/gcsa/aegis/qa/driver/Driver$Fixture',
-    'app/gcsa/aegis/qa/driver/Driver$GuardFailure'];
-  const xml = '<report><package name="app/gcsa/aegis/qa/driver">' +
+  const driverPackage = 'com/gcsa/aegis/qa/driver';
+  const classes = ['Driver', 'Driver$Fixture', 'Driver$GuardFailure'].map(name => `${driverPackage}/${name}`);
+  const xml = `<report><package name="${driverPackage}">` +
     classes.map(name => '<class name="' + name + '" sourcefilename="Driver.java"/>').join('') +
     '<sourcefile name="Driver.java"><counter type="LINE" missed="3" covered="5"/></sourcefile></package></report>';
   assert.deepEqual(summarizeJacocoXml(xml, classes),
     {measurement: 'jacoco-line-counter', covered: 5, missed: 3, total: 8, percent: 62.5});
+  for (const wrongPackage of ['app/gcsa/aegis/qa/driver', 'com/gcsa/aegis/qa/driver-extra']) {
+    const wrongClasses = classes.map(name => name.replace(driverPackage, wrongPackage));
+    assert.throws(() => summarizeJacocoXml(xml.replaceAll(driverPackage, wrongPackage), wrongClasses), /缺少 Driver package/);
+  }
   assert.throws(() => summarizeJacocoXml(xml, classes.slice(1)));
   assert.throws(() => summarizeJacocoXml(xml.replace('covered="5"', 'covered="0"'), classes));
   assert.throws(() => summarizeJacocoXml(xml.replace('<sourcefile name="Driver.java">', '<sourcefile name="Other.java">'), classes));

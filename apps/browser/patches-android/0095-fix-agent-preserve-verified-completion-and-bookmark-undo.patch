@@ -1,15 +1,9 @@
-From df4efda340bb541df275f07a19680801e16011f4 Mon Sep 17 00:00:00 2001
+From 8e1491407b7b06879494667d35724414b452f1b1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 02:55:19 +0800
 Subject: [PATCH] fix(agent): preserve verified completion and bookmark undo
 
 ---
- .../aegis/agent/aegis_agent_service.cc        | 73 +++++++++++++++++++
- .../browser/aegis/agent/aegis_agent_service.h |  1 +
- .../agent/aegis_agent_service_unittest.cc     | 72 ++++++++++++++++++
- chrome/browser/aegis/agent/agent_planner.cc   | 15 ++++
- .../aegis/agent/agent_planner_unittest.cc     | 39 ++++++++++
- 5 files changed, 200 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 index ba75b1faa7c445b6461e9dfbc307757f41ed7f70..e6b3660253e2391b4505d49d62038162a9551591 100644
@@ -287,6 +281,3 @@ index 89ce65e2a746ae15d456da92259107672d1a9463..1665b1fe93b81103291423243cfa95fd
  TEST(AegisAgentPlannerTest, PreopenedPagePlanMustObserveBeforeActing) {
    AgentToolRegistry registry;
    std::string error;
--- 
-2.52.0
-
