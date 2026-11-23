@@ -22,10 +22,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,7 +35,14 @@ import org.json.JSONObject;
 public final class Driver extends Instrumentation {
   private static final String BROWSER = "com.gcsa.aegis";
   private static final String HELPER = "com.gcsa.aegis.qa.driver";
-  private static final String PROFILE = "/data/user/0/app\\.gcsa\\.aegis/aegis-test-user-data-[a-z0-9-]+";
+  private static final String DATA_ALIAS = "/data/data/";
+  private static final String DATA_ROOT = "/data/user/0/";
+  private static final String BROWSER_DATA = DATA_ROOT + BROWSER + "/";
+  private static final Pattern TEST_PROFILE = Pattern.compile(
+      Pattern.quote(BROWSER_DATA) + "aegis-test-user-data-[a-z0-9-]+");
+  private static final Pattern PROFILE_ENTRY = Pattern.compile("/(?:Default|Profile [0-9]+)(?:/|\\z)");
+  private static final Pattern FD_MODE = Pattern.compile("[0-9a-fA-F]{1,4}");
+  private static final String DELETED = " (deleted)";
   private UiAutomation automation;
   private JSONObject request;
   private boolean coverageRequested;
@@ -141,10 +147,15 @@ public final class Driver extends Instrumentation {
   }
 
   private String shell(String command) throws Exception {
-    // 调用者只有下方三个固定的只读命令；从不接受外部命令文本。
+    // 只接受本类构造的固定只读命令。
     try (ParcelFileDescriptor descriptor = automation.executeShellCommand(command);
-         FileInputStream input = new FileInputStream(descriptor.getFileDescriptor());
-         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+         FileInputStream input = new FileInputStream(descriptor.getFileDescriptor())) {
+      return readText(input);
+    }
+  }
+
+  private static String readText(InputStream input) throws Exception {
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       byte[] buffer = new byte[4096];
       for (int size; (size = input.read(buffer)) != -1;) {
         check(output.size() + size <= 2 * 1024 * 1024, "目标元数据超出读取上限");
@@ -154,11 +165,24 @@ public final class Driver extends Instrumentation {
     }
   }
 
+  private String profileReader() throws Exception {
+    try (InputStream input = getTargetContext().getAssets().open("read-profile-fds.sh")) {
+      return readText(input);
+    }
+  }
+
+  private String shellWithScript(String script, String command) throws Exception {
+    // UiAutomation splits on whitespace. Pass an encoded script as a single argument and decode it to stdin.
+    String encoded = Base64.encodeToString(script.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+    return shell("sh -c echo${IFS}\"$0\"|base64${IFS}-d|\"$@\" " + encoded + " " + command);
+  }
+
   private void browserGuard() throws Exception {
     unlocked();
     String profile = request.getString("profile");
     String expectedHash = request.getString("apkSha256");
-    check(profile.matches(PROFILE) && expectedHash.matches("[a-f0-9]{64}"), "候选或独立资料参数无效");
+    check(TEST_PROFILE.matcher(profile).matches() && expectedHash.matches("[a-f0-9]{64}"),
+        "候选或独立资料参数无效");
     check(shell("am get-current-user").trim().equals("0"), "当前不是指定 Android 用户");
     String apk = getTargetContext().getPackageManager().getApplicationInfo(BROWSER, 0).sourceDir;
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -169,12 +193,39 @@ public final class Driver extends Instrumentation {
     check(hex(digest.digest()).equals(expectedHash), "运行中的 APK 不属于指定候选");
     String pid = shell("pidof " + BROWSER).trim();
     check(pid.matches("[0-9]+"), "未找到唯一浏览器进程");
-    String descriptors = shell("run-as " + BROWSER + " ls -l /proc/" + pid + "/fd");
-    Matcher paths = Pattern.compile(" -> (/data/(?:user/0|data)/app\\.gcsa\\.aegis/[^\\r\\n]*?)/(?:Default|Profile [0-9]+)/").matcher(descriptors);
-    Set<String> roots = new HashSet<>();
-    while (paths.find()) roots.add(paths.group(1).replace("/data/data/", "/data/user/0/"));
-    check(roots.size() == 1 && roots.contains(profile), "拒绝默认资料或未经证实的独立 Profile");
+    String readDescriptors = "run-as " + BROWSER + " sh -s -- " + pid;
+    check(hasActiveProfile(shellWithScript(profileReader(), readDescriptors), profile),
+        "拒绝默认资料、不完整清单或未经证实的独立 Profile");
     check(shell("pidof " + BROWSER).trim().equals(pid), "浏览器进程已变化，请重新检查");
+  }
+
+  private static boolean hasActiveProfile(String descriptors, String expectedProfile) {
+    String[] rows = descriptors.split("\0", -1);
+    int length = rows.length;
+    if (length < 2 || length % 2 != 0 || !rows[length - 2].equals("end") || !rows[length - 1].isEmpty()) {
+      return false;
+    }
+    boolean profileFileOpen = false;
+    for (int index = 0; index < length - 2; index += 2) {
+      String mode = rows[index];
+      String target = rows[index + 1];
+      if (!FD_MODE.matcher(mode).matches() || target.isEmpty()) return false;
+      if (target.startsWith(DATA_ALIAS)) target = DATA_ROOT + target.substring(DATA_ALIAS.length());
+      if (!target.startsWith(BROWSER_DATA)) continue;
+      boolean deleted = target.endsWith(DELETED);
+      if (deleted) target = target.substring(0, target.length() - DELETED.length());
+      for (String part : target.substring(BROWSER_DATA.length()).split("/", -1)) {
+        if (part.isEmpty() || part.equals(".") || part.equals("..")) return false;
+      }
+      Matcher entry = PROFILE_ENTRY.matcher(target);
+      if (!entry.find()) continue;
+      if (!target.substring(0, entry.start()).equals(expectedProfile)) return false;
+      boolean regularFile = (Integer.parseInt(mode, 16) & 0xf000) == 0x8000;
+      if (regularFile && !deleted && entry.group().endsWith("/") && entry.end() < target.length()) {
+        profileFileOpen = true;
+      }
+    }
+    return profileFileOpen;
   }
 
   private static String hex(byte[] data) {
@@ -293,6 +344,75 @@ public final class Driver extends Instrumentation {
     results.put(item);
   }
 
+  private JSONObject stableFixtureSnapshot(String property, Object value) throws Exception {
+    String previousDigest = null;
+    String lastFailure = "快照尚未稳定";
+    long deadline = SystemClock.uptimeMillis() + 5000;
+    do {
+      try {
+        check(Fixture.focused, "自测窗口尚未聚焦");
+        JSONObject state = snapshot(HELPER);
+        // A settled accessibility tree may still predate the fixture's UI update.
+        find(state, property, value);
+        // The fixture always includes one password field, which must be observed and redacted.
+        find(state, "password", true);
+        String digest = state.getString("snapshotSha256");
+        if (digest.equals(previousDigest)) return state;
+        previousDigest = digest;
+        lastFailure = "快照尚未稳定";
+      } catch (GuardFailure error) {
+        previousDigest = null;
+        lastFailure = error.getMessage();
+      }
+      SystemClock.sleep(50);
+    } while (SystemClock.uptimeMillis() < deadline);
+    throw new GuardFailure("界面未就绪；" + Fixture.lifecycle() +
+        ";category=" + lastFailure + ";activePackage=" + activeWindowPackage());
+  }
+
+  private void testProfileIsolation() throws Exception {
+    String fixture = "/aegis-test-user-data-fixture";
+    String packageRoot = DATA_ROOT + BROWSER;
+    String profile = packageRoot + fixture;
+    String alias = DATA_ALIAS + BROWSER + fixture;
+    String end = "end\0";
+    String opened = "81a4\0" + profile + "/Default/History\0";
+    String aliasEntry = "81a4\0" + alias + "/Profile 1/History\0";
+    String reader = profileReader();
+    String readerFixture = "sleep 30 </dev/null >/dev/null 2>&1 &\n"
+        + "holder=$!\ntrap 'kill \"$holder\" 2>/dev/null || :; wait \"$holder\" 2>/dev/null || :' EXIT\n"
+        + "set -- \"$holder\"\nsleep 0.1\n";
+    String observed = shellWithScript(readerFixture + reader, "sh -s");
+    check(TEST_PROFILE.matcher(profile).matches(), "当前浏览器的独立 Profile 被拒绝");
+    check(observed.endsWith("\0" + end) && !shellWithScript("set -- 0\n" + reader, "sh -s").endsWith(end),
+        "描述符命令完成标记不可靠");
+    check(hasActiveProfile(opened + aliasEntry + end, profile),
+        "未将 /data/data 别名绑定到同一个 Profile");
+    for (String invalid : new String[] {
+        opened,
+        opened + "?\0unknown\0" + end,
+        "41ed\0" + profile + "/Default\0" + end,
+        "41ed\0" + profile + "/Default/Local Storage\0" + end,
+        "81a4\0" + profile + "/Default\n\0" + end,
+        "81a4\0" + profile + "/Default/..\0" + end,
+        "81a4\0" + profile + "/Default/History\n" + DELETED + "\0" + end,
+        "81a4\0/fixture/2 -> " + profile + "/Default/History\0" + end,
+        "81a4\0/data/user/0/app.gcsa.aegis" + fixture + "/Default/History\0" + end,
+        "81a4\0" + packageRoot + ".other" + fixture + "/Default/History\0" + end,
+    }) {
+      check(!hasActiveProfile(invalid, profile), "接受了未经证实的独立 Profile");
+    }
+    for (String other : new String[] {
+        packageRoot + "/Default/History",
+        DATA_ALIAS + BROWSER + "/Profile 1/History",
+        packageRoot + "/app_chrome/Default",
+        packageRoot + "/app_chrome/Default/History" + DELETED,
+    }) {
+      check(!hasActiveProfile(opened + "41ed\0" + other + "\0" + end, profile),
+          "未拒绝与默认 Profile 混用的独立资料");
+    }
+  }
+
   private JSONObject selfTest() throws Exception {
     Fixture.resetLifecycle();
     Activity[] fixture = new Activity[1];
@@ -307,45 +427,46 @@ public final class Driver extends Instrumentation {
     }
     check(fixture[0] != null, "自测 Activity 未创建");
     Activity activity = fixture[0];
+    String phase = "首次观察";
     try {
       waitForIdleSync();
       JSONArray results = new JSONArray();
-      JSONObject initial = null;
-      String lastFailure = "尚未观察";
-      long deadline = SystemClock.uptimeMillis() + 5000;
-      do {
-        try { initial = snapshot(HELPER); break; }
-        catch (GuardFailure error) {
-          lastFailure = error.getMessage();
-          SystemClock.sleep(50);
-        }
-      } while (SystemClock.uptimeMillis() < deadline);
-      check(initial != null, "自测界面未就绪；" + Fixture.lifecycle() + ";category=" + lastFailure +
-          ";activePackage=" + activeWindowPackage());
-      String input = find(initial, "label", "中文目标输入");
+      String inputLabel = "中文目标输入";
+      JSONObject initial = stableFixtureSnapshot("label", inputLabel);
+      String input = find(initial, "label", inputLabel);
       String text = "帮我总结页面内容：电池续航18小时 🔋";
+      phase = "Unicode 输入";
       perform(HELPER, initial, initial.getString("snapshotSha256"), input, "set-text", text);
-      JSONObject edited = snapshot(HELPER);
-      find(edited, "text", text);
+      phase = "核对输入与密码框";
+      JSONObject edited = stableFixtureSnapshot("text", text);
       passed(results, "unicode-input");
+      phase = "过期快照";
       boolean refused = false;
       try { perform(HELPER, edited, initial.getString("snapshotSha256"), input, "set-text", "不应写入"); }
       catch (GuardFailure expected) { refused = true; }
       check(refused, "过期快照没有被拒绝");
       passed(results, "stale-snapshot-rejected");
+      phase = "错误应用";
+      AccessibilityNodeInfo fixtureRoot = root(HELPER);
       refused = false;
-      try { requirePackage(root(HELPER), BROWSER); }
+      try { requirePackage(fixtureRoot, BROWSER); }
       catch (GuardFailure expected) { refused = true; }
       check(refused, "错误应用没有被拒绝");
+      testProfileIsolation();
       passed(results, "wrong-package-rejected");
+      phase = "密码框";
+      String password = find(edited, "password", true);
       refused = false;
-      try { perform(HELPER, edited, edited.getString("snapshotSha256"), find(edited, "password", true), "set-text", "不应写入"); }
-      catch (GuardFailure expected) { refused = true; }
+      try { perform(HELPER, edited, edited.getString("snapshotSha256"), password, "set-text", "不应写入"); }
+      catch (GuardFailure expected) { refused = expected.getMessage().equals("节点不可操作，或属于密码框"); }
       check(refused, "密码框写入没有被拒绝");
       passed(results, "password-edit-rejected");
-      perform(HELPER, edited, edited.getString("snapshotSha256"), find(edited, "text", "确认中文输入"), "click", "");
-      JSONObject finalState = snapshot(HELPER);
-      find(finalState, "text", "已收到：" + text);
+      phase = "点击";
+      String clickLabel = "确认中文输入";
+      JSONObject beforeClick = stableFixtureSnapshot("text", clickLabel);
+      perform(HELPER, beforeClick, beforeClick.getString("snapshotSha256"), find(beforeClick, "text", clickLabel), "click", "");
+      phase = "核对点击结果";
+      JSONObject finalState = stableFixtureSnapshot("text", "已收到：" + text);
       passed(results, "click-updates-result");
       check(!finalState.toString().contains("fixture-password"), "密码框内容没有正确隐藏");
       passed(results, "password-value-hidden");
@@ -353,6 +474,8 @@ public final class Driver extends Instrumentation {
       finalState.put("selfTestResults", results);
       finalState.put("browserTested", false);
       return finalState;
+    } catch (GuardFailure error) {
+      throw new GuardFailure("自测" + phase + "：" + error.getMessage());
     } finally {
       runOnMainSync(activity::finish);
     }
@@ -387,9 +510,12 @@ public final class Driver extends Instrumentation {
       EditText input = new EditText(this);
       input.setContentDescription("中文目标输入");
       input.setSingleLine(false);
+      // Only accessibility actions drive this synthetic fixture's text fields.
+      input.setShowSoftInputOnFocus(false);
       EditText password = new EditText(this);
       password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
       password.setText("fixture-password");
+      password.setShowSoftInputOnFocus(false);
       Button button = new Button(this);
       button.setText("确认中文输入");
       TextView result = new TextView(this);
