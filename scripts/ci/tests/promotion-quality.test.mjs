@@ -65,6 +65,28 @@ test('quality workflow state requires exact push identity and both mandatory job
   assert.equal(qualityWorkflowRunState(run, [{...jobs[0], run_attempt: 2}, jobs[1]], expected), 'failure');
 });
 
+test('advisory job failure does not change the quality conclusion promotion reads', () => {
+  const expected = {repo: promotionConfig.personalRepo, branch: 'develop', sha: 'abc'};
+  const run = {
+    id: 8,
+    event: 'push',
+    head_branch: expected.branch,
+    head_sha: expected.sha,
+    path: '.github/workflows/quality.yml',
+    repository: {full_name: expected.repo},
+    status: 'completed',
+    conclusion: 'success',
+    run_attempt: 1,
+  };
+  const jobs = [
+    qualityJob(run, 'quality'),
+    qualityJob(run, 'quality-gate'),
+    qualityJob(run, 'other-platforms', 'failure'),
+  ];
+  assert.equal(qualityWorkflowRunState(run, jobs, expected), 'success');
+  assert.equal(qualityWorkflowRunState({...run, conclusion: 'failure'}, jobs, expected), 'failure');
+});
+
 test('quality verification ignores newer dispatch, PR and wrong-workflow successes', async () => {
   const commitSha = 'develop-sha';
   const exactRun = qualityRun({id: 10, branch: 'develop', sha: commitSha, conclusion: 'failure'});
