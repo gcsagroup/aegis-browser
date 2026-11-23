@@ -1,0 +1,116 @@
+{
+  "DEBIAN": {
+    "count": 2,
+    "rules": [
+      [
+        "domain",
+        "debian.org"
+      ],
+      [
+        "domain",
+        "dotdeb.org"
+      ]
+    ],
+    "sha256": "d865d67c829d0f13bf508e152ef402d5d9634227ed12a8b49434d231baf5a643"
+  },
+  "DOUBAN": {
+    "count": 3,
+    "rules": [
+      [
+        "domain",
+        "douban.com"
+      ],
+      [
+        "domain",
+        "douban.fm"
+      ],
+      [
+        "domain",
+        "doubanio.com"
+      ]
+    ],
+    "sha256": "62cfcbf5e006744783206139a2cbb6a3dffb05dbc366f1784a193e887e038619"
+  },
+  "MEITUAN": {
+    "count": 19,
+    "rules": [
+      [
+        "domain",
+        "100.me"
+      ],
+      [
+        "domain",
+        "51ping.com"
+      ],
+      [
+        "domain",
+        "baobaoaichi.cn"
+      ],
+      [
+        "domain",
+        "ddcorp.net"
+      ],
+      [
+        "domain",
+        "ddfresh.net"
+      ],
+      [
+        "domain",
+        "ddimg.mobi"
+      ],
+      [
+        "domain",
+        "ddmaicai.net"
+      ],
+      [
+        "domain",
+        "ddmc.mobi"
+      ],
+      [
+        "domain",
+        "dduser.mobi"
+      ],
+      [
+        "domain",
+        "ddxq.mobi"
+      ],
+      [
+        "domain",
+        "dianping.com"
+      ],
+      [
+        "domain",
+        "dpfile.com"
+      ],
+      [
+        "domain",
+        "imaicai.mobi"
+      ],
+      [
+        "domain",
+        "maoyan.com"
+      ],
+      [
+        "domain",
+        "meituan.com"
+      ],
+      [
+        "domain",
+        "meituan.net"
+      ],
+      [
+        "domain",
+        "mtyun.com"
+      ],
+      [
+        "domain",
+        "neixin.cn"
+      ],
+      [
+        "domain",
+        "sankuai.com"
+      ]
+    ],
+    "sha256": "7f23061fb1a46f4150077aa56c369188cfda5bb49bd99649264c5bfb7bf8efa9"
+  }
+}
