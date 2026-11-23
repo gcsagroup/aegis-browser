@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {test} from 'node:test';
-import {PACKAGE, packageApkPath, inspectProfileDescriptors, parseKeyguard,
+import {PACKAGE, committedProfileReader, packageApkPath, inspectProfileDescriptors, parseKeyguard,
   verifyTarget, inspectDevice, verifyBuildRecords, verifyCandidateFiles} from './verify-android-agent-target.mjs';
 
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -98,6 +98,48 @@ test('拒绝截断或含未解析目标的描述符记录', () => {
     {profileRoots: [], profileFileOpen: false});
 });
 
+test('同一文件描述符更换目标时清单不标记完成', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aegis-profile-fd-'));
+  try {
+    const fixture = `
+mkdir -p "$AEGIS_FD_DIR"
+: > "$AEGIS_FD_DIR/3"
+: > "$AEGIS_FD_DIR/4"
+stat() {
+  format=$3
+  shift 3
+  for fd do
+    case $format in '%f') printf '81a4\n' ;; *) printf '81a4:1:22\n' ;; esac
+  done
+}
+readlink() {
+  case $2 in
+    */3)
+      if [ -e "$AEGIS_FD_FLAG" ] && [ "$AEGIS_FD_REPLACEMENT" = yes ]; then
+        printf '/data/user/0/com.gcsa.aegis/app_chrome/Default/History'
+      else
+        printf '/data/user/0/com.gcsa.aegis/aegis-test-user-data-recovery-r1/Default/History'
+      fi
+      ;;
+    */4) : > "$AEGIS_FD_FLAG"; printf '/dev/null' ;;
+  esac
+}
+`;
+    const reader = committedProfileReader().replace('directory=/proc/$1/fd', 'directory=$AEGIS_FD_DIR');
+    const run = (replace, flag) => spawnSync('sh', ['-s', '--', '0'], {input: fixture + reader,
+      encoding: 'utf8', env: {...process.env, AEGIS_FD_REPLACEMENT: replace,
+        AEGIS_FD_DIR: path.join(root, 'fd'), AEGIS_FD_FLAG: path.join(root, flag)}});
+    const stable = run('no', 'unchanged');
+    assert.equal(stable.status, 0, stable.stderr);
+    assert.deepEqual(inspectProfileDescriptors(stable.stdout), {profileRoots: [profile], profileFileOpen: true});
+    const replaced = run('yes', 'replaced');
+    assert.equal(replaced.status, 1);
+    assert.throws(() => inspectProfileDescriptors(replaced.stdout), /清单不完整/);
+  } finally {
+    fs.rmSync(root, {recursive: true, force: true});
+  }
+});
+
 test('未知、锁定或灭屏状态不能当作可交互', () => {
   assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_ON'), unlocked);
   assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=2\n interactiveState=2'), unlocked);
@@ -143,14 +185,14 @@ test('未完成、失败、被中断、源码变化或错配构建不能验收�
   assert.throws(() => verifyBuildRecords({manifest_sha256: hash}, status, manifest, hash));
 });
 
-function deviceStub({switchUser = false, fdReadFails = false} = {}) {
+function deviceStub({switchUser = false, fdReadFails = false, driverHead = 'HEAD'} = {}) {
   const calls = [];
   const committedReader = '# Synthetic committed reader\n';
   let userReads = 0;
   const run = (program, args, options) => {
     if (program === 'git') {
       assert.equal(args[2], 'show');
-      assert.equal(args[3], 'HEAD:apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh');
+      assert.equal(args[3], driverHead + ':apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh');
       return committedReader;
     }
     assert.equal(program, '/test/adb');
@@ -192,6 +234,12 @@ test('远端 FD 枚举失败时拒绝收集目标证据', () => {
   const stub = deviceStub({fdReadFails: true});
   assert.throws(() => inspectDevice({serial: 'fixture123', adb: '/test/adb'}, stub.run), /只读命令失败/);
   assert.equal(stub.calls.some(args => args.includes('policy')), false);
+});
+
+test('宿主检查读取工具构建绑定的提交', () => {
+  const driverHead = 'a'.repeat(40);
+  const stub = deviceStub({driverHead});
+  assert.equal(inspectDevice({serial: 'fixture123', adb: '/test/adb', driverHead}, stub.run).profileFileOpen, true);
 });
 
 test('只读检查末尾重验 Android 用户', () => {

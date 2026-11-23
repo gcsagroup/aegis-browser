@@ -93,11 +93,12 @@ function command(program, args, options = {}) {
   return result.stdout;
 }
 
-export function committedProfileReader(run = command) {
-  return run('git', ['-C', repository, 'show', 'HEAD:apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh']);
+export function committedProfileReader(run = command, revision = 'HEAD') {
+  if (revision !== 'HEAD' && !/^[0-9a-f]{40}$/u.test(revision)) fail('描述符脚本提交无效');
+  return run('git', ['-C', repository, 'show', revision + ':apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh']);
 }
 
-export function inspectDevice({serial, adb}, run = command) {
+export function inspectDevice({serial, adb, driverHead}, run = command) {
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(serial ?? '')) fail('需要明确的 USB 真机序列号');
   const device = run(adb, ['devices']).split(/\r?\n/)
     .some(line => line.trim() === serial + '\tdevice');
@@ -112,7 +113,7 @@ export function inspectDevice({serial, adb}, run = command) {
   const metadata = shell('dumpsys', 'package', PACKAGE);
   const pid = shell('pidof', PACKAGE).trim();
   if (!/^\d+$/.test(pid)) fail('未找到唯一浏览器进程，未自动启动 App');
-  const input = committedProfileReader(run);
+  const input = committedProfileReader(run, driverHead);
   const descriptors = run(adb, ['-s', serial, 'shell', '-T', 'run-as', PACKAGE, 'sh', '-s', '--', pid], {input});
   const keyguard = parseKeyguard(shell('dumpsys', 'window', 'policy'));
   const endPid = shell('pidof', PACKAGE).trim();

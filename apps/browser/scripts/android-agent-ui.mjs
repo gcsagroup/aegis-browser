@@ -204,7 +204,7 @@ function build(options) {
   if (coverageEnabled !== Boolean(options['jacoco-dir'])) fail('只有显式 coverage 构建可以指定固定 JaCoCo 工件目录');
   const jacoco = coverageEnabled ? coverageTools(options['jacoco-dir']) : null;
   const repository = repositoryState();
-  const profileScript = committedProfileReader();
+  const profileScript = committedProfileReader(undefined, repository.head);
   if (hash(path.join(here, profileReader)) !== hashText(profileScript)) fail('描述符脚本必须与提交内容一致');
   const android = path.join(sdk, 'platforms/android-36/android.jar');
   const tool = name => path.join(sdk, 'build-tools/36.1.0', name);
@@ -297,7 +297,8 @@ function driverArtifact(directory) {
     configurationSha256: hash(path.join(here, coverageConfiguration)), output: 'none', dumpOnExit: false,
     dexContainsJacoco: true} : {enabled: false, dexContainsJacoco: false};
   const apkEntries = new Set(command('/usr/bin/unzip', ['-Z1', apk]).trim().split(/\r?\n/));
-  if (!apkEntries.has(profileAsset) || command('/usr/bin/unzip', ['-p', apk, profileAsset]) !== committedProfileReader()) {
+  if (!apkEntries.has(profileAsset) || command('/usr/bin/unzip', ['-p', apk, profileAsset]) !==
+      committedProfileReader(undefined, record.repository?.head)) {
     fail('APK 内的描述符读取脚本与宿主检查不一致');
   }
   const hasCoverageConfiguration = apkEntries.has('jacoco-agent.properties');
@@ -414,7 +415,7 @@ export function runDeviceInteraction(action, options, {apk, record}, run = comma
   } else {
     const apkSha256 = verifyCandidateFiles({sourceRoot: options['source-root'], manifestFile: options.manifest,
       buildDir: options['build-dir'], sourceBeforeFile: options['source-before']});
-    verifyTarget(inspectDevice(options), apkSha256, options.profile);
+    verifyTarget(inspectDevice({...options, driverHead: record.repository.head}), apkSha256, options.profile);
     request = actionRequest(action, {...options, apkSha256}, options.snapshot ? JSON.parse(fs.readFileSync(options.snapshot, 'utf8')) : undefined);
   }
   const inventory = adb('shell', 'pm', 'list', 'packages', HELPER).trim();
@@ -440,7 +441,7 @@ function interact(action, options) {
   const executionData = parseCoverageExec(instrumentationOutput, coverageEnabled);
   if (action === 'self-test') validateSelfTestResult(result);
   if (action !== 'self-test') {
-    verifyTarget(inspectDevice(options), request.apkSha256, request.profile);
+    verifyTarget(inspectDevice({...options, driverHead: record.repository.head}), request.apkSha256, request.profile);
     Object.assign(result, {profile: request.profile, apkSha256: request.apkSha256});
   }
   Object.assign(result, {observedAt: new Date().toISOString(), serial: options.serial, driverSha256: record.apkSha256,
