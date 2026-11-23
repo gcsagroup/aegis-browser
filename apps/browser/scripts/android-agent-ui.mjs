@@ -5,7 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {PACKAGE, inspectDevice, parseKeyguard, verifyCandidateFiles, verifyTarget} from './verify-android-agent-target.mjs';
+import {PACKAGE, committedProfileReader, inspectDevice, parseKeyguard, verifyCandidateFiles, verifyTarget} from './verify-android-agent-target.mjs';
 
 export const HELPER = 'com.gcsa.aegis.qa.driver';
 const HELPER_CLASS_PATH = HELPER.replaceAll('.', '/');
@@ -34,8 +34,10 @@ export const JACOCO_ARTIFACTS = Object.freeze({
 });
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(here, '../../..');
+const profileAsset = 'assets/read-profile-fds.sh';
+const profileReader = 'android-ui-driver/' + profileAsset;
 const sources = ['android-ui-driver/AndroidManifest.xml', 'android-ui-driver/Driver.java',
-  'android-ui-driver/jacoco-agent.properties'];
+  'android-ui-driver/jacoco-agent.properties', profileReader];
 const coverageConfiguration = sources[2];
 const fail = message => { throw new Error(message); };
 const hash = (file, algorithm = 'sha256') => crypto.createHash(algorithm).update(fs.readFileSync(file)).digest('hex');
@@ -202,6 +204,8 @@ function build(options) {
   if (coverageEnabled !== Boolean(options['jacoco-dir'])) fail('只有显式 coverage 构建可以指定固定 JaCoCo 工件目录');
   const jacoco = coverageEnabled ? coverageTools(options['jacoco-dir']) : null;
   const repository = repositoryState();
+  const profileScript = committedProfileReader(undefined, repository.head);
+  if (hash(path.join(here, profileReader)) !== hashText(profileScript)) fail('描述符脚本必须与提交内容一致');
   const android = path.join(sdk, 'platforms/android-36/android.jar');
   const tool = name => path.join(sdk, 'build-tools/36.1.0', name);
   for (const file of [android, ...['aapt2', 'd8', 'apksigner', 'zipalign'].map(tool), path.join(jdk, 'bin/java'),
@@ -217,7 +221,7 @@ function build(options) {
   const run = (program, args, extra = {}) => command(program, args, {env: environment, ...extra});
   run(path.join(jdk, 'bin/javac'), ['--release', '8', '-encoding', 'UTF-8', '-cp', android, '-d', classes, path.join(here, sources[1])]);
   const originals = classHashes(classes);
-  if (!originals.some(item => item.file === `${HELPER_CLASS_PATH}/Driver.class`) ||
+  if (!originals.some(item => item.file === HELPER_CLASS_PATH + '/Driver.class') ||
       originals.some(item => hasJacocoMarker(path.join(classes, item.file)))) fail('原始 Driver class 缺失或已被插桩');
   let dexInputs = listClassFiles(classes);
   if (coverageEnabled) {
@@ -238,6 +242,7 @@ function build(options) {
   const unsigned = path.join(output, 'unsigned.apk');
   run(tool('aapt2'), ['link', '-I', android, '--manifest', path.join(here, sources[0]), '-o', unsigned]);
   run('/usr/bin/zip', ['-q', unsigned, 'classes.dex'], {cwd: dex});
+  run('/usr/bin/zip', ['-q', unsigned, profileAsset], {cwd: path.join(here, 'android-ui-driver')});
   if (coverageEnabled) run('/usr/bin/zip', ['-q', '-j', unsigned, path.join(here, coverageConfiguration)]);
   const aligned = path.join(output, 'aligned.apk');
   run(tool('zipalign'), ['-p', '4', unsigned, aligned]);
@@ -261,6 +266,9 @@ function build(options) {
   }
   run(tool('apksigner'), ['verify', '--verbose', apk]);
   const apkEntries = new Set(run('/usr/bin/unzip', ['-Z1', apk]).trim().split(/\r?\n/));
+  if (!apkEntries.has(profileAsset) || run('/usr/bin/unzip', ['-p', apk, profileAsset]) !== profileScript) {
+    fail('APK 内的描述符读取脚本与宿主检查不一致');
+  }
   if (apkEntries.has('jacoco-agent.properties') !== coverageEnabled ||
       (coverageEnabled && run('/usr/bin/unzip', ['-p', apk, 'jacoco-agent.properties']) !==
         fs.readFileSync(path.join(here, coverageConfiguration), 'utf8'))) {
@@ -289,6 +297,10 @@ function driverArtifact(directory) {
     configurationSha256: hash(path.join(here, coverageConfiguration)), output: 'none', dumpOnExit: false,
     dexContainsJacoco: true} : {enabled: false, dexContainsJacoco: false};
   const apkEntries = new Set(command('/usr/bin/unzip', ['-Z1', apk]).trim().split(/\r?\n/));
+  if (!apkEntries.has(profileAsset) || command('/usr/bin/unzip', ['-p', apk, profileAsset]) !==
+      committedProfileReader(undefined, record.repository?.head)) {
+    fail('APK 内的描述符读取脚本与宿主检查不一致');
+  }
   const hasCoverageConfiguration = apkEntries.has('jacoco-agent.properties');
   if (record.package !== HELPER || record.apkSha256 !== hash(apk) || record.browserTested !== false ||
       record.repository?.head !== command('git', ['rev-parse', 'HEAD'], {cwd: repositoryRoot}).trim() ||
@@ -403,7 +415,7 @@ export function runDeviceInteraction(action, options, {apk, record}, run = comma
   } else {
     const apkSha256 = verifyCandidateFiles({sourceRoot: options['source-root'], manifestFile: options.manifest,
       buildDir: options['build-dir'], sourceBeforeFile: options['source-before']});
-    verifyTarget(inspectDevice(options), apkSha256, options.profile);
+    verifyTarget(inspectDevice({...options, driverHead: record.repository.head}), apkSha256, options.profile);
     request = actionRequest(action, {...options, apkSha256}, options.snapshot ? JSON.parse(fs.readFileSync(options.snapshot, 'utf8')) : undefined);
   }
   const inventory = adb('shell', 'pm', 'list', 'packages', HELPER).trim();
@@ -429,7 +441,7 @@ function interact(action, options) {
   const executionData = parseCoverageExec(instrumentationOutput, coverageEnabled);
   if (action === 'self-test') validateSelfTestResult(result);
   if (action !== 'self-test') {
-    verifyTarget(inspectDevice(options), request.apkSha256, request.profile);
+    verifyTarget(inspectDevice({...options, driverHead: record.repository.head}), request.apkSha256, request.profile);
     Object.assign(result, {profile: request.profile, apkSha256: request.apkSha256});
   }
   Object.assign(result, {observedAt: new Date().toISOString(), serial: options.serial, driverSha256: record.apkSha256,

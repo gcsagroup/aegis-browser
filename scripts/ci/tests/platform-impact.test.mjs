@@ -38,6 +38,8 @@ test('Android coverage uses the complete tested diff and the actual PR parents',
     git('init', '-b', 'develop');
     git('config', 'user.name', 'Coverage Test');
     git('config', 'user.email', 'coverage@example.invalid');
+    const fdReader = 'apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh';
+    save(fdReader, readFileSync(fdReader, 'utf8'));
     save('apps/ios/Feature.swift', 'old');
     const eventBase = commit('initial');
     save('apps/ios/Feature.swift', 'new');
@@ -81,6 +83,7 @@ test('Android coverage uses the complete tested diff and the actual PR parents',
     };
     exerciseSingleInput('apps/ios/Later.swift', false);
     exerciseSingleInput('apps/browser/CHROMIUM_VERSION', true);
+    exerciseSingleInput(fdReader, true);
     const {changedHead, changedTested} = exerciseSingleInput(
       'apps/browser/scripts/android-ui-driver/Driver.java', true);
     const manual = route({GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_SHA: changedTested});

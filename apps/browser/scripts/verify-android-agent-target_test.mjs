@@ -4,19 +4,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {test} from 'node:test';
-import {PACKAGE, packageApkPath, activeProfileRoots, parseKeyguard,
+import {PACKAGE, committedProfileReader, packageApkPath, inspectProfileDescriptors, parseKeyguard,
   verifyTarget, inspectDevice, verifyBuildRecords, verifyCandidateFiles} from './verify-android-agent-target.mjs';
 
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const hash = digest('合成 APK');
 const apk = '/data/app/~~safe/com.gcsa.aegis-build/base.apk';
 const profile = '/data/user/0/com.gcsa.aegis/aegis-test-user-data-recovery-r1';
-const mismatchedPackages = ['app.gcsa.aegis', 'com-gcsa.aegis', 'com.gcsa-aegis'];
 const unlocked = {known: true, unlocked: true, screenOn: true};
 const good = () => ({package: PACKAGE, androidUser: '0', installedSha256: hash,
-  keyguard: unlocked, processStable: true, profileRoots: [profile]});
+  keyguard: unlocked, processStable: true, profileRoots: [profile], profileFileOpen: true});
+const fdRecords = (...entries) => [...entries.flat(), 'end', ''].join('\0');
+const openFile = path => ['81a4', path];
+const openDirectory = path => ['41ed', path];
+const activeProfileRoots = listing => inspectProfileDescriptors(listing).profileRoots;
 
 test('安装路径只接受指定包的单一 APK', () => {
   assert.equal(packageApkPath('package:' + apk + '\n'), apk);
@@ -30,17 +33,110 @@ test('安装路径只接受指定包的单一 APK', () => {
 });
 
 test('只用打开的 Profile 文件证明目录，不根据参数或缓存推断', () => {
-  const listing = `1 -> ${profile}/Default/History\n2 -> ${profile}/Default/Session Storage/LOCK\n` +
-    '3 -> /data/user/0/com.gcsa.aegis/app_chrome/paks/resources.pak\n' +
-    '4 -> /data/user/0/com.gcsa.aegis/cache/opaque-file\n';
+  const listing = fdRecords(
+    openFile(profile + '/Default/History'),
+    openFile(profile + '/Default/Session Storage/LOCK'),
+    openFile('/data/user/0/com.gcsa.aegis/app_chrome/paks/resources.pak'),
+    openFile('/data/user/0/com.gcsa.aegis/cache/opaque-file'),
+  );
   assert.deepEqual(activeProfileRoots(listing), [profile]);
-  assert.deepEqual(activeProfileRoots('--user-data-dir=' + profile), []);
-  assert.deepEqual(activeProfileRoots('1 -> /data/data/com.gcsa.aegis/app_chrome/Default/History'),
+  assert.deepEqual(activeProfileRoots(fdRecords(openFile('--user-data-dir=' + profile))), []);
+  assert.deepEqual(activeProfileRoots(fdRecords(openFile('/data/data/com.gcsa.aegis/app_chrome/Default/History'))),
     ['/data/user/0/com.gcsa.aegis/app_chrome']);
-  assert.deepEqual(activeProfileRoots('1 -> /data/user/0/com.gcsa.aegis/../other/Default/History'), []);
-  for (const packageId of mismatchedPackages) {
-    const wrongProfile = profile.replace(PACKAGE, packageId);
-    assert.deepEqual(activeProfileRoots(`1 -> ${wrongProfile}/Default/History`), []);
+  assert.throws(() => activeProfileRoots(fdRecords(openFile('/data/user/0/com.gcsa.aegis/../other/Default/History'))),
+    /文件描述符目标路径无效/);
+});
+
+test('Profile 目录只接受当前 Android 应用 ID', () => {
+  for (const otherPackage of ['app.gcsa.aegis', 'com-gcsa.aegis', 'com.gcsa-aegis', PACKAGE + '.other']) {
+    const otherProfile = profile.replace(PACKAGE, otherPackage);
+    assert.deepEqual(activeProfileRoots(fdRecords(openFile(otherProfile + '/Default/History'))), []);
+    assert.throws(() => verifyTarget({...good(), profileRoots: [otherProfile]}, hash, otherProfile),
+      /必须指定 Aegis 独立测试资料目录/);
+  }
+});
+
+test('包根目录直属的 Profile 与独立资料混用时拒绝目标', () => {
+  const packageRoot = '/data/user/0/' + PACKAGE;
+  for (const defaultDescriptor of [
+    openFile(packageRoot + '/Default/History'),
+    openFile('/data/data/' + PACKAGE + '/Profile 1/History'),
+  ]) {
+    assert.deepEqual(activeProfileRoots(fdRecords(defaultDescriptor)), [packageRoot]);
+    const profileRoots = activeProfileRoots(fdRecords(openFile(profile + '/Default/History'), defaultDescriptor));
+    assert.deepEqual(profileRoots, [packageRoot, profile]);
+    assert.throws(() => verifyTarget({...good(), profileRoots}, hash, profile), /独立 Profile 尚未证实/);
+  }
+});
+
+test('目录和已删除条目只能作为冲突证据', () => {
+  const goodFile = openFile(profile + '/Default/History');
+  const other = '/data/user/0/' + PACKAGE + '/app_chrome';
+  for (const listing of [
+    fdRecords(openDirectory(profile + '/Default')),
+    fdRecords(openDirectory(profile + '/Default/Local Storage')),
+    fdRecords(openFile(profile + '/Default\n')),
+    fdRecords(openFile(profile + '/Default/History\n (deleted)')),
+    fdRecords(goodFile, openDirectory(other + '/Default')),
+    fdRecords(goodFile, openFile(other + '/Default/History (deleted)')),
+  ]) {
+    const evidence = inspectProfileDescriptors(listing);
+    assert.throws(() => verifyTarget({...good(), ...evidence}, hash, profile), /独立 Profile 尚未证实/);
+  }
+  assert.equal(verifyTarget({...good(), ...inspectProfileDescriptors(fdRecords(goodFile))}, hash, profile).targetVerified, true);
+});
+
+test('拒绝截断或含未解析目标的描述符记录', () => {
+  const goodFile = openFile(profile + '/Default/History');
+  for (const listing of [
+    fdRecords(goodFile).slice(0, -4),
+    fdRecords(goodFile, ['?', '']),
+    fdRecords(goodFile, ['81a4']),
+    fdRecords(goodFile, openFile(profile + '/Default/..')),
+  ]) assert.throws(() => inspectProfileDescriptors(listing), /文件描述符/);
+  assert.deepEqual(inspectProfileDescriptors(fdRecords(openFile('/fixture/2 -> ' + profile + '/Default/History'))),
+    {profileRoots: [], profileFileOpen: false});
+});
+
+test('同一文件描述符更换目标时清单不标记完成', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aegis-profile-fd-'));
+  try {
+    const fixture = `
+mkdir -p "$AEGIS_FD_DIR"
+: > "$AEGIS_FD_DIR/3"
+: > "$AEGIS_FD_DIR/4"
+stat() {
+  format=$3
+  shift 3
+  for fd do
+    case $format in '%f') printf '81a4\n' ;; *) printf '81a4:1:22\n' ;; esac
+  done
+}
+readlink() {
+  case $2 in
+    */3)
+      if [ -e "$AEGIS_FD_FLAG" ] && [ "$AEGIS_FD_REPLACEMENT" = yes ]; then
+        printf '/data/user/0/com.gcsa.aegis/app_chrome/Default/History'
+      else
+        printf '/data/user/0/com.gcsa.aegis/aegis-test-user-data-recovery-r1/Default/History'
+      fi
+      ;;
+    */4) : > "$AEGIS_FD_FLAG"; printf '/dev/null' ;;
+  esac
+}
+`;
+    const reader = committedProfileReader().replace('directory=/proc/$1/fd', 'directory=$AEGIS_FD_DIR');
+    const run = (replace, flag) => spawnSync('sh', ['-s', '--', '0'], {input: fixture + reader,
+      encoding: 'utf8', env: {...process.env, AEGIS_FD_REPLACEMENT: replace,
+        AEGIS_FD_DIR: path.join(root, 'fd'), AEGIS_FD_FLAG: path.join(root, flag)}});
+    const stable = run('no', 'unchanged');
+    assert.equal(stable.status, 0, stable.stderr);
+    assert.deepEqual(inspectProfileDescriptors(stable.stdout), {profileRoots: [profile], profileFileOpen: true});
+    const replaced = run('yes', 'replaced');
+    assert.equal(replaced.status, 1);
+    assert.throws(() => inspectProfileDescriptors(replaced.stdout), /清单不完整/);
+  } finally {
+    fs.rmSync(root, {recursive: true, force: true});
   }
 });
 
@@ -74,11 +170,6 @@ test('期望参数也必须为独立测试目录和有效摘要', () => {
   for (const value of ['/data/user/0/com.gcsa.aegis/app_chrome', profile + '/..', profile + '/Default', '', '/sdcard/test']) {
     assert.throws(() => verifyTarget(good(), hash, value));
   }
-  for (const packageId of mismatchedPackages) {
-    const wrongProfile = profile.replace(PACKAGE, packageId);
-    const report = {...good(), profileRoots: [wrongProfile]};
-    assert.throws(() => verifyTarget(report, hash, wrongProfile));
-  }
   assert.throws(() => verifyTarget(good(), 'wrong', profile));
 });
 
@@ -94,10 +185,16 @@ test('未完成、失败、被中断、源码变化或错配构建不能验收�
   assert.throws(() => verifyBuildRecords({manifest_sha256: hash}, status, manifest, hash));
 });
 
-function deviceStub({switchUser = false} = {}) {
+function deviceStub({switchUser = false, fdReadFails = false, driverHead = 'HEAD'} = {}) {
   const calls = [];
+  const committedReader = '# Synthetic committed reader\n';
   let userReads = 0;
-  const run = (program, args) => {
+  const run = (program, args, options) => {
+    if (program === 'git') {
+      assert.equal(args[2], 'show');
+      assert.equal(args[3], driverHead + ':apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh');
+      return committedReader;
+    }
     assert.equal(program, '/test/adb');
     calls.push(args);
     if (args[0] === 'devices') return 'List of devices attached\nfixture123\tdevice\n';
@@ -108,8 +205,11 @@ function deviceStub({switchUser = false} = {}) {
     if (cmd === 'shell sha256sum ' + apk) return hash + '  ' + apk + '\n';
     if (cmd === 'shell dumpsys package ' + PACKAGE) return 'versionCode=792207704\nversionName=151.0.7922.77\n';
     if (cmd === 'shell pidof ' + PACKAGE) return '123\n';
-    if (cmd === 'exec-out run-as ' + PACKAGE + ' ls -l /proc/123/fd') {
-      return `1 -> ${profile}/Default/History\n2 -> /data/user/0/${PACKAGE}/cache/敏感文件名-不输出\n`;
+    if (cmd === 'shell -T run-as ' + PACKAGE + ' sh -s -- 123') {
+      assert.equal(options.input, committedReader);
+      if (fdReadFails) throw new Error('只读命令失败');
+      return fdRecords(openFile(profile + '/Default/History'),
+        openFile('/data/user/0/' + PACKAGE + '/cache/敏感文件名-不输出'));
     }
     if (cmd === 'shell dumpsys window policy') return 'KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_ON';
     throw new Error('出现意外命令');
@@ -128,6 +228,18 @@ test('实机检查命令只读且不输出原始目录清单', () => {
   assert.equal(stub.calls.some(args => args.includes('install') || args.includes('input') || args.includes('start') || args.includes('clear')), false);
   assert.throws(() => inspectDevice({serial: 'fixture123;bad', adb: '/test/adb'}, stub.run));
   assert.throws(() => inspectDevice({serial: 'missing123', adb: '/test/adb'}, stub.run));
+});
+
+test('远端 FD 枚举失败时拒绝收集目标证据', () => {
+  const stub = deviceStub({fdReadFails: true});
+  assert.throws(() => inspectDevice({serial: 'fixture123', adb: '/test/adb'}, stub.run), /只读命令失败/);
+  assert.equal(stub.calls.some(args => args.includes('policy')), false);
+});
+
+test('宿主检查读取工具构建绑定的提交', () => {
+  const driverHead = 'a'.repeat(40);
+  const stub = deviceStub({driverHead});
+  assert.equal(inspectDevice({serial: 'fixture123', adb: '/test/adb', driverHead}, stub.run).profileFileOpen, true);
 });
 
 test('只读检查末尾重验 Android 用户', () => {

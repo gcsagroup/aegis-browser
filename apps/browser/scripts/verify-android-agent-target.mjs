@@ -6,8 +6,8 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 export const PACKAGE = 'com.gcsa.aegis';
-const PACKAGE_PATTERN = PACKAGE.replaceAll('.', '\\.');
-const TEST_PROFILE = new RegExp(`^/data/user/0/${PACKAGE_PATTERN}/aegis-test-user-data-[a-z0-9-]+$`);
+const PROFILE_DIRECTORY_PREFIX = `/data/user/0/${PACKAGE}/`;
+const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const HASH = /^[a-f0-9]{64}$/;
 const fail = message => { throw new Error(message); };
 const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -27,16 +27,33 @@ export function packageApkPath(output) {
   return value;
 }
 
-export function activeProfileRoots(fdListing) {
-  // 只识别已打开的 Profile 文件路径，不把 Java 公用缓存目录当作资料目录。
-  const roots = new Set();
-  const pattern = new RegExp(
-    String.raw` -> (/data/(?:user/0|data)/${PACKAGE_PATTERN}/[^\r\n]*?)/(?:Default|Profile \d+)/`, 'g');
-  for (const match of fdListing.matchAll(pattern)) {
-    const root = match[1].replace('/data/data/', '/data/user/0/');
-    if (!root.split('/').some(part => part === '..' || part === '.')) roots.add(root);
+export function inspectProfileDescriptors(fdListing) {
+  const entries = fdListing.split('\0');
+  if (entries.pop() !== '' || entries.pop() !== 'end' || entries.length % 2 !== 0) {
+    fail('文件描述符清单不完整');
   }
-  return [...roots].sort();
+  const roots = new Set();
+  let profileFileOpen = false;
+  for (let index = 0; index < entries.length; index += 2) {
+    const [mode, link] = entries.slice(index, index + 2);
+    if (!/^[0-9a-f]{1,4}$/iu.test(mode) || !link) fail('文件描述符记录无效');
+    const file = link.replace(/^\/data\/data\//u, '/data/user/0/');
+    if (!file.startsWith(PROFILE_DIRECTORY_PREFIX)) continue;
+    const deleted = file.endsWith(' (deleted)');
+    const target = deleted ? file.slice(0, -' (deleted)'.length) : file;
+    if (target.slice(PROFILE_DIRECTORY_PREFIX.length).split('/').some(part => !part || part === '..' || part === '.')) {
+      fail('文件描述符目标路径无效');
+    }
+    const profile = /\/(?:Default|Profile [0-9]+)(?:\/|$)/u.exec(target);
+    if (!profile) continue;
+    const root = target.slice(0, profile.index);
+    roots.add(root);
+    const regularFile = (Number.parseInt(mode, 16) & 0xf000) === 0x8000;
+    if (regularFile && !deleted && profile[0].endsWith('/') && profile.index + profile[0].length < target.length) {
+      profileFileOpen = true;
+    }
+  }
+  return {profileRoots: [...roots].sort(), profileFileOpen};
 }
 
 export function parseKeyguard(policy) {
@@ -50,7 +67,8 @@ export function parseKeyguard(policy) {
 
 export function verifyTarget(report, expectedHash, expectedProfile) {
   if (!HASH.test(expectedHash)) fail('候选 APK 摘要无效');
-  if (!TEST_PROFILE.test(expectedProfile)) {
+  if (typeof expectedProfile !== 'string' || !expectedProfile.startsWith(PROFILE_DIRECTORY_PREFIX) ||
+      !/^aegis-test-user-data-[a-z0-9-]+$/.test(expectedProfile.slice(PROFILE_DIRECTORY_PREFIX.length))) {
     fail('必须指定 Aegis 独立测试资料目录');
   }
   if (report.package !== PACKAGE || report.androidUser !== '0') fail('包或 Android 用户不匹配');
@@ -58,15 +76,16 @@ export function verifyTarget(report, expectedHash, expectedProfile) {
   if (!report.keyguard.known || !report.keyguard.unlocked || !report.keyguard.screenOn) {
     fail('真机尚未确认解锁并亮屏');
   }
-  if (!report.processStable || report.profileRoots.length !== 1 || report.profileRoots[0] !== expectedProfile) {
+  if (!report.processStable || report.profileFileOpen !== true ||
+      report.profileRoots.length !== 1 || report.profileRoots[0] !== expectedProfile) {
     fail('运行中的独立 Profile 尚未证实；不得在默认资料中继续验收');
   }
   return {targetVerified: true, uiTested: false, runtimeTested: false,
     releaseEligible: false, qualification: 'target-only'};
 }
 
-function command(program, args) {
-  const result = spawnSync(program, args, {encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024});
+function command(program, args, options = {}) {
+  const result = spawnSync(program, args, {encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024, ...options});
   if (result.status !== 0 || result.error || result.signal) {
     // 不输出远端原始 stdout/stderr，避免将路径、界面或资料内容写入诊断错误。
     fail('只读命令失败：' + path.basename(program));
@@ -74,7 +93,12 @@ function command(program, args) {
   return result.stdout;
 }
 
-export function inspectDevice({serial, adb}, run = command) {
+export function committedProfileReader(run = command, revision = 'HEAD') {
+  if (revision !== 'HEAD' && !/^[0-9a-f]{40}$/u.test(revision)) fail('描述符脚本提交无效');
+  return run('git', ['-C', repository, 'show', revision + ':apps/browser/scripts/android-ui-driver/assets/read-profile-fds.sh']);
+}
+
+export function inspectDevice({serial, adb, driverHead}, run = command) {
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(serial ?? '')) fail('需要明确的 USB 真机序列号');
   const device = run(adb, ['devices']).split(/\r?\n/)
     .some(line => line.trim() === serial + '\tdevice');
@@ -89,8 +113,8 @@ export function inspectDevice({serial, adb}, run = command) {
   const metadata = shell('dumpsys', 'package', PACKAGE);
   const pid = shell('pidof', PACKAGE).trim();
   if (!/^\d+$/.test(pid)) fail('未找到唯一浏览器进程，未自动启动 App');
-  const descriptors = run(adb, ['-s', serial, 'exec-out', 'run-as', PACKAGE,
-    'ls', '-l', '/proc/' + pid + '/fd']);
+  const input = committedProfileReader(run, driverHead);
+  const descriptors = run(adb, ['-s', serial, 'shell', '-T', 'run-as', PACKAGE, 'sh', '-s', '--', pid], {input});
   const keyguard = parseKeyguard(shell('dumpsys', 'window', 'policy'));
   const endPid = shell('pidof', PACKAGE).trim();
   const endApk = packageApkPath(shell('pm', 'path', PACKAGE));
@@ -98,7 +122,7 @@ export function inspectDevice({serial, adb}, run = command) {
   return {package: PACKAGE, serial, androidUser, installedSha256,
     versionName: metadata.match(/\bversionName=([^\s]+)/)?.[1] ?? null,
     versionCode: metadata.match(/\bversionCode=(\d+)/)?.[1] ?? null,
-    profileRoots: activeProfileRoots(descriptors), keyguard,
+    ...inspectProfileDescriptors(descriptors), keyguard,
     processStable: pid === endPid && apk === endApk && androidUser === endUser,
     targetVerified: false, uiTested: false, runtimeTested: false, releaseEligible: false,
     checkedAt: new Date().toISOString()};

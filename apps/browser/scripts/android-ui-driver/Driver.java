@@ -22,10 +22,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,11 +35,14 @@ import org.json.JSONObject;
 public final class Driver extends Instrumentation {
   private static final String BROWSER = "com.gcsa.aegis";
   private static final String HELPER = "com.gcsa.aegis.qa.driver";
-  private static final String BROWSER_PACKAGE = Pattern.quote(BROWSER);
-  private static final Pattern PROFILE = Pattern.compile(
-      "/data/user/0/" + BROWSER_PACKAGE + "/aegis-test-user-data-[a-z0-9-]+");
-  private static final Pattern OPEN_PROFILE = Pattern.compile(
-      " -> (/data/(?:user/0|data)/" + BROWSER_PACKAGE + "(?:/[^\\r\\n]*?)?)/(?:Default|Profile [0-9]+)/");
+  private static final String DATA_ALIAS = "/data/data/";
+  private static final String DATA_ROOT = "/data/user/0/";
+  private static final String BROWSER_DATA = DATA_ROOT + BROWSER + "/";
+  private static final Pattern TEST_PROFILE = Pattern.compile(
+      Pattern.quote(BROWSER_DATA) + "aegis-test-user-data-[a-z0-9-]+");
+  private static final Pattern PROFILE_ENTRY = Pattern.compile("/(?:Default|Profile [0-9]+)(?:/|\\z)");
+  private static final Pattern FD_MODE = Pattern.compile("[0-9a-fA-F]{1,4}");
+  private static final String DELETED = " (deleted)";
   private UiAutomation automation;
   private JSONObject request;
   private boolean coverageRequested;
@@ -145,10 +147,15 @@ public final class Driver extends Instrumentation {
   }
 
   private String shell(String command) throws Exception {
-    // 调用者只有下方三个固定的只读命令；从不接受外部命令文本。
+    // 只接受本类构造的固定只读命令。
     try (ParcelFileDescriptor descriptor = automation.executeShellCommand(command);
-         FileInputStream input = new FileInputStream(descriptor.getFileDescriptor());
-         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+         FileInputStream input = new FileInputStream(descriptor.getFileDescriptor())) {
+      return readText(input);
+    }
+  }
+
+  private static String readText(InputStream input) throws Exception {
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       byte[] buffer = new byte[4096];
       for (int size; (size = input.read(buffer)) != -1;) {
         check(output.size() + size <= 2 * 1024 * 1024, "目标元数据超出读取上限");
@@ -158,11 +165,24 @@ public final class Driver extends Instrumentation {
     }
   }
 
+  private String profileReader() throws Exception {
+    try (InputStream input = getTargetContext().getAssets().open("read-profile-fds.sh")) {
+      return readText(input);
+    }
+  }
+
+  private String shellWithScript(String script, String command) throws Exception {
+    // UiAutomation splits on whitespace. Pass an encoded script as a single argument and decode it to stdin.
+    String encoded = Base64.encodeToString(script.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+    return shell("sh -c echo${IFS}\"$0\"|base64${IFS}-d|\"$@\" " + encoded + " " + command);
+  }
+
   private void browserGuard() throws Exception {
     unlocked();
     String profile = request.getString("profile");
     String expectedHash = request.getString("apkSha256");
-    check(PROFILE.matcher(profile).matches() && expectedHash.matches("[a-f0-9]{64}"), "候选或独立资料参数无效");
+    check(TEST_PROFILE.matcher(profile).matches() && expectedHash.matches("[a-f0-9]{64}"),
+        "候选或独立资料参数无效");
     check(shell("am get-current-user").trim().equals("0"), "当前不是指定 Android 用户");
     String apk = getTargetContext().getPackageManager().getApplicationInfo(BROWSER, 0).sourceDir;
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -173,17 +193,39 @@ public final class Driver extends Instrumentation {
     check(hex(digest.digest()).equals(expectedHash), "运行中的 APK 不属于指定候选");
     String pid = shell("pidof " + BROWSER).trim();
     check(pid.matches("[0-9]+"), "未找到唯一浏览器进程");
-    String descriptors = shell("run-as " + BROWSER + " ls -l /proc/" + pid + "/fd");
-    check(hasVerifiedProfile(profile, descriptors), "拒绝默认资料或未经证实的独立 Profile");
+    String readDescriptors = "run-as " + BROWSER + " sh -s -- " + pid;
+    check(hasActiveProfile(shellWithScript(profileReader(), readDescriptors), profile),
+        "拒绝默认资料、不完整清单或未经证实的独立 Profile");
     check(shell("pidof " + BROWSER).trim().equals(pid), "浏览器进程已变化，请重新检查");
   }
 
-  static boolean hasVerifiedProfile(String profile, String descriptors) {
-    if (!PROFILE.matcher(profile).matches()) return false;
-    Matcher paths = OPEN_PROFILE.matcher(descriptors);
-    Set<String> roots = new HashSet<>();
-    while (paths.find()) roots.add(paths.group(1).replace("/data/data/", "/data/user/0/"));
-    return roots.size() == 1 && roots.contains(profile);
+  private static boolean hasActiveProfile(String descriptors, String expectedProfile) {
+    String[] rows = descriptors.split("\0", -1);
+    int length = rows.length;
+    if (length < 2 || length % 2 != 0 || !rows[length - 2].equals("end") || !rows[length - 1].isEmpty()) {
+      return false;
+    }
+    boolean profileFileOpen = false;
+    for (int index = 0; index < length - 2; index += 2) {
+      String mode = rows[index];
+      String target = rows[index + 1];
+      if (!FD_MODE.matcher(mode).matches() || target.isEmpty()) return false;
+      if (target.startsWith(DATA_ALIAS)) target = DATA_ROOT + target.substring(DATA_ALIAS.length());
+      if (!target.startsWith(BROWSER_DATA)) continue;
+      boolean deleted = target.endsWith(DELETED);
+      if (deleted) target = target.substring(0, target.length() - DELETED.length());
+      for (String part : target.substring(BROWSER_DATA.length()).split("/", -1)) {
+        if (part.isEmpty() || part.equals(".") || part.equals("..")) return false;
+      }
+      Matcher entry = PROFILE_ENTRY.matcher(target);
+      if (!entry.find()) continue;
+      if (!target.substring(0, entry.start()).equals(expectedProfile)) return false;
+      boolean regularFile = (Integer.parseInt(mode, 16) & 0xf000) == 0x8000;
+      if (regularFile && !deleted && entry.group().endsWith("/") && entry.end() < target.length()) {
+        profileFileOpen = true;
+      }
+    }
+    return profileFileOpen;
   }
 
   private static String hex(byte[] data) {
@@ -328,32 +370,67 @@ public final class Driver extends Instrumentation {
         ";category=" + lastFailure + ";activePackage=" + activeWindowPackage());
   }
 
-  private static void profileGuardSelfTest() throws GuardFailure {
-    String profile = "/data/user/0/com.gcsa.aegis/aegis-test-user-data-fixture";
-    String opened = "42 -> " + profile + "/Default/History";
-    String aliasProfile = profile.replace("/data/user/0/", "/data/data/");
-    String alias = "43 -> " + aliasProfile + "/Profile 1/History";
-    check(hasVerifiedProfile(profile, opened) && hasVerifiedProfile(profile, alias)
-        && hasVerifiedProfile(profile, opened + "\n" + alias) && !hasVerifiedProfile(aliasProfile, alias),
-        "独立资料及其别名处理错误");
-    for (String wrong : new String[] {
-        profile.replace("com.gcsa.aegis", "app.gcsa.aegis"),
-        profile.replace("com.gcsa.aegis", "com.gcsa.aegis.debug"),
-        profile.replace("com.gcsa.aegis", "com-gcsa.aegis"),
-        profile.replace("com.gcsa.aegis", "com.gcsa-aegis"),
-        profile.replace("/user/0/", "/user/10/"),
+  private void testProfileIsolation() throws Exception {
+    String fixture = "/aegis-test-user-data-fixture";
+    String packageRoot = DATA_ROOT + BROWSER;
+    String profile = packageRoot + fixture;
+    String alias = DATA_ALIAS + BROWSER + fixture;
+    String end = "end\0";
+    String opened = "81a4\0" + profile + "/Default/History\0";
+    String aliasEntry = "81a4\0" + alias + "/Profile 1/History\0";
+    String defaultRoot = packageRoot + "/app_chrome";
+    String defaultEntry = "81a4\0" + defaultRoot + "/Default/History\0";
+    String otherEntry = "81a4\0" + packageRoot + "/aegis-test-user-data-other/Default/History\0";
+    String reader = profileReader();
+    String readerFixture = "sleep 30 </dev/null >/dev/null 2>&1 &\n"
+        + "holder=$!\ntrap 'kill \"$holder\" 2>/dev/null || :; wait \"$holder\" 2>/dev/null || :' EXIT\n"
+        + "set -- \"$holder\"\nsleep 0.1\n";
+    String observed = shellWithScript(readerFixture + reader, "sh -s");
+    check(TEST_PROFILE.matcher(profile).matches(), "当前浏览器的独立 Profile 被拒绝");
+    check(observed.endsWith("\0" + end) && !shellWithScript("set -- 0\n" + reader, "sh -s").endsWith(end),
+        "描述符命令完成标记不可靠");
+    check(hasActiveProfile(opened + end, profile), "未识别规范路径下打开的 Profile");
+    check(hasActiveProfile(aliasEntry + end, profile) && hasActiveProfile(opened + aliasEntry + end, profile)
+        && !hasActiveProfile(aliasEntry + end, alias), "未将 /data/data 别名绑定到同一个 Profile");
+    check(!TEST_PROFILE.matcher(alias).matches() && !TEST_PROFILE.matcher(defaultRoot).matches(),
+        "接受了别名或默认 Profile 作为请求目录");
+    for (String invalid : new String[] {
+        end,
+        opened,
+        defaultEntry + end,
+        otherEntry + end,
+        opened + "?\0unknown\0" + end,
+        "41ed\0" + profile + "/Default\0" + end,
+        "41ed\0" + profile + "/Default/Local Storage\0" + end,
+        "81a4\0" + profile + "/Default\n\0" + end,
+        "81a4\0" + profile + "/Default/..\0" + end,
+        "81a4\0" + profile + "/Default/History\n" + DELETED + "\0" + end,
+        "81a4\0/fixture/2 -> " + profile + "/Default/History\0" + end,
     }) {
-      String mismatched = "43 -> " + wrong + "/Profile 1/History";
-      check(!hasVerifiedProfile(wrong, mismatched) && !hasVerifiedProfile(profile, mismatched),
-          "不匹配的资料没有被拒绝");
+      check(!hasActiveProfile(invalid, profile), "接受了未经证实的独立 Profile");
     }
-    String defaultRoot = "/data/user/0/com.gcsa.aegis/app_chrome";
-    String defaultProfile = "43 -> " + defaultRoot + "/Default/History";
-    String otherProfile = opened.replace("-fixture/", "-other/");
-    check(!hasVerifiedProfile(profile, "") && !hasVerifiedProfile(profile, otherProfile)
-        && !hasVerifiedProfile(defaultRoot, defaultProfile) && !hasVerifiedProfile(profile, defaultProfile)
-        && !hasVerifiedProfile(profile, opened + "\n" + defaultProfile)
-        && !hasVerifiedProfile(profile, opened + "\n" + otherProfile), "未拒绝未经证实或多个资料目录");
+    for (String wrong : new String[] {
+        DATA_ROOT + "app.gcsa.aegis" + fixture,
+        packageRoot + ".other" + fixture,
+        DATA_ROOT + "com-gcsa.aegis" + fixture,
+        DATA_ROOT + "com.gcsa-aegis" + fixture,
+        "/data/user/10/" + BROWSER + fixture,
+    }) {
+      String wrongEntry = "81a4\0" + wrong + "/Default/History\0" + end;
+      check(!TEST_PROFILE.matcher(wrong).matches() && !hasActiveProfile(wrongEntry, wrong)
+          && !hasActiveProfile(wrongEntry, profile), "接受了其他包或 Android 用户的 Profile");
+    }
+    for (String other : new String[] {
+        "81a4\0" + packageRoot + "/Default/History\0",
+        "81a4\0" + DATA_ALIAS + BROWSER + "/Profile 1/History\0",
+        "41ed\0" + packageRoot + "/app_chrome/Default\0",
+        "81a4\0" + packageRoot + "/app_chrome/Default/History" + DELETED + "\0",
+        defaultEntry,
+        otherEntry,
+    }) {
+      check(!hasActiveProfile(opened + other + end, profile),
+          "未拒绝与默认 Profile 混用的独立资料");
+    }
   }
 
   private JSONObject selfTest() throws Exception {
@@ -395,7 +472,7 @@ public final class Driver extends Instrumentation {
       try { requirePackage(fixtureRoot, BROWSER); }
       catch (GuardFailure expected) { refused = true; }
       check(refused, "错误应用没有被拒绝");
-      profileGuardSelfTest();
+      testProfileIsolation();
       passed(results, "wrong-package-rejected");
       phase = "密码框";
       String password = find(edited, "password", true);
