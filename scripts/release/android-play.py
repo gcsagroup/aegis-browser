@@ -57,12 +57,21 @@ def download_ids(row):
 def interpret_generated_apks(document, version_code):
     require(isinstance(document, dict) and isinstance(document.get('generatedApks'), list),
             'Play generated APK response is invalid')
-    matches = [row for row in document['generatedApks'] if row.get('versionCode') == version_code]
-    require(len(matches) <= 1, 'Play returned more than one row for this versionCode')
+    rows = document['generatedApks']
+    # generatedApks.list is versionCode-scoped. Real rows are per signing key and omit
+    # versionCode; older list-shaped fixtures still carry it and must stay unique.
+    if rows and all(isinstance(row, dict) and 'versionCode' in row for row in rows):
+        matches = [row for row in rows if row.get('versionCode') == version_code]
+        require(len(matches) <= 1, 'Play returned more than one row for this versionCode')
+    else:
+        matches = [row for row in rows if isinstance(row, dict)]
+        require(len(matches) == len(rows), 'Play generated APK row is invalid')
     base = {'packageName': APPLICATION_ID, 'versionCode': version_code, 'expired': False}
     if not matches:
         return {**base, 'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
-    ids = download_ids(matches[0])
+    ids = []
+    for match in matches:
+        ids.extend(download_ids(match))
     if not ids:
         return {**base, 'processingState': 'PROCESSING', 'uploadState': 'PROCESSING'}
     identity = canonical({'downloadIds': sorted(set(ids)), 'packageName': APPLICATION_ID, 'versionCode': version_code})
@@ -90,13 +99,27 @@ class Play:
         require(status in ok, 'Play request failed')
         return response_headers, payload
 
-    def generated_apks(self):
-        _headers, payload = self._request('GET', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/generatedApks')
+    def generated_apks(self, version_code):
+        """Return the generatedApks document, or None when Play has no such versionCode."""
+        require(isinstance(version_code, int) and version_code > 0, 'Invalid Play versionCode')
+        url = API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/generatedApks/{version_code}'
+        response = self.transport('GET', url, None, {'Authorization': 'Bearer ' + self.token})
+        require(isinstance(response, tuple) and len(response) == 3, 'Play transport response is invalid')
+        status, _headers, payload = response
+        require(status not in {301, 302, 303, 307, 308}, 'Play refused to follow a redirect')
+        # Play returns HTTP 404 when this versionCode has never been uploaded.
+        if status == 404:
+            return None
+        require(status == 200, 'Play request failed')
         return json.loads(payload.decode())
 
     def status(self, version_code):
         require(isinstance(version_code, int) and version_code > 0, 'Invalid Play versionCode')
-        return interpret_generated_apks(self.generated_apks(), version_code)
+        document = self.generated_apks(version_code)
+        if document is None:
+            return {'packageName': APPLICATION_ID, 'versionCode': version_code, 'expired': False,
+                    'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
+        return interpret_generated_apks(document, version_code)
 
     def upload_draft(self, aab, version_code, track):
         require(track in {'internal', 'beta'}, 'Play draft upload cannot target production')

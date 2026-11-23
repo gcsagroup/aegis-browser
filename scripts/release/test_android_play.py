@@ -35,7 +35,7 @@ class PlayTests(unittest.TestCase):
 
         def transport(method, url, body, headers):
             calls.append((method, url, body))
-            if url.endswith('/generatedApks'):
+            if url.endswith(f'/generatedApks/{CODE}'):
                 return 200, {}, b'{"generatedApks":[]}'
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-1"}'
@@ -51,6 +51,7 @@ class PlayTests(unittest.TestCase):
         result = client.upload_draft(Path(__file__), CODE, 'internal')
         self.assertEqual(result['status'], 'uploaded_draft')
         self.assertEqual([item[0] for item in calls], ['GET', 'POST', 'POST', 'PUT', 'POST'])
+        self.assertTrue(calls[0][1].endswith(f'/generatedApks/{CODE}'))
         self.assertIn(b'"track":"internal"', calls[3][2])
         self.assertIn(b'"status":"draft"', calls[3][2])
         occupied = play.Play(lambda *args: (200, {}, json.dumps({'generatedApks': [{'versionCode': CODE}]}).encode()), 'token')
@@ -62,7 +63,7 @@ class PlayTests(unittest.TestCase):
 
         def transport(method, url, body, headers):
             calls.append(body)
-            if url.endswith('/generatedApks'):
+            if url.endswith(f'/generatedApks/{CODE}'):
                 return 200, {}, json.dumps({'generatedApks': [{'versionCode': CODE, 'generatedUniversalApk': {'downloadId': 'u'}}]}).encode()
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-2"}'
@@ -73,6 +74,30 @@ class PlayTests(unittest.TestCase):
         self.assertNotIn(b'"userFraction":"0.1"', calls[2])
         with self.assertRaises(ValueError):
             play.Play(transport, 'token').update_track(CODE, 'internal', 'inProgress', '0.10')
+
+    def test_status_maps_missing_version_code_to_not_found(self):
+        calls = []
+
+        def transport(method, url, body, headers):
+            calls.append((method, url))
+            if url.endswith(f'/generatedApks/{CODE}'):
+                return 404, {}, b'{"error":{"code":404,"message":"missing"}}'
+            raise AssertionError(url)
+
+        remote = play.Play(transport, 'token').status(CODE)
+        self.assertEqual(remote['processingState'], 'NOT_FOUND')
+        self.assertEqual(remote['versionCode'], CODE)
+        self.assertTrue(calls[0][1].endswith(f'/generatedApks/{CODE}'))
+
+    def test_signing_key_rows_without_version_code_are_aggregated(self):
+        document = {'generatedApks': [
+            {'generatedUniversalApk': {'downloadId': 'u1'}},
+            {'generatedSplitApks': [{'downloadId': 's1'}]},
+        ]}
+        valid = play.interpret_generated_apks(document, CODE)
+        self.assertEqual(valid['processingState'], 'VALID')
+        identity = play.canonical({'downloadIds': ['s1', 'u1'], 'packageName': play.APPLICATION_ID, 'versionCode': CODE})
+        self.assertEqual(valid['buildIdentitySha256'], __import__('hashlib').sha256(identity.encode()).hexdigest())
 
 
 if __name__ == '__main__':
