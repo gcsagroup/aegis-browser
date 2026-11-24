@@ -1,3 +1,5 @@
+> **2026-11-24 · 安全更新源码候选**　桌面 `158.0.8127.89`、Android `158.0.8127.92`。包含官方 Variations 输入校验修复 CVE-2026-134401；未标注已被利用。原 Ver 7.5 (344) 产物仍对应旧内核及原构建提交，不作为本候选验收。新版本编译、三平台签名和实机升级验收尚未完成；下次真实编译前递增产品构建号。
+
 [English](./README.md) | [**简体中文**](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
 # GCSA-aegis Browser
@@ -20,7 +22,7 @@ GCSA-aegis Browser 将隐私与安全能力直接集成到 Chromium 浏览器及
 
 | 文件 | 含义 |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `155.0.8059.40`，尚未正式发布 |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `158.0.8127.89`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | 补丁所基于的精确 Chromium commit |
 
 该版本是固定快照，不会自动跟随更新的 Stable 版本。
