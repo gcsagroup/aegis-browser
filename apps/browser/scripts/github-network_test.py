@@ -307,7 +307,7 @@ class GitHubNetworkTests(unittest.TestCase):
             'source "$1"\n'
             'curl_ci_download "$2" "https://github.com/fixture/repo/archive.tar.gz"\n'
         )
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 - fixed /bin/bash, fixture-owned paths, no untrusted input.
             ['/bin/bash', '-c', script, 'download-fixture', str(helper), str(output)],
             env=environment,
             capture_output=True,
