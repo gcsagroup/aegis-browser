@@ -160,7 +160,7 @@ struct AegisApp: App {
 
     private func browserWindow(id: UUID) -> some View {
         AegisWindowView(id: id, dataStore: dataStore, workspaces: workspaceStore, windows: windows,
-                        preferences: settings.browserPreferences)
+                        preferences: settings.browserPreferences, hostStores: hostStores)
             .environmentObject(language)
             .environment(\.locale, language.snapshot.locale)
             .environment(\.calendar, Calendar.autoupdatingCurrent)
@@ -242,10 +242,10 @@ private struct AegisWindowView: View {
     @StateObject private var lifetime = AegisWindowLifetime()
     @ObservedObject var windows: BrowserWindowStore
     init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore,
-         preferences: BrowserPreferences) {
+         preferences: BrowserPreferences, hostStores: AccessHostStoreCoordinator) {
         self.windows = windows
         _browser = StateObject(wrappedValue: BrowserSession(dataStore: dataStore, workspaceStore: workspaces,
-            windowID: id, windowStore: windows, preferences: preferences))
+            windowID: id, windowStore: windows, preferences: preferences, hostCoordinator: hostStores))
     }
     @Environment(\.locale) private var localizationLocale
     var body: some View {
@@ -259,7 +259,6 @@ private struct AegisWindowView: View {
                 lifetime.browser = browser
                 lifetime.accessRegistry = accessRegistry
                 windows.register(browser.windowID)
-                browser.hostCoordinator = hostStores
                 hostStores.tabs = { [weak browser] in
                     guard let browser else { return [] }
                     return browser.standardTabs + browser.privateTabs

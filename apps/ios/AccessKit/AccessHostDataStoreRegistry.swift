@@ -179,6 +179,10 @@ public final class AccessHostDataStoreRegistry {
         return tabs
     }
 
+    public func isBound(_ tabID: String, to key: AccessHostStoreKey) -> Bool {
+        entries[key]?.record.boundTabIDs.contains(tabID) == true
+    }
+
     public func unbind(_ tabID: String, now: Date = Date()) {
         var changed = false
         for key in entries.keys {

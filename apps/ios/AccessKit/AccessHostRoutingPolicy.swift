@@ -68,3 +68,63 @@ public enum AccessHostRoutingPolicy {
         }
     }
 }
+
+public enum AccessWebsiteAccelerationMode: String, Sendable {
+    case manual
+    case smart
+}
+
+public enum AccessWebsiteRouteChoice: String, Sendable {
+    case original
+    case service
+}
+
+/// The two Domain records in the pinned DEBIAN group. A match only authorizes
+/// the top-level navigation. Its store remains isolated by exact host.
+public struct AccessWebsiteRoutePolicy: Sendable {
+    private static let debianRoots = ["debian.org", "dotdeb.org"]
+    private let roots: [String]
+
+    public init() {
+        roots = Self.debianRoots
+    }
+
+    #if DEBUG
+    /// Closed fixture projection of the same records. No configurable rules.
+    public static let geositeFixture = Self(roots: debianRoots.map { $0 + ".geosite.invalid" })
+
+    private init(roots: [String]) {
+        self.roots = roots
+    }
+    #endif
+
+    public func matches(_ url: URL) -> Bool {
+        guard let host = Self.websiteHost(url)?.rawValue else { return false }
+        return roots.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// Use the parsed navigation host and canonicalize a single DNS root dot.
+    /// Validate DNS labels before the more permissive legacy site normalizer.
+    public static func websiteHost(_ url: URL) -> AccessSiteHost? {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              var host = url.host(percentEncoded: false)?.lowercased() else { return nil }
+        if !host.utf8.allSatisfy({ $0 < 128 }) {
+            // Foundation can expose a percent-encoded IDN as decoded Unicode.
+            // Reparse only that host component to obtain the DNS representation.
+            guard host.rangeOfCharacter(from: CharacterSet(charactersIn: "/\\:@?#[]%").union(.whitespacesAndNewlines)) == nil,
+                  let normalized = URL(string: "https://\(host)/")?.host else { return nil }
+            host = normalized.lowercased()
+        }
+        if host.hasSuffix(".") { host.removeLast() }
+        guard host.utf8.count <= 253,
+              !host.hasSuffix(".localhost"), !host.hasSuffix(".local"),
+              host != "home.arpa", !host.hasSuffix(".home.arpa") else { return nil }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, labels.last?.utf8.contains(where: { (97...122).contains($0) }) == true,
+              labels.allSatisfy({ label in
+                  (1...63).contains(label.utf8.count) && label.first != "-" && label.last != "-"
+                      && label.utf8.allSatisfy { (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
+              }) else { return nil }
+        return try? AccessSiteHost(host)
+    }
+}

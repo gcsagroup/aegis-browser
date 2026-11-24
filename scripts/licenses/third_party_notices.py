@@ -95,6 +95,8 @@ def render(platform, root=ROOT):
                         "apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/bergamot\n"
                         "Downloaded model weights have separate notices and are not covered by this inventory.\n")
     elif platform == "ios":
+        include("V2Fly domain-list-community — DEBIAN — MIT — https://github.com/v2fly/domain-list-community",
+                f"{ACCESS}/v2fly-domain-list-community.txt")
         include("EasyList and EasyPrivacy — The EasyList authors", f"{RULES}/FILTER-LICENSE.txt")
         include("NoCoin — Hosh — https://github.com/hoshsadiq/adblock-nocoin-list", f"{RULES}/nocoin-LICENSE.txt")
         include("Phishing Block List — The Block List Project", f"{RULES}/phishing-LICENSE.txt")

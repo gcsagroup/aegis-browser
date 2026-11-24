@@ -52,9 +52,9 @@ class NoticePackageTests(unittest.TestCase):
         model = view.split("struct ThirdPartyNoticesDocument {", 1)[1].split(
             "\nstruct ThirdPartyNoticesView:", 1)[0]
         generated = notices.render("ios")
-        self.assertEqual(len(generated), 206859)
+        self.assertEqual(len(generated), 208174)
         expected_sources = re.findall(rb"^Source file: (.+)$", generated, re.MULTILINE)
-        self.assertEqual(len(expected_sources), 27)
+        self.assertEqual(len(expected_sources), 28)
         program = "import Foundation\nstruct ThirdPartyNoticesDocument {" + model + r'''
 let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
 let text = String(decoding: data, as: UTF8.self)
@@ -83,7 +83,7 @@ let expandedText = ([expandedIntroduction] + document.notices.map(\.text))
 let expanded = ThirdPartyNoticesDocument(text: expandedText)
 precondition(expanded.introduction == expandedIntroduction && expanded.fullText == expandedText)
 precondition(expanded.presentedIntroduction == document.presentedIntroduction + extraIntroduction)
-precondition(expanded.presentedNotices.count == 26)
+precondition(expanded.presentedNotices.count == document.notices.count - 1)
 for unfamiliar in ["Custom introduction\n\n" + rights,
                    "GCSA Aegis — Third-party licenses and acknowledgements (additional terms)\n" + rights,
                    "Before the title\n" + generatedTitle + rights, ""] {
@@ -93,7 +93,7 @@ for unfamiliar in ["Custom introduction\n\n" + rights,
 
 // Presentation is a projection; all legal bytes survive header removal.
 let presented = document.presentedNotices
-precondition(presented.count == 26)
+precondition(presented.count == document.notices.count - 1)
 let identities = ["markdown-it", "DOMPurify", "markdown-it-task-lists", "acorn", "highlight.js"]
 let inventory = document.notices[0].generatedHeader!.content
 let entries = inventory.components(separatedBy: "\n").dropFirst().prefix(5)
@@ -121,6 +121,7 @@ for notice in document.notices.dropFirst(6) {
 precondition(presented.contains { $0.body.contains("Source snapshot: https://github.com/publicsuffix/list/blob/") })
 precondition(presented.contains { $0.title.contains("Xray-core") && $0.body.contains("Mozilla Public License Version 2.0") })
 precondition(presented.contains { $0.title.contains("libXray") && $0.body.contains("MIT License") })
+precondition(presented.contains { $0.title.contains("V2Fly domain-list-community") && $0.body.contains("Copyright (c) 2018-2019 V2Ray") })
 precondition(!presented.contains { $0.body.contains("Source file:") })
 
 func replacingSection(_ index: Int, with replacement: String) -> String {

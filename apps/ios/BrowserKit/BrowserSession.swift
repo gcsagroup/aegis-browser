@@ -99,6 +99,7 @@ public struct BrowserPendingAddressNavigation: Equatable, Sendable {
 public protocol BrowserHostStoreCoordinating: AnyObject {
     func requiresProxy(tab: BrowserTab, url: URL) -> Bool
     func requiresProxyPreparation(tab: BrowserTab, url: URL) -> Bool
+    func canSendMainFrame(tab: BrowserTab, url: URL) -> Bool
     func prepareProxyNavigation(tab: BrowserTab, request: URLRequest) -> Bool
     func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool
     func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore?
@@ -113,6 +114,7 @@ public protocol BrowserHostStoreCoordinating: AnyObject {
 public extension BrowserHostStoreCoordinating {
     func requiresProxy(tab: BrowserTab, url: URL) -> Bool { false }
     func requiresProxyPreparation(tab: BrowserTab, url: URL) -> Bool { false }
+    func canSendMainFrame(tab: BrowserTab, url: URL) -> Bool { true }
     func prepareProxyNavigation(tab: BrowserTab, request: URLRequest) -> Bool { false }
     func willRestoreOriginalStore(tab: BrowserTab) {}
 }
@@ -153,7 +155,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func parentForProxyLanding(_ url: URL) -> String? {
         guard url.scheme == "https", url.port == nil || url.port == 443,
-              url.host?.lowercased() == proxyLandingTarget else { return nil }
+              url.user == nil, url.password == nil,
+              Self.routingHost(of: url) == proxyLandingTarget else { return nil }
         return proxyLandingParent
     }
     public var boundHostName: String?
@@ -162,6 +165,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public weak var hostCoordinator: BrowserHostStoreCoordinating?
     private typealias MainFrameAttempt = MainFrameNavigationState.Attempt
     private var committedRequest: MainFrameAttempt?
+    /// Only the unit-test commit seam records a document without a WebKit view identity.
+    private var committedDocument: (epoch: UInt64, viewID: ObjectIdentifier?)?
+    private var websiteRoutePause: (navigationID: String, documentEpoch: UInt64, editableAddress: URL?)?
     private var restoreURL: URL?
     private let navigationState = MainFrameNavigationState()
     private var attempt: MainFrameAttempt {
@@ -175,9 +181,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private var provisionalDeadline: Task<Void, Never>?
     private var retiringStoreReleases: [@MainActor () -> Void] = []
     private var deferredDocumentNavigationID: String?
+    private var restoreNavigationAwaitingRoute: String?
     @Published public private(set) var lastMainFrameFailure: BrowserMainFrameFailure?
     @Published public private(set) var loadingErrorAllowsProxyRetry = false
     @Published public private(set) var pendingAddressNavigation: BrowserPendingAddressNavigation?
+    /// App-issued document loads already handed to WebKit, newest last.
+    private var deliveredDocumentLoads: [(navigationID: String, url: URL)] = []
     /// The address the user is navigating or recovering, even when WebKit still
     /// displays an older document or its internal HTTPS warning page.
     public var addressBarURL: URL? {
@@ -187,6 +196,41 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if isLoading { return requestedURL ?? url }
         return lastMainFrameFailure?.url ?? url
     }
+
+    /// The address eligible for a manual website route choice in this tab.
+    public var websiteRouteControlURL: URL? {
+        guard !isDisposed, protectionIncident == nil, pendingAddressNavigation == nil,
+              let address = addressBarURL, Self.safeProxyURL(address) else { return nil }
+        if let pause = websiteRoutePause {
+            guard !isLoading, pause.navigationID == attempt.navigationID, attempt.url == address,
+                  pause.documentEpoch == navigationEpoch, pause.editableAddress == address else { return nil }
+            return address
+        }
+        if let failure = lastMainFrameFailure {
+            guard !isLoading, loadingErrorPresentation != nil, loadingErrorAllowsProxyRetry,
+                  failure.navigationID == attempt.navigationID, failure.url == address,
+                  !failure.hasReplayableBody, let request = safeRouteReloadRequest,
+                  request.url == address, request.httpMethod == failure.method else { return nil }
+            return address
+        }
+        guard loadingErrorPresentation == nil, let committedRequest, isLatestAttempt(committedRequest),
+              let committedDocument, committedDocument.epoch == navigationEpoch,
+              let committedURL = committedMainFrameURL, attempt.url == committedURL,
+              ["GET", "HEAD"].contains(committedRequest.method), attempt.method == committedRequest.method,
+              !committedRequest.hasReplayableBody, !attempt.hasReplayableBody else { return nil }
+        guard let viewID = committedDocument.viewID else {
+            return committedURL == address && committedRequest.url == address ? address : nil
+        }
+        // History API updates can change the live URL without starting a navigation.
+        guard restoreURL == nil, let view = loadedWebView, ObjectIdentifier(view) == viewID,
+              let liveURL = view.url, let origin = BrowserPreferences.origin(committedURL),
+              BrowserPreferences.origin(liveURL) == origin, BrowserPreferences.origin(address) == origin else { return nil }
+        if isLoading {
+            return liveURL == committedURL && liveURL == address ? liveURL : nil
+        }
+        return view.isLoading ? nil : liveURL
+    }
+
     private var pendingProxyRequest: URLRequest?
     private var unavailableDefaultRoute: BrowserPendingAddressNavigation?
     private struct HistoryNavigation {
@@ -259,6 +303,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let scheme = recorded.url.scheme?.lowercased() ?? ""
         guard ["http", "https"].contains(scheme) else { return }
         committedRequest = recorded
+        committedDocument = (navigationEpoch, nil)
         committedMainFrameURL = recorded.url
         url = recorded.url
         clearPendingAddressNavigation()
@@ -437,6 +482,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         hasReplayableBody: Bool = false,
         policyType: WKNavigationType? = nil
     ) {
+        websiteRoutePause = nil
         cancelJavaScriptDialog()
         afterProxyDocumentStops = nil
         documentStopDeadline?.cancel()
@@ -513,6 +559,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         loadGeneration = UUID()
         pendingAttachedLoad = nil
         needsWindowBeforeLoad = false
+        restoreNavigationAwaitingRoute = nil
         if let abandonedID = deferredDocumentNavigationID {
             retireUnboundAttempt(navigationID: abandonedID)
         }
@@ -532,30 +579,39 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         return true
     }
 
-    func alignStore(for url: URL, previous: URL?, method: String, body: Data?) -> Bool {
+    private static func routingHost(of url: URL) -> String? {
+        guard var host = url.host?.lowercased() else { return nil }
+        if host.hasSuffix(".") { host.removeLast() }
+        if !host.utf8.allSatisfy({ $0 < 128 }) { return RegisteredDomain.normalizedHost(host) }
+        return host
+    }
+
+    private static func canReplayForRoute(_ request: URLRequest) -> Bool {
+        ["GET", "HEAD"].contains((request.httpMethod ?? "GET").uppercased())
+            && !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(request)
+    }
+
+    private func alignStore(for url: URL, previous: URL?, safeToReplay: Bool) -> Bool {
         guard !isDisposed else { return false }
-        let hostChanged = previous?.host?.lowercased() != nil
-            && url.host?.lowercased() != nil
-            && previous?.host?.lowercased() != url.host?.lowercased()
-        if ["POST", "PATCH"].contains(method.uppercased()), body == nil,
-           hostCoordinator?.wouldSwitchStore(tab: self, url: url) == true {
-            loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
-            loadingErrorAllowsProxyRetry = false
+        let host = Self.routingHost(of: url)
+        let previousHost = previous.flatMap(Self.routingHost)
+        let hostChanged = previousHost != nil && host != nil && previousHost != host
+        if !safeToReplay, hostCoordinator?.wouldSwitchStore(tab: self, url: url) == true {
+            explainUnreplayableRequest()
             return false
         }
-        if url.scheme != "https" || (url.port != nil && url.port != 443) || url.host?.lowercased() != proxyLandingTarget {
+        if parentForProxyLanding(url) == nil {
             clearProxyLanding()
         }
         let routed = hostCoordinator?.dataStoreForMainFrame(tab: self, url: url)
         guard !rejectUnavailableLanding(url, store: routed) else { return false }
         let desired = routed ?? originalWebsiteDataStore
         guard hostChanged || desired !== configuration.websiteDataStore else { return true }
-        if ["POST", "PATCH"].contains(method.uppercased()), body == nil, desired !== configuration.websiteDataStore {
-            loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
-            loadingErrorAllowsProxyRetry = false
+        if !safeToReplay, desired !== configuration.websiteDataStore {
+            explainUnreplayableRequest()
             return false
         }
-        rebindWebsiteDataStore(desired, host: routed == nil ? nil : url.host?.lowercased())
+        rebindWebsiteDataStore(desired, host: routed == nil ? nil : host)
         return true
     }
 
@@ -582,7 +638,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         deferredDocumentNavigationID = attempt.navigationID
         if hostCoordinator?.prepareProxyNavigation(tab: self, request: request) == true { return }
-        guard alignStore(for: url, previous: requestedURL, method: method, body: request.httpBody) else { return }
+        guard alignStore(for: url, previous: requestedURL,
+                         safeToReplay: Self.canReplayForRoute(request) && !attempt.hasReplayableBody) else {
+            invalidateDeferredDocumentLoad()
+            isLoading = false
+            return
+        }
         isSuspended = false
         requestedURL = url
         isLoading = true
@@ -621,6 +682,34 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private func isLoopbackHTTP(_ url: URL?) -> Bool {
         guard url?.scheme?.lowercased() == "http" else { return false }
         return ["127.0.0.1", "localhost", "[::1]", "::1"].contains(url?.host ?? "")
+    }
+
+    /// WebKit can still ask about an app load that a newer app load replaced.
+    /// Only that exact earlier URL qualifies, and only before the newer load's
+    /// own first policy acknowledgment. That acknowledgment clears the pending
+    /// flag, and a server redirect of the newer load can only arrive after it,
+    /// so links, scripts and redirects are unaffected.
+    private func isSupersededAppLoad(_ action: WKNavigationAction, url: URL) -> Bool {
+        Self.isSupersededAppLoad(
+            navigationType: action.navigationType,
+            awaitingOwnPolicy: navigationState.programmaticPolicyNavigationID == attempt.navigationID,
+            currentNavigationID: attempt.navigationID,
+            currentURL: attempt.url,
+            url: url,
+            delivered: deliveredDocumentLoads
+        )
+    }
+
+    static func isSupersededAppLoad(
+        navigationType: WKNavigationType,
+        awaitingOwnPolicy: Bool,
+        currentNavigationID: String,
+        currentURL: URL,
+        url: URL,
+        delivered: [(navigationID: String, url: URL)]
+    ) -> Bool {
+        guard navigationType == .other, awaitingOwnPolicy, url != currentURL else { return false }
+        return delivered.contains { $0.navigationID != currentNavigationID && $0.url == url }
     }
 
     private func performLoad(_ request: URLRequest) {
@@ -698,11 +787,37 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             retireUnboundAttempt(navigationID: attempt.navigationID)
             return
         }
+        let needsRestoreRoute = restoreNavigationAwaitingRoute == attempt.navigationID
+        restoreNavigationAwaitingRoute = nil
+        if let url = request.url, let hostCoordinator {
+            // A session can attach its coordinator after starting the restore.
+            // Select the route for the same unsent request before handing it to WebKit.
+            if needsRestoreRoute, url == attempt.url, Self.safeProxyURL(url),
+               Self.canReplayForRoute(request), !attempt.hasReplayableBody {
+                commitPreservingMethod(request, continuesAttempt: true)
+                return
+            }
+            let requiresProxy = hostCoordinator.requiresProxy(tab: self, url: url)
+            if !hostCoordinator.canSendMainFrame(tab: self, url: url)
+                || hostCoordinator.wouldSwitchStore(tab: self, url: url)
+                || (requiresProxy && (boundHostName == nil || hostCoordinator.requiresProxyPreparation(tab: self, url: url))) {
+                retireUnboundAttempt(navigationID: attempt.navigationID)
+                isLoading = false
+                loadingErrorAllowsProxyRetry = false
+                loadingErrorPresentation = .resource("网站连接方式已更改，请重新打开此页面。")
+                return
+            }
+        }
         if replayingFailure {
             lastMainFrameFailure = nil
         }
         let recorded = attempt
         deferredDocumentNavigationID = nil
+        if let url = request.url {
+            deliveredDocumentLoads.removeAll { $0.navigationID == recorded.navigationID }
+            deliveredDocumentLoads.append((recorded.navigationID, url))
+            if deliveredDocumentLoads.count > 4 { deliveredDocumentLoads.removeFirst() }
+        }
         navigationState.programmaticPolicyNavigationID = recorded.navigationID
         let navigation = webView.load(request)
         pendingNavigation = navigation
@@ -853,6 +968,26 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         attempt.hasReplayableBody = unsafeReplay
         terminateCurrentDocument()
         loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
+    }
+
+    /// Cancel the load and keep the verified address available for editing the next route.
+    public func pauseAfterWebsiteRouteChange(detachStore: Bool) {
+        // Stop retains the address bar's snapshot of the verified site.
+        let editableAddress = websiteRouteControlURL == nil ? nil : addressBarURL
+        let keepsTerminalFailure = lastMainFrameFailure != nil && editableAddress != nil
+        if !keepsTerminalFailure { stop() }
+        if detachStore {
+            if keepsTerminalFailure { hostCoordinator?.pendingRecoveryInvalidated(tab: self) }
+            rebindWebsiteDataStore(originalWebsiteDataStore, host: nil)
+            loadingErrorAllowsProxyRetry = false
+        }
+        guard detachStore || !keepsTerminalFailure else { return }
+        // Bind the control to the paused tab state after Stop and any store teardown.
+        // The old request and document identities stay retired.
+        websiteRoutePause = (attempt.navigationID, navigationEpoch, editableAddress)
+        if !keepsTerminalFailure {
+            loadingErrorPresentation = .resource("网站连接方式已更改，请重新打开此页面。")
+        }
     }
 
     private func terminateCurrentDocument() {
@@ -1206,7 +1341,14 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         attempt.url = url
         attempt.method = "GET"
         if hostCoordinator?.prepareProxyNavigation(tab: self, request: URLRequest(url: url, timeoutInterval: 30)) == true { return }
-        guard alignStore(for: url, previous: previous, method: "GET", body: nil) else { return }
+        guard alignStore(for: url, previous: previous, safeToReplay: true) else {
+            invalidateDeferredDocumentLoad()
+            isLoading = false
+            return
+        }
+        if preservingScroll, hostCoordinator == nil, Self.safeProxyURL(url) {
+            restoreNavigationAwaitingRoute = attempt.navigationID
+        }
         // Store replacement releases the old WebView and changes loadGeneration.
         let generation = loadGeneration
         isLoading = true
@@ -1394,8 +1536,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
     ) {
         let finish: (WKNavigationActionPolicy) -> Void = { decisionHandler($0, webPreferences) }
-        guard webView === loadedWebView, let requestURL = navigationAction.request.url
-        else {
+        guard webView === loadedWebView, !isDisposed else {
+            finish(.cancel)
+            return
+        }
+        guard let requestURL = navigationAction.request.url else {
             finish(.allow)
             return
         }
@@ -1414,6 +1559,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             }
             let decision = navigationDecision(requestURL, method: navigationAction.request.httpMethod ?? "GET")
             finish(decision.kind == .blocked ? .cancel : .allow)
+            return
+        }
+        if isSupersededAppLoad(navigationAction, url: requestURL) {
+            // A newer app load already owns this tab. Re-issuing the stale
+            // request would replace it and drop its pending address choice.
+            finish(.cancel)
             return
         }
         if temporaryPermission?.url != requestURL { temporaryPermission = nil }
@@ -1439,9 +1590,10 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         let previousLanding = (proxyLandingParent, proxyLandingTarget)
         if decision.kind != .blocked, navigationAction.navigationType == .other,
-           boundHostName != nil, let parent = proxyLandingParent ?? boundHostName, let target = requestURL.host?.lowercased(),
+           boundHostName != nil, let parent = proxyLandingParent ?? boundHostName, let target = Self.routingHost(of: requestURL),
            requestedURL?.scheme == "https", requestURL.scheme == "https",
            requestURL.port == nil || requestURL.port == 443,
+           requestURL.user == nil, requestURL.password == nil,
            (navigationAction.request.httpMethod ?? "GET") == "GET",
            !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(navigationAction.request),
            RegisteredDomain.isCanonicalLandingHost(target, for: parent) {
@@ -1449,17 +1601,20 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             proxyLandingTarget = target
         }
         let method = navigationAction.request.httpMethod ?? "GET"
-        let body = navigationAction.request.httpBody
-        let hostMismatch = requestedURL.map { $0.host?.lowercased() != requestURL.host?.lowercased() } ?? false
-        if ["POST", "PATCH"].contains(method.uppercased()), body == nil,
+        let hostMismatch = requestedURL.map { Self.routingHost(of: $0) != Self.routingHost(of: requestURL) } ?? false
+        // WebKit can present a redirect from a write as a GET. Do not move it
+        // across stores while the original write is still in flight.
+        let redirectFromUnsafe = navigationAction.navigationType == .other && pendingNavigation != nil
+            && committedRequest.map(isLatestAttempt) != true
+            && (!["GET", "HEAD"].contains(attempt.method) || attempt.hasReplayableBody)
+        let safeToReplay = Self.canReplayForRoute(navigationAction.request) && !redirectFromUnsafe
+        if !safeToReplay,
            hostCoordinator?.wouldSwitchStore(tab: self, url: requestURL) == true {
             (proxyLandingParent, proxyLandingTarget) = previousLanding
-            loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
-            loadingErrorAllowsProxyRetry = false
+            explainUnreplayableRequest()
             finish(.cancel)
             return
         }
-        let routedStore = hostCoordinator?.dataStoreForMainFrame(tab: self, url: requestURL)
         let history = navigationAction.navigationType == .backForward ? historyNavigation : nil
         let ownedHistory = history?.view === webView && history?.target.url == requestURL
             && history?.navigationID == attempt.navigationID
@@ -1471,8 +1626,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             && hostCoordinator?.requiresProxy(tab: self, url: requestURL) != true
         if hostCoordinator?.requiresProxyPreparation(tab: self, url: requestURL) == true,
            !keepsWebKitHistory,
-           ["GET", "HEAD"].contains(method.uppercased()),
-           !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(navigationAction.request) {
+           safeToReplay {
             if ownedHistory {
                 adoptMainFrameNavigation(url: requestURL, method: method, continuesExistingNavigation: false,
                     hasReplayableBody: false, policyType: .backForward)
@@ -1481,23 +1635,28 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             commitPreservingMethod(navigationAction.request, continuesAttempt: ownedHistory)
             return
         }
-        if decision.kind != .blocked, rejectUnavailableLanding(requestURL, store: routedStore) {
+        let routedStore = hostCoordinator?.dataStoreForMainFrame(tab: self, url: requestURL)
+        if rejectUnavailableLanding(requestURL, store: routedStore) {
             (proxyLandingParent, proxyLandingTarget) = previousLanding
             finish(.cancel)
             return
         }
         let storeMismatch = (routedStore ?? originalWebsiteDataStore) !== websiteDataStore
-        if decision.kind != .blocked,
-           navigationAction.targetFrame?.isMainFrame != false,
-           storeMismatch || (hostMismatch && navigationAction.navigationType != .backForward
-                              && !["POST", "PATCH"].contains(method.uppercased())),
-           realignedNavigationURL != requestURL {
+        if storeMismatch {
+            guard safeToReplay, realignedNavigationURL != requestURL else {
+                (proxyLandingParent, proxyLandingTarget) = previousLanding
+                explainUnreplayableRequest()
+                finish(.cancel)
+                return
+            }
+        }
+        if realignedNavigationURL != requestURL,
+           storeMismatch || (safeToReplay && hostMismatch && navigationAction.navigationType != .backForward) {
             realignedNavigationURL = requestURL
             finish(.cancel)
             var request = navigationAction.request
             request.url = URL(string: decision.effectiveURL) ?? requestURL
             request.httpMethod = method
-            request.httpBody = body
             commitPreservingMethod(request, continuesAttempt: attempt.recoveryOperationID != nil)
             return
         }
@@ -1647,6 +1806,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView === loadedWebView, isCurrent(navigation) else { return }
+        deliveredDocumentLoads.removeAll()
         clearPendingAddressNavigation()
         historyNavigation = nil
         provisionalNavigation = nil
@@ -1655,6 +1815,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if let navigation, let recorded = navigationState.recorded(for: navigation) {
             let scheme = recorded.url.scheme?.lowercased() ?? ""
             committedRequest = recorded
+            committedDocument = (navigationEpoch, ObjectIdentifier(webView))
             if ["http", "https"].contains(scheme) {
                 committedMainFrameURL = recorded.url
                 url = recorded.url
@@ -2085,6 +2246,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let now = Date()
         recentTerminations = recentTerminations.filter { now.timeIntervalSince($0) < 60 } + [now]
         guard isActive else { releaseWebView(); return }
+        guard websiteRoutePause == nil else { return }
         guard recentTerminations.count <= 1 else {
             loadTask?.cancel(); loadGeneration = UUID(); pendingNavigation = nil; isLoading = false
             loadingErrorPresentation = .resource("页面连续停止运行，已暂停自动重载。请手动重试或关闭此标签。")
@@ -2292,12 +2454,14 @@ public final class BrowserSession: ObservableObject {
     public init(dataStore: BrowserDataStore = BrowserDataStore(), workspaceStore: WorkspaceStore = WorkspaceStore(),
                 windowID: UUID = UUID(), windowStore: BrowserWindowStore? = nil,
                 preferences: BrowserPreferences = BrowserPreferences(),
-                enhancementStore: WebsiteEnhancementStore = .shared) {
+                enhancementStore: WebsiteEnhancementStore = .shared,
+                hostCoordinator: BrowserHostStoreCoordinating? = nil) {
         self.dataStore = dataStore
         self.workspaceStore = workspaceStore
         self.windowID = windowID
         self.windowStore = windowStore
         self.preferences = preferences
+        self.hostCoordinator = hostCoordinator
         self.standardEnhancements = enhancementStore
         standardRuntime = WebExtensionRuntime(isPrivate: false)
         privateRuntime = WebExtensionRuntime(isPrivate: true)
