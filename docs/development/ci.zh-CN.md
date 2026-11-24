@@ -278,6 +278,8 @@ PR 从被测合并提交的第一父提交读取规则和汇总程序，并校�
 
 iOS 合同在自己的 impact 成功且 `ios && integrate` 时启动，unsigned archive 再等待合同成功且 `deep`。macOS 自动合同等待自己的 impact 成功且 `macos && integrate`。两者可与基础 quality 并行。手动验证和交付沿用各自的入口及准入条件。
 
+平台合同和 `platform-gate` 目前是诊断结果，不是合并门禁。开发 Fork `develop` 的必需检查是 `quality-gate` 和 `gitleaks`；上游 `main` 另外要求 `Codacy Static Code Analysis`。上游规则集同时作用于上游 `develop`，但 Codacy 只分析以 `main` 为目标的 PR（见「Codacy Production 准备状态」），指向上游 `develop` 的 PR 会一直等待该检查，规则集与分析范围需另行对齐。`quality-gate` 只汇总 `quality`。iOS 合同、unsigned archive、macOS 合同、`other-platforms` 和 `platform-gate` 失败不会阻止合并，审查者需要单独查看这些结果。`platform-gate` 接入规则集的条件见下文「观察、启用与回退」。
+
 基础 quality 成功且 `integrate` 为真时，Android、Windows、Linux 任一被选中就分配一个 Ubuntu runner。这个 runner 只执行选中的合同，每个平台单独显示一个步骤。多平台改动共用一次 checkout 和 Node 安装。一个合同失败后，其余已选合同继续运行。取消或环境准备失败时停止。步骤保留各自的失败状态，作业级 `continue-on-error` 让该作业提供诊断。Linux 合同执行真实 Bash 父子 fixture，并用样例验证报告过滤、零命中和缺项拒绝。kcov、Pester、Android instrumentation 和 iOS Simulator 的覆盖率报告及触发条件见本指南的「PR、develop/main 与证据身份」。
 
 `Platform CI` 使用一次路由结果分配五个合同作业。Linux 和 Windows 复用现有覆盖率 workflow 的对应入口。汇总检查始终核对实际结果。被选中作业只有明确成功才可通过。未选作业记录为不适用，缺失、失败、取消、超时及被选作业意外跳过均应报错。iOS unsigned archive、Android 模拟器、全量 Chromium、真机、签名和发布使用各自的证据。
