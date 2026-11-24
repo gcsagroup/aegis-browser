@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {Buffer} from 'node:buffer';
 import {spawn, spawnSync} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {clearTimeout, setTimeout} from 'node:timers';
 import {fileURLToPath} from 'node:url';
@@ -92,11 +92,14 @@ function runFork(body, {enabled = true, coverage = true, traceExit = false, vite
   const observer = join(directory, 'observe-exit.mjs');
   if (traceExit) writeFileSync(observer, [
     "import childProcess from 'node:child_process';",
-    "import {writeFileSync} from 'node:fs';",
+    "import {realpathSync, writeFileSync} from 'node:fs';",
     "import {syncBuiltinESMExports} from 'node:module';",
     'const fork = childProcess.fork;',
     'childProcess.fork = function (...args) {',
     '  const child = Reflect.apply(fork, this, args);',
+    // Vitest 5.1.1 还会启动 watchdog，只观察执行测试的真实 worker。
+    '  if (realpathSync(args[0]) !== ' +
+      JSON.stringify(realpathSync(join(core, 'node_modules/vitest/dist/workers/forks.js'))) + ') return child;',
     // Occupy the parent before Vitest processes the ACK and starts its kill timer.
     delayParentStop ? `  child.on('message', message => {
       if (message?.__vitest_worker_response__ && message.type === 'stopped')

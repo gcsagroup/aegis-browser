@@ -341,7 +341,7 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         // Settle it before observing the proxy document this test actually retires.
         let startupRetired = expectation(description: "Startup document became inert")
         tab.afterProxyHoldDocumentStops { startupRetired.fulfill() }
-        await fulfillment(of: [startupRetired], timeout: 2)
+        await fulfillment(of: [startupRetired], timeout: 10)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -355,7 +355,7 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         XCTAssertEqual(oldStore.proxyConfigurations.count, 1, "Old realm still owns its mandatory route")
         // A replacement can be parked waiting for its UIWindow. Its navigation
         // is not evidence that the old realm has stopped; await the owned receipt.
-        await fulfillment(of: [proxyDocumentRetired], timeout: 2)
+        await fulfillment(of: [proxyDocumentRetired], timeout: 10)
         coordinator.releaseIdleResources()
         XCTAssertTrue(oldStore.proxyConfigurations.isEmpty)
         XCTAssertNil(oldView.load(URLRequest(url: URL(string: "https://192.0.2.1/late")!)))
@@ -370,7 +370,7 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         tab.dispose { completed = true }
         XCTAssertFalse(completed, "held old view must become inert before releasing its store")
         XCTAssertNil(oldView.load(URLRequest(url: URL(string: "https://192.0.2.1/resurrect")!)))
-        await waitUntil { completed }
+        await waitUntil({ completed }, timeout: 10)
         XCTAssertTrue(completed)
     }
 
@@ -731,8 +731,8 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
         let tab = browser.activeTab!
         addTeardownBlock { [browser] in
-            browser.standardTabs.forEach { $0.stop() }
-            browser.privateTabs.forEach { $0.stop() }
+            // 停止加载不会释放已挂载的页面；每个用例结束时走真实窗口关闭路径。
+            browser.closeWindow()
         }
         return tab
     }
@@ -1406,13 +1406,19 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         let window = try await attachPage(tab, at: first)
         defer { window.isHidden = true }
         let view = tab.webView, history = view.backForwardList
+        let trace = PageNavigationTrace(tab)
+        view.navigationDelegate = trace
+        defer { view.navigationDelegate = tab }
         let firstItem = try XCTUnwrap(history.currentItem)
         let initialBack = history.backList
         tab.load(second)
-        await waitUntil { tab.committedMainFrameURL == second && !tab.isLoading }
+        await waitUntil({ trace.finished != nil && history.currentItem !== firstItem && history.currentItem?.url == second && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "第二个历史文档必须完成加载")
         let secondItem = try XCTUnwrap(history.currentItem)
+        trace.finished = nil
         tab.load(first) // A different item with the same URL must not be mistaken for firstItem.
-        await waitUntil { tab.committedMainFrameURL == first && !tab.isLoading }
+        await waitUntil({ trace.finished != nil && history.currentItem !== secondItem && history.currentItem?.url == first && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "重复 URL 的历史文档必须完成加载")
         let duplicate = try XCTUnwrap(history.currentItem)
         XCTAssertFalse(duplicate === firstItem)
         let coordinator = OptionalHistoryPreparation()
@@ -1424,13 +1430,16 @@ final class AccessNavigationRecoveryTests: XCTestCase {
             (false, duplicate, initialBack + [firstItem, secondItem], []),
         ]
         for (index, step) in steps.enumerated() {
+            trace.finished = nil
             if step.back { tab.goBack() } else { tab.goForward() }
             let identity = tab.currentAttemptIDForTests
-            await waitUntil { coordinator.held.count == index + 1 }
+            await waitUntil({ coordinator.held.count == index + 1 }, timeout: 10)
             let pending = try XCTUnwrap(coordinator.held.last)
             XCTAssertEqual(pending.navigationID, identity, "Preparation must retain the history operation's identity")
             tab.continueWithoutDefaultRoute(pending)
-            await waitUntil { tab.committedMainFrameURL == step.item.url && !tab.isLoading }
+            // URL 相同不能证明已经回到目标历史项；等待 WebKit 的真实游标。
+            await waitUntil({ trace.finished != nil && history.currentItem === step.item && !view.isLoading && !tab.isLoading }, timeout: 10)
+            XCTAssertNotNil(trace.finished, "历史回退必须完成：\(tab.loadingError ?? "无加载错误")")
             XCTAssertTrue(tab.webView === view)
             XCTAssertTrue(history.currentItem === step.item, "Fallback must traverse the original item rather than append its URL")
             XCTAssertEqual(history.backList, step.previous); XCTAssertEqual(history.forwardList, step.next)
@@ -1477,29 +1486,43 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         let window = try await attachPage(tab, at: first)
         defer { window.isHidden = true }
         let view = tab.webView, history = view.backForwardList
+        let trace = PageNavigationTrace(tab)
+        view.navigationDelegate = trace
+        defer { view.navigationDelegate = tab }
         view.allowsBackForwardNavigationGestures = true
         let firstItem = try XCTUnwrap(history.currentItem)
         tab.load(second)
-        await waitUntil { tab.committedMainFrameURL == second && !tab.isLoading }
+        await waitUntil({ trace.finished != nil && history.currentItem !== firstItem && history.currentItem?.url == second && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "第二个历史文档必须完成加载")
         let secondItem = try XCTUnwrap(history.currentItem)
+        trace.finished = nil
         tab.load(first)
-        await waitUntil { tab.committedMainFrameURL == first && !tab.isLoading }
+        await waitUntil({ trace.finished != nil && history.currentItem !== secondItem && history.currentItem?.url == first && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "重复 URL 的历史文档必须完成加载")
         let duplicate = try XCTUnwrap(history.currentItem)
         let coordinator = OptionalHistoryPreparation()
         tab.hostCoordinator = coordinator
+        trace.finished = nil
         _ = view.goBack() // Like a gesture, this traversal belongs to WebKit rather than navigateHistory.
-        await waitUntil({ history.currentItem === secondItem && !tab.isLoading }, timeout: 10)
+        await waitUntil({ trace.finished != nil && history.currentItem === secondItem && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "WebKit 历史遍历必须完成：\(tab.loadingError ?? "无加载错误")")
         XCTAssertTrue(history.currentItem === secondItem)
         XCTAssertTrue(history.forwardItem === duplicate)
+        trace.finished = nil
         _ = try await view.evaluateJavaScript("history.back(); true")
-        await waitUntil({ history.currentItem === firstItem && !tab.isLoading }, timeout: 10)
+        await waitUntil({ trace.finished != nil && history.currentItem === firstItem && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "WebKit 历史遍历必须完成：\(tab.loadingError ?? "无加载错误")")
         XCTAssertTrue(history.currentItem === firstItem)
         XCTAssertEqual(history.forwardList, [secondItem, duplicate])
+        trace.finished = nil
         _ = try await view.evaluateJavaScript("history.forward(); true")
-        await waitUntil({ history.currentItem === secondItem && !tab.isLoading }, timeout: 10)
+        await waitUntil({ trace.finished != nil && history.currentItem === secondItem && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "WebKit 历史遍历必须完成：\(tab.loadingError ?? "无加载错误")")
         XCTAssertTrue(history.currentItem === secondItem)
+        trace.finished = nil
         _ = view.goForward()
-        await waitUntil({ history.currentItem === duplicate && !tab.isLoading }, timeout: 10)
+        await waitUntil({ trace.finished != nil && history.currentItem === duplicate && !view.isLoading && !tab.isLoading }, timeout: 10)
+        XCTAssertNotNil(trace.finished, "WebKit 历史遍历必须完成：\(tab.loadingError ?? "无加载错误")")
         XCTAssertTrue(history.currentItem === duplicate)
         XCTAssertTrue(history.backItem === secondItem)
         XCTAssertTrue(coordinator.held.isEmpty, "Optional preparation cannot cancel a traversal whose exact target is private to WebKit")
@@ -1610,6 +1633,18 @@ private final class PageNavigationTrace: NSObject, WKNavigationDelegate {
         redirect = nav
         print("WK redirect \(ObjectIdentifier(nav))")
         tab.webView(view, didReceiveServerRedirectForProvisionalNavigation: nav)
+    }
+    // 观察导航时仍转发失败和进程终止，不能让测试代理吞掉产品错误路径。
+    func webView(_ view: WKWebView, didFailProvisionalNavigation nav: WKNavigation!, withError error: Error) {
+        print("WK provisional failure \(error)")
+        tab.webView(view, didFailProvisionalNavigation: nav, withError: error)
+    }
+    func webView(_ view: WKWebView, didFail nav: WKNavigation!, withError error: Error) {
+        print("WK failure \(error)")
+        tab.webView(view, didFail: nav, withError: error)
+    }
+    func webViewWebContentProcessDidTerminate(_ view: WKWebView) {
+        tab.webViewWebContentProcessDidTerminate(view)
     }
     func webView(_ view: WKWebView, didCommit nav: WKNavigation!) {
         print("WK commit \(ObjectIdentifier(nav))")

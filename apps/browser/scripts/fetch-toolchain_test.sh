@@ -42,14 +42,18 @@ fi
 store_root="$fixture_root/vpython-store"
 wheels_req="$store_root/wheels+fixture/contents/requirements.txt"
 vpython_req="$store_root/vpython_requirements+fixture/contents/requirements.txt"
-mkdir -p "$(dirname "$wheels_req")" "$(dirname "$vpython_req")"
+hyphen_req="$store_root/vpython_requirements-fixture/contents/requirements.txt"
+mkdir -p "$(dirname "$wheels_req")" "$(dirname "$vpython_req")" "$(dirname "$hyphen_req")"
 printf 'pyyaml==5.4.1+chromium.1\n' > "$wheels_req"
 printf '%s\n' \
   'crcmod==1.7+chromium.4' \
   'aioquic==1.2.0+chromium.1' \
   'aioquic==1.2.0+chromium.2' \
+  'cffi==1.15.1+chromium.2' \
+  'psutil==5.8.0+chromium.3' \
   'unverified-package==2.0+chromium.9' \
   > "$vpython_req"
+printf 'crcmod==1.7+chromium.4\n' > "$hyphen_req"
 # shellcheck disable=SC2034  # Consumed by the sourced scan_cached_requirements.
 VPYTHON_STORE_ROOTS=("$store_root")
 
@@ -58,8 +62,14 @@ assert_file_contains "$wheels_req" 'pyyaml==6.0.2' \
   'wheels+ requirements cache was not patched'
 assert_file_contains "$vpython_req" 'crcmod==1.7' \
   'vpython_requirements+ cache was not patched'
+assert_file_contains "$hyphen_req" 'crcmod==1.7' \
+  'hyphenated vpython_requirements- cache was not patched'
 assert_file_contains "$vpython_req" 'aioquic==1.2.0' \
   'verified aioquic Chromium pin was not mapped to its public wheel'
+assert_file_contains "$vpython_req" 'cffi==1.15.1' \
+  'cffi Chromium pin was not mapped to its public wheel'
+assert_file_contains "$vpython_req" 'psutil==6.1.1' \
+  'psutil Chromium pin was not mapped to a buildable public wheel'
 assert_file_contains "$vpython_req" 'aioquic==1.2.0+chromium.2' \
   'unverified aioquic Chromium revision must remain unchanged'
 assert_file_contains "$vpython_req" 'unverified-package==2.0+chromium.9' \

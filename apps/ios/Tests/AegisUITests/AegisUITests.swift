@@ -420,7 +420,13 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
         endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
         app.buttons["detect-models"].tap()
-        XCTAssertTrue(app.staticTexts["连接成功，请选择模型并保存。"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["aegis-simulator-fixture"].waitForExistence(timeout: 12))
+        let connected = app.staticTexts["连接成功，请选择模型并保存。"]
+        // iPad 表单是紧凑弹窗，新增模型行会把成功提示推到可视范围下方。
+        for _ in 0..<4 where !connected.exists {
+            (app.collectionViews.allElementsBoundByIndex.last ?? app).swipeUp()
+        }
+        XCTAssertTrue(connected.waitForExistence(timeout: 5))
         app.buttons["save-model"].tap()
         XCTAssertTrue(app.staticTexts["模型设置已保存。"].waitForExistence(timeout: 5))
         closeModelSettings(app)
@@ -1011,12 +1017,17 @@ final class AegisUITests: XCTestCase {
         preview.tap()
         XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5))
         // Quick Look 正文由系统视图绘制，使用截图识别核对实际展示的合成文件内容。
-        let image = try XCTUnwrap(XCUIScreen.main.screenshot().image.cgImage)
-        let recognition = VNRecognizeTextRequest()
-        recognition.recognitionLanguages = ["zh-Hans", "en-US"]
-        try VNImageRequestHandler(cgImage: image).perform([recognition])
-        let visibleText = recognition.results?.compactMap { $0.topCandidates(1).first?.string }.joined() ?? ""
-        XCTAssertTrue(visibleText.contains("文件预览验收资料"))
+        var visibleText = ""
+        let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let image = XCUIScreen.main.screenshot().image.cgImage else { return false }
+            let recognition = VNRecognizeTextRequest()
+            recognition.recognitionLanguages = ["zh-Hans", "en-US"]
+            guard (try? VNImageRequestHandler(cgImage: image).perform([recognition])) != nil else { return false }
+            visibleText = recognition.results?.compactMap { $0.topCandidates(1).first?.string }.joined() ?? ""
+            return visibleText.contains("文件预览验收资料")
+        }, object: app)
+        // 导航栏可能先于 Quick Look 正文出现，必须等待真实内容绘制完成。
+        XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed, visibleText)
         attachScreenshot("系统文件预览", app)
     }
 
@@ -1257,22 +1268,26 @@ final class AegisUITests: XCTestCase {
     }
 
     private func browserButtons(_ identifier: String, in app: XCUIApplication) -> XCUIElementQuery {
+        app.buttons.matching(browserButtonPredicate(identifier))
+    }
+
+    private func browserButtonPredicate(_ identifier: String) -> NSPredicate {
         let labels = ["reading-library-button": ["阅读库"], "open-browser-settings": ["设置"],
                       "agent-button": ["AI 助手"], "data-button": ["资料"], "downloads-button": ["下载"],
                       "profile-menu": ["普通", "私密"], "page-actions": ["页面操作"],
                       "toggle-bookmark": ["添加收藏", "移除收藏"]]
-        guard let labels = labels[identifier] else { return app.buttons.matching(identifier: identifier) }
-        return app.buttons.matching(NSPredicate(format: "identifier == %@ OR label IN %@", identifier, labels))
+        guard let labels = labels[identifier] else { return NSPredicate(format: "identifier == %@", identifier) }
+        return NSPredicate(format: "identifier == %@ OR label IN %@", identifier, labels)
     }
 
     private func tapBrowserButton(_ identifier: String, in app: XCUIApplication) {
         let button = browserButton(identifier, in: app)
         if !button.exists || !button.isHittable {
-            tapVisibleBrowserControl(app.buttons.matching(identifier: "browser-more"), in: app, timeout: 8)
+            tapVisibleBrowserControl(NSPredicate(format: "identifier == %@", "browser-more"), in: app, timeout: 8)
         }
         let parentAction = app.buttons["新建标签页"]
         let leavesParentMenu = parentAction.exists && parentAction.isHittable
-        tapVisibleBrowserControl(browserButtons(identifier, in: app), in: app)
+        tapVisibleBrowserControl(browserButtonPredicate(identifier), in: app)
         if leavesParentMenu {
             let exited = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 !parentAction.exists || !parentAction.isHittable
@@ -1281,43 +1296,49 @@ final class AegisUITests: XCTestCase {
         }
     }
 
-    private func tapVisibleBrowserControl(_ choices: XCUIElementQuery, in app: XCUIApplication,
+    private func tapVisibleBrowserControl(_ predicate: NSPredicate, in app: XCUIApplication,
                                           timeout: TimeInterval = 5, ready: @escaping () -> Bool = { true }) {
-        // 原生菜单的 AX 行可能位于裁剪范围之外，isHittable 仍返回 true。
-        // 使用包含该行的最小菜单容器，先滚动到真实可见范围，再发送一次点击。
-        func viewport(for choice: XCUIElement) -> CGRect {
-            let identifier = choice.identifier
-            guard !identifier.isEmpty,
-                  app.collectionViews.containing(.button, identifier: identifier).firstMatch.exists else { return app.frame }
-            return app.otherElements.containing(.button, identifier: identifier).allElementsBoundByIndex
-                .map { $0.frame.intersection(app.frame) }
-                .filter { !$0.isEmpty && $0.width >= choice.frame.width && $0.height >= 44 }
-                .min { $0.width * $0.height < $1.width * $1.height } ?? app.frame
+        // 每轮只读取一份原生快照，避免逐个查询祖先节点耗尽等待时限。
+        // 菜单可暴露重复的虚拟节点；仍须确认同一个、完整可见且稳定的点击区域。
+        func candidates(in snapshot: XCUIElementSnapshot) -> [(frame: CGRect, viewport: CGRect)] {
+            var result: [(frame: CGRect, viewport: CGRect)] = []
+            func visit(_ node: XCUIElementSnapshot, ancestors: [XCUIElementSnapshot]) {
+                if node.elementType == .button, node.isEnabled, predicate.evaluate(with: node),
+                   !node.frame.isEmpty, !node.frame.isInfinite, !node.frame.isNull {
+                    let inMenu = ancestors.contains { $0.elementType == .collectionView }
+                    var viewport = snapshot.frame
+                    if inMenu {
+                        for ancestor in ancestors where ancestor.elementType == .other || ancestor.elementType == .collectionView {
+                            let bounds = ancestor.frame.intersection(snapshot.frame)
+                            guard !bounds.isEmpty, bounds.width >= node.frame.width, bounds.height >= 44 else { continue }
+                            if bounds.width * bounds.height < viewport.width * viewport.height { viewport = bounds }
+                        }
+                    }
+                    result.append((node.frame, viewport))
+                }
+                for child in node.children { visit(child, ancestors: ancestors + [node]) }
+            }
+            visit(snapshot, ancestors: [])
+            return result
         }
         for _ in 0..<4 {
-            guard let choice = choices.allElementsBoundByIndex.first(where: { $0.exists && $0.isEnabled }) else { break }
-            let bounds = viewport(for: choice)
-            if choice.isHittable && bounds.contains(choice.frame) { break }
-            guard bounds != app.frame else { break }
+            guard let snapshot = try? app.snapshot(), let choice = candidates(in: snapshot).first else { break }
+            let bounds = choice.viewport
+            if bounds.contains(choice.frame) || bounds == snapshot.frame { break }
             let down = choice.frame.midY < bounds.midY
             let origin = app.coordinate(withNormalizedOffset: .zero)
-            let start = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
-                dy: bounds.minY + bounds.height * (down ? 0.3 : 0.7) - app.frame.minY))
-            let end = origin.withOffset(CGVector(dx: bounds.midX - app.frame.minX,
-                dy: bounds.minY + bounds.height * (down ? 0.7 : 0.3) - app.frame.minY))
+            let start = origin.withOffset(CGVector(dx: bounds.midX - snapshot.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.3 : 0.7) - snapshot.frame.minY))
+            let end = origin.withOffset(CGVector(dx: bounds.midX - snapshot.frame.minX,
+                dy: bounds.minY + bounds.height * (down ? 0.7 : 0.3) - snapshot.frame.minY))
             start.press(forDuration: 0.05, thenDragTo: end)
         }
         var previousFrame = CGRect.null
         var settledFrame = CGRect.null
+        var appFrame = CGRect.null
         let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            guard ready() else { previousFrame = .null; return false }
-            let frames = choices.allElementsBoundByIndex.compactMap { choice -> CGRect? in
-                guard choice.exists, choice.isEnabled, choice.isHittable else { return nil }
-                let frame = choice.frame
-                return !frame.isEmpty && viewport(for: choice).contains(frame) ? frame : nil
-            }
-            // A native Menu can expose virtual and rendered nodes for one row.
-            // Resolve one visible hit region, without depending on that AX topology.
+            guard ready(), let snapshot = try? app.snapshot() else { previousFrame = .null; return false }
+            let frames = candidates(in: snapshot).filter { $0.viewport.contains($0.frame) }.map { $0.frame }
             guard let frame = frames.first, frames.allSatisfy({ $0 == frame }) else {
                 previousFrame = .null
                 return false
@@ -1325,22 +1346,21 @@ final class AegisUITests: XCTestCase {
             defer { previousFrame = frame }
             guard frame == previousFrame else { return false }
             settledFrame = frame
+            appFrame = snapshot.frame
             return true
         }, object: app)
         let result = XCTWaiter.wait(for: [visible], timeout: timeout)
         if result != .completed { add(XCTAttachment(string: app.debugDescription)) }
         XCTAssertEqual(result, .completed)
         guard result == .completed else { return }
-        // Send one physical tap to the settled row. Re-activating a virtual Menu
-        // node can leave the row highlighted without invoking its action.
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
-            dx: settledFrame.midX - app.frame.minX, dy: settledFrame.midY - app.frame.minY)).tap()
+            dx: settledFrame.midX - appFrame.minX, dy: settledFrame.midY - appFrame.minY)).tap()
     }
 
     private func enterPrivateBrowsing(in app: XCUIApplication) {
         tapBrowserButton("profile-menu", in: app)
         let mainMenuAction = app.buttons["新建标签页"]
-        tapVisibleBrowserControl(app.buttons.matching(NSPredicate(format: "label == %@", "私密")), in: app) {
+        tapVisibleBrowserControl(NSPredicate(format: "label == %@", "私密"), in: app) {
             !mainMenuAction.exists || !mainMenuAction.isHittable
         }
         let switched = XCTNSPredicateExpectation(predicate: NSPredicate(

@@ -157,6 +157,10 @@
         <include name="IDR_LINUX_ILLUSTRATION" file="crostini/linux_illustration_2x.png" type="BINDATA" />
         <include name="IDR_LINUX_SUCCESS_ILLUSTRATION" file="crostini/linux_success_illustration.svg" type="BINDATA" />
       </if>
+      <if expr="is_win">
+        <!-- 与 Windows 安装器 ICO 的 256px 图层共用原始应用图标，避免误用透明品牌 Logo。 -->
+        <include name="IDR_AEGIS_WINDOWS_APP_ICON" file="gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_256.png" type="BINDATA" />
+      </if>
     </includes>
   </release>
 </grit>

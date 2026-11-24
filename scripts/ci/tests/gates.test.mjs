@@ -545,7 +545,7 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       delete step.run;
       step.uses = 'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d';
     }, 'old emulator action injects a key before AVD admission'],
-    ...[60, 360].map((minutes) => [1, (w) => { w.jobs['ios-coverage']['timeout-minutes'] = minutes; }]),
+    ...[60, 180].map((minutes) => [1, (w) => { w.jobs['ios-coverage']['timeout-minutes'] = minutes; }]),
     [1, (w) => { w.jobs['ios-coverage'].steps[1].with['node-version'] = '22.23.0'; }],
     [4, (w) => { w.on.pull_request_target.branches = ['main']; }],
     [4, (w) => { w.on.pull_request = {}; }],
