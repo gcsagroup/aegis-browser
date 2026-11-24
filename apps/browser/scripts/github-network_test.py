@@ -411,6 +411,20 @@ pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'ok')
         self.assertEqual(len(rows), 5)
         self.assertIn('Download failed after', result.stderr)
 
+    def test_ci_github_download_worst_case_fits_install_step_timeout(self):
+        workflow = (ROOT / '.github/workflows/quality.yml').read_text(encoding='utf-8')
+        start = workflow.index('name: Install fixed ripgrep')
+        after = workflow[start:start + 300]
+        marker = 'timeout-minutes:'
+        self.assertIn(marker, after)
+        budget = int(after.split(marker)[1].split()[0]) * 60
+        result, rows, _output = self.run_download(succeed_at=99, proxy=PROXY)
+        self.assertEqual(result.returncode, 1)
+        limits = [int(row['args'][row['args'].index('--max-time') + 1]) for row in rows]
+        self.assertEqual(len(limits), 5)
+        backoff = sum(1 << index for index in range(4))
+        self.assertLessEqual(sum(limits) + backoff, budget)
+
 
 if __name__ == '__main__':
     unittest.main()

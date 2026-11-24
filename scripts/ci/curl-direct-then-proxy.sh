@@ -3,6 +3,8 @@
 # Shared CI download helper (five-project schedule).
 # Attempt order: direct, direct, proxy, proxy, direct.
 # Exponential backoff between attempts (1s, 2s, 4s, 8s).
+# Per-attempt limit: CURL_CI_MAX_TIME_SECONDS (default 45). Worst case is
+# 5 x 45s + 1+2+4+8s backoff = 240s, inside the 5-minute install step timeout.
 # Override with CURL_CI_BACKOFF_BASE_SECONDS=0 or CI_DOWNLOAD_BACKOFF_BASE_SECONDS=0 in tests.
 # shellcheck shell=bash
 
@@ -26,9 +28,11 @@ curl_ci_download() {
   local url="$2"
   shift 2
   local -a extra=("$@")
+  local max_time="${CURL_CI_MAX_TIME_SECONDS:-${CI_DOWNLOAD_MAX_TIME_SECONDS:-45}}"
+  [[ "$max_time" =~ ^[1-9][0-9]*$ ]] || max_time=45
   local -a base=(
     curl --fail --location --proto '=https' --tlsv1.2
-    --connect-timeout 20 --max-time 120 --retry 0
+    --connect-timeout 20 --max-time "$max_time" --retry 0
     --output "$output"
   )
   local proxy route attempt delay
