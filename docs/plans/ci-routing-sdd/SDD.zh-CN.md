@@ -23,6 +23,8 @@
 
 iOS 合同目前只等待自己的 impact，不等待 quality。合同条件在 `ios-release-validation.yml` 的 contracts 作业；macOS 合同同样只等待 `macos-delivery.yml` 自己的 impact。因此 #217 的 macOS 合同可以在 quality 失败时仍然成功。
 
+Windows 漏选的修复是 fork 的 [#413](https://github.com/quinn521/aegis-browser/pull/413)，截至 2026-11-24 仍未合入。fork 上的规则修复要随晋升才进入上游，见「Fork 与上游」。
+
 ## 边界
 
 保留门禁、集成、深度三个自动阶段。签名、公证、TestFlight、Play 上传和 GitHub Release 继续只接受各自的手动 dispatch，不进入自动 `checks[]`。
@@ -42,7 +44,8 @@ C++ 路径过滤、秘密扫描、Chromium 候选和覆盖率 workflow 的现有
   "schemaVersion": 3,
   "event": "pull_request",
   "repository": "gcsagroup/aegis-browser",
-  "branch": "develop",
+  "headRepository": "gcsagroup/aegis-browser",
+  "branch": "main",
   "base": "<40 hex>",
   "head": "<40 hex>",
   "testedSha": "<40 hex>",
@@ -68,10 +71,12 @@ C++ 路径过滤、秘密扫描、Chromium 候选和覆盖率 workflow 的现有
 
 `planDigest` 覆盖选择，不覆盖结果。摘要输入是去掉 `planDigest` 本身后的计划，序列化为无空白的 UTF-8 JSON，再取 sha256 的小写十六进制。字符串转义与 `JSON.stringify` 一致。键顺序固定如下，不按字母排序：
 
-- 顶层：`schemaVersion`、`event`、`repository`、`branch`、`base`、`head`、`testedSha`、`rulesSha`、`affectedPlatforms`、`stageCeiling`、`lightweight`、`unmappedPaths`、`checks`
+- 顶层：`schemaVersion`、`event`、`repository`、`headRepository`、`branch`、`base`、`head`、`testedSha`、`rulesSha`、`affectedPlatforms`、`stageCeiling`、`lightweight`、`unmappedPaths`、`checks`
 - `affectedPlatforms`：`ios`、`android`、`macos`、`windows`、`linux`
 - `checks[]` 每项：`id`、`platform`、`stage`、`selected`、`reasons`
 - `reasons[]` 每项：`path`、`rule`
+
+`headRepository` 是 PR head 所在的仓库；push 和 `workflow_dispatch` 时等于 `repository`。它和 `repository` 一起参与身份核对，用来区分同仓库分支和 fork 发来的 PR。
 
 `unmappedPaths` 按 UTF-16 码元升序排序，`checks` 按 `id` 排序，每项 `reasons` 按 `path` 再按 `rule` 排序。计划中出现上述以外的键时，消费者按 schema 3 缺字段同样处理，门禁失败。
 
@@ -85,7 +90,7 @@ PR 从合并候选第一父提交读取 `scripts/ci/platform-impact.mjs`、规�
 
 push 的 `testedSha` 与 `rulesSha` 都是被测提交。`github.event.before` 是其祖先时，用这个区间做差异；它缺失、为 40 个 0、等于被测提交或不是祖先时，沿用 iOS 与 macOS 的完整自动路径，不因此打开 Android、Windows 或 Linux。`workflow_dispatch` 不走轻量跳过，并保留这条 iOS 与 macOS 回退。
 
-消费者核对仓库、事件、`testedSha`、`rulesSha` 和 `planDigest`。已知 schema 2 只补缺失的布尔键；已经写出的 `false` 保持 `false`。schema 2 没有 `checks[]` 时不合成检查。schema 不是 2 或 3、schema 3 缺少字段、摘要不一致或身份不一致时，门禁失败。分类器和补全器都从可信提交提取，不执行候选工作区里的副本。
+消费者核对仓库、head 仓库、事件、`testedSha`、`rulesSha` 和 `planDigest`。已知 schema 2 只补缺失的布尔键；已经写出的 `false` 保持 `false`。schema 2 没有 `checks[]` 时不合成检查，改走现行布尔路由，见「Fork 与上游」的切换窗口。schema 不是 2 或 3、schema 3 缺少字段、摘要不一致或身份不一致时，门禁失败。分类器和补全器都从可信提交提取，不执行候选工作区里的副本。
 
 ### R2 平台与深度独立
 
@@ -197,9 +202,57 @@ Draft 或缺少明确 `draft: false` 时，impact 与平台作业都不申请 ru
 
 因此普通 `develop` push 可以运行 quality，以及 quality 里已有的 Android、Windows、Linux 集成合同；它不分配 iOS 合同、iOS 归档或 macOS 合同。`main` push 保持 iOS 归档和 macOS 合同的现有资格。这个草案不给上述 workflow 增加触发分支。
 
+上表三份 workflow 在两个仓库的触发相同。上游没有 `develop` 分支，表中的 `develop` 只在 fork 生效；上游只按 `main` 的 PR 和 push 路由。
+
+## Fork 与上游
+
+路由在开发 Fork `quinn521/aegis-browser` 和上游 `gcsagroup/aegis-browser` 两处运行。两边的规则和 workflow 最终共享同一版本，但在一批晋升合入之前可以不同。下表是 2026-11-24 回读的状态。
+
+| 项目 | Fork | 上游 |
+| --- | --- | --- |
+| 自动路由的分支 | `develop`；个人 `main` 只快进镜像上游 | `main` |
+| 必需检查 | `quality-gate`、`gitleaks` | `quality-gate`、`Codacy Static Code Analysis`、`gitleaks` |
+| `AEGIS_SELF_HOSTED_TEST_REPOSITORY` | 本仓库 | 本仓库 |
+| `AEGIS_IOS_RUNNER_LABEL` | `aegis-ios-fork-migration` | `aegis-ios-upstream-migration` |
+| 轻量说明路由 | 可准入 | 不准入：`CI_LIGHTWEIGHT_ADMITTED` 要求目标分支为 `develop` |
+| 分类器 | `develop` `2c07cd24`，含 #412 | `main` `423ac984`，`platform-impact.mjs` 与基线 `0049a1f3` 相同 |
+| `quality.yml` 的 `other-platforms` | 读取 `linux`，`continue-on-error: true`，按平台分步骤 | 不读取 `linux`，单个 `quality:other-platforms` 步骤 |
+| `other-platform-coverage.yml`、`android-java-coverage.yml` | PR 和 push 自动运行 | 只有 `workflow_dispatch` |
+
+### 规则跟随目标分支
+
+PR 的分类器和补全器取自合并候选的第一父提交，也就是目标分支。指向 fork `develop` 的 PR 用 `develop` 的规则；指向上游 `main` 的 PR，包括晋升 PR，用上游 `main` 的规则。因此 #412、#413 这类规则修复合入 fork 后只保护 fork，上游要等含它的晋升批次合入 `main` 后才生效。晋升 PR 本身仍按上游旧规则分类；如果批次修改了 `platform-impact.mjs`，R2 会让五个平台都进入深度。
+
+同一组路径在两个仓库可以得到不同计划，计划用 `repository`、`rulesSha` 和 `planDigest` 区分。对照测试按 `rulesSha` 断言。fork 的计划或结果不能用来解释上游的运行，反过来也一样。
+
+### 晋升与回流
+
+晋升 PR 是 `codex/promote-<D>-<B>` 到上游 `main`，差异是 `B..D`。回流 PR 是 `codex/backflow-<S>` 到 `develop`。两者都用 merge commit 合入，范围内通常有 `Merge pull request …` 或 `Merge branch …` 主题。这些不是 Conventional 主题，按 R2 进入深度。这是有意的：晋升 PR 是代码进入上游 `main` 前最后一次自动验证，merge 主题不享受豁免。
+
+两类 PR 都由控制器以 Draft 创建（fork 的 `AEGIS_PROMOTION_AUTOMATION` 当前为 `paused`）。Draft 期间平台 runner 为 0，协调者转为 Ready 后才分配。
+
+### Runner 与信任
+
+只有 `github.repository` 等于 `AEGIS_SELF_HOSTED_TEST_REPOSITORY`，且 PR head 仓库等于当前仓库时，才使用自托管 runner。晋升 PR 的 head 可以在任一仓库：#201 在上游，#193、#189、#181 在 fork。head 在 fork 时，上游的 quality 回退到 `macos-15`，iOS 归档回退到 `macos-26`。计划只决定选中哪些检查，不决定 runner 标签。runner 仍由各 workflow 现有的表达式选择，结果记录实际执行环境。
+
+### 证据不跨仓库
+
+结果和复用都绑定 `repository`。fork `develop` push 对 D 的结果不能当作上游晋升 PR 的证据：仓库不同，`testedSha` 也是另一个合并候选。个人 `main` 快进到 S 后的 push run 记在 fork 名下，不能替代上游对 S 的 push run，`promotion-quality.mjs` 也不读取它。晋升读者继续分别核对 fork `develop` 的 D 和上游 `main` 的 S。本草案不改变镜像 push 的触发。
+
+### 切换窗口
+
+`pull_request` 运行的是合并候选里的 workflow，分类器却取自第一父提交。所以切换 PR 和携带切换的晋升 PR 会遇到新 workflow 配旧分类器：计划仍是 schema 2，没有 `checks[]`。这时消费者走现行布尔路由，即各 workflow 现有的平台布尔值和 `integrate`、`deep` 条件。门禁不失败，平台 runner 数与旧路由相同。只有第一父提交产出 schema 3 时，才按 `checks[]` 执行。
+
+切换顺序：
+
+1. 分类器、补全器、workflow 消费者和布尔回退一起合入 fork `develop`，并核验 `develop` push。合入后的下一条 `develop` PR 才第一次由 schema 3 选择。
+2. 随晋升进入上游。晋升 PR 按上游旧规则走布尔回退；合入后，上游 `main` 的下一条 PR 才开始用 schema 3。
+3. 回流完成、两边第一父提交都产出 schema 3 之后，再用单独的 PR 删除布尔回退。
+4. 上游发现漏选或错误判绿时，回退 PR 直接指向上游 `main`，合入后按现有路径回流，不等下一批晋升。fork 上的问题直接回退 `develop`。
+
 ## 复用
 
-同一次 quality 已经执行过相同检查时，结果状态可以是 `reused`。复用同时匹配被测 SHA、检查输入摘要、工具链、执行环境和 run attempt。任一不一致就重新执行。
+同一次 quality 已经执行过相同检查时，结果状态可以是 `reused`。复用同时匹配仓库、被测 SHA、检查输入摘要、工具链、执行环境和 run attempt。任一不一致就重新执行。
 
 `develop` 上的完整 quality 已经通过 `scripts/ci/run-android-release-tests.py` discover `scripts/release/test_android*.py`。这份证据可以满足 `android-release-regression`，但结果里要列出实际执行的测试文件，不能只记录包装命令名。被测 SHA 上的报告没有这份文件列表时，检查改为执行，不复用。本基线 `0049a1f3` 的 `run-quality.mjs` 还没有这个命令，所以这次上游 quality 运行本身不能当作 #226 的复用证据。
 
@@ -220,6 +273,12 @@ WinRM 成功只写入 `windows-winrm`。它不改变 `windows-uninstall-branding
 | Draft、转回 Draft、重跑拿到旧 attempt | Draft 的平台 runner 为 0。转回 Draft 取消同一 PR 的旧运行。旧 attempt 的成功记录在当前 attempt 上的状态不是 `passed` 或 `reused` |
 | `ci(ios):` 只修改 iOS 产品源码 | `affectedPlatforms.ios=true`，`stageCeiling=gate`，iOS 合同与归档 runner 为 0。计划合法，消费者不报错 |
 | `feat(ios):` 只修改 `apps/browser/args/aegis-windows.gn` | 选中 Windows。scope `ios` 不打开 iOS |
+| 用上游 `main` `423ac984` 和合入 #413 后的 fork 分类器，分别复放 #217 的九个路径 | 前者 `windows=false`，后者 `windows=true`。断言写明各自的 `rulesSha` |
+| 晋升 PR 的 `B..D` 含一个 `Merge pull request` 主题，其余是 `docs:` | `stageCeiling=deep` |
+| 晋升 PR 的范围修改了 `scripts/ci/platform-impact.mjs` | 五个平台都受影响，`stageCeiling=deep` |
+| head 在 fork、目标为上游 `main` 的 PR | `headRepository` 是 fork。quality 和归档不使用自托管标签。fork `develop` 对 D 的 push 结果状态不是 `reused` |
+| 切换 PR：合并候选带新 workflow，第一父提交的分类器输出 schema 2 | 执行现行布尔路由，门禁不失败，平台 runner 数与旧路由相同 |
+| 个人 `main` 快进到上游 S 后的 push run | 结果记在 fork 名下。晋升读者对 S 的判断只来自上游 push run |
 
 迁移测试还要覆盖 `qualityWorkflowRunState`：`quality.yml` 的 run 结论为 success，且 `quality` 与 `quality-gate` 成功时，旁边一个失败的 `other-platforms` 作业不改变返回的 success。同一个 run 结论变为 failure 时，函数仍返回 failure。切换执行时要保证平台失败不会把 `quality.yml` 的 run 结论改成 failure；只改读者、让它忽略一个已经变红的 workflow 结论，不算满足这条。
 
@@ -234,6 +293,8 @@ WinRM 成功只写入 `windows-winrm`。它不改变 `windows-uninstall-branding
 1. 先固定预期。用上表建立离线计划测试，并按规则提交保留对照：基线对 #226、#217 漏选，`develop` 只对 #217 漏选。`promotion-quality` 的读者锁测试使用现有读者，不改其判断。
 2. 再比较计划。对同一批历史输入输出新旧计划、选中原因和预计 runner。切换时每项检查只留一个执行入口：Android 发布回归不再由 iOS 合同的 `scripts/release/test_*.py` discover 顺带执行；iOS 与 macOS 不再各自生成第二份可执行计划。iOS 归档额外核对现有自托管 workflow 与作业准入，以及归档产物上的 tested SHA 和 attempt。
 3. 用可测条件放行。验收矩阵中的漏选数、同一检查的重复执行数、前置失败后新增的平台 runner 数都为 0。按平台记录 runner 分钟和绿单完成时间，单独列出合同等待 quality 的时间。发现漏选、错误判绿或晋升语义变化时，用回退 PR 恢复原来的执行入口：三个 impact、`quality:other-platforms` 组合命令，以及 iOS、macOS 合同只等待各自 impact。
+
+跨仓库的切换顺序和上游回退见「Fork 与上游」。
 
 回滚不改写已产生的 run 或 artifact。历史失败保留在原来的 attempt 上。
 
