@@ -369,7 +369,7 @@ pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'ok')
             'source "$1"\n'
             'curl_ci_download "$2" "$3" "${@:4}"\n'
         )
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 - fixed /bin/bash, fixture-owned paths, no untrusted input.
             ['/bin/bash', '-c', script, 'download-matrix', str(helper), str(output),
              'https://github.com/fixture/repo/archive.tar.gz', *extra],
             env=environment, capture_output=True, text=True, timeout=10)
