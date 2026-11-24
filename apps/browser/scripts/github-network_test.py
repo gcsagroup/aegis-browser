@@ -304,11 +304,11 @@ class GitHubNetworkTests(unittest.TestCase):
             'NO_PROXY': 'existing-upper.invalid',
         }
         script = (
-            f'source "{helper}"\n'
-            f'curl_ci_download "{output}" "https://github.com/fixture/repo/archive.tar.gz"\n'
+            'source "$1"\n'
+            'curl_ci_download "$2" "https://github.com/fixture/repo/archive.tar.gz"\n'
         )
         result = subprocess.run(
-            ['/bin/bash', '-c', script],
+            ['/bin/bash', '-c', script, 'download-fixture', str(helper), str(output)],
             env=environment,
             capture_output=True,
             text=True,
