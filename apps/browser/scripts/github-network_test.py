@@ -270,36 +270,160 @@ class GitHubNetworkTests(unittest.TestCase):
         self.assertEqual(value['rows'][2]['no_proxy'], 'existing-lower.invalid')
         self.assertEqual(value['rows'][2]['NO_PROXY'], 'existing-upper.invalid')
 
-    def test_ci_github_download_commands_preserve_proxy_for_other_hosts(self):
+    def test_ci_github_download_schedule_direct2_proxy2_direct1(self):
+        helper = ROOT / 'scripts/ci/curl-direct-then-proxy.sh'
+        log = self.root / 'curl-log.jsonl'
+        output = self.root / 'download.bin'
+        fixture_bin = self.root / 'curl-bin'
+        fixture_bin.mkdir()
+        curl = fixture_bin / 'curl'
+        # Succeed only on the final direct attempt (5th).
+        curl.write_text(
+            '#!' + sys.executable + '\n'
+            'import json, os, pathlib, sys\n'
+            'log = pathlib.Path(os.environ["CURL_LOG"])\n'
+            'with log.open("a", encoding="utf-8") as handle:\n'
+            '    handle.write(json.dumps({"args": sys.argv[1:]}) + "\\n")\n'
+            'count = sum(1 for _ in log.open(encoding="utf-8"))\n'
+            'path = pathlib.Path(sys.argv[sys.argv.index("--output") + 1])\n'
+            'if count < 5:\n'
+            '    path.write_bytes(b"")\n'
+            '    raise SystemExit(7)\n'
+            'path.write_bytes(b"ok")\n'
+            'raise SystemExit(0)\n'
+        )
+        curl.chmod(0o700)
+        environment = {
+            **self.environment,
+            'PATH': str(fixture_bin) + ':' + os.environ['PATH'],
+            'CURL_LOG': str(log),
+            'CURL_CI_BACKOFF_BASE_SECONDS': '0',
+            'https_proxy': PROXY,
+            'HTTPS_PROXY': PROXY,
+            'no_proxy': 'existing-lower.invalid',
+            'NO_PROXY': 'existing-upper.invalid',
+        }
+        script = (
+            'source "$1"\n'
+            'curl_ci_download "$2" "https://github.com/fixture/repo/archive.tar.gz"\n'
+        )
+        result = subprocess.run(  # nosec B603 - fixed /bin/bash, fixture-owned paths, no untrusted input.
+            ['/bin/bash', '-c', script, 'download-fixture', str(helper), str(output)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.read_bytes(), b'ok')
+        rows = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+        self.assertEqual(len(rows), 5)
+        expected = [
+            ('', '*'),
+            ('', '*'),
+            (PROXY, ''),
+            (PROXY, ''),
+            ('', '*'),
+        ]
+        for row, (proxy, noproxy) in zip(rows, expected):
+            self.assertEqual(row['args'][row['args'].index('--proxy') + 1], proxy)
+            self.assertEqual(row['args'][row['args'].index('--noproxy') + 1], noproxy)
         for relative in ('scripts/ci/install-ripgrep.sh', 'scripts/ci/run-shell-coverage.sh'):
             with self.subTest(script=relative):
-                lines = (ROOT / relative).read_text().splitlines()
-                first = next(i for i, line in enumerate(lines) if re.match(r'\s*curl --fail', line))
-                last = first
-                while lines[last].endswith('\\'):
-                    last += 1
-                command = '\n'.join(lines[first:last + 1])
-                fixture_bin = self.root / ('curl-' + Path(relative).stem)
-                fixture_bin.mkdir()
-                curl = fixture_bin / 'curl'
-                curl.write_text('#!' + sys.executable + '\nimport json,os,sys\n'
-                                'print(json.dumps({"args":sys.argv[1:],"https_proxy":'
-                                'os.environ.get("https_proxy")}))\n')
-                curl.chmod(0o700)
-                environment = {**self.environment, 'PATH': str(fixture_bin) + ':' + os.environ['PATH'],
-                               'https_proxy': PROXY, 'no_proxy': 'existing-lower.invalid',
-                               'NO_PROXY': 'existing-upper.invalid', 'url': 'https://github.com/fixture/repo',
-                               'archive': str(self.root / 'unused.tar.gz'),
-                               'source_archive': str(self.root / 'unused-source.tar.gz'),
-                               'KCOV_SOURCE_URL': 'https://codeload.github.com/fixture/repo'}
-                result = subprocess.run(['/bin/bash', '-c', command], env=environment,
-                                        capture_output=True, text=True, timeout=10)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                value = json.loads(result.stdout)
-                self.assertIn('--noproxy', value['args'])
-                exclusions = value['args'][value['args'].index('--noproxy') + 1]
-                self.assert_github_bypass({'no_proxy': exclusions, 'NO_PROXY': exclusions})
-                self.assertEqual(value['https_proxy'], PROXY)
+                text = (ROOT / relative).read_text(encoding='utf-8')
+                self.assertIn('curl_ci_download', text)
+                self.assertNotIn(
+                    'github.com,.github.com,githubusercontent.com,.githubusercontent.com',
+                    text,
+                )
+
+    def run_download(self, succeed_at, proxy=None, extra=()):
+        helper = ROOT / 'scripts/ci/curl-direct-then-proxy.sh'
+        log = self.root / 'curl-log-matrix.jsonl'
+        output = self.root / 'download-matrix.bin'
+        fixture_bin = self.root / 'curl-bin-matrix'
+        fixture_bin.mkdir()
+        body = '''import json, os, pathlib, sys
+log = pathlib.Path(os.environ['CURL_LOG'])
+with log.open('a', encoding='utf-8') as handle:
+    handle.write(json.dumps({'args': sys.argv[1:]}) + chr(10))
+count = sum(1 for _ in log.open(encoding='utf-8'))
+if count < int(os.environ['SUCCEED_AT']):
+    raise SystemExit(7)
+pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'ok')
+'''
+        curl = fixture_bin / 'curl'
+        curl.write_text('#!' + sys.executable + chr(10) + body, encoding='utf-8')
+        curl.chmod(0o700)
+        environment = {
+            **self.environment,
+            'PATH': str(fixture_bin) + ':' + os.environ['PATH'],
+            'CURL_LOG': str(log),
+            'SUCCEED_AT': str(succeed_at),
+            'CURL_CI_BACKOFF_BASE_SECONDS': '0',
+        }
+        if proxy:
+            environment['https_proxy'] = proxy
+        script = (
+            'set -euo pipefail\n'
+            'source "$1"\n'
+            'curl_ci_download "$2" "$3" "${@:4}"\n'
+        )
+        result = subprocess.run(  # nosec B603 - fixed /bin/bash, fixture-owned paths, no untrusted input.
+            ['/bin/bash', '-c', script, 'download-matrix', str(helper), str(output),
+             'https://github.com/fixture/repo/archive.tar.gz', *extra],
+            env=environment, capture_output=True, text=True, timeout=10)
+        rows = []
+        if log.exists():
+            rows = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+        return result, rows, output
+
+    def test_ci_github_download_without_proxy_skips_proxy_attempts(self):
+        result, rows, output = self.run_download(succeed_at=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.read_bytes(), b'ok')
+        self.assertEqual(len(rows), 3)
+        for row in rows:
+            args = row['args']
+            self.assertEqual(args[args.index('--proxy') + 1], '')
+            self.assertEqual(args[args.index('--noproxy') + 1], '*')
+        self.assertEqual(result.stderr.count('Skipping proxy attempt'), 2)
+
+    def test_ci_github_download_forwards_extra_arguments_under_nounset(self):
+        result, rows, _output = self.run_download(
+            succeed_at=1, proxy=PROXY, extra=('--silent', '--show-error'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(rows), 1)
+        args = rows[0]['args']
+        self.assertIn('--silent', args)
+        self.assertIn('--show-error', args)
+        self.assertEqual(args[-1], 'https://github.com/fixture/repo/archive.tar.gz')
+
+    def test_ci_github_download_without_extra_arguments_under_nounset(self):
+        result, rows, output = self.run_download(succeed_at=1, proxy=PROXY)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(output.read_bytes(), b'ok')
+
+    def test_ci_github_download_fails_after_all_five_attempts(self):
+        result, rows, _output = self.run_download(succeed_at=99, proxy=PROXY)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(rows), 5)
+        self.assertIn('Download failed after', result.stderr)
+
+    def test_ci_github_download_worst_case_fits_install_step_timeout(self):
+        workflow = (ROOT / '.github/workflows/quality.yml').read_text(encoding='utf-8')
+        start = workflow.index('name: Install fixed ripgrep')
+        after = workflow[start:start + 300]
+        marker = 'timeout-minutes:'
+        self.assertIn(marker, after)
+        budget = int(after.split(marker)[1].split()[0]) * 60
+        result, rows, _output = self.run_download(succeed_at=99, proxy=PROXY)
+        self.assertEqual(result.returncode, 1)
+        limits = [int(row['args'][row['args'].index('--max-time') + 1]) for row in rows]
+        self.assertEqual(len(limits), 5)
+        backoff = sum(1 << index for index in range(4))
+        self.assertLessEqual(sum(limits) + backoff, budget)
 
 
 if __name__ == '__main__':

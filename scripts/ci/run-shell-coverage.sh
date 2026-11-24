@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/curl-direct-then-proxy.sh
+source "${SCRIPT_DIR}/curl-direct-then-proxy.sh"
+
 KCOV_TAG="v43"
 KCOV_COMMIT="a39874f938ce13f7a65f253120d1ec946b349ffe"
 KCOV_SOURCE_URL="https://codeload.github.com/SimonKagstrom/kcov/tar.gz/$KCOV_COMMIT"
@@ -90,9 +94,9 @@ for command_name in curl sha256sum tar cmake; do
   }
 done
 source_archive="$work_dir/kcov-$KCOV_COMMIT.tar.gz"
-curl --fail --location --silent --show-error --retry 3 \
-  --noproxy "${no_proxy:-},${NO_PROXY:-},github.com,.github.com,githubusercontent.com,.githubusercontent.com" \
-  --output "$source_archive" "$KCOV_SOURCE_URL"
+# Direct first; self-hosted runners that only reach GitHub via a local proxy
+# recover on the second attempt.
+curl_ci_download "$source_archive" "$KCOV_SOURCE_URL" --silent --show-error
 actual_source_sha="$(sha256sum "$source_archive" | awk '{print $1}')"
 [[ "$actual_source_sha" == "$KCOV_SOURCE_SHA256" ]] || {
   printf 'kcov source SHA256 mismatch: expected=%s actual=%s\n' \
