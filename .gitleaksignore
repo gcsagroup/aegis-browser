@@ -301,6 +301,6 @@ f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offlin
 # apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift
 # 行 26 SHA-256 dc0d1b8b1a3f233313568c6dbf0be8ac7eb4f06a16a487c99acee6892b779659
 519ef2b93e15557d140f8afe9267ddf22e8132e6:apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift:generic-api-key:26
-# apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift (#401 squash 提交,内容与 519ef2b9 第 26 行一致)
+# apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift (develop 上 #401 squash 提交 1068d42e; full-history 扫描会命中, 内容与 519ef2b9 第 26 行一致)
 # 行 26 SHA-256 dc0d1b8b1a3f233313568c6dbf0be8ac7eb4f06a16a487c99acee6892b779659
 1068d42e3ee11a36eeb8d7d45262b7673f06286f:apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift:generic-api-key:26

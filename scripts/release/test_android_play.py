@@ -120,6 +120,55 @@ class PlayTests(unittest.TestCase):
                 self.assertEqual([method for method, _ in requests],
                                  ['GET', 'POST', 'POST' if action == 'upload' else 'PUT'])
 
+    def test_status_maps_missing_version_code_to_not_found(self):
+        calls = []
+
+        def transport(method, url, body, headers):
+            calls.append((method, url))
+            if url.endswith(f'/generatedApks/{CODE}'):
+                return 404, {}, b'{"error":{"code":404,"message":"missing"}}'
+            raise AssertionError(url)
+
+        remote = play.Play(transport, 'token').status(CODE)
+        self.assertEqual(remote['processingState'], 'NOT_FOUND')
+        self.assertEqual(remote['versionCode'], CODE)
+        self.assertTrue(calls[0][1].endswith(f'/generatedApks/{CODE}'))
+
+    def test_signing_key_rows_without_version_code_are_aggregated(self):
+        document = {'generatedApks': [
+            {'generatedUniversalApk': {'downloadId': 'u1'}},
+            {'generatedSplitApks': [{'downloadId': 's1'}]},
+        ]}
+        valid = play.interpret_generated_apks(document, CODE)
+        self.assertEqual(valid['processingState'], 'VALID')
+        identity = play.canonical({'downloadIds': ['s1', 'u1'], 'packageName': play.APPLICATION_ID, 'versionCode': CODE})
+        self.assertEqual(valid['buildIdentitySha256'], __import__('hashlib').sha256(identity.encode()).hexdigest())
+
+    def test_asset_pack_slices_are_part_of_the_build_identity(self):
+        document = {'generatedApks': [
+            {'generatedSplitApks': [{'downloadId': 's1'}],
+             'generatedAssetPackSlices': [{'moduleName': 'pack', 'downloadId': 'p1'}]},
+        ]}
+        valid = play.interpret_generated_apks(document, CODE)
+        self.assertEqual(valid['processingState'], 'VALID')
+        identity = play.canonical({'downloadIds': ['p1', 's1'], 'packageName': play.APPLICATION_ID, 'versionCode': CODE})
+        self.assertEqual(valid['buildIdentitySha256'], __import__('hashlib').sha256(identity.encode()).hexdigest())
+        only_slices = play.interpret_generated_apks({'generatedApks': [{'generatedAssetPackSlices': [{'downloadId': 'p1'}]}]}, CODE)
+        self.assertEqual(only_slices['processingState'], 'VALID')
+
+    def test_automatic_protection_apks_are_part_of_the_build_identity(self):
+        document = {'generatedApks': [
+            {'generatedSplitApks': [{'downloadId': 's1'}],
+             'unprotectedGeneratedSplitApks': [{'downloadId': 'us1'}],
+             'unprotectedGeneratedStandaloneApks': [{'downloadId': 'ua1'}]},
+        ]}
+        valid = play.interpret_generated_apks(document, CODE)
+        self.assertEqual(valid['processingState'], 'VALID')
+        identity = play.canonical({'downloadIds': ['s1', 'ua1', 'us1'], 'packageName': play.APPLICATION_ID, 'versionCode': CODE})
+        self.assertEqual(valid['buildIdentitySha256'], __import__('hashlib').sha256(identity.encode()).hexdigest())
+        only_unprotected = play.interpret_generated_apks({'generatedApks': [{'unprotectedGeneratedSplitApks': [{'downloadId': 'us1'}]}]}, CODE)
+        self.assertEqual(only_unprotected['processingState'], 'VALID')
+
 
 if __name__ == '__main__':
     unittest.main()

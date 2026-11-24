@@ -215,6 +215,7 @@ class PlayMatrix(unittest.TestCase):
         with self.assertRaises(ValueError):
             play.Play(transport, 'token').status(2007000339)
         self.assertEqual(calls[0][0], 'GET')
+        self.assertTrue(calls[0][1].endswith('/generatedApks/2007000339'))
         signer_calls = []
         token = play.access_token({'client_email': 'bot@aegis.gserviceaccount.com', 'private_key': 'PRIVATE KEY\n'},
                                   lambda *args: (200, {}, b'{"access_token":"tok"}'), 1_700_000_000,
