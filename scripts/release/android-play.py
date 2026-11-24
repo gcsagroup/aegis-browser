@@ -43,7 +43,8 @@ def download_ids(row):
     universal = row.get('generatedUniversalApk')
     if isinstance(universal, dict) and isinstance(universal.get('downloadId'), str) and universal['downloadId']:
         found.append(universal['downloadId'])
-    for key in ('generatedSplitApks', 'generatedAssetPackSlices', 'generatedAssetPackApks', 'generatedStandaloneApks'):
+    for key in ('generatedSplitApks', 'generatedAssetPackSlices', 'generatedAssetPackApks', 'generatedStandaloneApks',
+                'unprotectedGeneratedSplitApks', 'unprotectedGeneratedStandaloneApks'):
         items = row.get(key) or []
         require(isinstance(items, list), 'Play generated APK list is invalid')
         for item in items:
