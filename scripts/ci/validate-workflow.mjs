@@ -58,6 +58,8 @@ try {
   const automaticEvents = ['pull_request', 'push'];
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'].sort();
   const expectedConcurrency = "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}-{1}', github.ref, github.sha) || format('dispatch-{0}', github.run_id) }}";
+  const otherConcurrency = expectedConcurrency.replace(
+    '${{ github.workflow }}-', "other-platform-coverage-${{ inputs.lane || 'reporting' }}-");
   const cancelStalePR = "${{ github.event_name == 'pull_request' }}";
   const reportingWorkflows = [
     ['Other platform coverage', otherWorkflow], ['Android coverage', androidWorkflow],
@@ -78,6 +80,9 @@ try {
       const iosContracts = automatic === iosValidationWorkflow && id === 'contracts';
       const iosArchive = automatic === iosValidationWorkflow && id === 'ios-archive';
       const otherPlatforms = automatic === workflow && id === 'other-platforms';
+      const otherCoverage = automatic === otherWorkflow;
+      const coverageLane = id === 'shell-coverage' ? 'linux' : 'windows';
+      const coverageCallCondition = "${{ (inputs.lane == '' || inputs.lane == '" + coverageLane + "') && (" + ready + ') }}';
       const expectedCondition = cloudExercise
         ? "${{ github.event_name == 'workflow_dispatch' && inputs.exercise == 'cloud-poc' && github.repository == 'gcsagroup/aegis-browser' }}"
         : iosImpact ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') }}'
@@ -85,7 +90,9 @@ try {
             : iosArchive ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') && needs.impact.result == \'success\' && needs.contracts.result == \'success\' && (github.event_name == \'workflow_dispatch\' || needs.impact.outputs.deep == \'true\') }}'
               : otherPlatforms ? '${{ (' + ready + ') && needs.quality.result == \'success\' && needs.impact.result == \'success\' && (needs.impact.outputs.android == \'true\' || needs.impact.outputs.windows == \'true\' || needs.impact.outputs.linux == \'true\') && needs.impact.outputs.integrate == \'true\' }}'
                 : automatic === workflow && id === 'quality-summary' ? summaryCondition
-                  : androidCoverage ? androidCoverageCondition : readyCondition;
+                  : androidCoverage ? androidCoverageCondition
+                    : otherCoverage ? id === 'lane-result' ? "${{ always() && inputs.lane != '' }}" : coverageCallCondition
+                      : readyCondition;
       if (job.if !== expectedCondition) {
         fail(`${label}/${id} must require explicit Ready PR metadata, preserve non-PR execution and summary always()`);
       }
@@ -108,7 +115,8 @@ try {
     if ('paths' in config || 'paths-ignore' in config) fail(`${event} may not filter paths`);
   }
   for (const [label, report] of reportingWorkflows) {
-    if (JSON.stringify(Object.keys(report?.on ?? {}).sort()) !== JSON.stringify([...automaticEvents, 'workflow_dispatch'])) {
+    const callEvent = report === otherWorkflow ? ['workflow_call'] : [];
+    if (JSON.stringify(Object.keys(report?.on ?? {}).sort()) !== JSON.stringify([...automaticEvents, ...callEvent, 'workflow_dispatch'])) {
       fail(`${label} must support PRs, integration pushes and manual dispatch`);
     }
     for (const event of automaticEvents) {
@@ -122,7 +130,8 @@ try {
     if (report.permissions?.contents !== 'read' || Object.values(report.permissions ?? {}).includes('write')) {
       fail(`${label} workflow permissions must be read-only`);
     }
-    if (report.concurrency?.group !== expectedConcurrency || report.concurrency?.['cancel-in-progress'] !== cancelStalePR) {
+    const reportConcurrency = report === otherWorkflow ? otherConcurrency : expectedConcurrency;
+    if (report.concurrency?.group !== reportConcurrency || report.concurrency?.['cancel-in-progress'] !== cancelStalePR) {
       fail(`${label} must isolate each target SHA and dispatch, and cancel only stale PR runs`);
     }
   }
@@ -214,7 +223,15 @@ try {
   const androidCoverage = androidWorkflow.jobs?.['android-java-coverage'];
   const gate = jobs['quality-summary'];
   const expectedJobs = ['impact', 'other-platforms', 'quality', 'quality-summary'];
-  if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
+  if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['lane-result', 'powershell-coverage', 'shell-coverage'])) {
+    fail('Other platform coverage must report its two lanes and validate reusable calls');
+  }
+  const coverageResult = otherWorkflow.jobs['lane-result'];
+  if (JSON.stringify(array(coverageResult.needs).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage']) ||
+      coverageResult['runs-on'] !== 'ubuntu-24.04' || coverageResult['timeout-minutes'] !== 5 ||
+      'continue-on-error' in coverageResult || 'permissions' in coverageResult) {
+    fail('A reusable coverage call must check both job outcomes');
+  }
   if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['android-java-coverage', 'impact'])) {
     fail('Android job set must be exactly impact and android-java-coverage');
   }
@@ -299,7 +316,7 @@ try {
     }
   }
   const allJobs = {
-    ...jobs, ...otherWorkflow.jobs,
+    ...jobs, 'shell-coverage': shellCoverage, 'powershell-coverage': powershellCoverage,
     'android-report/impact': androidWorkflow.jobs.impact, 'android-report/android-java-coverage': androidCoverage,
     'ios-report/ios-coverage': iosCoverage,
   };

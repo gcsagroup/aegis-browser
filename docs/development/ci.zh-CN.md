@@ -240,11 +240,15 @@ macOS delivery 的自动 Ready PR 先在 Linux 校验 Git 身份和文档消费�
 
 Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS 路径继续依次通过 admission、Mac 上的 Access tests、package，只有所需前置项成功才打包。Chromium 编译、GN/GTest、桌面运行、签名和公证分别验收。基础 quality 增加 Linux 可信影响范围门。只有已配置开发 Fork 内同仓 develop PR 的已验证白名单说明文档内容修改走 Linux 文档合同，其余 PR、未知或旧规则、push 和手动事件继续完整 macOS 质量门。quality-gate 在 Linux 运行可信目标分支的汇总器，保留原检查名与 push 的 quality/quality-gate 作业身份。每个 push SHA 独立分组。全仓零 Mac 和 5 分钟有效反馈须在规则合入后的真实文档 Ready PR 实测。
 
-## 分阶段平台路由（第三批）
+## 分阶段平台路由与观察门
 
 `quality.yml`、`ios-release-validation.yml` 和 `macos-delivery.yml` 在各自的 impact job 中生成计划，同一 workflow 的后续作业读取该计划的平台和阶段。PR 从实际合并候选的第一父提交读取 `scripts/ci/platform-impact.mjs` 和 `scripts/ci/fill-platform-route-defaults.mjs`，并验证两个父提交的身份。push 从被测提交读取规则，用 `github.event.before` 与被测提交比较。如果前者缺失、全零、与被测提交相同或不在其祖先链上，沿用 iOS 和 macOS 的完整路径。手动 dispatch 沿用已有入口。
 
+`quality-gate` 继续按既有规则要求 `quality` 通过。独立的 `Platform CI` 在 Ready PR 及 `develop`、`main` push 运行，以 `platform-gate` 报告受影响平台的合同测试。观察期保留原覆盖率和发布入口，平台合同的失败结论独立显示。GitHub required checks 在实际 CI 验收后单独调整。
+
 旧目标分支缺少补全脚本时，workflow 使用内嵌的兼容版本。只有缺失的字段才补全，显式输出的 `false` 会保留。缺失的 `integrate` 和 `deep` 跟随旧版的 `ios` 或 `macos` 结果。Android、Windows、Linux 的缺省值均为 `false`。
+
+### 平台与验证深度
 
 平台取所有改动路径的并集。Conventional Commit 类型决定阶段，scope 不参与。非 Conventional 或空主题、删除、重命名、模式变化和符号链接都会提高阶段。分类器自身变更时，五个平台都进入深度阶段。缺省补全脚本也影响五个平台，其普通内容修改按提交类型选择阶段。文档轻量路由仅适用于已准入 PR 中的白名单普通内容修改。
 
@@ -258,13 +262,28 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 
 共享产品包括 `packages/core/**`、`apps/browser/overlay/**` 和 `apps/browser/patches/**`。单独变更 `apps/browser/scripts/common.sh` 会选中 Android 和 macOS。iOS unsigned archive 使用独立的归档入口和 Xcode 构建阶段；混合变更按各改动路径取平台并集。
 
-阶段只作用于自动作业：
+PR 从被测合并提交的第一父提交读取规则和汇总程序，并校验第二父提交等于事件 head。push 从被测提交读取规则，以 `before` 到实际落地提交计算完整差异。观察工作流在 push 起点缺失、为零或不可达时执行全部平台合同。其他调用方保留原有回退。PR 的可信 base 若尚未提供当前规则，观察门明确报告迁移待合入。路由产物保留 tested SHA、规则 SHA 和实际变更。
 
-- 门禁：非文档轻量路由继续跑完整 quality。`quality-gate` 的必需结果仍然只有 `quality`
-- 集成：平台被选中，且类型属于 `feat`、`fix`、`perf`、`refactor`、`build`、`test`、`revert`，或者事件是 push。`chore`、`ci`、`style`、`docs` 的 PR 不跑平台合同
-- 深度：在集成之上，类型属于 `feat`、`fix`、`perf`、`refactor`、`build`、`revert`，或者事件是 push。`test` 的 PR 停在合同，不编 unsigned archive
-- 提升：签名、公证、TestFlight、Play 和 GitHub Release 仍只接受手动 dispatch
+平台选择取实际消费者的并集。生产与构建输入按路径设置验证下限，提交主题可提高合同深度。安全相关 diff 形态、空主题、非 Conventional 提交以及规则变更使用保守阶段。轻量文档门仍只接受已登记文件的普通内容修改与原有仓库准入，删除、改名、符号链接及模式变化需要重新分类。
+
+| 输入 | 合同与原生证据 |
+| --- | --- |
+| iOS 产品源码、工程、EmbeddedCore 准备脚本与锁，以及构建直接消费的共享资源 | Linux 发布合同、WebExtension 测试和适用的无签名归档。XCTest 和它直接消费的共享向量需要对应模拟器证据。 |
+| Fastlane、Gemfile 或发布脚本 | 相关 Ruby/Python 合同。Apple 原生信任测试保留 macOS 路径。仅修改模拟器工具或普通发布合同可省去无签名归档。 |
+| Android Chromium pin、GN 参数、补丁和相关脚本 | Android 主机脚本、pin 解析及发布回归。API 36 instrumentation 与真正 Chromium 构建分别验收。 |
+| Windows 安装与卸载视图、补丁、PowerShell 或 WinRM | Windows runner 上执行现有安装器 fixture、WinRM 自测与 Pester。修改卸载视图时还需核验 Chromium 的卸载视图目标与同次构建资源。 |
+| 共享 Chromium 版本、补丁与候选编排 | 选择读取这些输入的 Android、macOS 或 Windows 合同。桌面补丁序列由 macOS 和 Windows 共同消费。 |
+| macOS 交付输入或未识别路径 | 完整基础质量门及适用的 macOS standalone 与 DMG 合同。 |
+| Linux Bash 覆盖率入口、浏览器 shell 脚本及 kcov fixture | Linux 上运行现有 Bash 行覆盖率和行为检查。 |
 
 iOS 合同在自己的 impact 成功且 `ios && integrate` 时启动，unsigned archive 再等待合同成功且 `deep`。macOS 自动合同等待自己的 impact 成功且 `macos && integrate`。两者可与基础 quality 并行。手动验证和交付沿用各自的入口及准入条件。
 
 基础 quality 成功且 `integrate` 为真时，Android、Windows、Linux 任一被选中就分配一个 Ubuntu runner。这个 runner 只执行选中的合同，每个平台单独显示一个步骤。多平台改动共用一次 checkout 和 Node 安装。一个合同失败后，其余已选合同继续运行。取消或环境准备失败时停止。步骤保留各自的失败状态，作业级 `continue-on-error` 让该作业提供诊断。Linux 合同执行真实 Bash 父子 fixture，并用样例验证报告过滤、零命中和缺项拒绝。kcov、Pester、Android instrumentation 和 iOS Simulator 的覆盖率报告及触发条件见本指南的「PR、develop/main 与证据身份」。
+
+`Platform CI` 使用一次路由结果分配五个合同作业。Linux 和 Windows 复用现有覆盖率 workflow 的对应入口。汇总检查始终核对实际结果。被选中作业只有明确成功才可通过。未选作业记录为不适用，缺失、失败、取消、超时及被选作业意外跳过均应报错。iOS unsigned archive、Android 模拟器、全量 Chromium、真机、签名和发布使用各自的证据。
+
+### 观察、启用与回退
+
+在真实后续 Ready PR 核验纯说明、Windows 卸载、Android pin、iOS 构建输入和混合变更。选择结果须与实际 runner 作业一致，同时验证汇总器能拒绝被选作业的失败、缺失和跳过。合并后核验实际 push SHA，记录测试前排队、执行时间及重复报告成本。启用前也须核验工作流定义的来源。GitHub Actions App 和检查名只识别结果的发布者。候选修改了工作流、复用入口或汇总策略时，单独核验受保护版本执行的结果；只有来源与实际 CI 均通过，才将 `platform-gate` 及预期 GitHub App 接入上游规则集，并回读已有保护与原必需检查。路由回归时用可审查的 revert 恢复已验证的路由，历史失败保留。
+
+后续可引入维护者的可信 PR 标签，只允许提高验证深度。全量 Nightly 需使用同一冻结 SHA、仓内 pin 和独立的无凭据构建入口，先核验预算、runner、锁、空间与一次完整手动运行。当前定时 Chromium 任务负责上游版本监测。签名、公证、上传与发布使用各自已授权的交付入口。
