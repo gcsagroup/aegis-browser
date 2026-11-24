@@ -218,6 +218,39 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         }
     }
 
+    func testWebSocketQueryDoesNotAlterSharedDiagnosticHistory() async throws {
+        let log = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { log.stop() }
+        let subscription = log.acquireShared(level: .info, secrets: [])
+        let subscriptionPath = try XCTUnwrap(subscription.path)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: subscriptionPath))
+        defer { try? writer.close() }
+        let prior = "2026/11/11 00:00:00 from local accepted //existing.example:443\n"
+        try writer.write(contentsOf: Data(prior.utf8))
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !log.snapshot().contains("existing.example:443"), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(log.snapshot().contains("2026/11/11 00:00:00 [Access] accepted existing.example:443"))
+
+        let node = try AccessVLESSWebSocketTLSParameters(address: "route.example", port: 443,
+            userID: "550e8400-e29b-41d4-a716-446655440000", serverName: "ws.example",
+            requestHost: "ws.example", path: "/local-upgrade-path?v=2", fingerprint: "", alpn: "")
+        let webSocket = log.acquireShared(level: .info, secrets: node.diagnosticSecrets)
+        XCTAssertTrue(log.snapshot().contains("2026/11/11 00:00:00 [Access] accepted existing.example:443"))
+        try writer.write(contentsOf: Data((
+            "2026/11/11 00:00:01 [Error] transport/internet/websocket: upgrade error /local-upgrade-path?v=2\n" +
+            "2026/11/11 00:00:02 from local accepted https://ws.example/local-upgrade-path?v=2\n").utf8))
+        XCTAssertTrue(log.stop(lease: webSocket))
+        XCTAssertTrue(log.stop(lease: subscription))
+        let history = log.snapshot()
+        XCTAssertTrue(history.contains("existing.example:443"))
+        XCTAssertTrue(history.contains("ws.example:443"))
+        XCTAssertTrue(history.contains("details withheld"))
+        XCTAssertFalse(history.contains("local-upgrade-path"))
+        XCTAssertFalse(history.contains("?v="))
+    }
+
     func testStopDrainPreservesClearAndNoneDiscardBoundaries() throws {
         for disable in [false, true] {
             let log = AccessDiagnosticLog(pollInterval: .seconds(60))

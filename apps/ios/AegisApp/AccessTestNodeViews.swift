@@ -89,11 +89,11 @@ private struct AccessTestNodeDetailView: View {
                 .disabled(editor.scan != nil)
                 .accessibilityIdentifier("access-test-node-scan")
             }
-            if editor.hasDraft {
+            if let protocolName = editor.draftProtocolName {
                 Section {
                     Text("3X-UI 测试节点", tableName: "AccessTestNode")
                         .accessibilityIdentifier("access-test-node-redacted-preview")
-                    Text(verbatim: "VLESS / TCP / REALITY / Vision")
+                    Text(verbatim: protocolName)
                 } header: {
                     Text("预览", tableName: "AccessTestNode")
                 }
@@ -256,7 +256,7 @@ private struct AccessTestNodeDetailView: View {
     private func message(for error: AccessTestNodeError) -> LocalizedStringResource {
         switch error {
         case .unavailable: LocalizedStringResource("此版本无法编辑测试节点。", table: "AccessTestNode")
-        case .invalidLink: LocalizedStringResource("请输入一条 VLESS / TCP / REALITY / Vision 分享链接。", table: "AccessTestNode")
+        case .invalidLink: LocalizedStringResource("请输入一条 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享链接。", table: "AccessTestNode")
         case .cameraDenied: LocalizedStringResource("相机权限未开启，可继续输入节点链接。", table: "AccessTestNode")
         case .cameraUnavailable: LocalizedStringResource("相机扫码暂不可用，可继续输入节点链接。", table: "AccessTestNode")
         case .conflict: LocalizedStringResource("另一窗口已保存。放弃更改后重新预览即可应用。", table: "AccessTestNode")

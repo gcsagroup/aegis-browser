@@ -254,25 +254,25 @@
         }
       }
     },
-    "请输入一条 VLESS / TCP / REALITY / Vision 分享链接。": {
+    "请输入一条 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享链接。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请输入一条 VLESS / TCP / REALITY / Vision 分享链接。"
+            "value": "请输入一条 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享链接。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter one VLESS / TCP / REALITY / Vision share link."
+            "value": "Enter one VLESS share link using REALITY/Vision or WebSocket/TLS."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請輸入一條 VLESS / TCP / REALITY / Vision 分享連結。"
+            "value": "請輸入一條 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享連結。"
           }
         }
       }

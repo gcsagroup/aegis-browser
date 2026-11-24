@@ -49,16 +49,7 @@ public struct AccessRealityVisionOutboundConfig: @unchecked Sendable {
         guard let outbounds = jsonObject["outbounds"] else {
             throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("outbounds")
         }
-        // An enabled log must have a controlled sink: Xray otherwise writes
-        // to process stdout.
-        guard logLevel == .none || (errorLogPath?.hasPrefix("/") == true && errorLogPath != "/") else {
-            throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("errorLogPath")
-        }
-        let log: [String: Any] = [
-            "loglevel": logLevel.rawValue,
-            "access": logLevel == .none || !includeAccessLog ? "none" : errorLogPath!,
-            "error": logLevel == .none ? "none" : errorLogPath!,
-        ]
+        let log = try Self.embeddedLog(logLevel: logLevel, errorLogPath: errorLogPath, includeAccessLog: includeAccessLog)
         let root: [String: Any] = [
             "log": log,
             "inbounds": [Any](),
@@ -66,6 +57,19 @@ public struct AccessRealityVisionOutboundConfig: @unchecked Sendable {
         ]
         try AccessRealityVisionOutboundConfigBuilder.assertFailClosed(root)
         return root
+    }
+
+    static func embeddedLog(logLevel: AccessLogLevel, errorLogPath: String?, includeAccessLog: Bool) throws -> [String: String] {
+        // An enabled log must have a controlled sink: Xray otherwise writes
+        // to process stdout.
+        guard logLevel == .none || (errorLogPath?.hasPrefix("/") == true && errorLogPath != "/") else {
+            throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("errorLogPath")
+        }
+        return [
+            "loglevel": logLevel.rawValue,
+            "access": logLevel == .none || !includeAccessLog ? "none" : errorLogPath!,
+            "error": logLevel == .none ? "none" : errorLogPath!,
+        ]
     }
 
     public func embeddedInstanceJSONData(

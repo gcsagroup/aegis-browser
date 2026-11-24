@@ -50,3 +50,5 @@ Codex Security Review 可补充审查秘密处理、凭据边界和 CI 变更；
 2026-11-17，提交 `f609c1cc` 内的桌面和 Android 离线 OCR 补丁出现 26 个 Sourcegraph 令牌误报。复核了提交及对象摘要、公开资源的编码行，并按供应商清单核对 10 个资源摘要。每条记录绑定该提交、文件、规则和行号，并附行内容摘要。
 
 2026-11-24，提交 `519ef2b9` 内 `AccessLocalV2RayConfigTests.swift` 第 26 行出现 1 个 generic-api-key 误报。该值是 REALITY 公钥格式校验的合成测试输入，Base64URL 解码后为 32 字节顺序值 `0x00…0x1f`，不对应任何真实节点。记录绑定该提交、文件、规则和行号，并附行内容摘要。
+
+2026-11-24,#401 squash 合并提交 `1068d42e` 中 `AccessLocalV2RayConfigTests.swift` 第 26 行再次出现 1 个 generic-api-key 误报。该行与已登记的 `519ef2b9` 第 26 行逐字相同(去除换行后的 SHA-256 均为 `dc0d1b8b…9659`),仍是 REALITY 公钥格式校验的合成测试输入。记录绑定该提交、文件、规则和行号,并附行内容摘要。

@@ -72,6 +72,11 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
         return instance.provision.endpoint
     }
 
+    /// Reads the live readiness predicate also used by the periodic health watch.
+    public var isCurrentEntryHealthy: Bool {
+        currentEndpoint != nil && (healthCheck?() ?? true)
+    }
+
     public var stateChanges: AsyncStream<AccessManagedProxyEndpoint> {
         if let cachedStream { return cachedStream }
         let created = AsyncStream<AccessManagedProxyEndpoint> { continuation in

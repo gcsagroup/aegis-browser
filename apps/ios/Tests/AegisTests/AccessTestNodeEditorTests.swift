@@ -20,6 +20,193 @@ final class AccessTestNodeEditorTests: XCTestCase {
         + "?type=tcp&security=reality&flow=xtls-rprx-vision&sni=www.example.com"
         + "&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=abcd1234#synthetic-node"
 
+    private let webSocketLink = "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.20:8443"
+        + "?security=tls&type=ws&host=ws.example.com&fp=chrome&sni=cert.example.com&path=%2Finside&encryption=none&alpn=#synthetic-ws"
+
+    func testTestNodeImportPreservesWebSocketWireValuesAndLegacyReality() throws {
+        let address = "xn--bcher-kva.example"
+        let uri = try XCTUnwrap(URLComponents(string: webSocketLink.replacingOccurrences(of: "198.51.100.20", with: address)))
+        var nested = uri
+        let path = "/upgrade?origin=https://assets.example/"
+        nested.queryItems = uri.queryItems?.map { $0.name == "path" ? URLQueryItem(name: "path", value: path) : $0 }
+        let share = try XCTUnwrap(nested.string)
+        XCTAssertTrue(share.contains("https://assets.example/"))
+        guard case .vlessWebSocketTLS(let parameters) = try AccessInternalTestNode.parseSingleShareURI(share)
+        else { return XCTFail("Expected a typed WebSocket profile") }
+        XCTAssertEqual(parameters.address, address)
+        XCTAssertEqual(parameters.path, path)
+
+        let legacy = link.replacingOccurrences(of: "sid=abcd1234", with: "sid=abcd1234&spx=/café")
+        let expected = try AccessLocalV2RayConfigLoader.parseSingleShareURI(legacy)
+        XCTAssertEqual(expected.spiderX, "/café")
+        XCTAssertEqual(try AccessInternalTestNode.parseSingleShareURI(legacy), .realityVision(expected))
+
+        for scoped in ["[fe80::1%25lo0]", "[fe80::1%lo0]", "fe80::1%lo0"] {
+            XCTAssertThrowsError(try AccessVLESSWebSocketTLSParameters(address: scoped, port: 443, userID: parameters.userID,
+                serverName: parameters.serverName, requestHost: parameters.requestHost, path: "/", fingerprint: "", alpn: ""))
+        }
+        XCTAssertThrowsError(try AccessVLESSWebSocketTLSParameters(address: address, port: 443, userID: parameters.userID,
+            serverName: parameters.serverName, requestHost: "[fe80::1%lo0]:443", path: "/", fingerprint: "", alpn: ""))
+        XCTAssertThrowsError(try AccessInternalTestNode.parseSingleShareURI(share + webSocketLink))
+    }
+
+    func testWebSocketValidatesRequestTargetBytesAndBothAddressFields() throws {
+        let source = webSocketLink.replacingOccurrences(of: "198.51.100.20", with: "r%6Fute.example.")
+            .replacingOccurrences(of: "path=%2Finside", with: "path=%2Fupgrade%3Ftag%3D%25E9")
+        guard case .vlessWebSocketTLS(let node) = try AccessInternalTestNode.parseSingleShareURI(source)
+        else { return XCTFail("Expected a WebSocket profile") }
+        XCTAssertEqual(node.address, "route.example.")
+        XCTAssertEqual(node.path, "/upgrade?tag=%E9")
+
+        let callback = webSocketLink.replacingOccurrences(of: "198.51.100.20", with: "b%C3%BCcher.example")
+            .replacingOccurrences(of: "host=ws.example.com", with: "host=ws.example.com.%3A8443")
+            .replacingOccurrences(of: "path=%2Finside", with: "path=%2Fupgrade%3Fnext%3D%2568ttps://assets.example/")
+        guard case .vlessWebSocketTLS(let callbackNode) = try AccessInternalTestNode.parseSingleShareURI(callback)
+        else { return XCTFail("Expected a WebSocket profile") }
+        XCTAssertEqual(callbackNode.address, "xn--bcher-kva.example")
+        XCTAssertEqual(callbackNode.requestHost, "ws.example.com.:8443")
+        XCTAssertEqual(callbackNode.path, "/upgrade?next=%68ttps://assets.example/")
+
+        let withSeparator = callback.replacingOccurrences(
+            of: "assets.example/", with: "assets.example/search%253Fq%253D%253A%252F%252F")
+        guard case .vlessWebSocketTLS(let separatorNode) = try AccessInternalTestNode.parseSingleShareURI(withSeparator)
+        else { return XCTFail("Expected a WebSocket profile") }
+        XCTAssertEqual(separatorNode.path, "/upgrade?next=%68ttps://assets.example/search%3Fq%3D%3A%2F%2F")
+
+        let withPathLast = String(webSocketLink.prefix(while: { $0 != "#" }))
+            .replacingOccurrences(of: "&path=%2Finside", with: "") + "&path=/upgrade"
+        for scheme in ["vless", "ss", "trojan", "vmess"] {
+            XCTAssertThrowsError(try AccessInternalTestNode.parseSingleShareURI(withPathLast + scheme + "://example.invalid"))
+        }
+        let forbiddenHost = source.replacingOccurrences(of: "host=ws.example.com", with: "host=169.254.8.8%25en0")
+        XCTAssertThrowsError(try AccessInternalTestNode.parseSingleShareURI(forbiddenHost))
+        let earlyData = source.replacingOccurrences(of: "tag%3D%25E9", with: "tag%3D%25E9%26e%2564%3D1")
+        XCTAssertThrowsError(try AccessInternalTestNode.parseSingleShareURI(earlyData))
+    }
+
+    func testUnsupportedSavedWebSocketAddressCannotRunAndCanBeRemovedOrReplaced() throws {
+        let node = try AccessInternalTestNode.parseSingleShareURI(webSocketLink)
+        let original = AccessTestNodeRecord(node)
+        let data = try JSONEncoder().encode(original)
+        var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        fields["address"] = "fe80::1%lo0"
+        let invalid = try JSONSerialization.data(withJSONObject: fields)
+        let storage = Storage()
+        storage.encodedValue = invalid
+        let repository = AccessTestNodeRepository(channel: .dev, storage: storage)
+        let editor = AccessTestNodeEditor(isPrivate: false, repository: repository)
+        XCTAssertThrowsError(try repository.savedNode(isPrivate: false))
+        XCTAssertEqual(try repository.revision(isPrivate: false), original.revision)
+        XCTAssertThrowsError(try repository.remove(expectedRevision: UUID(), isPrivate: false))
+        editor.openProfile()
+        XCTAssertTrue(editor.hasSavedNode)
+        editor.removeSavedNode()
+        XCTAssertNil(storage.encodedValue)
+        XCTAssertFalse(editor.hasSavedNode)
+
+        storage.encodedValue = invalid
+        editor.openProfile()
+        editor.preview(webSocketLink)
+        XCTAssertTrue(editor.canApply)
+        editor.apply()
+        XCTAssertEqual(try repository.savedNode(isPrivate: false).node, node)
+        XCTAssertNotEqual(try repository.revision(isPrivate: false), original.revision)
+    }
+
+    func testWebSocketProfileImportsOneShareAndPreservesVersionedRecords() throws {
+        let store = Storage()
+        let repository = AccessTestNodeRepository(channel: .dev, storage: store)
+        let editor = AccessTestNodeEditor(isPrivate: false, repository: repository)
+        editor.openProfile()
+        editor.preview(link)
+        editor.apply()
+        let legacy = try repository.savedNode(isPrivate: false)
+        let previous = Data("""
+        {"version":1,"revision":"E1EA5ABF-608B-40E3-886A-9D92520F79A1","address":"198.51.100.10",
+         "port":443,"userID":"550e8400-e29b-41d4-a716-446655440000","serverName":"www.example.com",
+         "publicKey":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8","shortID":"abcd1234","fingerprint":"chrome","spiderX":""}
+        """.utf8)
+        let restoredLegacy = try JSONDecoder().decode(AccessTestNodeRecord.self, from: previous)
+        XCTAssertEqual(restoredLegacy.node, legacy.node)
+        XCTAssertEqual(restoredLegacy.revision.uuidString, "E1EA5ABF-608B-40E3-886A-9D92520F79A1")
+
+        editor.preview(webSocketLink)
+        XCTAssertEqual(editor.draftProtocolName, "VLESS / WS / TLS")
+        XCTAssertEqual(store.writes, 1)
+        editor.apply()
+        let record = try repository.savedNode(isPrivate: false)
+        let restored = try JSONDecoder().decode(AccessTestNodeRecord.self, from: JSONEncoder().encode(record))
+        XCTAssertEqual(record.node, restored.node)
+        XCTAssertEqual(record.revision, restored.revision)
+        XCTAssertNotEqual(legacy.revision, record.revision)
+        guard case .vlessWebSocketTLS(let node) = record.node else { return XCTFail("Wrong outbound") }
+        XCTAssertEqual(node.serverName, "cert.example.com")
+        XCTAssertEqual(node.requestHost, "ws.example.com")
+        XCTAssertEqual(node.path, "/inside")
+        XCTAssertThrowsError(try AccessLocalV2RayConfigLoader.parseSingleShareURI(webSocketLink))
+        let explicitPort = webSocketLink.replacingOccurrences(of: "host=ws.example.com", with: "host=ws.example.com%3A8443")
+        guard case .vlessWebSocketTLS(let authority) = try AccessInternalTestNode.parseSingleShareURI(explicitPort)
+        else { return XCTFail("Wrong outbound for HTTP authority") }
+        XCTAssertEqual(authority.requestHost, "ws.example.com:8443")
+        XCTAssertEqual(authority.serverName, "cert.example.com")
+        let ipv6 = webSocketLink.replacingOccurrences(of: "198.51.100.20", with: "[2001:db8::2]")
+        guard case .vlessWebSocketTLS(let literal) = try AccessInternalTestNode.parseSingleShareURI(ipv6)
+        else { return XCTFail("Wrong outbound for IPv6") }
+        XCTAssertEqual(literal.address, "2001:db8::2")
+        let withQuery = webSocketLink.replacingOccurrences(of: "path=%2Finside", with: "path=%2Finside%3Fv%3D2")
+        guard case .vlessWebSocketTLS(let queryPath) = try AccessInternalTestNode.parseSingleShareURI(withQuery)
+        else { return XCTFail("Wrong outbound for a valid query") }
+        XCTAssertEqual(queryPath.path, "/inside?v=2")
+
+        for invalid in [webSocketLink.replacingOccurrences(of: "security=tls", with: "security=none"),
+                        webSocketLink.replacingOccurrences(of: "&alpn=", with: "&allowInsecure=1"),
+                        webSocketLink.replacingOccurrences(of: "&alpn=", with: "&security=tls"),
+                        webSocketLink.replacingOccurrences(of: "path=%2Finside", with: "path=%2F%0D%0AX-Forged"),
+                        webSocketLink.replacingOccurrences(of: "path=%2Finside", with: "path=%2Finvalid%25"),
+                        webSocketLink.replacingOccurrences(of: "path=%2Finside", with: "path=%2F%3F%2565d%3D1"),
+                        webSocketLink.replacingOccurrences(of: "path=%2Finside", with: "path=%2Finside%3Fv%3D%7B"),
+                        webSocketLink.replacingOccurrences(of: "alpn=", with: "alpn=%FF"),
+                        webSocketLink.replacingOccurrences(of: "@198.51.100.20", with: ":%FF@198.51.100.20"),
+                        webSocketLink.replacingOccurrences(of: "8443?", with: "8443/%FF?"),
+                        webSocketLink.replacingOccurrences(of: "198.51.100.20", with: "[route.example]"),
+                        webSocketLink.replacingOccurrences(of: "host=ws.example.com", with: "host=ws.example.com%3A92233720368547758070"),
+                        webSocketLink + "\n" + webSocketLink] {
+            editor.preview(invalid)
+            XCTAssertFalse(editor.canApply)
+            XCTAssertEqual(editor.error, .invalidLink)
+        }
+        XCTAssertEqual(store.writes, 2)
+    }
+
+    func testWebSocketPageRetainsCertificateVerificationAndUsesOneOutbound() async throws {
+        let storage = Storage()
+        let repository = AccessTestNodeRepository(channel: .dev, storage: storage)
+        let editor = AccessTestNodeEditor(isPrivate: false, repository: repository)
+        editor.openProfile()
+        editor.preview(webSocketLink)
+        editor.apply()
+        let core = PageCore()
+        let page = AccessTestNodePage(isPrivate: false, repository: repository, testingCore: core, transport: .http)
+        defer { page.close() }
+        await page.open(URL(string: "https://controlled.example/page")!)
+        XCTAssertEqual(page.selectedTransport, .http)
+        let bytes = try XCTUnwrap(core.startedConfig.withLock { $0 })
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        XCTAssertEqual((json["inbounds"] as? [Any])?.count, 0)
+        let outbounds = try XCTUnwrap(json["outbounds"] as? [[String: Any]])
+        XCTAssertEqual(outbounds.count, 1)
+        let stream = try XCTUnwrap(outbounds.first?["streamSettings"] as? [String: Any])
+        XCTAssertEqual(stream["network"] as? String, "ws")
+        XCTAssertEqual(stream["security"] as? String, "tls")
+        let tls = try XCTUnwrap(stream["tlsSettings"] as? [String: Any])
+        XCTAssertNil(tls["allowInsecure"])
+        XCTAssertEqual(tls["useSystemCA"] as? Bool, true)
+        XCTAssertEqual(tls["serverName"] as? String, "cert.example.com")
+        let webSocket = try XCTUnwrap(stream["wsSettings"] as? [String: String])
+        XCTAssertEqual(webSocket["host"], "ws.example.com")
+        XCTAssertEqual(webSocket["path"], "/inside")
+    }
+
     func testTransportAdmissionAndBindingTimeSelection() throws {
         XCTAssertEqual(try AccessTestNodeTransport.automatic.select(socksAdmitted: true), .socks5)
         XCTAssertEqual(try AccessTestNodeTransport.automatic.select(socksAdmitted: false), .http)
@@ -848,6 +1035,7 @@ final class AccessTestNodeEditorTests: XCTestCase {
         let running = Mutex(false)
         private let beforeStart: (@MainActor () async throws -> Void)?
         private let afterStop: (@MainActor () -> Void)?
+        let startedConfig = Mutex<Data?>(nil)
         init(beforeStart: (@MainActor () async throws -> Void)? = nil, afterStop: (@MainActor () -> Void)? = nil) {
             self.beforeStart = beforeStart
             self.afterStop = afterStop
@@ -855,6 +1043,7 @@ final class AccessTestNodeEditorTests: XCTestCase {
         var isRunning: Bool { running.withLock { $0 } }
         func start(configData: Data) async throws {
             if let beforeStart { try await beforeStart() }
+            startedConfig.withLock { $0 = configData }
             running.withLock { $0 = true }
         }
         func stop() async {
@@ -868,6 +1057,7 @@ final class AccessTestNodeEditorTests: XCTestCase {
 
     private final class Storage: AccessTestNodeStoring {
         var value: AccessTestNodeRecord?
+        var encodedValue: Data?
         var reads = 0
         var writes = 0
         var removals = 0
@@ -877,17 +1067,25 @@ final class AccessTestNodeEditorTests: XCTestCase {
         func read(channel: AccessInternalOptions) throws -> AccessTestNodeRecord? {
             reads += 1
             beforeRead?()
+            if let encodedValue { return try JSONDecoder().decode(AccessTestNodeRecord.self, from: encodedValue) }
             return value
+        }
+
+        func revision(channel: AccessInternalOptions) throws -> UUID? {
+            if let encodedValue { return try AccessTestNodeRecord.storedRevision(in: encodedValue) }
+            return try read(channel: channel)?.revision
         }
 
         func write(_ record: AccessTestNodeRecord, channel: AccessInternalOptions) throws {
             if failWrite { throw AccessTestNodeError.storageUnavailable }
             writes += 1
+            encodedValue = nil
             value = record
         }
 
         func remove(channel: AccessInternalOptions) throws {
             removals += 1
+            encodedValue = nil
             value = nil
         }
     }

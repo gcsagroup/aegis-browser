@@ -76,68 +76,109 @@ enum AccessTestNodeError: Error {
 }
 
 struct AccessTestNodeRecord: Codable {
-    let version = 1
     let revision: UUID
-    private let address: String
-    private let port: UInt16
-    private let userID: String
-    private let serverName: String
-    private let publicKey: String
-    private let shortID: String
-    private let fingerprint: String
-    private let spiderX: String
+    let node: AccessInternalTestNode
 
-    // Use an explicit encoding schema. Unknown or missing versions are rejected at restore.
     private enum CodingKeys: String, CodingKey {
         case version, revision, address, port, userID, serverName, publicKey, shortID, fingerprint, spiderX
+        case requestHost, path, alpn
     }
 
-    init(_ node: AccessRealityVisionParameters) {
+    private struct StoredIdentity: Decodable {
+        let version: Int
+        let revision: UUID
+    }
+
+    /// Revise or remove a known record even if its outbound can no longer run.
+    static func storedRevision(in data: Data) throws -> UUID {
+        let identity = try JSONDecoder().decode(StoredIdentity.self, from: data)
+        guard identity.version == 1 || identity.version == 2 else { throw AccessTestNodeError.storageUnavailable }
+        return identity.revision
+    }
+
+    init(_ node: AccessInternalTestNode) {
         revision = UUID()
-        address = node.address
-        port = node.port
-        userID = node.userID
-        serverName = node.serverName
-        publicKey = node.publicKey
-        shortID = node.shortID
-        fingerprint = node.fingerprint
-        spiderX = node.spiderX
+        self.node = node
     }
 
+    init(_ parameters: AccessRealityVisionParameters) {
+        self.init(.realityVision(parameters))
+    }
+
+    // REALITY-only test fixtures keep their existing typed accessor.
     func parameters() throws -> AccessRealityVisionParameters {
-        let parameters = try AccessRealityVisionParameters(address: address, port: port, userID: userID,
-            serverName: serverName, publicKey: publicKey, shortID: shortID,
-            fingerprint: fingerprint, spiderX: spiderX)
+        guard case .realityVision(let parameters) = node else { throw AccessTestNodeError.unavailable }
         try AccessLocalV2RayConfigLoader.validateManualParameters(parameters)
         return parameters
     }
 
     init(from decoder: any Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
-        guard try fields.decode(Int.self, forKey: .version) == version else {
-            throw AccessTestNodeError.storageUnavailable
-        }
+        let version = try fields.decode(Int.self, forKey: .version)
+        guard version == 1 || version == 2 else { throw AccessTestNodeError.storageUnavailable }
         revision = try fields.decode(UUID.self, forKey: .revision)
-        address = try fields.decode(String.self, forKey: .address)
-        port = try fields.decode(UInt16.self, forKey: .port)
-        userID = try fields.decode(String.self, forKey: .userID)
-        serverName = try fields.decode(String.self, forKey: .serverName)
-        publicKey = try fields.decode(String.self, forKey: .publicKey)
-        shortID = try fields.decode(String.self, forKey: .shortID)
-        fingerprint = try fields.decode(String.self, forKey: .fingerprint)
-        spiderX = try fields.decode(String.self, forKey: .spiderX)
-        _ = try AccessRealityVisionParameters(
-            address: address, port: port, userID: userID, serverName: serverName, publicKey: publicKey,
-            shortID: shortID, fingerprint: fingerprint, spiderX: spiderX
-        )
+        let address = try fields.decode(String.self, forKey: .address)
+        let port = try fields.decode(UInt16.self, forKey: .port)
+        let userID = try fields.decode(String.self, forKey: .userID)
+        let serverName = try fields.decode(String.self, forKey: .serverName)
+        let fingerprint = try fields.decode(String.self, forKey: .fingerprint)
+        if version == 1 {
+            node = .realityVision(try AccessRealityVisionParameters(
+                address: address, port: port, userID: userID, serverName: serverName,
+                publicKey: fields.decode(String.self, forKey: .publicKey),
+                shortID: fields.decode(String.self, forKey: .shortID), fingerprint: fingerprint,
+                spiderX: fields.decode(String.self, forKey: .spiderX)
+            ))
+        } else {
+            node = .vlessWebSocketTLS(try AccessVLESSWebSocketTLSParameters(
+                address: address, port: port, userID: userID, serverName: serverName,
+                requestHost: fields.decode(String.self, forKey: .requestHost),
+                path: fields.decode(String.self, forKey: .path), fingerprint: fingerprint,
+                alpn: fields.decode(String.self, forKey: .alpn)
+            ))
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(revision, forKey: .revision)
+        switch node {
+        case .realityVision(let parameters):
+            try fields.encode(1, forKey: .version)
+            try fields.encode(parameters.address, forKey: .address)
+            try fields.encode(parameters.port, forKey: .port)
+            try fields.encode(parameters.userID, forKey: .userID)
+            try fields.encode(parameters.serverName, forKey: .serverName)
+            try fields.encode(parameters.fingerprint, forKey: .fingerprint)
+            try fields.encode(parameters.publicKey, forKey: .publicKey)
+            try fields.encode(parameters.shortID, forKey: .shortID)
+            try fields.encode(parameters.spiderX, forKey: .spiderX)
+        case .vlessWebSocketTLS(let parameters):
+            try fields.encode(2, forKey: .version)
+            try fields.encode(parameters.address, forKey: .address)
+            try fields.encode(parameters.port, forKey: .port)
+            try fields.encode(parameters.userID, forKey: .userID)
+            try fields.encode(parameters.serverName, forKey: .serverName)
+            try fields.encode(parameters.fingerprint, forKey: .fingerprint)
+            try fields.encode(parameters.requestHost, forKey: .requestHost)
+            try fields.encode(parameters.path, forKey: .path)
+            try fields.encode(parameters.alpn, forKey: .alpn)
+        }
     }
 }
 
 @MainActor
 protocol AccessTestNodeStoring {
     func read(channel: AccessInternalOptions) throws -> AccessTestNodeRecord?
+    func revision(channel: AccessInternalOptions) throws -> UUID?
     func write(_ record: AccessTestNodeRecord, channel: AccessInternalOptions) throws
     func remove(channel: AccessInternalOptions) throws
+}
+
+extension AccessTestNodeStoring {
+    func revision(channel: AccessInternalOptions) throws -> UUID? {
+        try read(channel: channel)?.revision
+    }
 }
 
 struct AccessTestNodeKeychain: AccessTestNodeStoring {
@@ -150,7 +191,7 @@ struct AccessTestNodeKeychain: AccessTestNodeStoring {
          kSecAttrSynchronizable as String: false]
     }
 
-    func read(channel: AccessInternalOptions) throws -> AccessTestNodeRecord? {
+    private func data(channel: AccessInternalOptions) throws -> Data? {
         var request = query(for: channel)
         request[kSecReturnData as String] = true
         var item: CFTypeRef?
@@ -159,7 +200,15 @@ struct AccessTestNodeKeychain: AccessTestNodeStoring {
         guard status == errSecSuccess, let data = item as? Data else {
             throw AccessTestNodeError.storageUnavailable
         }
-        return try JSONDecoder().decode(AccessTestNodeRecord.self, from: data)
+        return data
+    }
+
+    func read(channel: AccessInternalOptions) throws -> AccessTestNodeRecord? {
+        try data(channel: channel).map { try JSONDecoder().decode(AccessTestNodeRecord.self, from: $0) }
+    }
+
+    func revision(channel: AccessInternalOptions) throws -> UUID? {
+        try data(channel: channel).map(AccessTestNodeRecord.storedRevision(in:))
     }
 
     func write(_ record: AccessTestNodeRecord, channel: AccessInternalOptions) throws {
@@ -239,13 +288,19 @@ final class AccessTestNodeRepository {
 
     func revision(isPrivate: Bool) throws -> UUID? {
         guard let channel, !isPrivate else { throw AccessTestNodeError.unavailable }
-        return try storage.read(channel: channel)?.revision
+        return try storage.revision(channel: channel)
     }
 
     func apply(_ draft: AccessRealityVisionParameters, expectedRevision: UUID?, isPrivate: Bool) throws -> UUID {
+        try apply(.realityVision(draft), expectedRevision: expectedRevision, isPrivate: isPrivate)
+    }
+
+    func apply(_ draft: AccessInternalTestNode, expectedRevision: UUID?, isPrivate: Bool) throws -> UUID {
         guard let channel, !isPrivate else { throw AccessTestNodeError.unavailable }
         guard try revision(isPrivate: isPrivate) == expectedRevision else { throw AccessTestNodeError.conflict }
-        try AccessLocalV2RayConfigLoader.validateManualParameters(draft)
+        if case .realityVision(let parameters) = draft {
+            try AccessLocalV2RayConfigLoader.validateManualParameters(parameters)
+        }
         let record = AccessTestNodeRecord(draft)
         try storage.write(record, channel: channel)
         revokeOpenPages()
@@ -269,7 +324,7 @@ final class AccessTestNodeEditor {
 
     private let repository: AccessTestNodeRepository
     private let isPrivate: Bool
-    private var draft: AccessRealityVisionParameters?
+    private var draft: AccessInternalTestNode?
     private var baseRevision: UUID?
     private var loaded = false
     private(set) var scan: Scan?
@@ -277,6 +332,13 @@ final class AccessTestNodeEditor {
 
     var allowsEditing: Bool { repository.allowsEditing(isPrivate: isPrivate) }
     var hasDraft: Bool { draft != nil }
+    var draftProtocolName: String? {
+        switch draft {
+        case .realityVision: "VLESS / TCP / REALITY / Vision"
+        case .vlessWebSocketTLS: "VLESS / WS / TLS"
+        case nil: nil
+        }
+    }
     var hasSavedNode: Bool { baseRevision != nil }
     var showsEmptyProfile: Bool { loaded && !hasSavedNode }
     var canApply: Bool { loaded && hasDraft && scan == nil }
@@ -310,7 +372,7 @@ final class AccessTestNodeEditor {
         guard loaded else { return }
         scan = nil
         do {
-            draft = try AccessLocalV2RayConfigLoader.parseSingleShareURI(input)
+            draft = try AccessInternalTestNode.parseSingleShareURI(input)
             error = nil
         } catch {
             // Remove an earlier candidate so Apply cannot save it after a failed preview.
@@ -387,6 +449,31 @@ enum AccessTestNodeQRCode {
 }
 
 
+/// First observations only. Never stores URLs, credentials, or document content.
+struct AccessTestNodeTimeline {
+    enum Milestone: String {
+        case loadIssued, provisionalStart, firstVisibleHTTPResponse
+        case documentCommit, documentFinish, navigationFailure, policyRejection
+        case retirementRequested, retirementCommit
+    }
+
+    private let origin = ContinuousClock.now
+    private var instants: [Milestone: ContinuousClock.Instant] = [:]
+
+    mutating func record(_ milestone: Milestone) {
+        if instants[milestone] == nil { instants[milestone] = .now }
+    }
+
+    func instant(_ milestone: Milestone) -> ContinuousClock.Instant? { instants[milestone] }
+
+    var milliseconds: [String: Int64] {
+        Dictionary(uniqueKeysWithValues: instants.map { milestone, instant in
+            let elapsed = origin.duration(to: instant).components
+            return (milestone.rawValue, elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000)
+        })
+    }
+}
+
 /// A deliberately selected ordinary test Profile owns one publisher and one immutable store.
 /// Each new page session rereads its saved revision and owns an isolated native core.
 @MainActor
@@ -429,6 +516,8 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         return "no-local-rejection-observed"
     }
     private(set) var httpStatus: Int?
+    private(set) var firstVisibleHTTPStatus: Int?
+    private(set) var timeline = AccessTestNodeTimeline()
     /// WebKit does not expose a redirect's HTTP status through its redirect callback.
     /// Keep the initial response unknown when it was not delivered to the response delegate.
     private(set) var initialHTTPStatus: Int?
@@ -437,6 +526,8 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     private let singleNavigation: Bool
     private let transportPreference: AccessTestNodeTransport
     private let socksAdmitted: Bool
+    private let navigationAllowed: () -> Bool
+    private let onTransportLoss: (() -> Void)?
     private(set) var selectedTransport: AccessInboundTransport?
     private var sentMainFrame = false
     private var committedMainFrame = false
@@ -448,10 +539,12 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     init(isPrivate: Bool, repository: AccessTestNodeRepository = .shared,
          testingCore: (any AccessEmbeddedCoreControlling)? = nil,
          singleNavigation: Bool = false, transport: AccessTestNodeTransport = .automatic,
-         socksAdmitted: Bool? = nil, preparationTimeout: Duration = .seconds(15),
+         socksAdmitted: Bool? = nil, navigationAllowed: @escaping () -> Bool = { true },
+         preparationTimeout: Duration = .seconds(15),
          waitForPreparationDeadline: @escaping @MainActor (ContinuousClock.Instant) async throws -> Void = {
              try await ContinuousClock().sleep(until: $0)
-         }) {
+         },
+         onTransportLoss: (() -> Void)? = nil) {
         self.transportPreference = transport
         self.socksAdmitted = socksAdmitted ?? AccessInternalSOCKSAdmission.current
         self.repository = repository
@@ -460,6 +553,8 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         self.singleNavigation = singleNavigation
         self.preparationTimeout = preparationTimeout
         self.waitForPreparationDeadline = waitForPreparationDeadline
+        self.navigationAllowed = navigationAllowed
+        self.onTransportLoss = onTransportLoss
         super.init()
     }
 
@@ -467,7 +562,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         let deadline = ContinuousClock.now.advanced(by: preparationTimeout)
         guard publisher == nil, preparationDeadline == nil, !closed, url.scheme == "https", url.user == nil, url.password == nil,
               let rawHost = url.host, let host = try? AccessSiteHost(rawHost),
-              repository.allowsEditing(isPrivate: isPrivate) else {
+              navigationAllowed(), repository.allowsEditing(isPrivate: isPrivate) else {
             status = "连接暂不可用"
             return
         }
@@ -480,18 +575,18 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             let revision = record.revision
             observerID = repository.observeRevocation { [weak self] in self?.close() }
             let core = try testingCore ?? AccessGoEmbeddedCore(isolated: true)
-            let newPublisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(
-                configPath: nil, verifiedCore: core,
-                parameters: { [repository, isPrivate] in
+            let newPublisher = AccessEmbeddedProxyEntryFactory.makeInternalTestPublisher(
+                verifiedCore: core,
+                node: { [repository, isPrivate] in
                     guard ContinuousClock.now < deadline else { throw AccessTestNodeError.unavailable }
                     let current = try repository.savedNode(isPrivate: isPrivate)
                     guard current.revision == revision else { throw AccessTestNodeError.conflict }
-                    let parameters = try current.parameters()
+                    if case .realityVision = current.node { _ = try current.parameters() }
                     guard ContinuousClock.now < deadline else { throw AccessTestNodeError.unavailable }
-                    return parameters
+                    return current.node
                 },
                 connectionAllowed: { [weak self, repository] in
-                    guard let self, !self.closed, !self.preparationDeadlineElapsed else { return false }
+                    guard let self, !self.closed, !self.preparationDeadlineElapsed, self.navigationAllowed() else { return false }
                     return (try? repository.revision(isPrivate: self.isPrivate)) == revision
                         && !self.closed && !self.preparationDeadlineElapsed
                 },
@@ -553,7 +648,10 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             view.navigationDelegate = self
             webView = view
             initialBinding = result.endpoint
+            guard navigationAllowed() else { close(); return }
+            if observeBoundEntryLoss() { close(); return }
             status = "正在加载"
+            timeline.record(.loadIssued)
             currentNavigation = view.load(URLRequest(url: url))
         } catch {
             guard !closed else { return }
@@ -582,6 +680,9 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             failureDomain = NSURLErrorDomain
             failureCode = NSURLErrorTimedOut
         }
+        // A navigation error can arrive before the publisher's health poll.
+        // Sample its current entry before ordinary shutdown makes it unhealthy.
+        observeBoundEntryLoss()
         closed = true
         if let observerID { repository.removeObserver(observerID) }
         observerID = nil
@@ -595,10 +696,21 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         } else { retire {} }
     }
 
+    @discardableResult
+    func observeBoundEntryLoss() -> Bool {
+        guard !closed, !retiring, let onTransportLoss, initialBinding != nil,
+              (publisher as? AccessProxyEntryPublisher)?.isCurrentEntryHealthy != true else { return false }
+        onTransportLoss()
+        return true
+    }
+
     private func retire(_ finish: @escaping () -> Void) {
         if retirementRequestedAt == nil { retirementRequestedAt = .now }
+        // A publisher can initiate retirement itself when its health watch fails.
+        if !closed, initialBinding != nil { onTransportLoss?() }
         status = "连接暂不可用"
         retiring = true
+        timeline.record(.retirementRequested)
         recordRetirement("requested")
         guard let view = webView else { finish(); release(); return }
         retirement = finish
@@ -650,18 +762,23 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
                   let finish = retirement else { recordRetirement("other-commit"); return }
             retirementCommittedAt = .now
             recordRetirement("replacement-committed")
+            timeline.record(.retirementCommit)
             retirement = nil
             finish()
             release()
             retiringOwner = nil
             return
         }
-        if let navigation, navigation === currentNavigation { committedMainFrame = true }
+        if let navigation, navigation === currentNavigation {
+            if webView === self.webView { timeline.record(.documentCommit) }
+            committedMainFrame = true
+        }
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         if retiring { recordRetirement(navigation != nil && navigation === retirementNavigation ? "replacement-started" : "other-start") }
         guard !retiring, let navigation else { return }
+        if webView === self.webView { timeline.record(.provisionalStart) }
         currentNavigation = navigation
         committedMainFrame = false
         status = "正在加载"
@@ -669,7 +786,10 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if retiring { recordRetirement(navigation != nil && navigation === retirementNavigation ? "replacement-finished" : "other-finish") }
-        if !retiring, let navigation, navigation === currentNavigation { status = "已连接" }
+        if !retiring, let navigation, navigation === currentNavigation {
+            if webView === self.webView { timeline.record(.documentFinish) }
+            status = "已连接"
+        }
     }
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
@@ -683,6 +803,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             retryRetirementReplacement(in: webView)
         }
         if ownsFailure(navigation, error: error) {
+            if webView === self.webView { timeline.record(.navigationFailure) }
             failureDomain = (error as NSError).domain
             failureCode = (error as NSError).code
             close()
@@ -696,6 +817,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             retryRetirementReplacement(in: webView)
         }
         if ownsFailure(navigation, error: error) {
+            if webView === self.webView { timeline.record(.navigationFailure) }
             failureDomain = (error as NSError).domain
             failureCode = (error as NSError).code
             close()
@@ -715,6 +837,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         // Termination is an error, never a successful document-retirement ack.
         // A fresh inert replacement must still commit before the port is freed.
         if !retiring {
+            timeline.record(.navigationFailure)
             failureDomain = WKError.errorDomain
             failureCode = WKError.Code.webContentProcessTerminated.rawValue
             close()
@@ -725,9 +848,16 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
         if response.isForMainFrame, !retiring {
             httpStatus = (response.response as? HTTPURLResponse)?.statusCode
+            if webView === self.webView, firstVisibleHTTPStatus == nil, let httpStatus {
+                firstVisibleHTTPStatus = httpStatus
+                timeline.record(.firstVisibleHTTPResponse)
+            }
             if !observedMainFrameResponse, serverRedirectCount == 0 { initialHTTPStatus = httpStatus }
             observedMainFrameResponse = true
-            if !response.canShowMIMEType { localPolicyRejection = "unsupported-mime-type" }
+            if !response.canShowMIMEType {
+                if webView === self.webView { timeline.record(.policyRejection) }
+                localPolicyRejection = "unsupported-mime-type"
+            }
         }
         decisionHandler(response.canShowMIMEType ? .allow : .cancel)
     }
@@ -755,6 +885,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
                 // commits, all further top-level actions are separate navigations.
                 let initialRedirect = !committedMainFrame && action.navigationType == .other
                 guard !sentMainFrame || initialRedirect else {
+                    if webView === self.webView { timeline.record(.policyRejection) }
                     localPolicyRejection = "additional-top-level-navigation"
                     decisionHandler(.cancel)
                     failureDomain = "AdditionalTopLevelNavigation"
@@ -767,6 +898,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             let scheme = action.request.url?.scheme
             let allowed = scheme == "https" && !action.shouldPerformDownload
             if !allowed, action.targetFrame?.isMainFrame == true {
+                if webView === self.webView { timeline.record(.policyRejection) }
                 localPolicyRejection = action.shouldPerformDownload ? "download-navigation" : "non-https-navigation"
             }
             if allowed, action.targetFrame?.isMainFrame == true {
