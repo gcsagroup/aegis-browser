@@ -1,4 +1,4 @@
-From 1a06ce77199362644268124ed5019138a86bc045 Mon Sep 17 00:00:00 2001
+From 254fb054aa1bbe8cc55399e647e4ad7a91dcc1a3 Mon Sep 17 00:00:00 2001
 From: lain665 <lain@erjinyi.com>
 Date: Sun, 22 Nov 2026 08:26:58 +0800
 Subject: [PATCH] feat(windows): align uninstall dialog with installer
@@ -14,7 +14,7 @@ Subject: [PATCH] feat(windows): align uninstall dialog with installer
  create mode 100644 chrome/browser/ui/views/aegis_uninstall_test_main.cc
 
 diff --git a/chrome/app/theme/chrome_unscaled_resources.grd b/chrome/app/theme/chrome_unscaled_resources.grd
-index 2cffbfc..d97a273 100644
+index 2cffbfc0e30d9d085f6a7dcff9c6ecafff0a4a86..d97a273991e7bc2f0c50a0030953d552cf54137f 100644
 --- a/chrome/app/theme/chrome_unscaled_resources.grd
 +++ b/chrome/app/theme/chrome_unscaled_resources.grd
 @@ -157,6 +157,10 @@
@@ -29,7 +29,7 @@ index 2cffbfc..d97a273 100644
    </release>
  </grit>
 diff --git a/chrome/browser/ui/views/BUILD.gn b/chrome/browser/ui/views/BUILD.gn
-index ccf57b0..1376d8b 100644
+index ccf57b0555f916a0f330a9ab501ceb79f2b0fcf8..1376d8be7c791c0b4e97bd247b54e4359b9ae0d6 100644
 --- a/chrome/browser/ui/views/BUILD.gn
 +++ b/chrome/browser/ui/views/BUILD.gn
 @@ -8,6 +8,7 @@ import("//build/config/ui.gni")
@@ -93,7 +93,7 @@ index ccf57b0..1376d8b 100644
  }
 diff --git a/chrome/browser/ui/views/aegis_uninstall_test_main.cc b/chrome/browser/ui/views/aegis_uninstall_test_main.cc
 new file mode 100644
-index 0000000..f127f0f
+index 0000000000000000000000000000000000000000..f127f0f9977f0148da6ea508b47823ed1bf194a5
 --- /dev/null
 +++ b/chrome/browser/ui/views/aegis_uninstall_test_main.cc
 @@ -0,0 +1,37 @@
@@ -135,7 +135,7 @@ index 0000000..f127f0f
 +  return UninstallTestSuite(argc, argv).RunTests();
 +}
 diff --git a/chrome/browser/ui/views/uninstall_view.cc b/chrome/browser/ui/views/uninstall_view.cc
-index 18fd1ee..6282bf2 100644
+index 18fd1eeba0d92402761562725ee1838bf9e7f5a0..6282bf2496264e10964b92c69d78c092cb9256cf 100644
 --- a/chrome/browser/ui/views/uninstall_view.cc
 +++ b/chrome/browser/ui/views/uninstall_view.cc
 @@ -1,83 +1,196 @@
@@ -401,7 +401,7 @@ index 18fd1ee..6282bf2 100644
    return result;
  }
 diff --git a/chrome/browser/ui/views/uninstall_view.h b/chrome/browser/ui/views/uninstall_view.h
-index 531cb7e..1609ba0 100644
+index 531cb7ee7faf2acb8a405096d310f62ff844a232..1609ba08885ad4fc0aca5afbf4c852fa47932cf6 100644
 --- a/chrome/browser/ui/views/uninstall_view.h
 +++ b/chrome/browser/ui/views/uninstall_view.h
 @@ -1,6 +1,7 @@
@@ -450,7 +450,7 @@ index 531cb7e..1609ba0 100644
    const raw_ref<int> user_selection_;
    base::RepeatingClosure quit_closure_;
 diff --git a/chrome/browser/ui/views/uninstall_view_unittest.cc b/chrome/browser/ui/views/uninstall_view_unittest.cc
-index 448687a..7107269 100644
+index 448687a76505808ca7a0cd9e5312e815624c0417..71072696d077a4d140700f06edc456f391058a51 100644
 --- a/chrome/browser/ui/views/uninstall_view_unittest.cc
 +++ b/chrome/browser/ui/views/uninstall_view_unittest.cc
 @@ -1,33 +1,150 @@
@@ -610,5 +610,5 @@ index 448687a..7107269 100644
 +  widget->CloseNow();
 +}
 -- 
-2.56.0.windows.4
+2.52.0
 
