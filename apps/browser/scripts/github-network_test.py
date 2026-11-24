@@ -364,11 +364,11 @@ pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'ok')
         }
         if proxy:
             environment['https_proxy'] = proxy
-        script = chr(10).join([
-            'set -euo pipefail',
-            'source "$1"',
-            'curl_ci_download "$2" "$3" "${@:4}"',
-        ])
+        script = (
+            'set -euo pipefail\n'
+            'source "$1"\n'
+            'curl_ci_download "$2" "$3" "${@:4}"\n'
+        )
         result = subprocess.run(
             ['/bin/bash', '-c', script, 'download-matrix', str(helper), str(output),
              'https://github.com/fixture/repo/archive.tar.gz', *extra],
