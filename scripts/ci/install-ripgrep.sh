@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/curl-direct-then-proxy.sh
+source "${SCRIPT_DIR}/curl-direct-then-proxy.sh"
+
 select_ripgrep_release() {
   local operating_system="$1"
   local architecture="$2"
@@ -42,9 +46,9 @@ main() {
   name="ripgrep-${version}-${target}"
   archive="${RUNNER_TEMP}/${name}.tar.gz"
   url="https://github.com/BurntSushi/ripgrep/releases/download/${version}/${name}.tar.gz"
-  curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
-    --noproxy "${no_proxy:-},${NO_PROXY:-},github.com,.github.com,githubusercontent.com,.githubusercontent.com" \
-    --output "$archive" "$url"
+  # Direct first; self-hosted runners that only reach GitHub via a local proxy
+  # recover on the second attempt.
+  curl_ci_download "$archive" "$url"
   printf '%s  %s\n' "$expected" "$archive" | shasum -a 256 --check --status
   tar -xzf "$archive" -C "$RUNNER_TEMP"
   "${RUNNER_TEMP}/${name}/rg" --version
