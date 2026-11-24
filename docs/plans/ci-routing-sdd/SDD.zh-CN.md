@@ -19,6 +19,8 @@
 
 #217 的 `other-platforms` 跳过不能单独证明 `windows=false`，因为 quality 已经失败。路径并集、iOS 合同跳过和 macOS 合同成功一起说明这次路由没有选中 Windows。
 
+上表是基线 `0049a1f3` 的规则。[#412](https://github.com/quinn521/aegis-browser/pull/412) 已于 2026-11-23 合入 `quinn521/aegis-browser` 的 `develop`，那里的 `selectsAndroid` 已覆盖 `scripts/release/android-*`、`scripts/release/android_*`、`scripts/release/test_android*.py`、`scripts/release/runner.rb` 和 `scripts/release/verify-aab.py`。按 `develop` 规则，#226 得到 `android=true`、`macos=false`，不再漏选。#217 在 `develop` 上仍然漏选 Windows：卸载视图和补丁走共享产品，`windows-uninstall-branding_test.py` 不含 `winrm`，仍落入 macOS 回退。上游 `main` 尚未包含 #412。
+
 iOS 合同目前只等待自己的 impact，不等待 quality。合同条件在 `ios-release-validation.yml` 的 contracts 作业；macOS 合同同样只等待 `macos-delivery.yml` 自己的 impact。因此 #217 的 macOS 合同可以在 quality 失败时仍然成功。
 
 ## 边界
@@ -62,7 +64,16 @@ C++ 路径过滤、秘密扫描、Chromium 候选和覆盖率 workflow 的现有
 }
 ```
 
-`planDigest` 覆盖选择，不覆盖结果。摘要是上述字段的 UTF-8 规范 JSON 的 sha256：对象键按固定顺序，`unmappedPaths` 排序，`checks` 按 `id` 排序，每项 `reasons` 按 `path` 再按 `rule` 排序，不保留多余空白。
+`stageCeiling` 与 `checks[].stage` 只取 `gate`、`integrate`、`deep`，依次对应门禁、集成、深度。`checks[].platform` 只取 `quality`、`ios`、`android`、`macos`、`windows`、`linux`。其他取值使计划无效。
+
+`planDigest` 覆盖选择，不覆盖结果。摘要输入是去掉 `planDigest` 本身后的计划，序列化为无空白的 UTF-8 JSON，再取 sha256 的小写十六进制。字符串转义与 `JSON.stringify` 一致。键顺序固定如下，不按字母排序：
+
+- 顶层：`schemaVersion`、`event`、`repository`、`branch`、`base`、`head`、`testedSha`、`rulesSha`、`affectedPlatforms`、`stageCeiling`、`lightweight`、`unmappedPaths`、`checks`
+- `affectedPlatforms`：`ios`、`android`、`macos`、`windows`、`linux`
+- `checks[]` 每项：`id`、`platform`、`stage`、`selected`、`reasons`
+- `reasons[]` 每项：`path`、`rule`
+
+`unmappedPaths` 按 UTF-16 码元升序排序，`checks` 按 `id` 排序，每项 `reasons` 按 `path` 再按 `rule` 排序。计划中出现上述以外的键时，消费者按 schema 3 缺字段同样处理，门禁失败。
 
 结果写在另一份文档。一次运行的结果至少包含 `testedSha`、`runId`、`runAttempt`，以及每项已选检查的 `state`。允许的状态是 `passed`、`failed`、`cancelled`、`blocked-prerequisite`、`missing-artifact`、`reused`。`missing-artifact` 必须带具体说明。已选检查遇到失败、取消、前置阻断或缺少原生产物时，结果使用对应状态，不用一个跳过来代替。
 
@@ -196,7 +207,7 @@ WinRM 成功只写入 `windows-winrm`。它不改变 `windows-uninstall-branding
 
 ## 验收
 
-离线测试使用 #226、#217 的真实路径和主题，以及下表的其余输入。期望是新计划的选择和 runner 分配；现行 `platform-impact.mjs` 对前两行仍会得到原来的漏选，测试要保留这个对照。
+离线测试使用 #226、#217 的真实路径和主题，以及下表的其余输入。期望是新计划的选择和 runner 分配。对照断言绑定规则提交：基线 `0049a1f3` 的 `platform-impact.mjs` 对前两行都漏选；`develop` 上含 #412 的分类器对 #226 已正确选中 Android，对 #217 仍漏选 Windows。测试按对应规则提交断言，不写成对任意现行分类器都漏选。
 
 | 输入 | 必须观察到的结果 |
 | --- | --- |
@@ -214,13 +225,13 @@ WinRM 成功只写入 `windows-winrm`。它不改变 `windows-uninstall-branding
 
 ## 草案取舍
 
-以 [Draft #412](https://github.com/quinn521/aegis-browser/pull/412) 为执行形状的起点：发布脚本按实际消费者登记，Linux 使用轻量 Bash 合同，Android、Windows、Linux 在 quality 成功后分平台执行并共享一次 Ubuntu 初始化。#412 把 `verify-ipa.py`、`product_delivery.py` 等无平台文件名的 iOS 工具列入 iOS 合同；本登记表沿用这个归属，但归档只收下表中的归档输入。
+以 [#412](https://github.com/quinn521/aegis-browser/pull/412)（已合入 `develop`）为执行形状的起点：发布脚本按实际消费者登记，Linux 使用轻量 Bash 合同，Android、Windows、Linux 在 quality 成功后分平台执行并共享一次 Ubuntu 初始化。#412 把 `verify-ipa.py`、`product_delivery.py` 等无平台文件名的 iOS 工具列入 iOS 合同；本登记表沿用这个归属，但归档只收下表中的归档输入。
 
 从 [Draft #410](https://github.com/quinn521/aegis-browser/pull/410) 吸收 Windows 卸载视图、`gcsa_aegis/win`、安装器目录、`aegis-windows.gn` 和 `apps/browser/scripts/windows-*`。不吸收它的两处行为：`selectPlatformChecks` 会拒绝合法的 `ios=true` 且集成阶段为 false；平台作业通过 `workflow_call` 运行完整 kcov 或 Pester。也不把所有 `overlay/**/*test.cc`、所有桌面补丁或所有 Node workspace 文件设为 Windows 或全平台输入。
 
 ## 迁移与回滚
 
-1. 先固定预期。用上表建立离线计划测试，并保留现行分类器对 #226、#217 的漏选对照。`promotion-quality` 的 advisory 测试使用现有读者，不改其判断。
+1. 先固定预期。用上表建立离线计划测试，并按规则提交保留对照：基线对 #226、#217 漏选，`develop` 只对 #217 漏选。`promotion-quality` 的读者锁测试使用现有读者，不改其判断。
 2. 再比较计划。对同一批历史输入输出新旧计划、选中原因和预计 runner。切换时每项检查只留一个执行入口：Android 发布回归不再由 iOS 合同的 `scripts/release/test_*.py` discover 顺带执行；iOS 与 macOS 不再各自生成第二份可执行计划。iOS 归档额外核对现有自托管 workflow 与作业准入，以及归档产物上的 tested SHA 和 attempt。
 3. 用可测条件放行。验收矩阵中的漏选数、同一检查的重复执行数、前置失败后新增的平台 runner 数都为 0。按平台记录 runner 分钟和绿单完成时间，单独列出合同等待 quality 的时间。发现漏选、错误判绿或晋升语义变化时，用回退 PR 恢复原来的执行入口：三个 impact、`quality:other-platforms` 组合命令，以及 iOS、macOS 合同只等待各自 impact。
 

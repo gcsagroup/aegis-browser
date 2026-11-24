@@ -65,7 +65,7 @@ test('quality workflow state requires exact push identity and both mandatory job
   assert.equal(qualityWorkflowRunState(run, [{...jobs[0], run_attempt: 2}, jobs[1]], expected), 'failure');
 });
 
-test('advisory job failure does not change the quality conclusion promotion reads', () => {
+test('promotion reader keeps a successful run conclusion when a non-required job fails', () => {
   const expected = {repo: promotionConfig.personalRepo, branch: 'develop', sha: 'abc'};
   const run = {
     id: 8,
