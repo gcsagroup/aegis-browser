@@ -698,6 +698,7 @@ exports.analyzeScriptAst = function () {
       child.once("error", rejectPromise);
       child.once("exit", resolvePromise);
     });
+    let exitCode: number | null = null;
     try {
       await waitForFile(firstReady);
       await waitForFile(virtualFilenameProbe);
@@ -719,15 +720,17 @@ exports.analyzeScriptAst = function () {
       await waitForFile(secondReady);
       writeFileSync(analyzerPath, coordinatedAnalyzer);
       writeFileSync(secondContinue, "continue", "utf8");
+      // 最终校验仍会读取仓库文件；必须等子进程退出后才能执行清理重写。
+      exitCode = await completion;
     } catch (error) {
       child.kill();
+      await completion.catch(() => null);
       throw error;
     } finally {
       writeFileSync(analyzerPath, coordinatedAnalyzer);
       writeFileSync(firstContinue, "continue", "utf8");
       writeFileSync(secondContinue, "continue", "utf8");
     }
-    const exitCode = await completion;
     expect(exitCode, stderr || stdout).toBe(0);
     expect(existsSync(badLoaded)).toBe(false);
     expect(
