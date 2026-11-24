@@ -277,6 +277,17 @@ final class AccessGoSchedulingTests: XCTestCase {
         XCTAssertTrue(core.isRunning)
         await core.stop()
     }
+
+    func testNativeTeardownAcknowledgementReportsTheNativeError() async throws {
+        for shouldFail in [false, true] {
+            let native = ControlledAsyncNativeCore(onRead: {}, failStop: shouldFail)
+            let core = AccessGoEmbeddedCore(native: native)
+            try await core.start(configData: Data("{}".utf8))
+            let acknowledged = await core.stopAndConfirm()
+            XCTAssertEqual(acknowledged, !shouldFail)
+            XCTAssertFalse(core.isRunning)
+        }
+    }
 }
 
 /// Native callback contract double. Actual blocking saturation is exercised by
@@ -298,13 +309,15 @@ private final class ControlledAsyncNativeCore: AccessGoNativeCore, Sendable {
     private let onClose: @Sendable () -> Void
     private let onStop: @Sendable (Int) -> Void
     private let beforeStart: @Sendable (Int) async -> Void
+    private let failStop: Bool
     init(onRead: @escaping @Sendable () -> Void, onClose: @escaping @Sendable () -> Void = {},
          onStop: @escaping @Sendable (Int) -> Void = { _ in },
-         beforeStart: @escaping @Sendable (Int) async -> Void = { _ in }) {
+         beforeStart: @escaping @Sendable (Int) async -> Void = { _ in }, failStop: Bool = false) {
         self.onRead = onRead
         self.onClose = onClose
         self.onStop = onStop
         self.beforeStart = beforeStart
+        self.failStop = failStop
     }
     var snapshot: State { state.withLock { $0 } }
     var isRunning: Bool { snapshot.running }
@@ -348,10 +361,11 @@ private final class ControlledAsyncNativeCore: AccessGoNativeCore, Sendable {
         onClose()
         read?.resume(returning: Data())
     }
-    func stop() async {
+    func stop() async throws {
         let count = state.withLock { $0.stops += 1; return $0.stops }
         finishAll()
         onStop(count)
+        if failStop { throw AccessEmbeddedCoreError.unverifiedAsset }
     }
     func finishAll() {
         let reads = state.withLock {

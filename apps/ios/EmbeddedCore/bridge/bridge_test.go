@@ -50,6 +50,50 @@ func TestDialRequiresRunningInstance(t *testing.T) {
 	}
 }
 
+func TestStopAwaitsStreamCloseAlreadyRemovedFromRuntime(t *testing.T) {
+	runtime := NewRuntime()
+	if err := runtime.Start(freedomConfig); err != nil {
+		t.Fatal(err)
+	}
+	local, peer := net.Pipe()
+	defer peer.Close()
+	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	runtime.mu.Lock()
+	runtime.streams[1] = &streamHandle{conn: delayedCloseConn{local, entered, release}, cancel: func() {}}
+	runtime.mu.Unlock()
+	runtime.CloseStreamAsync(1)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("independent stream close did not start")
+	}
+	stopped := make(chan asyncResult, 1)
+	runtime.StopAsync(resultReceiver{stopped})
+	select {
+	case <-stopped:
+		t.Fatal("stop acknowledged before the detached stream finished closing")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	if result := awaitResult(t, stopped); result.failure != "" {
+		t.Fatal(result.failure)
+	}
+}
+
+type delayedCloseConn struct {
+	net.Conn
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (c delayedCloseConn) Close() error {
+	close(c.entered)
+	<-c.release
+	return c.Conn.Close()
+}
+
 // Thousands of reads exceed the practical dispatch-worker limit, but must not
 // prevent async write, another dial, close or stop callbacks from completing.
 func TestAsyncIOBeyondDispatchCapacity(t *testing.T) {

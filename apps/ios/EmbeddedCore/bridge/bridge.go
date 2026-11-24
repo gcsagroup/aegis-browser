@@ -31,14 +31,18 @@ import (
 // Legacy package entry points below retain their original single-runtime API.
 type Runtime struct {
 	mu              sync.Mutex
+	stopMu          sync.Mutex
 	instance        *core.Instance
 	streams         map[int64]*streamHandle
+	streamCloses    *sync.WaitGroup
 	nextID          atomic.Int64
 	instanceContext context.Context
 	instanceCancel  context.CancelFunc
 }
 
-func NewRuntime() *Runtime { return &Runtime{streams: map[int64]*streamHandle{}} }
+func NewRuntime() *Runtime {
+	return &Runtime{streams: map[int64]*streamHandle{}, streamCloses: &sync.WaitGroup{}}
+}
 
 var legacy = NewRuntime()
 
@@ -215,10 +219,14 @@ func (r *Runtime) Start(configJSON string) error {
 
 // Stop closes every open dial stream and the running instance.
 func (r *Runtime) Stop() error {
+	r.stopMu.Lock()
+	defer r.stopMu.Unlock()
 	r.mu.Lock()
 	inst, cancel, closing := r.instance, r.instanceCancel, r.streams
+	pendingCloses := r.streamCloses
 	r.instance, r.instanceContext, r.instanceCancel = nil, nil, nil
 	r.streams = map[int64]*streamHandle{}
+	r.streamCloses = &sync.WaitGroup{}
 	r.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -227,19 +235,24 @@ func (r *Runtime) Stop() error {
 		handle.cancel()
 		_ = handle.conn.Close()
 	}
+	var stopErr error
 	if inst != nil {
 		lifecycleMu.Lock()
-		defer lifecycleMu.Unlock()
-		err := inst.Close()
+		stopErr = inst.Close()
 		liveInstances--
 		if liveInstances == 0 && activeLogger != nil {
 			_ = activeLogger.Close()
 			activeLogger, activeLogConfig, activeLogGeneration = nil, nil, 0
 			selectLiveLogger()
 		}
-		return err
+		lifecycleMu.Unlock()
 	}
-	return nil
+	// A separately closed stream may already be absent from the map. Swapping the
+	// generation under mu excludes new Adds to this group before waiting.
+	if pendingCloses != nil {
+		pendingCloses.Wait()
+	}
+	return stopErr
 }
 
 // IsRunning reports whether the embedded instance is live.
@@ -320,13 +333,15 @@ func (r *Runtime) Write(streamID int64, data []byte) error {
 func (r *Runtime) CloseStream(streamID int64) {
 	r.mu.Lock()
 	handle, ok := r.streams[streamID]
-	if ok {
-		delete(r.streams, streamID)
-	}
-	r.mu.Unlock()
 	if !ok {
+		r.mu.Unlock()
 		return
 	}
+	group := r.streamCloses
+	group.Add(1)
+	delete(r.streams, streamID)
+	r.mu.Unlock()
+	defer group.Done()
 	handle.cancel()
 	_ = handle.conn.Close()
 }

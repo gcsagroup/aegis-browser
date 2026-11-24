@@ -452,24 +452,98 @@ enum AccessTestNodeQRCode {
 /// First observations only. Never stores URLs, credentials, or document content.
 struct AccessTestNodeTimeline {
     enum Milestone: String {
-        case loadIssued, provisionalStart, firstVisibleHTTPResponse
-        case documentCommit, documentFinish, navigationFailure, policyRejection
+        case loadIssued, loadNotAccepted, provisionalStart, firstVisibleHTTPResponse
+        case documentCommit, documentFinish, preparationTimedOut, preparationFailure, navigationFailure, policyRejection
         case retirementRequested, retirementCommit
     }
 
-    private let origin = ContinuousClock.now
-    private var instants: [Milestone: ContinuousClock.Instant] = [:]
+    enum Observation {
+        case http(status: Int, initial: Bool)
+        case redirect
+        case policyRejection(String)
+        case failure(domain: String, code: Int)
+    }
 
-    mutating func record(_ milestone: Milestone) {
-        if instants[milestone] == nil { instants[milestone] = .now }
+    struct Snapshot {
+        var nanoseconds: [String: Int64] = [:]
+        var milliseconds: [String: Int64] { nanoseconds.mapValues { $0 / 1_000_000 } }
+        var firstHTTPStatus: Int?
+        var initialHTTPStatus: Int?
+        var lastHTTPStatus: Int?
+        var serverRedirectCount = 0
+        var localPolicyRejection: String?
+        var failureDomain: String?
+        var failureCode: Int?
+
+        var isEmpty: Bool {
+            nanoseconds.isEmpty && lastHTTPStatus == nil && serverRedirectCount == 0
+                && localPolicyRejection == nil && failureDomain == nil
+        }
+
+        var navigationPolicy: String {
+            if let localPolicyRejection { return localPolicyRejection }
+            if failureDomain == "WebKitErrorDomain", failureCode == 102 { return "policy-interruption-unattributed" }
+            return "no-local-rejection-observed"
+        }
+    }
+
+    let origin: ContinuousClock.Instant
+    private var instants: [Milestone: ContinuousClock.Instant] = [:]
+    private var observations: [(instant: ContinuousClock.Instant, value: Observation)] = []
+
+    init(origin: ContinuousClock.Instant = .now) {
+        self.origin = origin
+    }
+
+    mutating func record(_ milestone: Milestone, at instant: ContinuousClock.Instant = .now) {
+        if instants[milestone] == nil { instants[milestone] = instant }
     }
 
     func instant(_ milestone: Milestone) -> ContinuousClock.Instant? { instants[milestone] }
 
+    mutating func observe(_ value: Observation, at instant: ContinuousClock.Instant) {
+        observations.append((instant, value))
+    }
+
+    func snapshot(through cutoff: ContinuousClock.Instant, after start: ContinuousClock.Instant? = nil) -> Snapshot {
+        func includes(_ instant: ContinuousClock.Instant) -> Bool {
+            instant <= cutoff && (start.map { instant > $0 } ?? true)
+        }
+        var snapshot = Snapshot()
+        for (milestone, instant) in instants where includes(instant)
+            && milestone != .retirementRequested && milestone != .retirementCommit {
+            snapshot.nanoseconds[milestone.rawValue] = nanoseconds(at: instant)
+        }
+        for observation in observations where includes(observation.instant) {
+            switch observation.value {
+            case .http(let status, let initial):
+                if snapshot.firstHTTPStatus == nil { snapshot.firstHTTPStatus = status }
+                if initial { snapshot.initialHTTPStatus = status }
+                snapshot.lastHTTPStatus = status
+            case .redirect:
+                snapshot.serverRedirectCount += 1
+            case .policyRejection(let reason):
+                snapshot.localPolicyRejection = reason
+            case .failure(let domain, let code):
+                snapshot.failureDomain = domain
+                snapshot.failureCode = code
+            }
+        }
+        return snapshot
+    }
+
+    func milliseconds(at instant: ContinuousClock.Instant) -> Int64 {
+        nanoseconds(at: instant) / 1_000_000
+    }
+
+    private func nanoseconds(at instant: ContinuousClock.Instant) -> Int64 {
+        let elapsed = origin.duration(to: instant).components
+        return elapsed.seconds * 1_000_000_000 + elapsed.attoseconds / 1_000_000_000
+    }
+
     var milliseconds: [String: Int64] {
         Dictionary(uniqueKeysWithValues: instants.map { milestone, instant in
-            let elapsed = origin.duration(to: instant).components
-            return (milestone.rawValue, elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000)
+            (milestone.rawValue, milliseconds(at: instant))
         })
     }
 }
@@ -495,7 +569,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     private var observerID: UUID?
     private let preparationTimeout: Duration
     private let waitForPreparationDeadline: @MainActor (ContinuousClock.Instant) async throws -> Void
-    private var preparationDeadline: ContinuousClock.Instant?
+    private var activePreparationDeadline: ContinuousClock.Instant?
     private var deadlineTask: Task<Void, Never>?
     private var preparationWaiter: CheckedContinuation<AccessProxyEntryPrepareResult, Error>?
     private var retirement: (() -> Void)?
@@ -517,7 +591,10 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     }
     private(set) var httpStatus: Int?
     private(set) var firstVisibleHTTPStatus: Int?
-    private(set) var timeline = AccessTestNodeTimeline()
+    private(set) var timeline: AccessTestNodeTimeline
+    private(set) var preparationStartedAt: ContinuousClock.Instant?
+    private(set) var preparationDeadline: ContinuousClock.Instant?
+    private(set) var originalNavigationAfterClose: AccessTestNodeTimeline
     /// WebKit does not expose a redirect's HTTP status through its redirect callback.
     /// Keep the initial response unknown when it was not delivered to the response delegate.
     private(set) var initialHTTPStatus: Int?
@@ -532,6 +609,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     private var sentMainFrame = false
     private var committedMainFrame = false
     private var currentNavigation: WKNavigation?
+    private(set) var originalNavigation: WKNavigation?
     private var sawMainFrameAction = false
     private var closed = false
     private var retiring = false
@@ -555,18 +633,29 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         self.waitForPreparationDeadline = waitForPreparationDeadline
         self.navigationAllowed = navigationAllowed
         self.onTransportLoss = onTransportLoss
+        let createdAt = ContinuousClock.now
+        self.timeline = AccessTestNodeTimeline(origin: createdAt)
+        self.originalNavigationAfterClose = AccessTestNodeTimeline(origin: createdAt)
         super.init()
     }
 
     func open(_ url: URL) async {
-        let deadline = ContinuousClock.now.advanced(by: preparationTimeout)
-        guard publisher == nil, preparationDeadline == nil, !closed, url.scheme == "https", url.user == nil, url.password == nil,
+        await open(url, recordDispatch: { _ in })
+    }
+
+    func open(_ url: URL, recordDispatch: (ContinuousClock.Instant) throws -> Void) async rethrows {
+        let preparingAt = ContinuousClock.now
+        let deadline = preparingAt.advanced(by: preparationTimeout)
+        guard publisher == nil, activePreparationDeadline == nil, !closed, url.scheme == "https", url.user == nil, url.password == nil,
               let rawHost = url.host, let host = try? AccessSiteHost(rawHost),
               navigationAllowed(), repository.allowsEditing(isPrivate: isPrivate) else {
             status = "连接暂不可用"
             return
         }
+        activePreparationDeadline = deadline
+        preparationStartedAt = preparingAt
         preparationDeadline = deadline
+        let view: WKWebView
         do {
             let transport = try transportPreference.select(socksAdmitted: socksAdmitted)
             selectedTransport = transport
@@ -600,8 +689,9 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             operationID = operation
             deadlineTask = Task { [weak self, waitForPreparationDeadline] in
                 try? await waitForPreparationDeadline(deadline)
-                guard !Task.isCancelled, let self, self.preparationDeadline == deadline,
+                guard !Task.isCancelled, let self, self.activePreparationDeadline == deadline,
                       ContinuousClock.now >= deadline else { return }
+                self.timeline.record(.preparationTimedOut, at: deadline)
                 self.close()
             }
             let request = AccessProxyEntryPrepareRequest(operationID: operation, deadline: remaining)
@@ -640,26 +730,41 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             }
             let configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = store
-            let view = WKWebView(frame: .zero, configuration: configuration)
+            view = WKWebView(frame: .zero, configuration: configuration)
             guard !closed, ContinuousClock.now < deadline else { throw AccessTestNodeError.unavailable }
             deadlineTask?.cancel()
-            preparationDeadline = nil
+            activePreparationDeadline = nil
             endpoint = result.endpoint
             view.navigationDelegate = self
             webView = view
             initialBinding = result.endpoint
-            guard navigationAllowed() else { close(); return }
-            if observeBoundEntryLoss() { close(); return }
-            status = "正在加载"
-            timeline.record(.loadIssued)
-            currentNavigation = view.load(URLRequest(url: url))
         } catch {
-            guard !closed else { return }
-            if !preparationDeadlineElapsed {
-                failureDomain = (error as NSError).domain
-                failureCode = (error as NSError).code
+            if !closed {
+                if preparationDeadlineElapsed, let activePreparationDeadline {
+                    timeline.record(.preparationTimedOut, at: activePreparationDeadline)
+                } else {
+                    recordFailure(error as NSError)
+                }
             }
             close()
+            return
+        }
+        guard navigationAllowed(), !observeBoundEntryLoss() else { close(); return }
+        guard let navigation = view.load(URLRequest(url: url)) else {
+            timeline.record(.loadNotAccepted)
+            close()
+            return
+        }
+        let acceptedAt = ContinuousClock.now
+        currentNavigation = navigation
+        if singleNavigation { originalNavigation = navigation }
+        status = "正在加载"
+        timeline.record(.loadIssued, at: acceptedAt)
+        do {
+            try recordDispatch(acceptedAt)
+        } catch {
+            close()
+            throw error
         }
     }
 
@@ -670,15 +775,19 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     }
 
     private var preparationDeadlineElapsed: Bool {
-        preparationDeadline.map { ContinuousClock.now >= $0 } ?? false
+        activePreparationDeadline.map { ContinuousClock.now >= $0 } ?? false
     }
 
     func close() {
         guard !closed else { return }
         if retirementRequestedAt == nil { retirementRequestedAt = .now }
-        if failureDomain == nil, preparationDeadlineElapsed {
-            failureDomain = NSURLErrorDomain
-            failureCode = NSURLErrorTimedOut
+        timeline.record(.retirementRequested)
+        if preparationDeadlineElapsed, let activePreparationDeadline {
+            timeline.record(.preparationTimedOut, at: activePreparationDeadline)
+            if failureDomain == nil {
+                failureDomain = NSURLErrorDomain
+                failureCode = NSURLErrorTimedOut
+            }
         }
         // A navigation error can arrive before the publisher's health poll.
         // Sample its current entry before ordinary shutdown makes it unhealthy.
@@ -688,7 +797,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         observerID = nil
         status = "连接暂不可用"
         deadlineTask?.cancel()
-        preparationDeadline = nil
+        activePreparationDeadline = nil
         if let operationID { publisher?.cancel(operationID: operationID) }
         finishPreparation(.failure(CancellationError()))
         if let publisher = publisher as? AccessProxyEntryPublisher {
@@ -757,6 +866,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        recordOriginalAfterClose(.documentCommit, navigation: navigation, in: webView)
         if retiring {
             guard webView === self.webView, let navigation, navigation === retirementNavigation,
                   let finish = retirement else { recordRetirement("other-commit"); return }
@@ -776,6 +886,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        recordOriginalAfterClose(.provisionalStart, navigation: navigation, in: webView)
         if retiring { recordRetirement(navigation != nil && navigation === retirementNavigation ? "replacement-started" : "other-start") }
         guard !retiring, let navigation else { return }
         if webView === self.webView { timeline.record(.provisionalStart) }
@@ -785,6 +896,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        recordOriginalAfterClose(.documentFinish, navigation: navigation, in: webView)
         if retiring { recordRetirement(navigation != nil && navigation === retirementNavigation ? "replacement-finished" : "other-finish") }
         if !retiring, let navigation, navigation === currentNavigation {
             if webView === self.webView { timeline.record(.documentFinish) }
@@ -793,33 +905,35 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
-        if !retiring, let navigation, navigation === currentNavigation { serverRedirectCount += 1 }
+        if isOriginalAfterClose(navigation, in: webView) { originalNavigationAfterClose.observe(.redirect, at: .now) }
+        if !retiring, let navigation, navigation === currentNavigation {
+            serverRedirectCount += 1
+            if singleNavigation, webView === self.webView { timeline.observe(.redirect, at: .now) }
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        recordOriginalFailureAfterClose(error as NSError, navigation: navigation, in: webView)
         if retiring { recordRetirement("provisional-failure-" + String((error as NSError).code)) }
         if retiring, webView === self.webView, let navigation, navigation === retirementNavigation {
             retirementNavigation = nil
             retryRetirementReplacement(in: webView)
         }
         if ownsFailure(navigation, error: error) {
-            if webView === self.webView { timeline.record(.navigationFailure) }
-            failureDomain = (error as NSError).domain
-            failureCode = (error as NSError).code
+            recordFailure(error as NSError, observesTimeline: webView === self.webView)
             close()
         }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        recordOriginalFailureAfterClose(error as NSError, navigation: navigation, in: webView)
         if retiring { recordRetirement("navigation-failure-" + String((error as NSError).code)) }
         if retiring, webView === self.webView, let navigation, navigation === retirementNavigation {
             retirementNavigation = nil
             retryRetirementReplacement(in: webView)
         }
         if ownsFailure(navigation, error: error) {
-            if webView === self.webView { timeline.record(.navigationFailure) }
-            failureDomain = (error as NSError).domain
-            failureCode = (error as NSError).code
+            recordFailure(error as NSError, observesTimeline: webView === self.webView)
             close()
         }
     }
@@ -831,15 +945,49 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
         return navigation === currentNavigation
     }
 
+    private func isOriginalAfterClose(_ navigation: WKNavigation?, in view: WKWebView) -> Bool {
+        retiring && view === webView && navigation != nil && navigation === originalNavigation
+    }
+
+    private func recordOriginalAfterClose(_ milestone: AccessTestNodeTimeline.Milestone, navigation: WKNavigation?,
+                                          in view: WKWebView) {
+        guard isOriginalAfterClose(navigation, in: view), timeline.instant(milestone) == nil else { return }
+        if milestone == .documentFinish, timeline.instant(.documentCommit) == nil,
+           originalNavigationAfterClose.instant(.documentCommit) == nil { return }
+        originalNavigationAfterClose.record(milestone)
+    }
+
+    private func recordOriginalFailureAfterClose(_ error: NSError, navigation: WKNavigation?, in view: WKWebView) {
+        guard isOriginalAfterClose(navigation, in: view) else { return }
+        let now = ContinuousClock.now
+        originalNavigationAfterClose.record(.navigationFailure, at: now)
+        originalNavigationAfterClose.observe(.failure(domain: error.domain, code: error.code), at: now)
+    }
+
+    private func recordFailure(_ error: NSError, observesTimeline: Bool = true) {
+        failureDomain = error.domain
+        failureCode = error.code
+        guard observesTimeline else { return }
+        let now = ContinuousClock.now
+        timeline.record(timeline.instant(.loadIssued) == nil ? .preparationFailure : .navigationFailure, at: now)
+        if singleNavigation { timeline.observe(.failure(domain: error.domain, code: error.code), at: now) }
+    }
+
+    private func recordPolicyRejection(_ reason: String, in view: WKWebView) {
+        localPolicyRejection = reason
+        guard view === webView else { return }
+        let now = ContinuousClock.now
+        timeline.record(.policyRejection, at: now)
+        if singleNavigation { timeline.observe(.policyRejection(reason), at: now) }
+    }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard webView === self.webView else { return }
         recordRetirement("web-content-process-terminated")
         // Termination is an error, never a successful document-retirement ack.
         // A fresh inert replacement must still commit before the port is freed.
         if !retiring {
-            timeline.record(.navigationFailure)
-            failureDomain = WKError.errorDomain
-            failureCode = WKError.Code.webContentProcessTerminated.rawValue
+            recordFailure(NSError(domain: WKError.errorDomain, code: WKError.Code.webContentProcessTerminated.rawValue))
             close()
         }
     }
@@ -848,15 +996,19 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
         if response.isForMainFrame, !retiring {
             httpStatus = (response.response as? HTTPURLResponse)?.statusCode
-            if webView === self.webView, firstVisibleHTTPStatus == nil, let httpStatus {
-                firstVisibleHTTPStatus = httpStatus
-                timeline.record(.firstVisibleHTTPResponse)
+            let initial = !observedMainFrameResponse && serverRedirectCount == 0
+            if webView === self.webView, let httpStatus {
+                let now = ContinuousClock.now
+                if firstVisibleHTTPStatus == nil {
+                    firstVisibleHTTPStatus = httpStatus
+                    timeline.record(.firstVisibleHTTPResponse, at: now)
+                }
+                if singleNavigation { timeline.observe(.http(status: httpStatus, initial: initial), at: now) }
             }
-            if !observedMainFrameResponse, serverRedirectCount == 0 { initialHTTPStatus = httpStatus }
+            if initial { initialHTTPStatus = httpStatus }
             observedMainFrameResponse = true
             if !response.canShowMIMEType {
-                if webView === self.webView { timeline.record(.policyRejection) }
-                localPolicyRejection = "unsupported-mime-type"
+                recordPolicyRejection("unsupported-mime-type", in: webView)
             }
         }
         decisionHandler(response.canShowMIMEType ? .allow : .cancel)
@@ -885,8 +1037,7 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
                 // commits, all further top-level actions are separate navigations.
                 let initialRedirect = !committedMainFrame && action.navigationType == .other
                 guard !sentMainFrame || initialRedirect else {
-                    if webView === self.webView { timeline.record(.policyRejection) }
-                    localPolicyRejection = "additional-top-level-navigation"
+                    recordPolicyRejection("additional-top-level-navigation", in: webView)
                     decisionHandler(.cancel)
                     failureDomain = "AdditionalTopLevelNavigation"
                     failureCode = 1
@@ -898,8 +1049,8 @@ final class AccessTestNodePage: NSObject, WKNavigationDelegate {
             let scheme = action.request.url?.scheme
             let allowed = scheme == "https" && !action.shouldPerformDownload
             if !allowed, action.targetFrame?.isMainFrame == true {
-                if webView === self.webView { timeline.record(.policyRejection) }
-                localPolicyRejection = action.shouldPerformDownload ? "download-navigation" : "non-https-navigation"
+                recordPolicyRejection(action.shouldPerformDownload ? "download-navigation" : "non-https-navigation",
+                                      in: webView)
             }
             if allowed, action.targetFrame?.isMainFrame == true {
                 let continuesProvisional = !committedMainFrame && action.navigationType == .other

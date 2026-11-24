@@ -1341,7 +1341,7 @@ final class AccessTestNodeDeviceTests: XCTestCase {
         defer { monitor.cancel() }
         guard try !AccessDomainCampaignInput.stopRequested(at: control) else { return }
         try append(["event":"network", "interface":network])
-        var preparationFailures = 0
+        var preparationFailures = AccessCampaignPreparationFailureStreak()
         var consecutiveNetworkFailures = 0
         for host in pending {
             if try AccessDomainCampaignInput.stopRequested(at: control) {
@@ -1382,7 +1382,7 @@ final class AccessTestNodeDeviceTests: XCTestCase {
                         "actualProtocol":page.initialBinding.map { $0.transport == .socks5 ? "socks5" : "http" } ?? "unbound",
                         "network":network.0])
             consecutiveNetworkFailures = timedOut || page.failureDomain == NSURLErrorDomain ? consecutiveNetworkFailures + 1 : 0
-            preparationFailures = page.webView == nil ? preparationFailures + 1 : 0
+            let preparationLimitReached = preparationFailures.observe(navigationIssued: page.timeline.instant(.loadIssued) != nil)
             let retired = try await Self.observeRetirement(page) { checkpoint in
                 var row: [String: Any] = ["event":checkpoint.supplement ? "retirement-supplement" : "retirement",
                     "host":host, "attempt":attempt, "retired":checkpoint.confirmed,
@@ -1392,7 +1392,7 @@ final class AccessTestNodeDeviceTests: XCTestCase {
             }
             guard retired else { XCTFail("Old document retirement unconfirmed; campaign stopped"); return }
             page.webView?.removeFromSuperview()
-            guard preparationFailures < 3 else { XCTFail("Repeated preparation failures; campaign stopped"); return }
+            guard !preparationLimitReached else { XCTFail("Repeated preparation failures; campaign stopped"); return }
             if consecutiveNetworkFailures >= 10 {
                 try append(["event":"checkpoint", "reason":"consecutive-network-failures", "reservedCount":reserved.count])
                 return

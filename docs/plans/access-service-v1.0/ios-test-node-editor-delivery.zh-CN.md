@@ -82,3 +82,17 @@ SOCKS5 端口补充：应用内发布端口不得为 `0` 或 `1080`；产品采�
 流行组第623项已收到403并完成文档，但本地退役替换获准后出现另一被拒动作，5秒及10秒均未观察到准确提交。原失败与第213项一样封存，不重试公开目标，也不反推原次退役时点。受控403、sandbox、COOP、子框架及卸载处理未复现原次完整路径，因此不宣称已确认原站点的具体触发脚本。
 
 对本地替换被中断的恢复路径增加独立回归：准确替换导航失败后立即作废其身份，迟到提交不能释放旧绑定；失败回调或退役期间被拒的主框架导航最多排队一次新的本地无资源HTML。该动作不加载原目标、不准备新代理、不改变协议或10秒观察预算。旧监听继续封流并隔离占用，只在新的准确本地提交后释放；第二次失败继续阻断。原生回调注入与真实WebKit竞争的 `about:blank` 用例分别取证，均不称为对原公开域名的复测或系统故障再现。
+
+## 批次中断与页面阶段
+
+常用组保留 891 次已确认导航和第 859 项的单条持久预留。原始账本和旧版执行器用作历史证据。此修订在新版测试账本上验证运行许可、派发收据与阶段归类。新版回执单独登记。 [#215](https://github.com/gcsagroup/aegis-browser/issues/215) [#216](https://github.com/gcsagroup/aegis-browser/issues/216)
+
+- 设备在允许受控健康检查或网页流量之前发布一次性 `.permit` 挑战，并先将其摘要同步写入本批次账本。Mac 校验清单顺序、批次身份和上限，在完整快照中看到当前挑战的摘要后，才将挑战原样写入 `.control`。每份应答只能消费一次，设备按挑战签发时刻计算最多 30 秒的单调有效期。过期、显式停止、网络或保护路径失效及原有预算耗尽均结束该批。停止后新挑战应答不能恢复连接。旧版 `run` 指令不具备新版运行许可。
+- 每个批次继续使用它获准的上限。常用组上限为 100 项、45 分钟、512 MiB，历史首组驱动仍限定 20 项、20 分钟、256 MiB。每项 15 秒准备、20 秒导航观察、10 秒退役和连续三次无 HTTP 超时的停机条件继续生效。
+- 设备在调用 WebKit 前同步写入 `reserved`，取得非空 `WKNavigation` 后立即同步写入 `dispatch`，随后独立写入 `result` 和 `retirement`。许可签发、目标准入、派发及账本写出使用各自的设备单调时刻，以批次开始为原点并保留纳秒精度。按时准入且因本地写入延迟而晚记的预留仍消耗其键。恢复对账按规范化的 DNS 域名排除历史预留，保存原清单字节用于摘要核验。退役和传输静止分别记录。
+- `apps/ios/scripts/access_campaign_observer.py` 的 `CampaignObserver` 最多三次读回，每次使用新文件。复制前在批次专属 `state_file` 登记待检查状态。完整有效行和已看到的未完尾部都先落盘，再输出回执。恢复必须覆盖已见字节，失效行、重复 JSON 字段、同批次历史矛盾、超限或未检查完的副本阻断自动恢复。续期校验不可回退的计时和已计量字节，以及共享预留额度。首次挑战只证明发出许可请求，后继挑战和首个健康检查共同证明开跑。原生停机、不合格的健康或退役检查及预算耗尽关闭续期。操作者给 CoreDevice 的账本、挑战、应答及进程检查传递同一个单调截止点。恢复时以 `recover=True` 读回同一状态文件，仅允许停止后的对账。窗口内两次完全相同、覆盖全部已见字节的停止后回执才能生成下一次授权的排除集合。新版采用 schema 3，旧控制器与原账本继续用于各自版本。
+- 结果按单调截止点冻结。账本记录页面创建、准备开始与截止、冻结和观测结束的绝对时刻。目标页面以预留为最早时刻，健康检查分别以首次确认许可或暂停派发为最早时刻。未派发页面受准备截止约束，已派发页面受导航截止约束，两者都受批次和许可截止约束。回调保留相对于页面创建的纳秒时刻和用于展示的毫秒值。迟到事件单独记账，初始响应只归给重定向或先前响应之前的首个主框架响应。终止回执保留同一次停机的时刻与原因。TLS 和代理层错误的归因须有对应链路回执。
+- 首次关闭时刻锁定退役窗口。WebKit 拒绝加载但页面已经绑定时，仍须取得准确的本地替换文档提交，历史批次驱动将此计入连续本地准备失败。账本记录首次和最终采样时刻。最终采样须发生在文档释放且流量排空后，或达到十秒期限。旧导航的补充回调须对应先前接受的句柄，并发生在最终采样及退役期限之内。静止要求共享字节预留归零，包括 Go 运行时中已经移出流表但仍在异步关闭的流。该设备批次的已绑定页面使用 SOCKS5。主机验证终止原因与实际到期的期限及已观测阶段一致，并在最后一项或最终受控探测结束时关闭续期。
+- `AccessCampaignBudgetTests`、`AccessCampaignNavigationObservationTests`、`testOwnedRelayClosesWhenHostCannotRenewAndDispatchIsDurable` 验证预算、边界时刻、真实 WebKit 派发回执、许可中断、旧流退役及不重放。`python3 -m unittest discover -s apps/ios/scripts -p test_access_campaign_observer.py` 验证主机端的短暂失联、持续失联、残尾、前缀改写、稳定回读和独立阶段。
+- `testOwnedLoopbackHTTPSDistinguishesRelayCertificateAndResponseStages` 使用临时模拟器。由 `apps/ios/scripts/access_campaign_https_fixture.py` 启动两个只绑定 `127.0.0.1` 的受控源站和独立收件查询端口，接收一个含 `trusted.pem`、`trusted.key`、`untrusted.pem`、`untrusted.key` 的专用目录。两份证书的服务名称使用 `aegis-campaign-fixture.invalid`，仅将前者的测试 CA 装入该临时模拟器。将生成的三个端口注入 XCTest 的 `AEGIS_LOOPBACK_TRUSTED_PORT`、`AEGIS_LOOPBACK_UNTRUSTED_PORT` 和 `AEGIS_LOOPBACK_RECEIPTS_PORT`。模拟器用实际 WebKit 和 HTTP 回环监听，测试核心只转发两个本机源站端口。每个用例通过随机标记和 Mac 内核的同一单调时钟核对截止前的源站收件。真机矩阵需要独立授权、自己的 HTTPS/TLS 夹具和断连回执。
+- `testOwnedSOCKSLedgerForHostReconciliation` 在同一临时模拟器中用受控 SOCKS5 和 HTTPS 生成完整账本。主机校验一次受控预留、派发、结果和退役。`testOwnedSOCKSUnfinishedHealthPreservesLedger` 将截止前收到的主文档和停滞资源与 HTTP 200、文档未完成和零预留的账本关联。`testOwnedSOCKSExpiredBeforeChallengePreservesLedger` 验证首次挑战发布前过期时仍有终止回执。模拟器使用夹具准入，产品的真机 SOCKS5 准入条件继续独立验收。

@@ -85,6 +85,11 @@ public final class AccessGoEmbeddedCore: AccessEmbeddedCoreControlling, @uncheck
     }
 
     public func stop() async {
+        _ = await stopAndConfirm()
+    }
+
+    /// Returns whether native stop acknowledged instance close without error.
+    public func stopAndConfirm() async -> Bool {
         await operations.stop(native, ownership: ownership)
     }
 }
@@ -98,7 +103,7 @@ protocol AccessGoNativeCore: Sendable {
     func read(_ id: Int64, maxBytes: Int) async throws -> Data?
     func write(_ id: Int64, data: Data) async throws
     func close(_ id: Int64)
-    func stop() async
+    func stop() async throws
 }
 
 /// The legacy native runtime is shared across adapters. Keep its claim through
@@ -122,7 +127,7 @@ private final class AccessGoOperationLifetime: Sendable {
         var generation: UInt64 = 0
         var ownsRuntime = false
         var startup: Task<Void, Error>?
-        var stop: Task<Void, Never>?
+        var stop: Task<Bool, Never>?
     }
 
     private let state = Mutex(State())
@@ -160,7 +165,7 @@ private final class AccessGoOperationLifetime: Sendable {
             let priorStop = state.stop
             if priorStop != nil { state.generation &+= 1 }
             let task = Task {
-                await priorStop?.value
+                _ = await priorStop?.value
                 guard ownership.claim() else { throw AccessEmbeddedCoreError.unverifiedAsset }
                 do { try await native.start(config) }
                 catch {
@@ -184,29 +189,40 @@ private final class AccessGoOperationLifetime: Sendable {
         if stoppedDuringStart { throw CancellationError() }
     }
 
-    func stop(_ native: any AccessGoNativeCore, ownership: AccessGoRuntimeOwnership) async {
-        let stop = state.withLock { state -> Task<Void, Never>? in
+    /// Returns false only when native stop reported an instance-close error.
+    func stop(_ native: any AccessGoNativeCore, ownership: AccessGoRuntimeOwnership) async -> Bool {
+        let stop = state.withLock { state -> Task<Bool, Never>? in
             if let existing = state.stop { return existing }
             let startup = state.startup
             let wasOwner = state.ownsRuntime
             guard wasOwner || startup != nil else { return nil }
             state.ownsRuntime = false
-            let task = Task { [active] in
+            let task = Task { [active] () -> Bool in
                 if !wasOwner {
-                    guard case .success? = await startup?.result else { return }
+                    guard case .success? = await startup?.result else { return true }
                 }
                 // Stop drains the native registry. A close which already
                 // removed its handle from that registry can still be running.
-                await native.stop()
+                let acknowledged: Bool
+                do {
+                    try await native.stop()
+                    acknowledged = true
+                } catch {
+                    // Go has already detached the instance and closed its stream table.
+                    // Report the instance-close error without including native details.
+                    Logger(subsystem: "com.gcsa.aegis", category: "Access").error("Embedded core instance close reported an error")
+                    acknowledged = false
+                }
                 await withCheckedContinuation { continuation in
                     active.notify(queue: .global()) { continuation.resume() }
                 }
                 ownership.release()
+                return acknowledged
             }
             state.stop = task
             return task
         }
-        await stop?.value
+        return await stop?.value ?? true
     }
 }
 
@@ -289,16 +305,10 @@ private struct AccessGomobileCore: AccessGoNativeCore, @unchecked Sendable {
         if let runtime { runtime.closeStream(id) }
         else { EmbeddedcoreCloseStream(id) }
     }
-    func stop() async {
-        do {
-            _ = try await result { callback in
-                if let runtime { runtime.stopAsync(callback) }
-                else { EmbeddedcoreStopAsync(callback) }
-            }
-        } catch {
-            // Go has already detached the instance and closed its stream table.
-            // Report the instance-close error without including native details.
-            Logger(subsystem: "com.gcsa.aegis", category: "Access").error("Embedded core instance close reported an error")
+    func stop() async throws {
+        _ = try await result { callback in
+            if let runtime { runtime.stopAsync(callback) }
+            else { EmbeddedcoreStopAsync(callback) }
         }
     }
 
