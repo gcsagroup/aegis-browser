@@ -6,7 +6,7 @@
 
 [W0 质量交接](QUALITY-HANDOFF.md)记录了原有矩阵和 #187 新增的 relay 取消/watchdog、缓存 REJECT、已提交 MHTML 预取早拒绝回归。#187 已合并到 develop，实际 `S=edd02853f65ab6a089defac29fd5c73c3cbbdeed`；其 [develop push run 36238830929/1](https://github.com/quinn521/aegis-browser/actions/runs/36238830929) 已按 S 验证通过，Q/I 的最终候选审查与固定 Chromium 回执关闭**有界 W0 底座工程**。这不证明生产 MHTML 默认 factory 回调的普遍终态、完整 BFCache/prerender BLOCK、性能、双 Profile/双出口、真实服务或分发；**G0 仍为 `UNVERIFIED`，131 个 A/PF 主行仍未逐项验收**。本交接不修改 overlay、patch、GN、Xray、Network Service 或验收追踪表，亦不操作 Q 的源码、`out` 或锁。
 
-有界 W0 底座已退出前置队列；W1b/W1c 可以按本清单开始生产切片，但它们自己的接口、真实流量和认证验收仍须分别完成。每个 `feat(...)` PR 在最终 HEAD 同时执行新增逻辑的 unit 和至少一项真实入口 regression；[DEV CI 指南](../../development/ci.zh-CN.md)的本地全门、独立 Review、托管检查及适用固定 Chromium 证据分别核验。模型通过或本文完成均不改变 G0 和 131 个 A/PF 主行的状态。
+有界 W0 底座已退出前置队列；W1b/W1c 可以按本清单开始生产切片，但它们自己的接口、真实流量和登记隔离验收仍须分别完成。每个 `feat(...)` PR 在最终 HEAD 同时执行新增逻辑的 unit 和至少一项真实入口 regression；[DEV CI 指南](../../development/ci.zh-CN.md)的本地全门、独立 Review、托管检查及适用固定 Chromium 证据分别核验。模型通过或本文完成均不改变 G0 和 131 个 A/PF 主行的状态。
 
 ## 当前调用链与待实现的最小接口
 
@@ -17,7 +17,7 @@
 | W1b-1 可信载体与安装 | `access_browser_request_adapter.cc::BuildBrowserOwnedRequestMetadata` 构造 Browser 归属；`access_proxying_url_loader_factory.cc::PrepareProxyDispatch` 捕获五元组和选定 endpoint，最终 `ForwardNative` 仍交出普通 `ResourceRequest`。`access_network_context_transport.cc::PublishPolicyCandidateToClients` 的 ACK 只确认已有 publication metadata。 | Browser 私有 `AccessFactoryBinding` 绑定 owner、partition、document/pending-navigation 归属和 NetworkContext incarnation；私有 `CreateLoaderAndStartWithRoute` 在一次 IPC 中携带原请求与 `AegisAccessRequestContext`。NetworkContext 原子安装完整 `AccessPublishedRouteSnapshot` 和 `AccessEndpointRegistration`，返回与候选、client 集合及 incarnation 精确相符的 ACK；半安装不得 READY。renderer 不得获取 receiver 或自报 owner，原 CORS/process/origin-lock 检查继续运行。此切片保留现有多组准入限制。 |
 | W1b-2 请求级执行 | `AccessNetworkContextTransport::PartitionState` 只有一个 endpoint 和 exact-host 列表；`BuildConfig` 写 partition 级 HTTP CustomProxyConfig。`AccessProxyingURLTrackedRequest::RebindOwnershipForRedirect` 仅放行 PROXY→PROXY，再调用普通 `FollowRedirect`；初始 native 路径没有等价的逐跳控制。 | 按 owner/group/registration 发布不可变表；把已验证的 `AccessResolvedRoute` 从 URLLoader 经 URLRequest、`HttpRequestInfo` 送到实际 proxy/stream 决定点。受约束请求在缓存和首次发送前完成校验。私有 `FollowRedirectWithRoute` 每跳重验 token、hop、目标、可信站点、版本和 Chromium 计算的 method/body；初始 native 路径同样保留控制。只有同一候选真实证明多组并发正路径及基础连接隔离，才有替换 `AccessServiceCoordinator::ValidateTransportScope` 冲突保护的依据。 |
 | W1c-1 复用、租约、恢复 | `RegisteredProxyEndpoint` 只有 owner/group/五元组、HTTP transport、host/port；没有 listener incarnation、credential handle 或租约期限。模型只拦新派发，不持有真实 socket/session。 | `AccessRouteIsolationKey` 至少包含 owner、group、registration、listener incarnation、完整命中组五元组和 NetworkContext incarnation，并进入 HTTP/1、CONNECT、HTTP/2/coalescing、新旧 stream pool、preconnect、auth/retry cache 的查找与回收。受约束 HTTP cache 首版按 W1a 设计禁用复用；REJECT 仍在缓存前阻断。明确到期、撤销、Profile/OTR 关闭、Network Service 重启时新派发和既有流各自的终态。W1b-2 对真实并发安全所需的基础隔离须随执行器同交，不能等 W1c 才补。 |
-| W1c-2 实际认证 | `RegisteredProxyTransport` 目前只有 `kHttp/kInvalid`；W1a 的 `authorizeCredentialLookup` 只返回模型中的 identity。 | 已验证 route 才能调用 `AccessProxyCredentialProvider::LookupForRoute`。HTTP forward 与 CONNECT 均处理 407、拒绝错误/跨 Profile 凭据，且不把 `Proxy-Authorization` 发给 origin。新增 SOCKS5 transport、受信 socket 参数与 username/password 握手；需要认证的已登记入口不能降为无认证。未知 registration、外部代理、过期或已关闭 owner 不获秘密。SOCKS5 当前原生适配缺口的源码观察见 W1a 第 6 节，实施前重新核对固定候选。 |
+| W1c-2 登记隔离 | `RegisteredProxyTransport` 目前只有 `kHttp/kInvalid`；W1a 的 `authorizeCredentialLookup` 只返回模型中的 identity。冻结修订 5 起本地入站无认证，该查询不再分发秘密。 | 已验证 route 才能派发到已登记端点。HTTP forward 与 CONNECT 不携带 `Proxy-Authorization`，已登记端点返回 407 时失败关闭，不弹认证提示、不改投另一协议或 DIRECT。新增 SOCKS5 transport 与受信 socket 参数，只使用方法 0x00 和 TCP CONNECT；listener 拒绝仅用户名/密码方法、BIND 与 UDP ASSOCIATE。未知/过期 registration、外部代理、非回环地址或已关闭 owner 不获派发，撤销后旧流终止。SOCKS5 原生握手的源码观察见 W1a 第 6 节，实施前重新核对固定候选。 |
 
 所有切片保持：owner、document/pending navigation 和顶层 SchemefulSite 由 Browser 确定；URL、活动 tab、NAK、renderer/header 输入不能授权。`DIRECT`/未命中保留当前原生代理解析结果，`PROXY` 仅一个已登记入口且无原生/DIRECT fallback，`REJECT` 在缓存命中和发送前阻断。五元组分别为 policy、identity、**命中组** selection、network epoch、base proxy config，再加 NetworkContext incarnation。完整候选安装→精确 ACK→durable commit→finalize；新 BLOCK 的即时屏障不能被旧 ACK 解除。每个 `(requestId, hop)` 业务发送至多一次，合法 307/308 新 hop 单独计数，恢复不得重发旧 hop。
 
@@ -35,7 +35,7 @@
 | `F-B2-HopOnce` / browser + origin 业务标记 | 首次 POST/PATCH 只发送一次；302、307、308 的每个 hop 按原生 method/body 规则分别选路，包含 native→PROXY/REJECT、PROXY→native/异组。 | 被拒下一跳发送增量 0；旧 hop、过期 redirect、故障恢复、407 前转发均不增加业务标记；A20/A76/A108。 |
 | `F-C1-ReuseLease` / native + 真实连接 | 先建 HTTP/1、CONNECT、HTTP/2 session；相同有效 key 可复用，同地址新注册能建立新的合法连接。 | 换 owner/group/registration/listener/五元组/incarnation 不复用旧 socket 或 H2 alias；到期停止新连接，旧流按截止终止，无关流不误杀；A16/A30。 |
 | `F-C1-RestartCache` / browser | 真正重建 Network Service 后，完整新 incarnation 安装才恢复受约束请求；预热缓存后的原生非 Aegis 请求仍可按原配置完成。 | READY 前没有受约束 DIRECT 窗口；旧 ACK/secret/session/redirect 失效；预热 HTTP cache 后 REJECT 仍无发送；无业务重放；A15/A53/A96。 |
-| `F-C2-AuthMatrix` / 固定 Chromium + 本地受控 HTTP/SOCKS5 代理 | 两个普通 Profile 分别以自己的凭据在 HTTP forward、CONNECT、SOCKS5 成功；IPv4/IPv6 listener 分别记录健康握手和出口。 | 无/错/跨 Profile/过期/关闭凭据、未知 registration、非 loopback 连接均明确拒绝；无认证降级、origin 不收到代理凭据，错误认证不预转发 POST/PATCH；A10/A78。 |
+| `F-C2-AuthMatrix`（修订 5 起为登记隔离矩阵） / 固定 Chromium + 本地受控无认证 HTTP/SOCKS5 代理 | 两个普通 Profile 各自经已登记端点在 HTTP forward、CONNECT、SOCKS5 成功，零本地凭据或认证提示；IPv4/IPv6 listener 分别记录健康握手和出口。 | 未知/过期/跨 owner/已撤销 registration、非 loopback 连接均明确拒绝；SOCKS5 仅密码方法、BIND、UDP ASSOCIATE 拒绝；撤销后旧流终止，不改投另一协议或 DIRECT，失败不预转发 POST/PATCH；listener 握手计数不构成出口回执；A10/A78。 |
 
 PF01–PF03 仍须按冻结样本规模、计时边界和预算独立跑性能实验；这些功能用例不产生性能 PASS。HTTP/SOCKS5 × REALITY/WS+TLS、完整 OTR/Guest 矩阵属后续 W5，不能由两普通 Profile 最小原型推断。
 
@@ -96,4 +96,4 @@ PY
 
 ## 交接结论
 
-当前可执行的是 W1a 合同模型；W1b/W1c 的七组生产验收 ID 还没有对应实现或运行回执。W1b-1 先保住可信入口与完整安装门，W1b-2 才进入真实并发与逐跳选路；W1c-1 补齐全资源生命周期，W1c-2 用实际 HTTP/SOCKS5 握手收口最小认证。每个切片的已知隔离前提必须与其执行器一起提交，任何阶段都不以另一个阶段的待办漏洞对外放行。
+当前可执行的是 W1a 合同模型；W1b/W1c 的七组生产验收 ID 还没有对应实现或运行回执。W1b-1 先保住可信入口与完整安装门，W1b-2 才进入真实并发与逐跳选路；W1c-1 补齐全资源生命周期，W1c-2 用实际 HTTP/SOCKS5 无认证握手收口登记隔离与撤销。每个切片的已知隔离前提必须与其执行器一起提交，任何阶段都不以另一个阶段的待办漏洞对外放行。

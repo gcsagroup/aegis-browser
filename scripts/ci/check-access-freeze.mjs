@@ -16,6 +16,15 @@ const freezeDirectory = 'docs/plans/access-service-v1.0';
 const freezePath = `${freezeDirectory}/freeze.json`;
 const trustedFallback = 'd60b5952b40e511d6f98f3f33be926dbe7ab1eb7';
 const trustedFallbackManifestSha256 = 'ea90c1005787121924897d1dc0f7d5dcf573982e3ba499c26f48c8078983d4e0';
+const revisionMigrations = Object.freeze([
+  Object.freeze({
+    fromRevision: 4,
+    fromManifestSha256: trustedFallbackManifestSha256,
+    toRevision: 5,
+    toManifestSha256: 'b5e8586e6ca346bca2cdf02824de5765908fa9e2a88f09da4ae8f50cc61549e7',
+  }),
+]);
+const embeddedManifestDigests = new Set(revisionMigrations.map(({toManifestSha256}) => toManifestSha256));
 
 function gitFile(ref, path, cwd) {
   try {
@@ -41,7 +50,7 @@ function hasGitFile(ref, path, cwd) {
 function validateManifest(manifest) {
   const expected = {
     specVersion: 'V1.0',
-    specRevision: 4,
+    specRevision: 5,
     specificationStatus: 'FROZEN',
     authority: 'spec.zh-CN.md',
   };
@@ -54,7 +63,7 @@ function validateManifest(manifest) {
     counts.performanceMetrics !== 13 ||
     counts.deliveryGates !== 4
   ) {
-    fail('Frozen manifest counts do not match revision 4');
+    fail('Frozen manifest counts do not match revision 5');
   }
   if (manifest.documentChecks?.previewScenarioCount !== 13) {
     fail('Frozen preview scenario count must be 13');
@@ -77,12 +86,21 @@ try {
   const fallbackObjectAvailable = hasGitFile(trustedFallback, freezePath, cwd);
   const baseline = baseHasFreeze ? base : trustedFallback;
   const candidateBytes = readFileSync(join(cwd, freezePath));
-  if (baseHasFreeze || fallbackObjectAvailable) {
+  const candidateDigest = sha256(candidateBytes);
+  const trustedAvailable = baseHasFreeze || fallbackObjectAvailable;
+  let baselineManifest = null;
+  let migration = null;
+  if (trustedAvailable) {
     const baselineBytes = gitFile(baseline, freezePath, cwd);
     if (!candidateBytes.equals(baselineBytes)) {
-      fail(`freeze.json differs from trusted baseline ${baseline}`);
+      const baselineDigest = sha256(baselineBytes);
+      migration = revisionMigrations.find(
+        (entry) => entry.fromManifestSha256 === baselineDigest && entry.toManifestSha256 === candidateDigest,
+      ) ?? null;
+      if (!migration) fail(`freeze.json differs from trusted baseline ${baseline}`);
     }
-  } else if (sha256(candidateBytes) !== trustedFallbackManifestSha256) {
+    baselineManifest = JSON.parse(baselineBytes.toString('utf8'));
+  } else if (!embeddedManifestDigests.has(candidateDigest)) {
     fail(`freeze.json differs from embedded digest for trusted baseline ${trustedFallback}`);
   }
   const manifest = JSON.parse(candidateBytes.toString('utf8'));
@@ -95,7 +113,9 @@ try {
     const relativePath = `${freezeDirectory}/${name}`;
     const absolutePath = join(cwd, relativePath);
     const current = readFileSync(absolutePath);
-    if (baseHasFreeze || fallbackObjectAvailable) {
+    const trustedContract = baselineManifest?.files?.[name];
+    const contractUnchanged = trustedContract?.sha256 === contract.sha256 && trustedContract?.bytes === contract.bytes;
+    if (trustedAvailable && (!migration || contractUnchanged)) {
       const trusted = gitFile(baseline, relativePath, cwd);
       if (!current.equals(trusted)) fail(`${relativePath} differs from trusted baseline ${baseline}`);
     }
@@ -106,7 +126,15 @@ try {
       fail(`${relativePath} SHA-256 mismatch`);
     }
   }
-  console.log(JSON.stringify({status: 'PASS', base, baseline, fallbackUsed: !baseHasFreeze, files: files.length}));
+  console.log(JSON.stringify({
+    status: 'PASS',
+    base,
+    baseline,
+    fallbackUsed: !baseHasFreeze,
+    specRevision: manifest.specRevision,
+    migration: migration ? `${migration.fromRevision}->${migration.toRevision}` : null,
+    files: files.length,
+  }));
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

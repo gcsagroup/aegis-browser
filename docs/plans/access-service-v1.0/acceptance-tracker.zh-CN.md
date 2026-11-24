@@ -1,5 +1,7 @@
 # Aegis 访问服务 V1.0：逐项验收追踪表
 
+> **2026-11-24 冻结修订 5：** [规范](spec.zh-CN.md)采纳应用级双无认证入站合同。A78 场景列按修订 5 更新，判定拆为 A78-HTTP 与 A78-SOCKS 分别取证；状态保持 UNVERIFIED/NOT_RUN，历史结果不迁移，131 个主行与编号不变。W1 行同步改写。
+
 > **2026-10-28 当前交付：** 先交付已完成的三份文档，再按完整 develop/upstream 差异核准晋升与 fork 同步；后续接续 macOS 个人试用集成。Chromium **155.0.8059.80**；文档基线 `c1b7f54f675dfa84578af9f0eb3d47a7df46ce94`。最新 MAC 签名失败/钥匙串解锁、M44/R77 源码结论、M45 准备与 Go19 NOT_RUN、F56/R78 剩余 P2 见[当前交付索引](handoff-20261023.zh-CN.md#current-execution-index)。原生、五步、realPG 及阶段一均未验收；历史 PASS 不迁移，131 个 A/PF 主行不升级。
 
 > **历史：2026-10-23 进度索引：** [当前阶段一交接](handoff-20261023.zh-CN.md)记录 #209/#218 已合并、S2 实际 push CI 通过，以及仍未完成的原生与真实服务验收。该源码/质量进展没有为本表 131 个冻结主行补造 PASS；本次所有主行及既有历史证据保持原判定。
@@ -28,7 +30,7 @@ Content 6 项包含 `PrefetchBrowserTestBase.HttpMhtmlSubframePrefetchKeepsRestr
 | 工作包 | 待补实际测试与证据 | 关联主行 / 边界 |
 | --- | --- | --- |
 | W0 | 固定候选全部必需 Access unit 与既有真实入口矩阵，实际目标/匹配数/退出码 | G0 部分证据；17-target runner 不替代 browser_tests |
-| W1 | 同 CDN/不同 host 的异组并发，精确 scope 与 scheme/port，旧连接/凭据/重启，POST/PATCH 首次发送及原生配置组合；G0 前执行 HTTP/SOCKS5 Profile 最小认证/隔离原型 | A10/A11/A15/A16/A53/A76/A78/A108/A113/A115、PF01–PF03 的子场景；其余主行条件仍须执行 |
+| W1 | 同 CDN/不同 host 的异组并发，精确 scope 与 scheme/port，旧连接/凭据/重启，POST/PATCH 首次发送及原生配置组合；G0 前执行 HTTP/SOCKS5 两种无认证入站的独立运行验证（真实转发、登记隔离与撤销） | A10/A11/A15/A16/A53/A76/A78/A108/A113/A115、PF01–PF03 的子场景；其余主行条件仍须执行 |
 | W2 | 实际适用 Vision/splice 长连接计量、数据面额度截断、崩溃/重启/失联恢复、预先绑定误差与对账 | A118、PF04/PF09；账本/账户的其他主行在实验落地时补完整映射，不能只覆盖 A118 就判计量完成 |
 | W3 | 可信网站开关→真实 HTTP→REALITY→失败不直连→Network Service 恢复→两 Profile，保存失败与取消 | 纵向工程验证；不等于 G0/G1，按实际测试继续细分映射 |
 | W4–W6 | 完整 Alpha、全功能和最终包矩阵 | 仍按冻结 G1/G2/G3；单节点/受限账户/部分入口不使完整主行 PASS |
@@ -145,7 +147,7 @@ Content 6 项包含 `PrefetchBrowserTestBase.HttpMhtmlSubframePrefetchKeepsRestr
 | A75 | 周期切换、旧消息重放及传输中额度耗尽 | UNVERIFIED | NOT_MAPPED | NOT_RUN | NOT_EVALUATED | 待盘点 | — |
 | A76 | GET/POST/PATCH 等首次发送、企业/系统/扩展代理组合 | PARTIAL_SOURCE | S07 | NOT_RUN | NOT_EVALUATED | PARTIAL；见 S07 | SRC-287 |
 | A77 | 无内核/过期快照时解析路由、高频命中与发布等待 | PARTIAL_SOURCE | S03 | NOT_RUN | NOT_EVALUATED | PARTIAL；见 S03 | SRC-287 |
-| A78 | HTTP/SOCKS5 入站认证、错误 Profile 凭据与外部连接 | UNVERIFIED | NOT_MAPPED | NOT_RUN | NOT_EVALUATED | 待盘点 | — |
+| A78 | 无认证回环 HTTP/SOCKS5 入站、登记隔离、撤销与外部连接 | UNVERIFIED | NOT_MAPPED | NOT_RUN | NOT_EVALUATED | 待盘点 | — |
 | A79 | scheme/port、精确子域、私有后缀、IDNA/IPv6 与边界冲突 | UNVERIFIED | NOT_MAPPED | NOT_RUN | NOT_EVALUATED | 待盘点 | — |
 | A80 | Shared/Service Worker 无唯一客户端、prerender/BFCache、受代理约束的 UDP | UNVERIFIED | NOT_MAPPED | NOT_RUN | NOT_EVALUATED | 待盘点 | — |
 | A81 | 重装、多建 Profile、临时会话、身份恢复及窃取其他主体引用 | UNVERIFIED | NOT_MAPPED | NOT_RUN | NOT_EVALUATED | 待盘点 | — |

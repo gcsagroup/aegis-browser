@@ -41,4 +41,4 @@ WebUI 消息携带草稿版本和操作 ID，Browser 侧的 Profile 服务逐操
 | M-F5 · HTTP 回退 | 单独验证能力关闭及 SOCKS 专属探测失败。原候选释放并确认后，在同一授权范围准备已准入的无认证 HTTP 监听，通过准备检查才发布，UI 与 NetLog 指向实际 HTTP。HTTP 未准入时保持阻断。通用故障、上游拒绝和误绑均不进入回退。 |
 | M-F4 · 默认准入与回滚 | 在正式冻结修订、两入站本地隔离、受控出口及产品路径通过后按平台和渠道开启 Auto。禁用 SOCKS 后新登记独立选择已准入的 HTTP。旧代只有在完成退役后才可换端点 |
 
-M-F0 交付共同合同的正式冻结修订。A78 的两种入站分别取证。M-F6 对应 A89，A89 的 REALITY、WS+TLS 四个入出站组合保留各自的部署、认证与流量条件。完整浏览器验证记录成品身份、产品 SHA、Chromium 补丁树和本次 NetLog/源站标记。首标签白屏、崩溃、账户及百站工作沿用各自工单和失败历史。[浏览器验收 #141](https://github.com/gcsagroup/aegis-browser/issues/141) · [产品阶段一 #98](https://github.com/gcsagroup/aegis-browser/issues/98)
+M-F0 交付共同合同的正式冻结修订，规范层已由修订 5 落地。A78 的两种入站分别取证。M-F6 对应 A89，A89 的 REALITY、WS+TLS 四个入出站组合保留各自的部署、认证与流量条件。完整浏览器验证记录成品身份、产品 SHA、Chromium 补丁树和本次 NetLog/源站标记。首标签白屏、崩溃、账户及百站工作沿用各自工单和失败历史。[浏览器验收 #141](https://github.com/gcsagroup/aegis-browser/issues/141) · [产品阶段一 #98](https://github.com/gcsagroup/aegis-browser/issues/98)

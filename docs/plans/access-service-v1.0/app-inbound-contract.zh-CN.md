@@ -1,6 +1,6 @@
 # Access 应用级回环入站合同
 
-2026-11-20 · iOS、macOS 的设计决定。源码基线为 [fork main `c5b4257a`](https://github.com/quinn521/aegis-browser/tree/c5b4257a221b7d4434a113d2c13d870139b8d6fa)。本页给出下一次冻结修订的具体替换内容。修订 4 仍是当前机器检查采用的基线，产品准入和运行回执分别登记。
+2026-11-20 · iOS、macOS 的设计决定。源码基线为 [fork main `c5b4257a`](https://github.com/quinn521/aegis-browser/tree/c5b4257a221b7d4434a113d2c13d870139b8d6fa)。本页给出冻结修订的具体替换内容，已由 2026-11-24 的[冻结修订 5](spec.zh-CN.md)采纳，机器检查基线随之更新为修订 5。产品准入和运行回执分别登记。
 
 [查看三端 Options](app-access-options-sdd.zh-CN.md) · [查看 iOS SDD](ios-app-inbound-sdd.zh-CN.md) · [查看 macOS SDD](macos-app-inbound-sdd.zh-CN.md) · [查看 Android Options 与可行性评估](android-app-inbound-options-sdd.zh-CN.md)
 
@@ -49,6 +49,6 @@ DEV / 内部 Alpha 可在三端 Options 明确选择手动输入或扫码的 3X-
 | W1c、G1 | W1c 的本地凭据拒绝矩阵改为上述两组登记隔离和撤销矩阵，保留完整的连接复用键与生命周期检查。G1 的 HTTP→REALITY 和两个普通 Profile 保留。W1 请求级隔离在 macOS 单独验证 |
 | A89、iOS O3/O6 | 入站、上游认证和实际出站分别列证据。A89 的两入站 × 两出站按组合记录。iOS O3 固定 HTTP，O6 的 HTTP 和适用上游项独立进行，只有 SOCKS 子行以该平台准入为前提 |
 
-正式修订沿用 A78 主编号和历史结果，同步规范、架构、开发计划、W1c 交接、验收台账和受信冻结清单。版本、历史摘要及对上版的差异应可审阅。在新修订和平台验收完成前，默认开关保持未准入。[冻结规范](spec.zh-CN.md) · [W1c 合同](FEATURE-HANDOFF-W1b-W1c-preparation.zh-CN.md) · [验收台账](acceptance-tracker.zh-CN.md) · [冻结校验](../../../scripts/ci/check-access-freeze.mjs)
+正式修订沿用 A78 主编号和历史结果，同步规范、架构、开发计划、W1c 交接、验收台账和受信冻结清单。版本、历史摘要及对上版的差异应可审阅。修订 5 已完成规范层同步；在各平台验收完成前，默认开关保持未准入。[冻结规范](spec.zh-CN.md) · [W1c 合同](FEATURE-HANDOFF-W1b-W1c-preparation.zh-CN.md) · [验收台账](acceptance-tracker.zh-CN.md) · [冻结校验](../../../scripts/ci/check-access-freeze.mjs)
 
 每个平台的同一候选须提供三类收件证据。受保护请求带本次标记到达指定出口；显式选原连接的独立对照确实收件；强制路由失效后，原连接出口新增收件为零。记录源码、构建或补丁树、系统、实际协议、代次、标记、请求范围与失败原因。协议夹具、模拟器、真实浏览器或设备、发布分别记账。

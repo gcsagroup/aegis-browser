@@ -26,7 +26,7 @@
 3. **真实 Chromium vertical slice 仍未打通。** 需要把 runtime 接入一个最小真实请求入口，证明 exact-host policy → real URLLoader → 当前 Profile/StoragePartition NetworkContext → localhost HTTP proxy fixture 的闭环，并覆盖 stale generation、关闭后恢复原生 proxy、跨 Profile/partition 隔离和 fail-closed。
 4. **请求面仍需逐步扩展。** 在最小闭环稳定后，再覆盖 Navigation、subresource、Worker/Service Worker、prefetch/preconnect、WebSocket、HTTP/2、HTTP/3、BFCache 等，并补真实 termination handle 与执行点 ACK/预算。
 5. **用户产品入口仍未落地。** `SetSiteProxy`、可信 WebUI/工具栏开关、状态反馈及持久 site group 协调仍待实现；当前成果仍属于浏览器原生访问/代理底座。
-6. **真实代理 runtime 仍有较大缺口。** Xray 生命周期、HTTP/SOCKS Profile 认证、REALITY/WS 真实链路、节点/租约、账户与额度、持续计量、故障恢复、连接池代次和企业/原有代理组合仍需按冻结规范实现和验证；Vision/splice 计量风险及 A117/A118 仍未关闭。
+6. **真实代理 runtime 仍有较大缺口。** Xray 生命周期、HTTP/SOCKS 无认证入站登记/隔离（修订 5）、REALITY/WS 真实链路、节点/租约、账户与额度、持续计量、故障恢复、连接池代次和企业/原有代理组合仍需按冻结规范实现和验证；Vision/splice 计量风险及 A117/A118 仍未关闭。
 7. **完整 Chromium runtime/G0 仍未通过。** 最终仍需固定源码/补丁/工具链完成 GTest、Chrome build、真实浏览器代理流量和冻结 G0 项。
 
 当日建议顺序（仅供追溯，现行顺序见[开发计划](development-plan.zh-CN.md)）：
@@ -114,7 +114,7 @@
 
 必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 review 审查最终实现和测试；实现者修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
 
-P0 剩余：RequestOwnershipRegistry 与 dispatch barrier 的浏览器/导航真实适配及入口接线、同步回调外等待、真实 URLLoader/导航/HTTP2/HTTP3 终止句柄、BLOCK 发布后的执行点 ACK/2 秒预算、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
+P0 剩余：RequestOwnershipRegistry 与 dispatch barrier 的浏览器/导航真实适配及入口接线、同步回调外等待、真实 URLLoader/导航/HTTP2/HTTP3 终止句柄、BLOCK 发布后的执行点 ACK/2 秒预算、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS 无认证入站登记/隔离（修订 5）、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
 
 本切片可报告 native_unit=PASS（实际执行后）、合同子项通过；对应 A76/A108/A113/A115/A116 等只记录所覆盖的纯决策子场景，整行仍 partial/NOT_RUN，G0 仍 NOT_RUN 或明确环境 BLOCKED。P0 不因本切片通过而结束，运行/性能/部署/分发状态不提升。
 

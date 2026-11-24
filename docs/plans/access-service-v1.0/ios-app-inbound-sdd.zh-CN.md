@@ -13,7 +13,7 @@
 | [SOCKS 会话](../../../apps/ios/AccessKit/AccessSOCKS5InboundSession.swift)、[HTTP listener](../../../apps/ios/AccessKit/AccessHTTPInboundListener.swift) | SOCKS 夹具可以完成握手；现有 HTTP 产品入口可以向受控上游打开隧道 | SOCKS CONNECT 复用经过授权的核心拨号和双向流生命周期，拨号成功后才回成功，保留已收到的业务字节。两种入口分别覆盖取消、半关闭和内核退出 |
 | [Fixture builder](../../../apps/ios/AccessKit/AccessProxyConfigurationBuilder.swift)、[账户下载](../../../apps/ios/AegisApp/AccessAccountSession.swift) | builder 主动拒绝 SOCKS，独立下载通路有 TLS 和租约凭据 | 不把 fixture 错误计作 OS 拒绝。网页路径使用 `ProxyConfiguration(socksv5Proxy:)` 或 `httpCONNECTProxy:`，均设 `allowFailover = false`。下载租约按原有授权单验。[Apple 接口](https://developer.apple.com/documentation/network/proxyconfiguration) |
 
-独立候选 `043e5651` 曾在模拟器完成真实内核和转发 5/5，包含两种入站的 HTTP/HTTPS 页面及带标记的跨源响应。该候选默认使用应用级 10808 端口。复审记录了 5 项 P1、8 项 P2、2 项 P3，其中包括旧文档结束前的端口所有权。历史回执保留其候选身份。当前 SDD 采用持有有效监听并完成退役的规则，多作用域并发不能以固定端口作为身份。[流量回执](https://github.com/gcsagroup/aegis-browser/issues/138#issuecomment-6968029114) · [复审与恢复记录](https://github.com/gcsagroup/aegis-browser/issues/183#issuecomment-6968024379)
+独立候选 `043e5651` 曾在模拟器完成真实内核和转发 5/5，包含两种入站的 HTTP/HTTPS 页面及带标记的跨源响应。该候选默认使用应用级 10808 端口。复审记录了 5 项 P1、8 项 P2、2 项 P3，其中包括旧文档结束前的端口所有权。历史回执保留其候选身份。当前 SDD 采用持有有效监听并完成退役的规则，多作用域并发不能以固定端口作为身份。10808 仅属该历史候选；现行规则为系统分配 SOCKS5 端口，内部准入夹具固定使用 DEV 端口 10806。[流量回执](https://github.com/gcsagroup/aegis-browser/issues/138#issuecomment-6968029114) · [复审与恢复记录](https://github.com/gcsagroup/aegis-browser/issues/183#issuecomment-6968024379)
 
 ## iOS 原生 Options
 
@@ -42,6 +42,6 @@ Apply 在更换活动文档的 DataStore 前显示受影响标签和表单状态
 | I-F2 · 自动绑定 | 在已准入系统优先 SOCKS；仅协议能力不足时在绑定前选择已独立准入且通过准备检查的 HTTP，诊断显示实际结果 | 绑定后的断流、取消、超时和额度撤销均不切协议。显式锁定协议失败可见，POST/PATCH 无重放 |
 | I-F5 · O6 真机 | 同一候选包分别测 Wi-Fi、蜂窝、网络切换、前后台和私密结束。记录设备 OS、入口、上游和两个独立标记 | HTTP 与适用上游认证持续验收。SOCKS 长期未准入的平台可交付经真机验证的 HTTP-only 状态，不借另一协议或模拟器签字 |
 
-I-F0 对齐共同合同的冻结修订。默认自动选择须在该平台候选的监听退役、HTTP 回退与适用真机行有回执后开放。
+I-F0 对齐共同合同的冻结修订，规范层已由修订 5 落地。默认自动选择须在该平台候选的监听退役、HTTP 回退与适用真机行有回执后开放。
 
 O1 渠道与原生入口、O2 规则/文件/并发、O4 导航/退役/下载、O5 账户与诊断仍按原完整 Options 合同执行。O3 与 O6 采用上表细化后的本地协议口径。继承原 issue 的全部复选范围、既有失败与候选证据；文档交付不勾选实现项。[执行与验收 #208](https://github.com/gcsagroup/aegis-browser/issues/208) · [O1–O6 原始验收](https://github.com/gcsagroup/aegis-browser/issues/183) · [内核与私密隔离](https://github.com/gcsagroup/aegis-browser/issues/136) · [原标签重试](https://github.com/gcsagroup/aegis-browser/issues/137) · [真流量和设备](https://github.com/gcsagroup/aegis-browser/issues/138)
