@@ -2308,7 +2308,8 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
-      js-tokens: 10.0.1
+      # js-tokens 是公开的 JavaScript 词法分析依赖，值为版本号。
+      js-tokens: 10.0.1 # nosemgrep: codacy.yaml.security.hard-coded-tokens
 
   balanced-match@4.0.4: {}
 
