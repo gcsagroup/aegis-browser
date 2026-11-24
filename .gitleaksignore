@@ -298,3 +298,6 @@ f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offlin
 f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:122287
 # 行 122307 SHA-256 a14ef60c06b2a07257e3a30108389f3876af58693e80a740c938bda81d76ae79
 f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offline-ocr.patch:sourcegraph-access-token:122307
+# apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift
+# 行 26 SHA-256 dc0d1b8b1a3f233313568c6dbf0be8ac7eb4f06a16a487c99acee6892b779659
+519ef2b93e15557d140f8afe9267ddf22e8132e6:apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift:generic-api-key:26

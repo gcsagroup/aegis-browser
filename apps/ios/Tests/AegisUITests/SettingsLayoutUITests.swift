@@ -78,6 +78,93 @@ final class SettingsLayoutUITests: XCTestCase {
         capture("当前网站-隐藏地理位置", app)
     }
 
+    func testInternalNodeEditorKeepsTextEntryAvailableAfterCameraUnavailable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "-AppleLanguages", "(en)",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        defer { app.terminate() }
+        let entry = app.buttons["access-test-node-options"]
+        XCTAssertTrue(reveal(entry, app))
+        entry.tap()
+        let profile = app.buttons["access-test-profile"]
+        XCTAssertTrue(reveal(profile, app))
+        profile.tap()
+        let saved = app.staticTexts["access-test-node-saved"]
+        XCTAssertFalse(saved.exists, "The UI test launch must start with an empty profile")
+        let scan = app.buttons["access-test-node-scan"]
+        XCTAssertTrue(reveal(scan, app))
+        scan.tap()
+        let cameraError = app.staticTexts["access-test-node-error"]
+        XCTAssertTrue(reveal(cameraError, app))
+        XCTAssertEqual(cameraError.label, "Camera scanning is unavailable. You can still enter a node link.")
+
+        let field = app.secureTextFields["access-test-node-link"]
+        XCTAssertTrue(reveal(field, app, scrollDown: true))
+        field.tap()
+        let syntheticLink = "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.10:443"
+            + "?type=tcp&security=reality&flow=xtls-rprx-vision&sni=www.example.com"
+            + "&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=&spx=%2Fsynthetic"
+            + "&support-x25519mlkem768=true#synthetic-node"
+        field.typeText(syntheticLink)
+        let preview = app.buttons["access-test-node-preview"]
+        XCTAssertTrue(reveal(preview, app))
+        preview.tap()
+        let redacted = app.staticTexts["access-test-node-redacted-preview"]
+        XCTAssertTrue(reveal(redacted, app))
+        XCTAssertEqual(redacted.label, "3X-UI test node")
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "synthetic-node")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "198.51.100.10")).firstMatch.exists)
+        let apply = app.buttons["access-test-node-apply"]
+        XCTAssertTrue(reveal(apply, app))
+        XCTAssertTrue(apply.isEnabled)
+        let discard = app.buttons["access-test-node-discard"]
+        XCTAssertTrue(reveal(discard, app))
+        discard.tap()
+        XCTAssertFalse(redacted.exists)
+        // Removing the draft section can reset this virtualized Form's scroll
+        // position, especially with a saved node and accessibility text sizes.
+        XCTAssertTrue(reveal(apply, app))
+        XCTAssertFalse(apply.isEnabled)
+
+        XCTAssertTrue(reveal(field, app, scrollDown: true))
+        field.tap()
+        field.typeText(syntheticLink)
+        XCTAssertTrue(reveal(preview, app))
+        preview.tap()
+        XCTAssertTrue(reveal(apply, app))
+        apply.tap()
+        XCTAssertTrue(reveal(saved, app, scrollDown: true))
+        XCTAssertEqual(saved.label, "Node saved.")
+        // The saved section includes a URL TextField. Start below-viewport
+        // scrolling in the form gutter so text interaction cannot absorb it.
+        XCTAssertTrue(reveal(apply, app, dragOffsetX: 0.96))
+        XCTAssertFalse(apply.isEnabled)
+        let remove = app.buttons["access-test-node-remove"]
+        XCTAssertTrue(reveal(remove, app, dragOffsetX: 0.96))
+        XCTAssertTrue(remove.isEnabled)
+        remove.tap()
+        // UIKit may expose both a popup wrapper and its button with this identifier.
+        let confirm = app.sheets.buttons.matching(identifier: "access-test-node-confirm-remove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "One tap on Remove must present confirmation")
+        confirm.tap()
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(remove.waitForNonExistence(timeout: 5), "Confirmation must remove the visible saved-node action")
+        XCTAssertTrue(saved.waitForNonExistence(timeout: 5))
+
+        let profileBar = app.navigationBars["3X-UI test profile"]
+        if profileBar.exists {
+            let back = profileBar.buttons.firstMatch
+            XCTAssertTrue(back.isHittable)
+            back.tap()
+        }
+        XCTAssertTrue(reveal(profile, app))
+        profile.tap()
+        let emptyProfile = app.staticTexts["access-test-node-empty"]
+        XCTAssertTrue(reveal(emptyProfile, app))
+        XCTAssertEqual(emptyProfile.label, "No node saved.")
+    }
+
     func testAccountUsageEntryShowsHonestEmptyStateInChinese() {
         inspectAccountUsage(language: "zh-Hans", largeText: false)
     }

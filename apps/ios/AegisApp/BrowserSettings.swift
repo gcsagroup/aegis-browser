@@ -71,6 +71,7 @@ struct BrowserSettingsView: View {
                         AccessUsagePage(isPrivate: browser.profile.isPrivate)
                     } label: { Label("隐藏地理位置服务", systemImage: "location.slash") }
                         .accessibilityIdentifier("access-usage-link")
+                    AccessTestNodeOptionsLink(isPrivate: browser.profile.isPrivate)
                     NavigationLink("网站设置与权限") { WebsiteSettingsView(preferences: browser.preferences) }
                         .accessibilityIdentifier("website-settings")
                     NavigationLink("网站数据管理") { WebsiteDataSettingsView() }

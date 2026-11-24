@@ -256,7 +256,7 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 | Windows | `**/*.ps1`、`apps/browser/scripts/**` 内含 winrm 的路径、`scripts/ci/platform-tests/windows-*`、`apps/browser/scripts/ci/windows*` |
 | Linux | `scripts/ci/run-shell-coverage.sh`、`scripts/ci/platform-tests/kcov-*`、`scripts/ci/tests/shell-coverage.test.mjs` |
 
-共享产品包括 `packages/core/**`、`apps/browser/overlay/**` 和 `apps/browser/patches/**`。`apps/browser/scripts/common.sh` 由 iOS、Android 和 macOS 共同使用，三个平台都会选中。
+共享产品包括 `packages/core/**`、`apps/browser/overlay/**` 和 `apps/browser/patches/**`。单独变更 `apps/browser/scripts/common.sh` 会选中 Android 和 macOS。iOS unsigned archive 使用独立的归档入口和 Xcode 构建阶段；混合变更按各改动路径取平台并集。
 
 阶段只作用于自动作业：
 

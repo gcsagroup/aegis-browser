@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {copyFileSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -19,6 +19,59 @@ test('iOS Access delivery keeps its self-hosted, internal-only workflow contract
     .map(step => step.run ?? '').join('\n');
   assert(commands.includes('ios-access-tests.sh'));
   assert(commands.includes('ios-internal-archive.sh'));
+});
+
+test('both Fork Access callers run exactly the default cases and still reject a skip', t => {
+  const {simulator, internal} = parse(readFileSync('.github/workflows/ios-fork-access.yml', 'utf8')).jobs;
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'ios-access-discovery-'));
+  t.after(() => rmSync(root, {recursive: true, force: true}));
+  const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], {encoding: 'utf8'}).stdout.trim();
+  mkdirSync(join(root, 'bin'));
+  symlinkSync(python, join(root, 'bin/python3'));
+  mkdirSync(join(root, 'apps/ios'), {recursive: true});
+  symlinkSync(realpathSync('apps/ios/Tests'), join(root, 'apps/ios/Tests'));
+  const scripts = join(root, 'scripts/release');
+  mkdirSync(scripts, {recursive: true});
+  for (const name of ['ios-access-tests.sh', 'ios_access_test_gate.py']) {
+    copyFileSync(join('scripts/release', name), join(scripts, name));
+  }
+  writeFileSync(join(scripts, 'prepare-ios-package-core.sh'), 'exit 0\n');
+  writeFileSync(join(root, 'bin/xcodebuild'), `#!${python}
+import sys
+sys.path.insert(0, 'scripts/release')
+from pathlib import Path
+from ios_access_test_gate import expected_cases
+only = [item.split('AegisTests/', 1)[1] for item in sys.argv if item.startswith('-only-testing:')]
+assert only, 'each Xcode invocation must supply specific selectors'
+cases = sorted(pair for pair in expected_cases([Path('apps/ios/Tests/AccessKitTests'), Path('apps/ios/Tests/AegisTests')])
+               if pair[0] in only or '/'.join(pair) in only)
+for index, (cls, method) in enumerate(cases):
+    outcome = "skipped" if "rejected" in sys.argv[sys.argv.index('-resultBundlePath') + 1] and index == 0 else "passed"
+    print(f"Test Case '-[AegisTests.{cls} {method}]' {outcome}")
+`, {mode: 0o755});
+  const callers = [simulator, internal].map(job => job.steps.find(step => step.run?.includes('ios-access-tests.sh')));
+  const observed = callers.map((step, index) => {
+    assert.equal(step.env.AEGIS_IOS_ACCESS_TEST_CLASSES, '');
+    const invoke = name => {
+      const runRoot = join(root, name);
+      mkdirSync(runRoot);
+      return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', step.run], {
+        cwd: root, encoding: 'utf8', env: {PATH: `${root}/bin:/usr/bin:/bin`, PYTHONDONTWRITEBYTECODE: '1',
+          AEGIS_IOS_DESTINATION: 'synthetic', AEGIS_IOS_ACCESS_RUN_ROOT: runRoot, ALPHA_ROOT: runRoot,
+          AEGIS_IOS_ACCESS_TEST_CLASSES: step.env.AEGIS_IOS_ACCESS_TEST_CLASSES},
+      });
+    };
+    const success = invoke(`default-${index}`);
+    assert.equal(success.status, 0, success.stderr);
+    const rejected = invoke(`rejected-${index}`);
+    assert.equal(rejected.status, 1, rejected.stderr);
+    assert.match(rejected.stdout + rejected.stderr, /^skipped: /mu);
+    const log = readFileSync(join(root, `default-${index}`, 'xcodebuild.log'), 'utf8');
+    assert.doesNotMatch(log, /testPhysicalDomainCampaign|testControlledSOCKSWebKitAdmission|testAuthorizedAppPath/u);
+    assert.match(log, /testEstablishedSOCKSDownloadIsFencedOnWallClockExpiry/u);
+    return log;
+  });
+  assert.deepEqual(observed[0], observed[1]);
 });
 
 

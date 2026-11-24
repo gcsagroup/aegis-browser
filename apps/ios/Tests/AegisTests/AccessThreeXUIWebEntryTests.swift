@@ -127,7 +127,8 @@ final class AccessThreeXUIWebEntryTests: XCTestCase {
 
     private func publisher(for usage: AccessSubscriptionUsageSession, core: EntryRecordingCore) -> any AccessProxyEntryPublishing {
         let lock = Data(#"{"status":"verified_build","xrayCore":{"commit":"676eaf66f8f05d4d558ee7a74b4736623d3feeb9","tag":"v26.11.9"},"artifacts":{"iosArm64Sha256":"aa","iosArm64SimulatorSha256":"bb"}}"#.utf8)
-        return AccessThreeXUIWebEntry.makePublisher(for: usage, lockData: lock, verifiedCore: core)
+        return AccessThreeXUIWebEntry.makePublisher(for: usage, lockData: lock, verifiedCore: core,
+                                               retireDocuments: { _, finish in finish() })
     }
 
     private func configuration() -> AccessSubscriptionConfiguration {

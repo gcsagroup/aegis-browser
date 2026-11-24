@@ -37,40 +37,43 @@ enter_source() {
   fi
 }
 
-if [[ "${1:-}" == --verify-archive ]]; then
-  enter_source
+enter_source
+case "${1:-}" in
+--verify-embedded-core)
+  exec python3 -B "$REPO_ROOT/scripts/release/ios_embedded_core.py" verify --root "$SOURCE" \
+    --source-lock "$SOURCE/apps/ios/EmbeddedCore/embedded-core-lock.json" \
+    --products "$IOS_CI_ROOT/EmbeddedCore"
+  ;;
+--verify-archive)
+  derived="${IOS_CI_SCRATCH:?IOS_CI_SCRATCH is required}/DerivedData"
   python3 "$REPO_ROOT/scripts/release/verify-ios-archive.py" \
     "$IOS_CI_ROOT/Aegis.xcarchive" 1.0.0 1
   python3 -B "$REPO_ROOT/scripts/release/test_ios_linked_bundle.py" \
     "$IOS_CI_ROOT/Aegis.xcarchive/Products/Applications/Aegis.app" \
-    "$IOS_CI_ROOT/EmbeddedCore" "$IOS_CI_ROOT/DerivedData" device
-  exec python3 -I -B "$REPO_ROOT/scripts/ci/ios-ci-storage.py" seal --root "$IOS_CI_ROOT"
-fi
-
-# SwiftPM's system Git uses the runner's Git and proxy configuration.
-export GIT_TERMINAL_PROMPT=0
-
-export TMPDIR="$IOS_CI_ROOT/tmp"
-export CLANG_MODULE_CACHE_PATH="$IOS_CI_ROOT/ModuleCache"
-mkdir -p "$TMPDIR" "$CLANG_MODULE_CACHE_PATH"
-
-python3 -B "$REPO_ROOT/scripts/release/ios_embedded_core.py" verify --root "$SOURCE" \
-  --source-lock "$SOURCE/apps/ios/EmbeddedCore/embedded-core-lock.json" \
-  --products "$IOS_CI_ROOT/EmbeddedCore" >/dev/null
-
-enter_source
-compiler="$(command -v xcodebuild)"
-
-exec python3 -I -B "$REPO_ROOT/scripts/ci/ios-archive-supervisor.py" \
-    "$IOS_CI_ROOT/xcodebuild.log" "$BASH" "$REPO_ROOT/scripts/ci/run-ios-unsigned-archive.sh" \
-    "$compiler" -scmProvider system -onlyUsePackageVersionsFromResolvedFile \
+    "$IOS_CI_ROOT/EmbeddedCore" "$derived" device --owned-linker-paths
+  exec python3 -I -B "$REPO_ROOT/scripts/ci/ios-ci-storage.py" seal --root "$IOS_CI_ROOT" --derived "$derived"
+  ;;
+--compile-archive)
+  # SwiftPM's system Git uses the runner's Git and proxy configuration.
+  export GIT_TERMINAL_PROMPT=0
+  export CLANG_MODULE_CACHE_PATH="$IOS_CI_ROOT/ModuleCache"
+  mkdir -p "$CLANG_MODULE_CACHE_PATH"
+  exec xcodebuild -scmProvider system -onlyUsePackageVersionsFromResolvedFile \
     -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release \
     -destination 'generic/platform=iOS' \
     -archivePath "$IOS_CI_ROOT/Aegis.xcarchive" \
-    -derivedDataPath "$IOS_CI_ROOT/DerivedData" \
+    -derivedDataPath "$IOS_CI_SCRATCH/DerivedData" \
+    -resultBundlePath "$IOS_CI_SCRATCH/Aegis.xcresult" \
     -clonedSourcePackagesDirPath "$IOS_CI_ROOT/SourcePackages" \
     -packageCachePath "$IOS_CI_ROOT/PackageCache" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 \
     AEGIS_EMBEDDED_CORE_PRODUCTS="$IOS_CI_ROOT/EmbeddedCore" \
     archive
+  ;;
+'')
+  exec python3 -I -B "$REPO_ROOT/scripts/ci/ios-archive-supervisor.py" \
+    "$IOS_CI_ROOT/xcodebuild.log" "$BASH" "$REPO_ROOT/scripts/ci/run-ios-unsigned-archive.sh"
+  ;;
+*) exit 2 ;;
+esac

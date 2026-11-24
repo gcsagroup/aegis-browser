@@ -48,6 +48,8 @@ runner 先通过实际适配器只读预检，再启动临时 loopback 中转和
 
 `prepare-alpha-device-project.py` 在全新目录生成隔离测试工程与少量身份 overlay，不改原源码。独立 Bundle ID、App Group 和外部 URL scheme 必须一起隔离；保留原扩展与权限，Firebase 仅在该变体使用 disabled 模式。生成回执记录原始及 overlay 哈希，不能把变体称为未经修改的正式产品。
 
+带 `AegisPreparedSourceCommit` 的 Alpha 工程只接受 `strict` 模式的 EmbeddedCore 回执。安装回执前会核对暂存源码的提交、桥接源码和锁文件、锁定的 Apple 工具链、两个已冻结切片的哈希，以及 XCFramework 的库路由与文件布局。即使源码干净，`ci-rebuild` 回执也不能用于带提交标记的 Alpha 工程。请用 `AEGIS_EMBEDDED_CORE_DIGEST_MODE=strict` 重新准备与该提交对应的产品。普通未标记的本地打包和托管 CI 仍可使用原有 `ci-rebuild` 流程。
+
 该脚本不构建、不签名、不安装、不修改 Apple 账号。需要先获得开发团队/设备授权，实际签名后核对 App 和扩展的 entitlement、组标识、包内节点选择及源码来源。不得用移除 App Group 权限的方式绕过配置失败，也不得覆盖设备现有商店 App。
 
 真机不能访问 Mac 的 `127.0.0.1`。当前直读路径需要手机可达的受信任 HTTPS 订阅信息入口；历史账户中转路径仍需要受控 HTTPS origin 和原生账户绑定。两条路径不能互相冒充验证结果，也不把面板管理 API/token 交给 App。

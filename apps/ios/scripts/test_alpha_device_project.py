@@ -1,10 +1,13 @@
 """Offline preparation tests; no device, signing or Apple operations."""
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import plistlib
 import shutil
+import subprocess
+import tarfile
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -52,6 +55,11 @@ class AlphaDeviceProjectTest(unittest.TestCase):
         self.assertEqual(spec["packages"], self.spec["packages"])
         self.assertEqual(spec["schemes"], self.spec["schemes"])
         self.assertFalse(spec["options"]["createIntermediateGroups"])
+        alpha_configs = spec["settings"]["configs"]
+        for name, flags in alpha_configs.items():
+            self.assertEqual(flags["AEGIS_ACCESS_RELEASE_CHANNEL"], "alpha", name)
+            self.assertEqual(flags["AEGIS_ACCESS_INTERNAL_OPTIONS"], "YES", name)
+        self.assertEqual(self.spec["settings"]["configs"]["Release"]["AEGIS_ACCESS_INTERNAL_OPTIONS"], "NO")
         for name, target in spec["targets"].items():
             original = self.spec["targets"][name]
             settings = target["settings"]["base"]
@@ -92,6 +100,117 @@ class AlphaDeviceProjectTest(unittest.TestCase):
             self.assertEqual(text.count(new), count)
         local = self.out / "overlay/Shared/AppLocalization.swift"
         self.assertIn(module.GROUP, local.read_text())
+
+    def test_only_clean_git_inputs_stamp_the_prepared_app(self):
+        def git(*arguments):
+            return subprocess.check_output(["git", "-C", str(self.root), *arguments], text=True).strip()
+
+        self.assertIsNone(module.prepared_source_commit(self.root))
+        # Keep a minimal but complete synthetic source tree for all XcodeGen
+        # source entries, including those outside apps/ios.
+        files_to_mutate = [self.ios / "AegisApp/Frozen.swift", self.ios / "Tests/AegisTests/Frozen.swift"]
+        for target in self.spec["targets"].values():
+            for row in target["sources"]:
+                rel = Path(row["path"])
+                path = (self.ios / rel).resolve()
+                if not rel.suffix:
+                    path = path / "fixture.swift"
+                if not path.exists():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("// committed placeholder\n")
+        for path in [*files_to_mutate, self.root / module.SNAPSHOT_PATHS[-1]]:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("// committed inputs\n")
+        substitution = self.ios / "Tests/AegisTests/Export.swift"
+        substitution.write_text('// approved literal $Format:%H$\n')
+        executable = self.ios / "AegisApp/helper.sh"
+        executable.write_text("#!/bin/sh\n")
+        executable.chmod(0o755)
+        (self.root / ".gitignore").write_text("Ignored.swift\n")
+        git("init", "-q")
+        git("add", ".")
+        git("-c", "user.name=Synthetic Fixture", "-c", "user.email=fixture@example.invalid",
+            "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture")
+        commit = git("rev-parse", "HEAD")
+        files_to_mutate[0].write_text("// replacement bytes must not compile\n")
+        git("add", str(files_to_mutate[0]))
+        replacement = git("-c", "user.name=Synthetic Fixture", "-c", "user.email=fixture@example.invalid",
+                          "-c", "commit.gpgSign=false", "commit-tree", git("write-tree"), "-m", "replacement")
+        git("restore", "--staged", "--worktree", str(files_to_mutate[0]))
+        git("replace", commit, replacement)
+        archive_git = ["git", "-C", str(self.root), "archive", commit, "--", *module.SNAPSHOT_PATHS]
+        replaced = subprocess.check_output(archive_git)
+        with tarfile.open(fileobj=io.BytesIO(replaced)) as archive:
+            synthetic = archive.extractfile(str(files_to_mutate[0].relative_to(self.root))).read()
+        self.assertEqual(synthetic, b"// replacement bytes must not compile\n")
+        original = subprocess.check_output([archive_git[0], "--no-replace-objects", *archive_git[1:]])
+        self.assertNotEqual(replaced, original)
+        self.assertEqual(module.prepared_source_commit(self.root), commit)
+        (self.ios / "AegisApp/Ignored.swift").write_text("// ignored input must never compile\n")
+        receipt = self.prepare()
+        variant = module.load_spec(self.out / "project.yml")
+        app_info = self.out / "overlay/AegisApp/Info.plist"
+        self.assertEqual(receipt["sourceCommit"], commit)
+        self.assertEqual(receipt["sourceArchiveSha256"], hashlib.sha256(original).hexdigest())
+        self.assertEqual((self.out / "source/apps/ios/AegisApp/helper.sh").stat().st_mode & 0o777, 0o555)
+        self.assertEqual((self.out / "source" / substitution.relative_to(self.root)).read_bytes(), substitution.read_bytes())
+        self.assertEqual(plistlib.loads(app_info.read_bytes())["AegisPreparedSourceCommit"], commit)
+        for target in ("AegisTests", "AegisUITests"):
+            info = Path(variant["targets"][target]["settings"]["base"]["INFOPLIST_FILE"])
+            self.assertEqual(plistlib.loads(info.read_bytes())["AegisPreparedSourceCommit"], commit)
+        verifier = variant["targets"]["AccessKit"]["postBuildScripts"][0]
+        self.assertIn(f'--prepared-source "{self.out / "source"}" {commit}', verifier["script"])
+        self.assertIn(str(self.out / "source" / module.SNAPSHOT_PATHS[-1]), verifier["inputFiles"])
+        for target in variant["targets"].values():
+            for row in target["sources"]:
+                self.assertTrue(Path(row["path"]).is_relative_to(self.out))
+        for name, path in zip(("Aegis", "AegisTests"), files_to_mutate):
+            compiled = next(Path(row["path"]) for row in variant["targets"][name]["sources"]
+                            if Path(row["path"]).name == path.parent.name) / path.name
+            path.write_text("// changed after XcodeGen preparation\n")
+            self.assertEqual(compiled.read_text(), "// committed inputs\n")
+            self.assertEqual(compiled.stat().st_mode & 0o777, 0o444)
+            self.assertEqual(compiled.parent.stat().st_mode & 0o777, 0o555)
+        self.assertFalse((self.out / "source/apps/ios/AegisApp/Ignored.swift").exists())
+        for path in files_to_mutate:
+            git("--no-replace-objects", "restore", str(path))
+        attrs = self.root / ".git/info/attributes"
+        for path, attribute, failure in [(files_to_mutate[1], "export-ignore", "omitted Git tree entries"),
+                                         (substitution, "export-subst", "changed Git blob contents")]:
+            with self.subTest(attribute=attribute):
+                attrs.write_text(path.relative_to(self.root).as_posix() + f" {attribute}\n")
+                altered = subprocess.check_output([archive_git[0], "--no-replace-objects", *archive_git[1:]])
+                with tarfile.open(fileobj=io.BytesIO(altered)) as archive:
+                    self.assertTrue(archive.getmember("apps/ios/Tests/AegisTests").isdir())
+                    if attribute == "export-ignore":
+                        self.assertNotIn(path.relative_to(self.root).as_posix(), archive.getnames())
+                    else:
+                        self.assertNotEqual(archive.extractfile(path.relative_to(self.root).as_posix()).read(), path.read_bytes())
+                self.out = self.base / attribute
+                with self.assertRaisesRegex(ValueError, failure):
+                    self.prepare()
+                self.assertFalse(self.out.exists())
+        attrs.unlink()
+        extra = self.ios / "untracked.swift"
+        extra.write_text("// synthetic untracked input\n")
+        self.assertIsNone(module.prepared_source_commit(self.root))
+        extra.unlink()
+        with (self.ios / "AegisApp/Info.plist").open("ab") as stream:
+            stream.write(b"\n")
+        self.assertIsNone(module.prepared_source_commit(self.root))
+
+    def test_snapshot_rejects_tracked_escaping_symlink(self):
+        path = self.ios / "AegisApp/escaping"
+        path.symlink_to("../../../../outside")
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        git = ["git", "-C", str(self.root), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+               "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null"]
+        subprocess.run([*git, "add", "."], check=True)
+        subprocess.run([*git, "commit", "-qm", "symlink fixture"], check=True)
+        commit = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+        with self.assertRaisesRegex(ValueError, "unsupported Git tree entry"):
+            module.snapshot_source(self.root, commit, self.out)
+        self.assertFalse(self.out.exists())
 
     def test_unknown_group_reference_blocks_generation(self):
         extra = self.ios / "AegisApp/Unexpected.swift"

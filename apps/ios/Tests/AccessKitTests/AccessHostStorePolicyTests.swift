@@ -77,6 +77,57 @@ final class AccessHostStorePolicyTests: XCTestCase {
         XCTAssertEqual(decision, .keepBoundHostStore)
     }
 
+    @MainActor
+    func testListenerRetirementWaitsForAllBoundAndAlreadyDetachedDocuments() throws {
+        let registry = AccessHostDataStoreRegistry()
+        let ordinary = AccessHostStoreKey(scopeID: "ordinary", host: try host("one.invalid"), isPrivate: false)
+        let privateKey = AccessHostStoreKey(scopeID: "private-scope", host: try host("two.invalid"), isPrivate: true)
+        let unrelated = AccessHostStoreKey(scopeID: "ordinary", host: try host("three.invalid"), isPrivate: false)
+        let old = AccessManagedProxyEndpoint(identity: "expired", generation: 1, loopbackHost: "127.0.0.1",
+                                             port: 18080, state: .ready)
+        var replacement = old
+        replacement.identity = "replacement"
+        replacement.generation = 2
+        replacement.port = 18081
+        func install(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey) -> Bool {
+            registry.setEndpoint(endpoint, scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate)
+        }
+        func bind(_ tab: String, to key: AccessHostStoreKey, bound: Bool = false) -> WKWebsiteDataStore? {
+            registry.storeForTab(tabID: tab, scopeID: key.scopeID, isPrivate: key.isPrivate,
+                targetHost: key.host, boundHost: bound ? key.host : nil, intent: .on)
+        }
+        XCTAssertTrue(install(old, for: ordinary))
+        XCTAssertTrue(install(old, for: privateKey))
+        XCTAssertTrue(install(replacement, for: unrelated))
+        let ordinaryStore = try XCTUnwrap(bind("open-tab", to: ordinary))
+        let privateStore = try XCTUnwrap(bind("closing-window", to: privateKey))
+        let otherStore = try XCTUnwrap(bind("other-tab", to: unrelated))
+        let acknowledgeDetached = try XCTUnwrap(registry.retainRetiringDocument(
+            scopeID: ordinary.scopeID, host: ordinary.host, isPrivate: ordinary.isPrivate))
+        var releases = 0
+        let bound = registry.retireListener(identity: old.identity) { releases += 1 }
+        XCTAssertEqual(bound[ordinary], ["open-tab"])
+        XCTAssertEqual(bound[privateKey], ["closing-window"])
+        XCTAssertNil(bind("new-tab", to: ordinary, bound: true))
+        XCTAssertFalse(install(replacement, for: privateKey))
+        XCTAssertEqual(ordinaryStore.proxyConfigurations.count, 1)
+        XCTAssertEqual(privateStore.proxyConfigurations.count, 1)
+        XCTAssertEqual(releases, 0)
+        // A removed tab's close path acknowledges via the normal unbind callback.
+        registry.unbind("closing-window")
+        XCTAssertEqual(releases, 0)
+        acknowledgeDetached()
+        registry.acknowledgeRetiredTab("open-tab", key: ordinary, identity: replacement.identity)
+        XCTAssertEqual(releases, 0)
+        registry.acknowledgeRetiredTab("open-tab", key: ordinary, identity: old.identity)
+        XCTAssertEqual(releases, 1)
+        XCTAssertTrue(ordinaryStore.proxyConfigurations.isEmpty)
+        XCTAssertTrue(privateStore.proxyConfigurations.isEmpty)
+        XCTAssertEqual(otherStore.proxyConfigurations.count, 1)
+        XCTAssertTrue(install(replacement, for: ordinary))
+        XCTAssertNotNil(bind("new-generation", to: ordinary))
+    }
+
     func testNavigationToAnotherHostDoesNotCarryThePreviousStore() throws {
         let decision = AccessHostRoutingPolicy.decide(AccessHostRoutingRequest(
             intent: .on,
@@ -264,6 +315,77 @@ final class AccessHostStorePolicyTests: XCTestCase {
         XCTAssertNil(other)
         XCTAssertEqual(first?.proxyConfigurations.count, 1)
         XCTAssertFalse(first?.proxyConfigurations.first?.allowFailover ?? true)
+    }
+
+    @MainActor
+    func testInadmissibleReadyEndpointsCannotCreateOrReuseAHostStore() throws {
+        let host = try self.host("example.com")
+        var forbiddenSOCKS = readyEndpoint(generation: 2, port: 1080)
+        forbiddenSOCKS.transport = .socks5
+        var nonLoopback = readyEndpoint(generation: 2)
+        nonLoopback.loopbackHost = "192.0.2.1"
+        for rejected in [forbiddenSOCKS, nonLoopback, readyEndpoint(generation: 2, port: 0)] {
+            for hasExistingStore in [false, true] {
+                let registry = AccessHostDataStoreRegistry()
+                func attach(boundHost: AccessSiteHost?) -> WKWebsiteDataStore? {
+                    registry.storeForTab(tabID: "tab", scopeID: "ordinary", isPrivate: false,
+                                        targetHost: host, boundHost: boundHost, intent: .on)
+                }
+                let previous = readyEndpoint(generation: 1)
+                var oldStore: WKWebsiteDataStore?
+                if hasExistingStore {
+                    XCTAssertTrue(registry.setEndpoint(previous, scopeID: "ordinary", host: host, isPrivate: false))
+                    oldStore = try XCTUnwrap(attach(boundHost: nil))
+                }
+                XCTAssertFalse(registry.setEndpoint(rejected, scopeID: "ordinary", host: host, isPrivate: false))
+                XCTAssertEqual(registry.endpoint(scopeID: "ordinary", host: host, isPrivate: false)?.state, .failed)
+                XCTAssertNil(attach(boundHost: hasExistingStore ? host : nil))
+                XCTAssertFalse(registry.setEndpoint(previous, scopeID: "ordinary", host: host, isPrivate: false))
+                if let oldStore {
+                    XCTAssertEqual(oldStore.proxyConfigurations.count, 1)
+                    XCTAssertFalse(oldStore.proxyConfigurations.first?.allowFailover ?? true)
+                } else {
+                    XCTAssertNil(registry.store(scopeID: "ordinary", host: host, isPrivate: false))
+                }
+                XCTAssertTrue(registry.setEndpoint(readyEndpoint(generation: 3, port: 1080),
+                                                   scopeID: "ordinary", host: host, isPrivate: false))
+                let recovered = try XCTUnwrap(attach(boundHost: hasExistingStore ? host : nil))
+                XCTAssertEqual(recovered.proxyConfigurations.count, 1)
+                XCTAssertFalse(recovered.proxyConfigurations.first?.allowFailover ?? true)
+            }
+        }
+    }
+
+    @MainActor
+    func testRejectedReplacementKeepsTheAppliedListenerUntilBothDocumentsRetire() throws {
+        let registry = AccessHostDataStoreRegistry()
+        let host = try self.host("example.com")
+        let key = AccessHostStoreKey(scopeID: "ordinary", host: host, isPrivate: false)
+        let old = readyEndpoint(generation: 1)
+        var rejected = readyEndpoint(generation: 2, port: 1080)
+        rejected.transport = .socks5
+        XCTAssertTrue(registry.setEndpoint(old, scopeID: key.scopeID, host: host, isPrivate: false))
+        func bind(_ id: String) -> WKWebsiteDataStore? {
+            registry.storeForTab(tabID: id, scopeID: key.scopeID, isPrivate: false,
+                targetHost: host, boundHost: nil, intent: .on)
+        }
+        let store = try XCTUnwrap(bind("bound"))
+        XCTAssertTrue(bind("detached") === store)
+        let detached = try XCTUnwrap(registry.detachTab("detached", from: store))
+        XCTAssertFalse(registry.setEndpoint(rejected, scopeID: key.scopeID, host: host, isPrivate: false))
+        XCTAssertEqual(registry.endpoint(scopeID: key.scopeID, host: host, isPrivate: false)?.identity, rejected.identity)
+        var finished = 0
+        XCTAssertEqual(registry.retireListener(identity: old.identity) { finished += 1 }, [key: ["bound"]])
+        XCTAssertEqual(finished, 0)
+        XCTAssertEqual(store.proxyConfigurations.count, 1)
+        XCTAssertNil(bind("new"))
+        XCTAssertFalse(registry.setEndpoint(readyEndpoint(generation: 3), scopeID: key.scopeID, host: host, isPrivate: false))
+        registry.acknowledgeRetiredTab("bound", key: key, identity: rejected.identity)
+        detached()
+        XCTAssertEqual(finished, 0)
+        registry.acknowledgeRetiredTab("bound", key: key, identity: old.identity)
+        XCTAssertEqual(finished, 1)
+        XCTAssertTrue(store.proxyConfigurations.isEmpty)
     }
 
     @MainActor

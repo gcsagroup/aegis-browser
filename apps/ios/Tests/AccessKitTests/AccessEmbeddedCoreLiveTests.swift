@@ -176,7 +176,7 @@ final class AccessEmbeddedCoreLiveTests: XCTestCase {
 
     func testProductPublisherStartsListenerAndConnectTunnel() async throws {
         let path = try requireLiveConfig()
-        let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(configPath: path)
+        let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(configPath: path, retireDocuments: { _, finish in finish() })
         let operationID = UUID()
         let prepared: AccessProxyEntryPrepareResult
         do {

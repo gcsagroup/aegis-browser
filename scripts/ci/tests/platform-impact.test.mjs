@@ -304,7 +304,11 @@ test('paths select platforms and commit types select stage depth', () => {
   try {
     git('init', '-b', 'develop'); git('config', 'user.name', 'Routing Test'); git('config', 'user.email', 'routing@example.invalid');
     const commonScript = 'apps/browser/scripts/common.sh';
-    const iosArchiveTests = ['scripts/release/test_verify_ios_archive.py', 'scripts/release/test_ios_embedded_core.py'];
+    const iosArchiveTests = ['scripts/release/test_verify_ios_archive.py', 'scripts/release/test_ios_embedded_core.py',
+      'scripts/release/test_ios_archive_seal.py',
+      'scripts/ci/tests/ios-archive-cancel-isolation.test.mjs', 'scripts/ci/tests/ios-archive-supervisor-fixture.py',
+      'scripts/ci/tests/ios-embedded-core-prepare.test.mjs'];
+    const iosPrepareWorker = 'scripts/ci/run-ios-embedded-core-prepare.sh';
     const iosCliTest = 'fastlane/tests/cli_test.rb';
     const aabCertificate = 'scripts/release/VerifiedAabCertificate.java';
     save('README.md', 'base');
@@ -336,7 +340,17 @@ test('paths select platforms and commit types select stage depth', () => {
     const iosRoute = {ios: true, android: false, macos: false, windows: false, linux: false, integrate: true, deep: true};
     const androidRoute = {...iosRoute, ios: false, android: true};
     const sharedSetup = pr(() => save(commonScript, 'updated'), 'fix: repair browser setup');
-    assert.deepEqual(route(sharedSetup), {...iosRoute, android: true, macos: true});
+    assert.deepEqual(route(sharedSetup), {...androidRoute, macos: true});
+    const sharedSetupWithIos = pr(() => {
+      save(commonScript, 'updated');
+      save(iosPrepareWorker, 'updated');
+      save('unknown.file', 'updated');
+    }, 'fix: repair browser setup and iOS');
+    assert.deepEqual(route(sharedSetupWithIos), {...iosRoute, android: true, macos: true});
+    for (const path of ['scripts/ci/ios-archive-go.py', 'scripts/ci/ios-archive-supervisor.py', 'scripts/ci/run-ios-unsigned-archive.sh',
+      iosPrepareWorker, '.github/workflows/ios-release-validation.yml']) {
+      assert.deepEqual(route(pr(() => save(path, 'updated'), 'fix: protect archive logs')), iosRoute, path);
+    }
     for (const path of iosArchiveTests) {
       assert.deepEqual(route(pr(() => save(path, 'updated'), 'test: cover archive input')), {...iosRoute, deep: false}, path);
     }
@@ -344,7 +358,7 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.deepEqual(route(cliTestOnly), {...iosRoute, deep: false});
     for (const file of [
       'build-ios-access-core.sh', 'development_key_access.py', 'development_signing.py',
-      'ios_embedded_core.py', 'ios_linked_core.py', 'prepare-ios-access-core.sh', 'record-ios-access-core-digests.sh',
+      'ios_core_build.py', 'ios_embedded_core.py', 'ios_linked_core.py', 'prepare-ios-access-core.sh', 'record-ios-access-core-digests.sh',
       'safari_manifest.py', 'test_development_key_access.py', 'test_development_signing.py',
       'test_ios_linked_bundle.py', 'test_ios_profile_trust.py', 'verify-ios-archive.py', 'verify-signed-ios.py',
     ]) {
@@ -556,8 +570,8 @@ test('quality preflight selects Linux docs and preserves full checks on all othe
 const archiveScript = 'scripts/ci/run-ios-unsigned-archive.sh';
 const delegateArchiveSupervisor = `case "$3" in
   */ios-archive-supervisor.py)
-    if [[ "\${ARCHIVE_TEST_LOG_FAILURE:-}" == write ]]; then ulimit -f 8; fi
-    exec "$ARCHIVE_TEST_PYTHON" "$@"
+    shift 2
+    exec "$ARCHIVE_TEST_PYTHON" -I -B "$ARCHIVE_TEST_SUPERVISOR" "$@"
     ;;
 esac
 `;
@@ -578,7 +592,7 @@ function prepareArchiveFixture(root) {
   return source;
 }
 
-test('archive compiler diagnostics reach Actions and retain exit status before sealing', () => {
+test('archive keeps only trusted compiler status in Actions and the uploaded log before sealing', () => {
   const workflow = YAML.parse(readFileSync('.github/workflows/ios-release-validation.yml', 'utf8'));
   const step = workflow.jobs['ios-archive'].steps.find(item => item.name === 'Compile uncredentialed native archive');
   assert.match(step.run, /run-ios-unsigned-archive\.sh/u);
@@ -609,20 +623,21 @@ fi
   writeFileSync(join(bin, 'xcodebuild'), `#!/bin/bash
 ${rejectGitSelectors}pwd -P > "$ARCHIVE_TEST_LAUNCH"
 printf 'archive-compiler-diagnostic\\n' >&2
-if [[ "$ARCHIVE_TEST_LOG_FAILURE" == write ]]; then printf '%16384s\\n' ''; fi
 exit "$ARCHIVE_TEST_EXIT"
 `);
   chmodSync(join(bin, 'python3'), 0o755);
   chmodSync(join(bin, 'xcodebuild'), 0o755);
   const run = overrides => spawnSync('bash', ['-e', '-o', 'pipefail', '-c', step.run], {
     cwd: shared, encoding: 'utf8', timeout: 10000, env: {
-      ...process.env, PATH: `${bin}:${process.env.PATH}`, IOS_CI_ROOT: root, IOS_CI_SOURCE: source,
+      PATH: `${bin}:/usr/bin:/bin`, HOME: root, IOS_CI_ROOT: root, IOS_CI_SOURCE: source,
+      GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ALLOW_PROTOCOL: 'file',
       GIT_DIR: join(shared, '.git'), GIT_WORK_TREE: shared, GIT_COMMON_DIR: join(shared, '.git'),
       GIT_OBJECT_DIRECTORY: join(shared, '.git', 'objects'), GIT_INDEX_FILE: join(shared, '.git', 'index'),
       GIT_IMPLICIT_WORK_TREE: '0', GIT_ALTERNATE_OBJECT_DIRECTORIES: shared, GIT_QUARANTINE_PATH: shared,
       GIT_GRAFT_FILE: join(shared, 'grafts'), GIT_REPLACE_REF_BASE: 'refs/fixture/', GIT_NO_REPLACE_OBJECTS: '1',
       GIT_SHALLOW_FILE: join(shared, 'shallow'), GIT_NAMESPACE: 'fixture', GIT_ATTR_SOURCE: 'wrong-tree',
       ARCHIVE_TEST_PYTHON: python, ARCHIVE_TEST_TRACE: trace, ARCHIVE_TEST_LAUNCH: launch,
+      ARCHIVE_TEST_SUPERVISOR: resolve('scripts/ci/tests/ios-archive-supervisor-fixture.py'), ARCHIVE_TEST_LEAF_COMPILER: '1',
       ...overrides,
     },
   });
@@ -634,7 +649,8 @@ exit "$ARCHIVE_TEST_EXIT"
     assert.equal(readFileSync(trace, 'utf8'), '');
     const vanished = run({ARCHIVE_TEST_SOURCE_CHANGE: '1', ARCHIVE_TEST_EXIT: '0'});
     assert.equal(vanished.status, 1, vanished.stderr);
-    assert.match(vanished.stderr, /cd:.*Source/u);
+    assert.match(vanished.stdout, /pre-compile EmbeddedCore verification exited with status 0/u);
+    assert.match(vanished.stdout, /source became unavailable before compilation/u);
     assert.throws(() => readFileSync(launch), {code: 'ENOENT'});
     assert.doesNotMatch(readFileSync(trace, 'utf8'), /verify-ios-archive\.py|ios-ci-storage\.py seal/u);
     renameSync(join(root, 'MovedSource'), source);
@@ -651,16 +667,23 @@ exit "$ARCHIVE_TEST_EXIT"
       assert.ifError(result.error);
       assert.equal(result.status, compilerExit || (logFailure ? 74 : 0), result.stderr);
       assert.equal(readFileSync(launch, 'utf8').trim(), source);
-      assert.match(result.stdout + result.stderr, /archive-compiler-diagnostic/u);
+      const console = result.stdout + result.stderr;
+      assert.match(console, /archive diagnostics withheld/u);
+      assert(console.includes('compiler exited with status ' + compilerExit));
+      assert.doesNotMatch(console, /archive-compiler-diagnostic|synthetic-log-error-value/u);
       if (logFailure) assert.match(result.stderr, /failed to retain xcodebuild\.log/u);
       if (logFailure === 'open') rmSync(log, {recursive: true});
       else {
         const retained = readFileSync(log, 'utf8');
-        assert.match(retained, /archive-compiler-diagnostic/u);
-        if (logFailure === 'write') assert(retained.length < 16384, 'fixture must hit the file-size limit');
+        if (logFailure === 'write') assert.equal(retained, '');
+        else {
+          assert(retained.includes('compiler exited with status ' + compilerExit));
+          assert.doesNotMatch(retained, /archive-compiler-diagnostic/u);
+        }
       }
       const calls = readFileSync(trace, 'utf8').trim().split('\n');
       const succeeded = compilerExit === 0 && !logFailure;
+      assert.equal(console.includes('unsigned archive verification exited with status 0'), succeeded);
       assert(calls[0].startsWith(`-B ${source}/scripts/release/ios_embedded_core.py verify `));
       assert.equal(calls.some(line => line.startsWith(`${source}/scripts/release/verify-ios-archive.py `)), succeeded);
       assert.equal(calls.some(line => line.startsWith(`-B ${source}/scripts/release/test_ios_linked_bundle.py `)), succeeded);
@@ -701,14 +724,14 @@ exit 65
     writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755);
   }
   try {
-    const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_CONFIG_')));
     const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', step.run], {encoding: 'utf8', env: {
-      ...environment, PATH: `${bin}:${process.env.PATH}`, IOS_CI_ROOT: root,
+      PATH: `${bin}:/usr/bin:/bin`, HOME: root, IOS_CI_ROOT: root,
       IOS_CI_SOURCE: source,
-      GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1', GIT_ALLOW_PROTOCOL: 'file',
       https_proxy: 'http://127.0.0.1:10', HTTPS_PROXY: 'http://127.0.0.1:10',
       no_proxy: 'localhost', NO_PROXY: 'localhost',
       ARCHIVE_TEST_PYTHON: python, ARCHIVE_TEST_TRACE: trace, ARCHIVE_TEST_ARGS: args,
+      ARCHIVE_TEST_SUPERVISOR: resolve('scripts/ci/tests/ios-archive-supervisor-fixture.py'), ARCHIVE_TEST_LEAF_COMPILER: '1',
     }});
     assert.equal(result.status, 65, result.stderr);
     const policy = readFileSync(trace, 'utf8');

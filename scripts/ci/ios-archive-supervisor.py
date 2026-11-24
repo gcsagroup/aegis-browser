@@ -1,20 +1,31 @@
 #!/usr/bin/env python3
-"""Retain the compiler log and supervise unsigned archive stages in private sessions."""
+"""Retain archive stage status and supervise unsigned archive stages in private sessions."""
 
 import ctypes
 import errno
 import os
+from pathlib import Path
 import select
+import shutil
 import signal
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 
 POLL_INTERVAL = 0.05
-READ_SIZE = 64 * 1024
 TERM_GRACE = 0.5
 CENSUS_TIMEOUT = 2
+
+
+def archive_environment():
+    environment = {name: value for name, value in os.environ.items()
+                   if not name.startswith("GIT_TRACE") and name != "GIT_CURL_VERBOSE"}
+    # Override Trace2 destinations from system/global Git configuration as well.
+    environment.update(GIT_TRACE2="0", GIT_TRACE2_EVENT="0", GIT_TRACE2_PERF="0")
+    return environment
 
 
 def process_states(timeout=CENSUS_TIMEOUT):
@@ -194,6 +205,10 @@ def report(message):
     write_console(f"{message}\n".encode(errors="backslashreplace"), sys.stderr)
 
 
+def cancellation_notice(status):
+    return f"unsigned archive wrapper cancelled with status {status}"
+
+
 class ArchiveOutput:
     def __init__(self, path):
         self.log = None
@@ -205,9 +220,10 @@ class ArchiveOutput:
 
     def log_error(self, error):
         self.failed = True
-        report(f"failed to retain xcodebuild.log: {error}")
+        report(f"failed to retain xcodebuild.log (errno {error.errno})")
 
-    def write(self, data):
+    def notice(self, message):
+        data = f"{message}\n".encode("ascii")
         if self.log is not None:
             try:
                 write_all(self.log.fileno(), data)
@@ -226,21 +242,10 @@ class ArchiveOutput:
                 self.log = None
 
 
-def copy_chunk(descriptor, output):
-    try:
-        data = os.read(descriptor, READ_SIZE)
-    except BlockingIOError:
-        return False
-    if data:
-        output(data)
-    return bool(data)
-
-
-def stream_until_exit(pid, descriptor, output, cancelled):
+def wait_until_exit(pid, cancelled):
     # macOS Python 3.9 lacks waitid. Both observers leave the child unreaped.
     queue = None
     changes = []
-    ready = [descriptor]
     try:
         if not hasattr(os, "waitid"):
             queue = select.kqueue()
@@ -261,50 +266,137 @@ def stream_until_exit(pid, descriptor, output, cancelled):
                     if event.flags & select.KQ_EV_ERROR and event.data != errno.ESRCH:
                         raise OSError(event.data, os.strerror(event.data))
                     return
-            if select.select(ready, [], [], POLL_INTERVAL)[0] and not copy_chunk(descriptor, output):
-                ready = []
+            time.sleep(POLL_INTERVAL)
     finally:
         if queue is not None:
             queue.close()
 
 
-def run_stage(command, output, cancelled, signal_worker):
+def run_stage(command, environment, cancelled, signal_worker):
     # Verify process enumeration is available before starting anything that
     # might leave a helper in a second process group.
     if cancelled():
-        return 0
+        return None
     process_states()
-    reader, writer = os.pipe()
+    if cancelled():
+        return None
+    # Transport configuration can change between fetches. Discard child output
+    # at spawn so no stage bytes can reach the console or retained status log.
+    # Keep the direct parent, atomic session creation and runner tracking env.
+    pid = os.posix_spawn(
+        command[0], command, environment, setsid=True, setsigmask=(),
+        setsigdef=(signal.SIGINT, signal.SIGTERM, signal.SIGPIPE),
+        file_actions=[
+            (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
+            (os.POSIX_SPAWN_DUP2, 1, 2),
+        ])
     try:
-        try:
-            os.set_blocking(reader, False)
-            if cancelled():
-                return 0
-            # Create the session atomically with spawn. The supervisor stays
-            # the direct parent and passes the Actions tracking env intact.
-            pid = os.posix_spawn(
-                command[0], command, os.environ, setsid=True, setsigmask=(),
-                setsigdef=(signal.SIGINT, signal.SIGTERM, signal.SIGPIPE),
-                file_actions=[(os.POSIX_SPAWN_DUP2, writer, fd) for fd in (1, 2)])
-        finally:
-            os.close(writer)
-        try:
-            stream_until_exit(pid, reader, output, cancelled)
-        finally:
-            status = stop_and_reap(pid, signal_worker)
-        # Helpers can hold the pipe open after the direct child exits. Drain
-        # buffered diagnostics only after those helpers have stopped.
-        while copy_chunk(reader, output):
-            pass
+        wait_until_exit(pid, cancelled)
     finally:
-        os.close(reader)
+        status = stop_and_reap(pid, signal_worker)
     code = os.waitstatus_to_exitcode(status)
     if code < 0:
         return 128 - code
     return code
 
 
-def main(log, shell, wrapper, *command):
+def directory_identity(path, *, private):
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or path.resolve(strict=True) != path:
+        raise OSError(errno.EINVAL, "scratch directory is not canonical")
+    if private:
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise OSError(errno.EPERM, "scratch directory is not private")
+    elif info.st_uid not in (os.getuid(), 0) or (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX):
+        raise OSError(errno.EPERM, "scratch parent is unsafe")
+    return info.st_dev, info.st_ino
+
+
+class JobScratch:
+    def __init__(self, root):
+        # Storage admission has already checked the job hierarchy and ACLs.
+        # Keep sensitive diagnostics outside the retained job root, on its volume.
+        root_device, _ = directory_identity(root, private=True)
+        self.parent_identity = directory_identity(root.parent, private=False)
+        if root_device != self.parent_identity[0] or not shutil.rmtree.avoids_symlink_attacks:
+            raise OSError(errno.EPERM, "scratch lacks a same-volume parent or safe removal")
+        self.path = Path(tempfile.mkdtemp(prefix=".aegis-ios-scratch-", dir=root.parent))
+        self.identity = directory_identity(self.path, private=True)
+
+    def environment(self, environment, *, for_archive=False):
+        temporary = self.path / "tmp"
+        temporary.mkdir(mode=0o700)
+        device, inode = self.identity
+        result = dict(environment, TMPDIR=str(temporary), GOTMPDIR=str(temporary), IOS_CI_SCRATCH=str(self.path),
+                      IOS_CI_SCRATCH_ID=f"{device}:{inode}")
+        if for_archive:
+            derived = self.path / "DerivedData"
+            derived.mkdir(mode=0o700)
+            derived_device, derived_inode = directory_identity(derived, private=True)
+            result["IOS_CI_DERIVED_ID"] = f"{derived_device}:{derived_inode}"
+        return result
+
+    def clean(self):
+        try:
+            if (directory_identity(self.path.parent, private=False) != self.parent_identity
+                    or directory_identity(self.path, private=True) != self.identity):
+                raise OSError(errno.EPERM, "scratch directory identity changed")
+            shutil.rmtree(self.path)
+        except OSError as error:
+            report(f"failed to remove private iOS job scratch (errno {error.errno})")
+            return False
+        return True
+
+
+def prepare_embedded_core(shell, worker, environment, cancelled, signal_worker):
+    source = Path(environment["IOS_CI_SOURCE"])
+    report("EmbeddedCore preparation starting (tool diagnostics withheld)")
+    code = run_stage([sys.executable, "-I", "-B", str(source / "scripts/ci/ios-archive-go.py"),
+                      str(source / "apps/ios/EmbeddedCore/embedded-core-lock.json"), environment["IOS_CI_SCRATCH"]],
+                     environment, cancelled, signal_worker)
+    if code is not None:
+        report(f"locked Go setup exited with status {code}")
+    if code == 0 and not cancelled():
+        code = run_stage([shell, worker], environment, cancelled, signal_worker)
+    if code is not None:
+        report(f"EmbeddedCore preparation exited with status {code}")
+    return code
+
+
+def archive(log, shell, wrapper, environment, cancelled, signal_worker, cancel_status):
+    output = ArchiveOutput(log)
+    try:
+        output.notice("unsigned archive diagnostics withheld because transport settings can change during archive")
+        code = run_stage([shell, wrapper, "--verify-embedded-core"], environment, cancelled, signal_worker)
+        if code is not None:
+            output.notice(f"pre-compile EmbeddedCore verification exited with status {code}")
+        if code == 0 and not cancelled():
+            if Path.cwd() != Path(environment["IOS_CI_SOURCE"]):
+                output.notice("unsigned archive source became unavailable before compilation")
+                return 1, False
+            code = run_stage([shell, wrapper, "--compile-archive"], environment, cancelled, signal_worker)
+            if code is not None:
+                output.notice(f"unsigned archive compiler exited with status {code}")
+        if cancelled():
+            status = cancel_status()
+            output.notice(cancellation_notice(status))
+            return status, True
+    finally:
+        output.close()
+    if cancelled() or code or output.failed:
+        return code or os.EX_IOERR, False
+    derived = Path(environment["IOS_CI_SCRATCH"]) / "DerivedData"
+    device, inode = directory_identity(derived, private=True)
+    if f"{device}:{inode}" != environment["IOS_CI_DERIVED_ID"]:
+        raise OSError(errno.EPERM, "archive DerivedData identity changed")
+    report("unsigned archive verification starting")
+    code = run_stage([shell, wrapper, "--verify-archive"], environment, cancelled, signal_worker)
+    if code is not None:
+        report(f"unsigned archive verification exited with status {code}")
+    return code, False
+
+
+def main(*arguments):
     received = 0
 
     def cancel(signum, _frame):
@@ -319,22 +411,45 @@ def main(log, shell, wrapper, *command):
         return received != 0
 
     signal_worker = worker_signaler()
-    output = ArchiveOutput(log)
+    environment = archive_environment()
+    scratch = JobScratch(Path(environment["IOS_CI_ROOT"]))
+    preparing = arguments[0] == "--prepare-embedded-core"
+    session_stopped = True
+    cancellation_reported = False
     try:
-        code = run_stage(command, output.write, cancelled, signal_worker)
+        environment = scratch.environment(environment, for_archive=not preparing)
+        if preparing:
+            code = prepare_embedded_core(*arguments[1:], environment, cancelled, signal_worker)
+        else:
+            code, cancellation_reported = archive(*arguments, environment, cancelled, signal_worker, lambda: 128 + received)
+    except OSError as error:
+        # Do not remove an active session's scratch if its stop could not be confirmed.
+        session_stopped = error.errno != errno.EBUSY
+        raise
     finally:
-        output.close()
+        cleaned = session_stopped and scratch.clean()
     if received:
-        return 128 + received
-    if code or output.failed:
-        return code or os.EX_IOERR
-    code = run_stage([shell, wrapper, "--verify-archive"], write_console, cancelled, signal_worker)
-    return 128 + received if received else code
+        status = 128 + received
+        if not cancellation_reported:
+            report(f"EmbeddedCore preparation cancelled with status {status}" if preparing else cancellation_notice(status))
+        return status
+    return code or (0 if cleaned else os.EX_IOERR)
+
+
+def cli(*arguments):
+    try:
+        return main(*arguments)
+    except subprocess.TimeoutExpired:
+        report("unsigned archive supervisor: process census timed out")
+    except subprocess.SubprocessError:
+        report("unsigned archive supervisor: process census failed")
+    except OSError as error:
+        if error.errno == errno.EBUSY:
+            report("unsigned archive supervisor: could not confirm archive session stopped")
+        else:
+            report(f"unsigned archive supervisor: OS error {error.errno}")
+    return 1
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main(*sys.argv[1:]))
-    except (OSError, subprocess.SubprocessError) as error:
-        report(f"unsigned archive supervisor: {error}")
-        sys.exit(1)
+    sys.exit(cli(*sys.argv[1:]))

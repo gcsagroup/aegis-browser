@@ -108,13 +108,23 @@ struct AegisApp: App {
         let registry = AccessSiteProxyStoreRegistry()
         let subscription = AccessSubscriptionUsageSession.product()
         _subscriptionUsage = StateObject(wrappedValue: subscription)
-        let publisher = AccessThreeXUIWebEntry.makePublisher(for: subscription)
+        let hostRegistry = AccessHostDataStoreRegistry()
+        weak var retirementOwner: AccessHostStoreCoordinator?
+        let publisher = AccessThreeXUIWebEntry.makePublisher(for: subscription) { identity, finish in
+            if let retirementOwner {
+                retirementOwner.retireManagedDocuments(identity: identity, finish: finish)
+            } else {
+                _ = hostRegistry.retireListener(identity: identity, finish: finish)
+            }
+        }
         let hostStores = AccessHostStoreCoordinator(
             publisher: publisher,
             channel: AccessProductChannel.resolve(),
             defaultLocationPrivacy: !(publisher is AccessFailClosedProxyEntryPublisher),
-            locationPreferences: defaults
+            locationPreferences: defaults,
+            registry: hostRegistry
         )
+        retirementOwner = hostStores
         registry.hostRouting = hostStores
         hostStores.startForegroundSweep()
         _accessSiteProxyRegistry = StateObject(wrappedValue: registry)

@@ -139,7 +139,6 @@ const selectsIos = path => path.startsWith('apps/ios/')
   || path.startsWith('.github/workflows/ios-')
   || path.startsWith('scripts/ci/ios-')
   || path.startsWith('scripts/ci/run-ios-')
-  || path === browserCommonScript
   || path.startsWith('scripts/ci/tests/ios-')
   || iosFastlaneTest.test(path)
   || /^scripts\/release\/(?:test_)?ios[-_]/u.test(path)

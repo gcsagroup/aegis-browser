@@ -7,7 +7,7 @@ import WebKit
 /// A private scope id is the browser's current private session.
 @MainActor
 final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordinating {
-    let registry = AccessHostDataStoreRegistry()
+    let registry: AccessHostDataStoreRegistry
     let publisher: any AccessProxyEntryPublishing
     let clock: any AccessPreparationClock
     let releaseChannel: AccessReleaseChannel
@@ -51,8 +51,10 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         channel: AccessReleaseChannel = .release,
         probeRunner: AccessSiteProbeRunner = AccessSiteProbeRunner(),
         defaultLocationPrivacy: Bool = false,
-        locationPreferences: UserDefaults? = nil
+        locationPreferences: UserDefaults? = nil,
+        registry: AccessHostDataStoreRegistry = AccessHostDataStoreRegistry()
     ) {
+        self.registry = registry
         self.publisher = publisher ?? AccessFailClosedProxyEntryPublisher()
         self.clock = clock ?? AccessContinuousPreparationClock()
         self.releaseChannel = channel == .unknown ? .release : channel
@@ -352,12 +354,12 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
 
     /// A landing store owns its entry independently of the idle redirect source.
     func retainLandingEndpoint(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey) -> Bool {
-        guard endpoint.state == .ready else { return false }
+        guard endpoint.state == .ready, endpoint.hasAdmittedBinding else { return false }
         if let current = registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate),
            current.generation > endpoint.generation { return false }
-        guard publisher.retain(endpoint, for: key) else { return false }
-        registry.setEndpoint(endpoint, scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate)
-        return true
+        return publisher.retain(endpoint, for: key) {
+            registry.setEndpoint(endpoint, scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate)
+        }
     }
 
     @discardableResult
@@ -798,6 +800,12 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         probeGenerations.removeValue(forKey: tab.instanceID.uuidString)
     }
 
+    func willRestoreOriginalStore(tab: BrowserTab) {
+        guard let finish = registry.detachTab(tab.instanceID.uuidString, from: tab.websiteDataStore)
+        else { return }
+        tab.afterCurrentDocumentBecomesInert(finish)
+    }
+
     func ordinaryHostStores() -> [WKWebsiteDataStore] {
         registry.ordinaryStores()
     }
@@ -949,16 +957,10 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             publisher.cancel(operationID: operationID)
             return
         }
-        guard publisher.validateReady(result), publisher.retain(result.endpoint, for: operation.key) else {
+        guard publisher.validateReady(result), retainLandingEndpoint(result.endpoint, for: operation.key) else {
             fail(operationID, reason: "代理入口还不能使用")
             return
         }
-        registry.setEndpoint(
-            result.endpoint,
-            scopeID: operation.key.scopeID,
-            host: operation.key.host,
-            isPrivate: operation.key.isPrivate
-        )
         if let pending = operation.addressNavigation,
            let tab = BrowserSession.openTabs().first(where: { $0.instanceID.uuidString == operation.tabID }) {
             if !operation.automaticFirstVisit {
@@ -1066,6 +1068,24 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             lastRecoveryFailure = AccessAutoRecoveryCopy.unavailable
         }
         revision &+= 1
+    }
+
+    func retireManagedDocuments(identity: String, finish: @escaping @MainActor () -> Void) {
+        if var endpoint = registry.endpointSnapshot.values.first(where: { $0.identity == identity && $0.state == .ready }) {
+            endpoint.state = .failed
+            applySharedState(endpoint)
+        }
+        let bound = registry.retireListener(identity: identity, finish: finish)
+        let tabs = BrowserSession.openTabs()
+        for (key, tabIDs) in bound {
+            guard let store = registry.store(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate) else { continue }
+            for tab in tabs where tab.websiteDataStore === store && tabIDs.contains(tab.instanceID.uuidString) {
+                let tabID = tab.instanceID.uuidString
+                tab.retireFailedProxyDocument { [registry] in
+                    registry.acknowledgeRetiredTab(tabID, key: key, identity: identity)
+                }
+            }
+        }
     }
 
     private func publishGroup(

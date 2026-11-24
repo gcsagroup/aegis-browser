@@ -12,9 +12,25 @@ enum AccessNWListenerBootstrap {
     static func awaitReady(
         _ listener: NWListener,
         on queue: DispatchQueue,
+        alreadyStarted: Bool = false,
         timeout: Duration = .seconds(2),
         observeState: @escaping @Sendable (NWListener.State) -> Void = { _ in }
     ) async throws {
+        if alreadyStarted {
+            try Task.checkCancellation()
+            let state = listener.state
+            observeState(state)
+            guard case .ready = state else { throw Failure.failed("prepared listener is no longer ready") }
+            // Publish the initial state before installing future notifications.
+            // A late manual .ready must never overwrite an observed failure.
+            listener.stateUpdateHandler = observeState
+            let current = listener.state
+            guard case .ready = current else {
+                observeState(current)
+                throw Failure.failed("prepared listener stopped during handoff")
+            }
+            return
+        }
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 try await withTaskCancellationHandler {

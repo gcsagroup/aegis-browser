@@ -7,15 +7,18 @@ Uses installed PyYAML, or system Ruby safe_load. Output project.yml is JSON
 import argparse
 import copy
 import hashlib
+import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import plistlib
 import re
 import stat
 # Local tooling uses argument arrays with the shell disabled.
 import subprocess  # nosec B404
 import sys
+import tarfile
+from tempfile import TemporaryDirectory
 
 APP = "com.gcsa.aegis.alpha.internal"
 OLD_GROUP = "group.com.gcsa.aegis.ios.share-inbox"
@@ -31,6 +34,9 @@ REPLACEMENTS = {
 IDS = {"Aegis": "", "SafariWebExtension": ".safari", "ShareExtension": ".share",
        "BrowserKit": ".browserkit", "AegisPolicyKit": ".policykit", "AccessKit": ".accesskit",
        "AgentKit": ".agentkit", "AegisTests": ".tests", "AegisUITests": ".uitests"}
+SNAPSHOT_PATHS = ("apps/ios", "apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared",
+                  "packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json",
+                  "scripts/release/ios_embedded_core.py")
 
 
 def digest(data):
@@ -62,6 +68,91 @@ def private_path(path):
     return str(path)
 
 
+def prepared_source_commit(root):
+    git = ["git", "--no-replace-objects", "-C", str(root)]
+    result = subprocess.run([*git, "rev-parse", "--show-toplevel", "HEAD"],  # nosec B603 B607
+                            capture_output=True, text=True, check=False)
+    if result.returncode:
+        return None
+    lines = result.stdout.splitlines()
+    if len(lines) != 2 or Path(lines[0]).resolve() != root or not re.fullmatch(r"[0-9a-f]{40}", lines[1]):
+        return None
+    status = subprocess.run([*git, "--no-optional-locks", "status", "--porcelain",  # nosec B603 B607
+                             "--untracked-files=normal", "--", "apps/ios"],
+                            capture_output=True, text=True, check=False)
+    return lines[1] if status.returncode == 0 and not status.stdout else None
+
+
+def snapshot_path(name):
+    path = PurePosixPath(name)
+    if (path.is_absolute() or ".." in path.parts or not path.parts or path.as_posix() != name
+            or "\\" in name or any(ord(char) < 32 for char in name)):
+        raise ValueError("unsafe snapshot path")
+    return path
+
+
+def snapshot_source(root, commit, destination):
+    git = ["git", "--no-replace-objects", "-C", str(root)]
+    listing = subprocess.check_output([*git, "ls-tree", "-r", "-z", "--full-tree", commit, "--", *SNAPSHOT_PATHS])  # nosec B603 B607
+    expected = {}
+    directories = set()
+    for entry in listing.split(b"\0")[:-1]:
+        header, name = entry.split(b"\t", 1)
+        mode, kind, blob = header.split()
+        if kind != b"blob" or mode not in (b"100644", b"100755") or not re.fullmatch(rb"[0-9a-f]{40}", blob):
+            raise ValueError("unsupported Git tree entry in Alpha source")
+        relative = snapshot_path(os.fsdecode(name))
+        if relative in expected:
+            raise ValueError("duplicate Git tree entry in Alpha source")
+        expected[relative] = (mode == b"100755", blob.decode("ascii"))
+        directories.update(parent for parent in relative.parents if parent.parts)
+
+    # The tar digest alone cannot detect local export attributes that omit or
+    # substitute files. Verify every member against the unreplaced Git tree.
+    data = subprocess.check_output([*git, "archive", commit, "--", *SNAPSHOT_PATHS])  # nosec B603 B607
+    seen_files, seen_dirs = set(), set()
+    destination.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(data)) as archive:
+        for member in archive:
+            relative = snapshot_path(member.name)
+            path = destination / relative
+            if member.isdir():
+                if relative not in directories or relative in seen_dirs:
+                    raise ValueError("unexpected directory in Alpha source archive")
+                path.mkdir()
+                seen_dirs.add(relative)
+            elif member.isfile():
+                if relative not in expected or relative in seen_files:
+                    raise ValueError("unexpected file in Alpha source archive")
+                executable, blob = expected[relative]
+                if bool(member.mode & 0o100) != executable:
+                    raise ValueError("Alpha source archive changed a Git executable mode")
+                actual = hashlib.sha1(f"blob {member.size}\0".encode("ascii"), usedforsecurity=False)
+                with archive.extractfile(member) as source, path.open("xb") as output:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        actual.update(chunk)
+                        output.write(chunk)
+                if actual.hexdigest() != blob:
+                    raise ValueError("Alpha source archive changed Git blob contents")
+                path.chmod(0o755 if executable else 0o644)
+                seen_files.add(relative)
+            else:
+                raise ValueError("non-regular snapshot input")
+    if seen_files != set(expected) or seen_dirs != directories:
+        raise ValueError("Alpha source archive omitted Git tree entries")
+    if {PurePosixPath(path.relative_to(destination).as_posix()) for path in destination.rglob("*")} != set(expected) | directories:
+        raise ValueError("Alpha source tree paths alias on the staging filesystem")
+    return digest(data)
+
+
+def make_read_only(directory):
+    for root, _, files in os.walk(directory, topdown=False):
+        for name in files:
+            path = Path(root) / name
+            path.chmod(0o555 if path.stat().st_mode & stat.S_IXUSR else 0o444)
+        Path(root).chmod(0o555)
+
+
 def prepare(source_root, output_dir, products, team_id, node_file=None):
     root = Path(source_root).resolve(strict=True)
     ios = root / "apps/ios"
@@ -77,8 +168,18 @@ def prepare(source_root, output_dir, products, team_id, node_file=None):
         raise ValueError("existing EmbeddedCore products required; run verify separately")
     node = private_path(node_file) if node_file else "/dev/null"
     # Paths are inserted inside quoted shell build scripts; reject shell syntax.
-    if any(c in str(ios) for c in ('"', '$', '`', '\n', '\r')):
+    if any(c in str(ios) + str(out) for c in ('"', '$', '`', '\\', '\n', '\r')):
         raise ValueError("source path cannot be represented safely in build scripts")
+    source_commit = prepared_source_commit(root)
+    with TemporaryDirectory(prefix="alpha-source-", dir=out.parent) as staging:
+        snapshot = Path(staging) / "source"
+        archive_digest = snapshot_source(root, source_commit, snapshot) if source_commit else None
+        return prepare_variant(root, out, products, team_id, node, source_commit, snapshot, archive_digest)
+
+
+def prepare_variant(root, out, products, team_id, node, source_commit, snapshot, archive_digest):
+    ios = (snapshot if source_commit else root) / "apps/ios"
+    build_ios = (out / "source" if source_commit else root) / "apps/ios"
     original = (ios / "project.yml").read_bytes()
     spec = copy.deepcopy(load_spec(ios / "project.yml"))
     if set(spec["targets"]) != set(IDS):
@@ -120,6 +221,7 @@ def prepare(source_root, output_dir, products, team_id, node_file=None):
                 AEGIS_EMBEDDED_CORE_PRODUCTS=str(products))
     for config in spec["settings"]["configs"].values():
         config["AEGIS_ACCESS_RELEASE_CHANNEL"] = "alpha"
+        config["AEGIS_ACCESS_INTERNAL_OPTIONS"] = "YES"
     spec["options"]["bundleIdPrefix"] = APP
     # Sources intentionally live outside this generated project. Intermediate
     # parent groups for absolute paths can make XcodeGen traverse toward '/'.
@@ -150,11 +252,18 @@ def prepare(source_root, output_dir, products, team_id, node_file=None):
             elif name in ("ShareExtension", "SafariWebExtension") and key == "INFOPLIST_FILE":
                 data["CFBundleDisplayName"] += " Alpha"
                 changes["displayName"] = 1
+            if key == "INFOPLIST_FILE" and name in ("Aegis", "AegisTests", "AegisUITests"):
+                data.pop("AegisPreparedSourceCommit", None)
+                if source_commit:
+                    data["AegisPreparedSourceCommit"] = source_commit
+                    changes["preparedSourceCommit"] = 1
             settings[key] = overlay(rel, plistlib.dumps(data, sort_keys=False), changes)
         extra = []
         for source in target["sources"]:
             rel = source["path"]
-            source["path"] = mapping.get(rel, str((ios / rel).resolve()))
+            if source_commit and not (ios / rel).resolve().exists():
+                raise ValueError("Xcode source is missing from the committed snapshot")
+            source["path"] = mapping.get(rel, str((build_ios / rel).resolve()))
             if rel == "SharedWebExtension":
                 source.setdefault("excludes", []).append("background.js")
                 extra.append({"path": mapping["SharedWebExtension/background.js"], "buildPhase": "resources"})
@@ -165,10 +274,24 @@ def prepare(source_root, output_dir, products, team_id, node_file=None):
                                "Install verified EmbeddedCore manifest"}
             if script.get("name") not in allowed_scripts:
                 raise ValueError("unrecognized build script; review source-root conversion")
-            script["script"] = script["script"].replace('${SRCROOT}/../..', str(root)).replace('${SRCROOT}', str(ios))
+            # Core verification uses the independently recorded absolute
+            # xcfilelist. Only the source compiler and app scripts use the snapshot.
+            script_ios = root / "apps/ios" if script["name"] == "Install verified EmbeddedCore manifest" else build_ios
+            script["script"] = script["script"].replace('${SRCROOT}/../..', str(root)).replace('${SRCROOT}', str(script_ios))
             for key in ("inputFiles", "inputFileLists"):
                 if key in script:
-                    script[key] = [p.replace('$(SRCROOT)/../..', str(root)).replace('$(SRCROOT)', str(ios)) for p in script[key]]
+                    script[key] = [p.replace('$(SRCROOT)/../..', str(root)).replace('$(SRCROOT)', str(script_ios)) for p in script[key]]
+            if source_commit and script["name"] == "Install verified EmbeddedCore manifest":
+                rel = "scripts/release/ios_embedded_core.py"
+                build_snapshot = out / "source"
+                frozen_verifier = str(build_snapshot / rel)
+                script["script"] = script["script"].replace(str(root / rel), frozen_verifier).rstrip()
+                script["script"] += f' --prepared-source "{build_snapshot}" {source_commit}\n'
+                embedded = snapshot / "apps/ios/EmbeddedCore"
+                bridge = embedded / "bridge"
+                core_source_inputs = [embedded / "embedded-core-lock.json", bridge, *sorted(bridge.rglob("*"))]
+                script["inputFiles"].extend([frozen_verifier, *(str(build_snapshot / p.relative_to(snapshot))
+                                                               for p in core_source_inputs)])
         if name == "Aegis":
             settings["AEGIS_PRIVATE_TEST_NODE_FILE"] = node
             settings["AEGIS_FIREBASE_CHANNEL"] = "disabled"
@@ -184,10 +307,17 @@ def prepare(source_root, output_dir, products, team_id, node_file=None):
                    generatedSpecSha256=digest(generated), appId=APP, appGroup=GROUP,
                    externalScheme=SCHEME, teamId=team_id, firebase="disabled",
                    coreVerification="NOT_RUN", build="NOT_RUN", device="NOT_RUN", overlays=overlays)
+    if source_commit:
+        receipt["sourceCommit"] = source_commit
+        receipt["sourceArchiveSha256"] = archive_digest
     out.mkdir(mode=0o700)
     for path, data in files.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
+    if source_commit:
+        snapshot.rename(out / "source")
+        make_read_only(out / "source")
+        make_read_only(out / "overlay")
     (out / "project.yml").write_bytes(generated)
     (out / "preparation-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt

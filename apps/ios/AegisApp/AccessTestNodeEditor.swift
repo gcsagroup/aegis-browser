@@ -1,0 +1,785 @@
+import AccessKit
+import Foundation
+import Observation
+import Security
+import WebKit
+import UIKit
+
+/// Package metadata is resolved by native code. Firebase is independent of Access admission.
+enum AccessInternalOptions: String {
+    case dev, alpha
+
+    static var installed: Self? {
+        let bundle = Bundle.main
+#if DEBUG
+        let debug = true
+#else
+        let debug = false
+#endif
+        return resolve(
+            bundleID: bundle.bundleIdentifier,
+            channel: bundle.object(forInfoDictionaryKey: "AegisAccessReleaseChannel") as? String,
+            releaseProfile: bundle.object(forInfoDictionaryKey: "AegisReleaseProfile") as? String,
+            capability: bundle.object(forInfoDictionaryKey: "AegisAccessInternalOptions") as? String,
+            debug: debug
+        )
+    }
+
+    static func resolve(
+        bundleID: String?, channel: String?, releaseProfile: String?, capability: String?, debug: Bool
+    ) -> Self? {
+        guard let channel, channel == releaseProfile, capability == "YES" else { return nil }
+        switch (bundleID, channel) {
+        case ("com.gcsa.aegis", "dev") where debug: return .dev
+        case ("com.gcsa.aegis.alpha.internal", "alpha"): return .alpha
+        default: return nil
+        }
+    }
+}
+
+/// Admission is limited to the physical iPhone OS build actually verified for this internal path.
+enum AccessInternalSOCKSAdmission {
+    static func admitted(major: Int, minor: Int, patch: Int, build: String,
+                         phone: Bool, simulator: Bool) -> Bool {
+        !simulator && phone && major == 26 && minor == 6 && patch == 1 && (build == "23G83" || build.hasSuffix("(Build 23G83)"))
+    }
+
+    @MainActor static var current: Bool {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+#if targetEnvironment(simulator)
+        let simulator = true
+#else
+        let simulator = false
+#endif
+        return admitted(major: os.majorVersion, minor: os.minorVersion, patch: os.patchVersion,
+                        build: ProcessInfo.processInfo.operatingSystemVersionString,
+                        phone: UIDevice.current.userInterfaceIdiom == .phone, simulator: simulator)
+    }
+}
+
+enum AccessTestNodeTransport: String {
+    case automatic, http, socks5
+
+    func select(socksAdmitted: Bool) throws -> AccessInboundTransport {
+        switch self {
+        case .automatic: return socksAdmitted ? .socks5 : .http
+        case .http: return .http
+        case .socks5:
+            guard socksAdmitted else { throw AccessTestNodeError.unavailable }
+            return .socks5
+        }
+    }
+}
+
+enum AccessTestNodeError: Error {
+    case unavailable, invalidLink, cameraDenied, cameraUnavailable, conflict, storageUnavailable
+}
+
+struct AccessTestNodeRecord: Codable {
+    let version = 1
+    let revision: UUID
+    private let address: String
+    private let port: UInt16
+    private let userID: String
+    private let serverName: String
+    private let publicKey: String
+    private let shortID: String
+    private let fingerprint: String
+    private let spiderX: String
+
+    // Use an explicit encoding schema. Unknown or missing versions are rejected at restore.
+    private enum CodingKeys: String, CodingKey {
+        case version, revision, address, port, userID, serverName, publicKey, shortID, fingerprint, spiderX
+    }
+
+    init(_ node: AccessRealityVisionParameters) {
+        revision = UUID()
+        address = node.address
+        port = node.port
+        userID = node.userID
+        serverName = node.serverName
+        publicKey = node.publicKey
+        shortID = node.shortID
+        fingerprint = node.fingerprint
+        spiderX = node.spiderX
+    }
+
+    func parameters() throws -> AccessRealityVisionParameters {
+        let parameters = try AccessRealityVisionParameters(address: address, port: port, userID: userID,
+            serverName: serverName, publicKey: publicKey, shortID: shortID,
+            fingerprint: fingerprint, spiderX: spiderX)
+        try AccessLocalV2RayConfigLoader.validateManualParameters(parameters)
+        return parameters
+    }
+
+    init(from decoder: any Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        guard try fields.decode(Int.self, forKey: .version) == version else {
+            throw AccessTestNodeError.storageUnavailable
+        }
+        revision = try fields.decode(UUID.self, forKey: .revision)
+        address = try fields.decode(String.self, forKey: .address)
+        port = try fields.decode(UInt16.self, forKey: .port)
+        userID = try fields.decode(String.self, forKey: .userID)
+        serverName = try fields.decode(String.self, forKey: .serverName)
+        publicKey = try fields.decode(String.self, forKey: .publicKey)
+        shortID = try fields.decode(String.self, forKey: .shortID)
+        fingerprint = try fields.decode(String.self, forKey: .fingerprint)
+        spiderX = try fields.decode(String.self, forKey: .spiderX)
+        _ = try AccessRealityVisionParameters(
+            address: address, port: port, userID: userID, serverName: serverName, publicKey: publicKey,
+            shortID: shortID, fingerprint: fingerprint, spiderX: spiderX
+        )
+    }
+}
+
+@MainActor
+protocol AccessTestNodeStoring {
+    func read(channel: AccessInternalOptions) throws -> AccessTestNodeRecord?
+    func write(_ record: AccessTestNodeRecord, channel: AccessInternalOptions) throws
+    func remove(channel: AccessInternalOptions) throws
+}
+
+struct AccessTestNodeKeychain: AccessTestNodeStoring {
+    var service = "com.gcsa.aegis.ios.access-test-node.v1"
+
+    private func query(for channel: AccessInternalOptions) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: service,
+         kSecAttrAccount as String: channel.rawValue + ".ordinary.fixed-test-profile",
+         kSecAttrSynchronizable as String: false]
+    }
+
+    func read(channel: AccessInternalOptions) throws -> AccessTestNodeRecord? {
+        var request = query(for: channel)
+        request[kSecReturnData as String] = true
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(request as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw AccessTestNodeError.storageUnavailable
+        }
+        return try JSONDecoder().decode(AccessTestNodeRecord.self, from: data)
+    }
+
+    func write(_ record: AccessTestNodeRecord, channel: AccessInternalOptions) throws {
+        let request = query(for: channel)
+        let attributes: [String: Any] = [
+            kSecValueData as String: try JSONEncoder().encode(record),
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        var status = SecItemUpdate(request as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            status = SecItemAdd(request.merging(attributes) { _, value in value } as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw AccessTestNodeError.storageUnavailable }
+    }
+
+    func remove(channel: AccessInternalOptions) throws {
+        let status = SecItemDelete(query(for: channel) as CFDictionary)
+        guard status == errSecSuccess else { throw AccessTestNodeError.storageUnavailable }
+    }
+}
+
+@MainActor
+final class AccessTestNodeRepository {
+    static let shared = launchRepository(arguments: ProcessInfo.processInfo.arguments)
+
+    static func launchRepository(arguments: [String], channel: AccessInternalOptions? = AccessInternalOptions.installed,
+                                 persistentStorage: () -> any AccessTestNodeStoring = { AccessTestNodeKeychain() }) -> AccessTestNodeRepository {
+#if DEBUG
+        if arguments.contains("--ui-testing") {
+            return AccessTestNodeRepository(channel: channel, storage: UITestStorage())
+        }
+#endif
+        return AccessTestNodeRepository(channel: channel, storage: persistentStorage())
+    }
+
+#if DEBUG
+    private final class UITestStorage: AccessTestNodeStoring {
+        private var records: [AccessInternalOptions: AccessTestNodeRecord] = [:]
+
+        func read(channel: AccessInternalOptions) -> AccessTestNodeRecord? { records[channel] }
+        func write(_ record: AccessTestNodeRecord, channel: AccessInternalOptions) { records[channel] = record }
+        func remove(channel: AccessInternalOptions) { records.removeValue(forKey: channel) }
+    }
+#endif
+    private let channel: AccessInternalOptions?
+    private let storage: any AccessTestNodeStoring
+    private var revocations: [UUID: @MainActor () -> Void] = [:]
+
+    func observeRevocation(_ callback: @escaping @MainActor () -> Void) -> UUID {
+        let id = UUID()
+        revocations[id] = callback
+        return id
+    }
+
+    func removeObserver(_ id: UUID) { revocations[id] = nil }
+
+    private func revokeOpenPages() {
+        let callbacks = Array(revocations.values)
+        callbacks.forEach { $0() }
+    }
+
+    init(channel: AccessInternalOptions? = AccessInternalOptions.installed,
+         storage: any AccessTestNodeStoring = AccessTestNodeKeychain()) {
+        self.channel = channel
+        self.storage = storage
+    }
+
+    func allowsEditing(isPrivate: Bool) -> Bool { channel != nil && !isPrivate }
+
+    func savedNode(isPrivate: Bool) throws -> AccessTestNodeRecord {
+        guard let channel, !isPrivate, let record = try storage.read(channel: channel) else {
+            throw AccessTestNodeError.unavailable
+        }
+        return record
+    }
+
+
+    func revision(isPrivate: Bool) throws -> UUID? {
+        guard let channel, !isPrivate else { throw AccessTestNodeError.unavailable }
+        return try storage.read(channel: channel)?.revision
+    }
+
+    func apply(_ draft: AccessRealityVisionParameters, expectedRevision: UUID?, isPrivate: Bool) throws -> UUID {
+        guard let channel, !isPrivate else { throw AccessTestNodeError.unavailable }
+        guard try revision(isPrivate: isPrivate) == expectedRevision else { throw AccessTestNodeError.conflict }
+        try AccessLocalV2RayConfigLoader.validateManualParameters(draft)
+        let record = AccessTestNodeRecord(draft)
+        try storage.write(record, channel: channel)
+        revokeOpenPages()
+        return record.revision
+    }
+
+    func remove(expectedRevision: UUID, isPrivate: Bool) throws {
+        guard let channel, !isPrivate else { throw AccessTestNodeError.unavailable }
+        guard try revision(isPrivate: isPrivate) == expectedRevision else { throw AccessTestNodeError.conflict }
+        try storage.remove(channel: channel)
+        revokeOpenPages()
+    }
+}
+
+@MainActor
+@Observable
+final class AccessTestNodeEditor {
+    struct Scan: Identifiable, Equatable {
+        let id = UUID()
+    }
+
+    private let repository: AccessTestNodeRepository
+    private let isPrivate: Bool
+    private var draft: AccessRealityVisionParameters?
+    private var baseRevision: UUID?
+    private var loaded = false
+    private(set) var scan: Scan?
+    private(set) var error: AccessTestNodeError?
+
+    var allowsEditing: Bool { repository.allowsEditing(isPrivate: isPrivate) }
+    var hasDraft: Bool { draft != nil }
+    var hasSavedNode: Bool { baseRevision != nil }
+    var showsEmptyProfile: Bool { loaded && !hasSavedNode }
+    var canApply: Bool { loaded && hasDraft && scan == nil }
+
+    init(isPrivate: Bool, repository: AccessTestNodeRepository = .shared) {
+        self.isPrivate = isPrivate
+        self.repository = repository
+    }
+
+    /// Each visit to the test Profile starts a new editing lifetime.
+    func openProfile() {
+        closeProfile()
+        do {
+            baseRevision = try repository.revision(isPrivate: isPrivate)
+            loaded = true
+            error = nil
+        } catch {
+            self.error = allowsEditing ? .storageUnavailable : .unavailable
+        }
+    }
+
+    func closeProfile() {
+        scan = nil
+        draft = nil
+        baseRevision = nil
+        loaded = false
+        error = nil
+    }
+
+    func preview(_ input: String) {
+        guard loaded else { return }
+        scan = nil
+        do {
+            draft = try AccessLocalV2RayConfigLoader.parseSingleShareURI(input)
+            error = nil
+        } catch {
+            // Remove an earlier candidate so Apply cannot save it after a failed preview.
+            draft = nil
+            self.error = .invalidLink
+        }
+    }
+
+    func beginScan() -> Scan? {
+        guard loaded, scan == nil else { return nil }
+        let request = Scan()
+        // A new input attempt cannot leave an older candidate ready to Apply.
+        draft = nil
+        scan = request
+        error = nil
+        return request
+    }
+
+    @discardableResult
+    func finishScan(_ request: Scan, result: Result<String, AccessTestNodeError>?) -> Bool {
+        guard scan == request else { return false }
+        scan = nil
+        switch result {
+        case .success(let input):
+            preview(input)
+            return hasDraft && error == nil
+        case .failure(let error): self.error = error
+        case nil: break
+        }
+        return false
+    }
+
+    func finishScan(_ request: Scan, result: Result<String, AccessTestNodeError>?,
+                    pendingText: inout String) {
+        if finishScan(request, result: result) { pendingText = "" }
+    }
+
+    func apply() {
+        guard canApply, let draft else { return }
+        do {
+            baseRevision = try repository.apply(draft, expectedRevision: baseRevision, isPrivate: isPrivate)
+            self.draft = nil
+            error = nil
+        } catch let failure as AccessTestNodeError {
+            error = failure
+        } catch {
+            self.error = .storageUnavailable
+        }
+    }
+
+    func discard() {
+        openProfile()
+    }
+
+    func removeSavedNode() {
+        guard loaded, scan == nil, let baseRevision else { return }
+        do {
+            try repository.remove(expectedRevision: baseRevision, isPrivate: isPrivate)
+            openProfile()
+        } catch let failure as AccessTestNodeError {
+            error = failure
+        } catch {
+            self.error = .storageUnavailable
+        }
+    }
+}
+
+/// VisionKit and offline QR fixtures use the same whole-capture admission.
+enum AccessTestNodeQRCode {
+    static func payload(from items: [String?]) -> Result<String, AccessTestNodeError> {
+        guard items.count == 1, let payload = items.first ?? nil else { return .failure(.invalidLink) }
+        return .success(payload)
+    }
+}
+
+
+/// A deliberately selected ordinary test Profile owns one publisher and one immutable store.
+/// Each new page session rereads its saved revision and owns an isolated native core.
+@MainActor
+@Observable
+final class AccessTestNodePage: NSObject, WKNavigationDelegate {
+    let id = UUID()
+    private(set) var webView: WKWebView?
+    private(set) var status = "正在准备连接"
+    private(set) var endpoint: AccessManagedProxyEndpoint?
+    /// Read-only identity of the store actually created; survives retirement for receipts.
+    private(set) var initialBinding: AccessManagedProxyEndpoint?
+    private let repository: AccessTestNodeRepository
+    private let isPrivate: Bool
+    private let registry = AccessHostDataStoreRegistry()
+    private let testingCore: (any AccessEmbeddedCoreControlling)?
+    private var publisher: (any AccessProxyEntryPublishing)?
+    private var key: AccessHostStoreKey?
+    private var operationID: UUID?
+    private var observerID: UUID?
+    private let preparationTimeout: Duration
+    private let waitForPreparationDeadline: @MainActor (ContinuousClock.Instant) async throws -> Void
+    private var preparationDeadline: ContinuousClock.Instant?
+    private var deadlineTask: Task<Void, Never>?
+    private var preparationWaiter: CheckedContinuation<AccessProxyEntryPrepareResult, Error>?
+    private var retirement: (() -> Void)?
+    private(set) var retirementNavigation: WKNavigation?
+    private var retirementRetryUsed = false
+    private let retirementURL = URL(string: "https://aegis.invalid/retired/" + UUID().uuidString)!
+    private var retiringOwner: AccessTestNodePage?
+    /// Bounded, secret-free lifecycle evidence; no URL or document content.
+    private(set) var retirementEvents: [String] = []
+    private(set) var retirementRequestedAt: ContinuousClock.Instant?
+    private(set) var retirementCommittedAt: ContinuousClock.Instant?
+    private(set) var failureDomain: String?
+    private(set) var failureCode: Int?
+    private(set) var localPolicyRejection: String?
+    var navigationPolicyObservation: String {
+        if let localPolicyRejection { return localPolicyRejection }
+        if failureDomain == "WebKitErrorDomain", failureCode == 102 { return "policy-interruption-unattributed" }
+        return "no-local-rejection-observed"
+    }
+    private(set) var httpStatus: Int?
+    /// WebKit does not expose a redirect's HTTP status through its redirect callback.
+    /// Keep the initial response unknown when it was not delivered to the response delegate.
+    private(set) var initialHTTPStatus: Int?
+    private(set) var serverRedirectCount = 0
+    private var observedMainFrameResponse = false
+    private let singleNavigation: Bool
+    private let transportPreference: AccessTestNodeTransport
+    private let socksAdmitted: Bool
+    private(set) var selectedTransport: AccessInboundTransport?
+    private var sentMainFrame = false
+    private var committedMainFrame = false
+    private var currentNavigation: WKNavigation?
+    private var sawMainFrameAction = false
+    private var closed = false
+    private var retiring = false
+
+    init(isPrivate: Bool, repository: AccessTestNodeRepository = .shared,
+         testingCore: (any AccessEmbeddedCoreControlling)? = nil,
+         singleNavigation: Bool = false, transport: AccessTestNodeTransport = .automatic,
+         socksAdmitted: Bool? = nil, preparationTimeout: Duration = .seconds(15),
+         waitForPreparationDeadline: @escaping @MainActor (ContinuousClock.Instant) async throws -> Void = {
+             try await ContinuousClock().sleep(until: $0)
+         }) {
+        self.transportPreference = transport
+        self.socksAdmitted = socksAdmitted ?? AccessInternalSOCKSAdmission.current
+        self.repository = repository
+        self.isPrivate = isPrivate
+        self.testingCore = testingCore
+        self.singleNavigation = singleNavigation
+        self.preparationTimeout = preparationTimeout
+        self.waitForPreparationDeadline = waitForPreparationDeadline
+        super.init()
+    }
+
+    func open(_ url: URL) async {
+        let deadline = ContinuousClock.now.advanced(by: preparationTimeout)
+        guard publisher == nil, preparationDeadline == nil, !closed, url.scheme == "https", url.user == nil, url.password == nil,
+              let rawHost = url.host, let host = try? AccessSiteHost(rawHost),
+              repository.allowsEditing(isPrivate: isPrivate) else {
+            status = "连接暂不可用"
+            return
+        }
+        preparationDeadline = deadline
+        do {
+            let transport = try transportPreference.select(socksAdmitted: socksAdmitted)
+            selectedTransport = transport
+            let record = try repository.savedNode(isPrivate: isPrivate)
+            guard !closed, ContinuousClock.now < deadline else { throw AccessTestNodeError.unavailable }
+            let revision = record.revision
+            observerID = repository.observeRevocation { [weak self] in self?.close() }
+            let core = try testingCore ?? AccessGoEmbeddedCore(isolated: true)
+            let newPublisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(
+                configPath: nil, verifiedCore: core,
+                parameters: { [repository, isPrivate] in
+                    guard ContinuousClock.now < deadline else { throw AccessTestNodeError.unavailable }
+                    let current = try repository.savedNode(isPrivate: isPrivate)
+                    guard current.revision == revision else { throw AccessTestNodeError.conflict }
+                    let parameters = try current.parameters()
+                    guard ContinuousClock.now < deadline else { throw AccessTestNodeError.unavailable }
+                    return parameters
+                },
+                connectionAllowed: { [weak self, repository] in
+                    guard let self, !self.closed, !self.preparationDeadlineElapsed else { return false }
+                    return (try? repository.revision(isPrivate: self.isPrivate)) == revision
+                        && !self.closed && !self.preparationDeadlineElapsed
+                },
+                retireDocuments: { [weak self] _, finish in
+                    self?.retire(finish)
+                }, transport: transport)
+            let remaining = ContinuousClock.now.duration(to: deadline)
+            guard !closed, remaining > .zero else { throw AccessTestNodeError.unavailable }
+            publisher = newPublisher
+            let operation = UUID()
+            operationID = operation
+            deadlineTask = Task { [weak self, waitForPreparationDeadline] in
+                try? await waitForPreparationDeadline(deadline)
+                guard !Task.isCancelled, let self, self.preparationDeadline == deadline,
+                      ContinuousClock.now >= deadline else { return }
+                self.close()
+            }
+            let request = AccessProxyEntryPrepareRequest(operationID: operation, deadline: remaining)
+            let result = try await withCheckedThrowingContinuation { continuation in
+                preparationWaiter = continuation
+                // The publisher owns native startup and disposal of its late
+                // result. Closing this page only resolves its own wait.
+                Task { [weak self] in
+                    guard self?.preparationWaiter != nil else { return }
+                    guard ContinuousClock.now < deadline else {
+                        self?.close()
+                        return
+                    }
+                    do {
+                        let result = try await newPublisher.prepare(request)
+                        self?.finishPreparation(.success(result))
+                    } catch {
+                        self?.finishPreparation(.failure(error))
+                    }
+                }
+            }
+            guard !closed, ContinuousClock.now < deadline,
+                  (try? repository.revision(isPrivate: isPrivate)) == revision,
+                  result.endpoint.transport == transport,
+                  newPublisher.validateReady(result) else { throw AccessTestNodeError.unavailable }
+            let storeKey = AccessHostStoreKey(scopeID: "test-" + id.uuidString, host: host, isPrivate: isPrivate)
+            guard newPublisher.retain(result.endpoint, for: storeKey) else { throw AccessTestNodeError.unavailable }
+            key = storeKey
+            guard registry.setEndpoint(result.endpoint, scopeID: storeKey.scopeID, host: host, isPrivate: isPrivate),
+                let store = registry.storeForTab(tabID: id.uuidString, scopeID: storeKey.scopeID,
+                isPrivate: isPrivate, targetHost: host, boundHost: nil, intent: .on),
+                store.proxyConfigurations.count == 1,
+                store.proxyConfigurations.first?.allowFailover == false,
+                ContinuousClock.now < deadline else {
+                throw AccessTestNodeError.unavailable
+            }
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = store
+            let view = WKWebView(frame: .zero, configuration: configuration)
+            guard !closed, ContinuousClock.now < deadline else { throw AccessTestNodeError.unavailable }
+            deadlineTask?.cancel()
+            preparationDeadline = nil
+            endpoint = result.endpoint
+            view.navigationDelegate = self
+            webView = view
+            initialBinding = result.endpoint
+            status = "正在加载"
+            currentNavigation = view.load(URLRequest(url: url))
+        } catch {
+            guard !closed else { return }
+            if !preparationDeadlineElapsed {
+                failureDomain = (error as NSError).domain
+                failureCode = (error as NSError).code
+            }
+            close()
+        }
+    }
+
+    private func finishPreparation(_ result: Result<AccessProxyEntryPrepareResult, Error>) {
+        let waiter = preparationWaiter
+        preparationWaiter = nil
+        waiter?.resume(with: result)
+    }
+
+    private var preparationDeadlineElapsed: Bool {
+        preparationDeadline.map { ContinuousClock.now >= $0 } ?? false
+    }
+
+    func close() {
+        guard !closed else { return }
+        if retirementRequestedAt == nil { retirementRequestedAt = .now }
+        if failureDomain == nil, preparationDeadlineElapsed {
+            failureDomain = NSURLErrorDomain
+            failureCode = NSURLErrorTimedOut
+        }
+        closed = true
+        if let observerID { repository.removeObserver(observerID) }
+        observerID = nil
+        status = "连接暂不可用"
+        deadlineTask?.cancel()
+        preparationDeadline = nil
+        if let operationID { publisher?.cancel(operationID: operationID) }
+        finishPreparation(.failure(CancellationError()))
+        if let publisher = publisher as? AccessProxyEntryPublisher {
+            if key != nil { publisher.closeCurrentGeneration() }
+        } else { retire {} }
+    }
+
+    private func retire(_ finish: @escaping () -> Void) {
+        if retirementRequestedAt == nil { retirementRequestedAt = .now }
+        status = "连接暂不可用"
+        retiring = true
+        recordRetirement("requested")
+        guard let view = webView else { finish(); release(); return }
+        retirement = finish
+        // Retain the suspended listener and old document until their exact stop acknowledgement.
+        retiringOwner = self
+        view.stopLoading()
+        view.configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        loadRetirementReplacement(in: view)
+        if retirementNavigation == nil { retryRetirementReplacement(in: view) }
+    }
+
+    private func loadRetirementReplacement(in view: WKWebView) {
+        // Give the local replacement a host-bearing identity under the proxied store.
+        // loadHTMLString does not fetch this synthetic HTTPS URL.
+        retirementNavigation = view.loadHTMLString("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'\">", baseURL: retirementURL)
+        recordRetirement(retirementNavigation == nil ? "replacement-not-created" : "replacement-created")
+    }
+
+    private func retryRetirementReplacement(in view: WKWebView) {
+        guard retiring, retirement != nil, view === webView, !retirementRetryUsed else { return }
+        retirementRetryUsed = true
+        // An interrupted navigation can never become an acknowledgement later.
+        // Keep the same suspended endpoint and retry only the inert local document,
+        // after the current policy/failure callback has returned. No target replay.
+        retirementNavigation = nil
+        recordRetirement("replacement-retry-scheduled")
+        Task { @MainActor [weak self, weak view] in
+            guard let self, let view, self.retirement != nil, view === self.webView else { return }
+            self.recordRetirement("replacement-retried")
+            self.loadRetirementReplacement(in: view)
+        }
+    }
+
+    private func recordRetirement(_ event: String) {
+        if retirementEvents.count == 32 { retirementEvents.removeFirst() }
+        retirementEvents.append(event)
+    }
+
+    private func release() {
+        if let key { publisher?.release(for: key) }
+        if let operationID { publisher?.cancel(operationID: operationID) }
+        key = nil
+        endpoint = nil
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if retiring {
+            guard webView === self.webView, let navigation, navigation === retirementNavigation,
+                  let finish = retirement else { recordRetirement("other-commit"); return }
+            retirementCommittedAt = .now
+            recordRetirement("replacement-committed")
+            retirement = nil
+            finish()
+            release()
+            retiringOwner = nil
+            return
+        }
+        if let navigation, navigation === currentNavigation { committedMainFrame = true }
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        if retiring { recordRetirement(navigation != nil && navigation === retirementNavigation ? "replacement-started" : "other-start") }
+        guard !retiring, let navigation else { return }
+        currentNavigation = navigation
+        committedMainFrame = false
+        status = "正在加载"
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if retiring { recordRetirement(navigation != nil && navigation === retirementNavigation ? "replacement-finished" : "other-finish") }
+        if !retiring, let navigation, navigation === currentNavigation { status = "已连接" }
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        if !retiring, let navigation, navigation === currentNavigation { serverRedirectCount += 1 }
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if retiring { recordRetirement("provisional-failure-" + String((error as NSError).code)) }
+        if retiring, webView === self.webView, let navigation, navigation === retirementNavigation {
+            retirementNavigation = nil
+            retryRetirementReplacement(in: webView)
+        }
+        if ownsFailure(navigation, error: error) {
+            failureDomain = (error as NSError).domain
+            failureCode = (error as NSError).code
+            close()
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if retiring { recordRetirement("navigation-failure-" + String((error as NSError).code)) }
+        if retiring, webView === self.webView, let navigation, navigation === retirementNavigation {
+            retirementNavigation = nil
+            retryRetirementReplacement(in: webView)
+        }
+        if ownsFailure(navigation, error: error) {
+            failureDomain = (error as NSError).domain
+            failureCode = (error as NSError).code
+            close()
+        }
+    }
+
+    private func ownsFailure(_ navigation: WKNavigation?, error: Error) -> Bool {
+        let failure = error as NSError
+        guard !retiring, !(failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled),
+              let navigation else { return false }
+        return navigation === currentNavigation
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard webView === self.webView else { return }
+        recordRetirement("web-content-process-terminated")
+        // Termination is an error, never a successful document-retirement ack.
+        // A fresh inert replacement must still commit before the port is freed.
+        if !retiring {
+            failureDomain = WKError.errorDomain
+            failureCode = WKError.Code.webContentProcessTerminated.rawValue
+            close()
+        }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        if response.isForMainFrame, !retiring {
+            httpStatus = (response.response as? HTTPURLResponse)?.statusCode
+            if !observedMainFrameResponse, serverRedirectCount == 0 { initialHTTPStatus = httpStatus }
+            observedMainFrameResponse = true
+            if !response.canShowMIMEType { localPolicyRejection = "unsupported-mime-type" }
+        }
+        decisionHandler(response.canShowMIMEType ? .allow : .cancel)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        if retiring {
+            let replacement = action.request.url == retirementURL
+            recordRetirement(replacement ? "replacement-policy-allowed" : "other-policy-denied")
+            if !replacement {
+                let kind = action.request.url?.scheme == "about" ? "about" :
+                    action.request.url?.scheme == "https" ? "https" : "other"
+                let frame = action.targetFrame?.isMainFrame == true ? "main" : "sub-or-new"
+                recordRetirement("denied-" + kind + "-" + frame)
+            }
+            decisionHandler(replacement ? .allow : .cancel)
+            if !replacement, action.targetFrame?.isMainFrame == true {
+                retryRetirementReplacement(in: webView)
+            }
+        } else {
+            if singleNavigation, action.targetFrame?.isMainFrame == true {
+                // HTTP redirects are presented as .other before WebKit reports the
+                // redirect callback. Let the initial provisional load continue;
+                // document scripts cannot execute until its first commit. Once it
+                // commits, all further top-level actions are separate navigations.
+                let initialRedirect = !committedMainFrame && action.navigationType == .other
+                guard !sentMainFrame || initialRedirect else {
+                    localPolicyRejection = "additional-top-level-navigation"
+                    decisionHandler(.cancel)
+                    failureDomain = "AdditionalTopLevelNavigation"
+                    failureCode = 1
+                    close()
+                    return
+                }
+                sentMainFrame = true
+            }
+            let scheme = action.request.url?.scheme
+            let allowed = scheme == "https" && !action.shouldPerformDownload
+            if !allowed, action.targetFrame?.isMainFrame == true {
+                localPolicyRejection = action.shouldPerformDownload ? "download-navigation" : "non-https-navigation"
+            }
+            if allowed, action.targetFrame?.isMainFrame == true {
+                let continuesProvisional = !committedMainFrame && action.navigationType == .other
+                if sawMainFrameAction && !continuesProvisional {
+                    // Policy precedes didStart. Ignore the old navigation even if
+                    // its cancellation is delivered before the new didStart.
+                    currentNavigation = nil
+                    committedMainFrame = false
+                }
+                sawMainFrameAction = true
+            }
+            decisionHandler(allowed ? .allow : .cancel)
+        }
+    }
+}

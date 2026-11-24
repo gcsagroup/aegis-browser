@@ -384,6 +384,10 @@
 		FE9F0161923B4F3B8113E7BA /* AccessSOCKS5InboundParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C847A626F65D47D1D17E704 /* AccessSOCKS5InboundParser.swift */; };
 		FF0A91425480299B9A465E34 /* ExternalPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2D2FFC6E99254E69EFC1E7 /* ExternalPageLink.swift */; };
 		FFD0D8F1BB9920FE7C0C3B35 /* ThreeXUISubscriptionRedirectFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EEC6BC393F5B54A72EFBC2B /* ThreeXUISubscriptionRedirectFixtureTests.swift */; };
+		54E49E445CD6C20C7655974F /* AccessTestNodeEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 726F6C2DE67B2577C793481D /* AccessTestNodeEditorTests.swift */; };
+		E177F2E434D17AE05D898DF2 /* AccessTestNodeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D41ABAFC3BD71A202D11BC /* AccessTestNodeViews.swift */; };
+		E8B84191174402DB083F8AFA /* AccessTestNodeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B50A15B5EA6602740DA3945 /* AccessTestNodeEditor.swift */; };
+		FE428CCFC1490FE96988057C /* AccessTestNode.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E1BC3C9EC5D9A8F5CF6FF41A /* AccessTestNode.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -919,6 +923,10 @@
 		FC3FF8FFFFB7624BE852E341 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCenterView.swift; sourceTree = "<group>"; };
 		FDEB860E4BF7C92C09B917CB /* BrowserOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserOperationsView.swift; sourceTree = "<group>"; };
+		31D41ABAFC3BD71A202D11BC /* AccessTestNodeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessTestNodeViews.swift; sourceTree = "<group>"; };
+		5B50A15B5EA6602740DA3945 /* AccessTestNodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessTestNodeEditor.swift; sourceTree = "<group>"; };
+		726F6C2DE67B2577C793481D /* AccessTestNodeEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessTestNodeEditorTests.swift; sourceTree = "<group>"; };
+		E1BC3C9EC5D9A8F5CF6FF41A /* AccessTestNode.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AccessTestNode.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1102,6 +1110,7 @@
 				8639BBDA3C7A77E352404520 /* AccessProxyRecoveryViewTests.swift */,
 				F2E3ECA8DE63818F6343B787 /* AccessSiteProxyToggleModelTests.swift */,
 				456A92525770EAEB36370B28 /* AccessSubscriptionUsageTests.swift */,
+				726F6C2DE67B2577C793481D /* AccessTestNodeEditorTests.swift */,
 				A5EAEF8ED14775D028597AA8 /* AccessThreeXUIWebEntryTests.swift */,
 				92F0B7B7172BCFC7AF4AD7AB /* AccessWebKitRoutingCapabilityTests.swift */,
 				BAD0A9BE1373C1BED239FB08 /* AppLanguageTests.swift */,
@@ -1485,6 +1494,9 @@
 				76A7A3DC4F70E812DCA5DA4B /* AccessSiteProxyToggleView.swift */,
 				3E6C902394C2430A497155B6 /* AccessSubscriptionUsageSession.swift */,
 				A7FF10EF054B2E1A9B253FE0 /* AccessSubscriptionUsageView.swift */,
+				31D41ABAFC3BD71A202D11BC /* AccessTestNodeViews.swift */,
+				5B50A15B5EA6602740DA3945 /* AccessTestNodeEditor.swift */,
+				E1BC3C9EC5D9A8F5CF6FF41A /* AccessTestNode.xcstrings */,
 				F8125D6AEB6AD1F1B223D1B9 /* AccessThreeXUIWebEntry.swift */,
 				0CE69F147725CCB975EFDA4B /* AccessUsagePage.swift */,
 				A71C6CF9E940DE74ED2C5C5B /* AccessUsageSummaryView.swift */,
@@ -1890,6 +1902,7 @@
 				DC77D9043FD789C47428971A /* Assets.xcassets in Resources */,
 				966EA9CF1919C20609D86F5A /* InfoPlist.strings in Resources */,
 				F8BA4DB858988A9CEDBA5BB9 /* Localizable.xcstrings in Resources */,
+				FE428CCFC1490FE96988057C /* AccessTestNode.xcstrings in Resources */,
 				C97391F838CD807B58557C14 /* PrivacyInfo.xcprivacy in Resources */,
 				48C622C40381439576402C2A /* ThirdPartyNotices.txt in Resources */,
 				34CAF16DE691E1CC97FEA976 /* _locales in Resources */,
@@ -2183,6 +2196,8 @@
 				C53281994D7A64D56514744D /* AccessSiteProxyToggleView.swift in Sources */,
 				8F1191F2E7F99D45A44715A5 /* AccessSubscriptionUsageSession.swift in Sources */,
 				5605CEDA844AB6D0C7B46FA6 /* AccessSubscriptionUsageView.swift in Sources */,
+				E177F2E434D17AE05D898DF2 /* AccessTestNodeViews.swift in Sources */,
+				E8B84191174402DB083F8AFA /* AccessTestNodeEditor.swift in Sources */,
 				03260D511FCB04A738F9D49F /* AccessThreeXUIWebEntry.swift in Sources */,
 				5DF6C5DD65244348EE137046 /* AccessUsagePage.swift in Sources */,
 				857C11DBFB6FC8DD89F67A46 /* AccessUsageSummaryView.swift in Sources */,
@@ -2282,6 +2297,7 @@
 				A7982EBA1F2A58A980A4C00F /* AccessSiteSessionControllerTests.swift in Sources */,
 				E47B18287F4109FDBDB633A9 /* AccessSiteSessionFaultTests.swift in Sources */,
 				CD318826AF80CE30677BD379 /* AccessSubscriptionUsageTests.swift in Sources */,
+				54E49E445CD6C20C7655974F /* AccessTestNodeEditorTests.swift in Sources */,
 				BE30DFF3E6CC18A7B4A48FE0 /* AccessThreeXUIWebEntryTests.swift in Sources */,
 				D2EC2DA381CB86BB45A7C476 /* AccessWebKitRoutingCapabilityTests.swift in Sources */,
 				66B205148868B0DA0BCC1A41 /* AccessXrayAssetPinTests.swift in Sources */,
@@ -2717,6 +2733,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_ACCESS_RELEASE_CHANNEL = release;
+				AEGIS_ACCESS_INTERNAL_OPTIONS = NO;
 				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -2781,6 +2798,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_ACCESS_RELEASE_CHANNEL = dev;
+				AEGIS_ACCESS_INTERNAL_OPTIONS = YES;
 				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

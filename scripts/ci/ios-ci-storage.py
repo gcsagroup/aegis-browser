@@ -303,7 +303,7 @@ def prepare(environment, runner_environment, runner_name, *, config_path=CONFIG)
     ordinary_directory(root)
     require(root.stat().st_dev == volume.stat().st_dev, "job backing differs from its admitted volume")
     require(not acl_entries(root), "new private job directory has an ACL")
-    for name in ("tmp", "DerivedData", "SourcePackages", "PackageCache", "ModuleCache"):
+    for name in ("SourcePackages", "PackageCache", "ModuleCache"):
         (root / name).mkdir(mode=0o700)
     checkout_archive_source(root, environment, metadata)
     seed_digest, seed_count = (seed_artifacts(base, root / "PackageCache", volume)
@@ -320,7 +320,24 @@ def prepare(environment, runner_environment, runner_name, *, config_path=CONFIG)
     return root
 
 
-def seal(root, environment):
+def seal_derived_data(root, derived, environment):
+    scratch = Path(environment["IOS_CI_SCRATCH"])
+    require(scratch.parent == root.parent and scratch.name.startswith(".aegis-ios-scratch-")
+            and scratch.resolve(strict=True) == scratch and derived == scratch / "DerivedData",
+            "linker evidence is outside the current archive scratch")
+    ordinary_directory(scratch)
+    ordinary_directory(derived)
+    info = scratch.stat()
+    derived_info = derived.stat()
+    require(f"{info.st_dev}:{info.st_ino}" == environment.get("IOS_CI_SCRATCH_ID")
+            and info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) == 0o700
+            and f"{derived_info.st_dev}:{derived_info.st_ino}" == environment.get("IOS_CI_DERIVED_ID")
+            and derived_info.st_uid == os.getuid() and derived_info.st_dev == info.st_dev == root.stat().st_dev,
+            "archive scratch identity changed")
+    return derived
+
+
+def seal(root, environment, *, derived=None):
     root = Path(root)
     ordinary_directory(root)
     state, _ = private_json(root / ".storage-state.json")
@@ -346,11 +363,12 @@ def seal(root, environment):
     embedded_core = None
     source_lock = workspace / "apps/ios/EmbeddedCore/embedded-core-lock.json"
     if source_lock.is_file():
+        derived = seal_derived_data(root, derived, environment)
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
         import ios_embedded_core as verifier
         embedded_core = verifier.verify(workspace, source_lock, root / "EmbeddedCore")
         embedded_core.update(verifier.verify_bundle(archive / "Products/Applications/Aegis.app", root / "EmbeddedCore",
-                                                    root / "DerivedData", "device"))
+                                                    derived, "device", owned_linker_paths=True))
     target = root / "Aegis.xcarchive.zip"
     require(not target.exists() and not target.is_symlink(), "archive evidence already exists")
     # Fixed archiver operation; both operands are absolute paths inside the revalidated job root.
@@ -373,6 +391,7 @@ def main():
     prepare_parser.add_argument("--runner-name", required=True)
     seal_parser = sub.add_parser("seal")
     seal_parser.add_argument("--root", required=True, type=Path)
+    seal_parser.add_argument("--derived", required=True, type=Path)
     doctor_parser = sub.add_parser("doctor")
     doctor_parser.add_argument("--runner-name", required=True)
     args = parser.parse_args()
@@ -382,7 +401,7 @@ def main():
             stream.write(f"root={root}\n")
             stream.write(f"source={root / 'Source'}\n")
     elif args.operation == "seal":
-        seal(args.root, os.environ)
+        seal(args.root, os.environ, derived=args.derived)
     else:
         root, volume, enrollment = host_storage(args.runner_name, CONFIG)
         require(available_bytes(volume) >= MIN_FREE_BYTES, "unsigned iOS CI storage capacity is below 20 GiB")

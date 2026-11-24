@@ -12,7 +12,7 @@ export function writeInputManifest(repoRoot, destination, embeddedProducts) {
     'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared',
     'scripts/release/prepare-ios-package-core.sh', 'scripts/release/prepare-ios-access-core.sh',
     'scripts/release/build-ios-access-core.sh', 'scripts/release/record-ios-access-core-digests.sh',
-    'scripts/release/ios_embedded_core.py',
+    'scripts/release/ios_embedded_core.py', 'scripts/release/ios_core_build.py',
   ], {cwd: repoRoot, maxBuffer: 16 * 1024 * 1024}).toString('utf8');
   const files = [...new Set(output.split('\0').filter(Boolean))].map(file => [file, path.join(repoRoot, file)]);
   if (embeddedProducts) {

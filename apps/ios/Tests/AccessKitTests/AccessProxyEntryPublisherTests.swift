@@ -62,6 +62,19 @@ final class AccessProxyEntryPublisherTests: XCTestCase {
         XCTAssertFalse(publisher.validateReady(wrong))
     }
 
+    func testReadyAndRetentionRejectForgedTransportOrPort() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in self.provision(generation: generation) }
+        let result = try await publisher.prepare(.init(operationID: UUID(), deadline: .seconds(5)))
+        let key = AccessHostStoreKey(scopeID: "ordinary", host: try AccessSiteHost("a.example"), isPrivate: false)
+        for changeTransport in [false, true] {
+            var forged = result.endpoint
+            if changeTransport { forged.transport = .socks5 } else { forged.port += 1 }
+            XCTAssertFalse(publisher.validateReady(.init(operationID: result.operationID, endpoint: forged)))
+            XCTAssertFalse(publisher.retain(forged, for: key))
+        }
+        publisher.cancel(operationID: result.operationID)
+    }
+
     func testClosedGenerationDoesNotBecomeReadyAgain() async throws {
         let publisher = AccessProxyEntryPublisher { generation, _ in
             self.provision(generation: generation)
@@ -191,6 +204,29 @@ final class AccessProxyEntryPublisherTests: XCTestCase {
             XCTFail("意外错误 \(error)")
         }
         XCTAssertNil(publisher.currentEndpoint)
+    }
+
+    func testUnhealthyPublishedGenerationCannotBeReusedBeforeTheHealthPoll() async throws {
+        var healthy = true
+        var stopped: [String] = []
+        let publisher = AccessProxyEntryPublisher(provision: { generation, _ in
+            healthy = true
+            return self.provision(generation: generation, identity: "entry-\(generation)")
+        }, shutdown: { stopped.append($0) }, healthCheck: { healthy })
+        let first = try await publisher.prepare(.init(operationID: UUID(), deadline: .seconds(15)))
+        let key = AccessHostStoreKey(scopeID: "ordinary", host: try AccessSiteHost("example.invalid"), isPrivate: false)
+        healthy = false
+        XCTAssertNil(publisher.currentEndpoint)
+        XCTAssertFalse(publisher.validateReady(first))
+        XCTAssertFalse(publisher.retain(first.endpoint, for: key))
+        let second = try await publisher.prepare(.init(operationID: UUID(), deadline: .seconds(15)))
+        XCTAssertEqual(stopped, [first.endpoint.identity])
+        XCTAssertGreaterThan(second.endpoint.generation, first.endpoint.generation)
+        XCTAssertTrue(publisher.validateReady(second))
+        publisher.cancel(operationID: first.operationID)
+        XCTAssertEqual(publisher.currentEndpoint, second.endpoint)
+        publisher.cancel(operationID: second.operationID)
+        XCTAssertEqual(stopped, [first.endpoint.identity, second.endpoint.identity])
     }
 
     func testCancelledReplacementIsStoppedDespiteRetainedFailedGeneration() async throws {

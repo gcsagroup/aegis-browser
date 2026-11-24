@@ -7,6 +7,41 @@ import XCTest
 
 @MainActor
 final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
+    func testRejectedReplacementConsumerDoesNotOutliveItsWaiterOrReleaseOldStore() async throws {
+        var shutdowns: [String] = []
+        let publisher = AccessProxyEntryPublisher(provision: { generation, _ in
+            .init(endpoint: .init(identity: "listener-\(generation)", generation: generation,
+                                  loopbackHost: "127.0.0.1", port: UInt16(18_250 + generation), state: .ready),
+                  listenerReady: true, runtimeHealthy: true, bridgeInstalled: true)
+        }, shutdown: { shutdowns.append($0) })
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher)
+        let key = AccessHostStoreKey(scopeID: "ordinary", host: try AccessSiteHost("retiring.invalid"), isPrivate: false)
+        let oldRequest = AccessProxyEntryPrepareRequest(operationID: UUID(), deadline: .seconds(15))
+        let old = try await publisher.prepare(oldRequest).endpoint
+        XCTAssertTrue(coordinator.retainLandingEndpoint(old, for: key))
+        publisher.cancel(operationID: oldRequest.operationID)
+        let store = try XCTUnwrap(coordinator.registry.storeForTab(tabID: "retiring-tab", scopeID: key.scopeID,
+            isPrivate: false, targetHost: key.host, boundHost: nil, intent: .on))
+        publisher.closeCurrentGeneration()
+        var releasedOldSocket = false
+        coordinator.retireManagedDocuments(identity: old.identity) { releasedOldSocket = true }
+
+        let newRequest = AccessProxyEntryPrepareRequest(operationID: UUID(), deadline: .seconds(15))
+        let replacement = try await publisher.prepare(newRequest).endpoint
+        XCTAssertFalse(coordinator.retainLandingEndpoint(replacement, for: key))
+        publisher.cancel(operationID: newRequest.operationID)
+        XCTAssertNil(publisher.currentEndpoint)
+        XCTAssertEqual(shutdowns, [old.identity, replacement.identity])
+        XCTAssertFalse(releasedOldSocket)
+        XCTAssertFalse(store.proxyConfigurations.isEmpty)
+        XCTAssertEqual(coordinator.registry.endpointSnapshot[key]?.identity, old.identity)
+
+        coordinator.registry.acknowledgeRetiredTab("retiring-tab", key: key, identity: old.identity)
+        XCTAssertTrue(releasedOldSocket)
+        XCTAssertTrue(store.proxyConfigurations.isEmpty)
+        XCTAssertEqual(shutdowns, [old.identity, replacement.identity])
+    }
+
     func testDefaultPrivacyHoldsFirstNavigationAndRemembersOnlyOrdinaryOptOuts() throws {
         let name = "test.locationPrivacy." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
@@ -749,7 +784,7 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(readySnap.attachment, .notAttached)
         XCTAssertEqual(
             AccessSiteProxyToggleModel.attachmentLine(for: readySnap.attachment, intent: readySnap.intent),
-            Aegis.AegisLocalization.string("当前页面仍使用原连接")
+            "当前页面仍使用原连接"
         )
         coordinator.setProxyEnabled(false, for: tab)
         XCTAssertTrue(tab.websiteDataStore === original)
@@ -1386,9 +1421,9 @@ private final class GenerationScript: AccessProxyEntryPublishing {
         retained.contains(result.operationID) && result.endpoint.generation == 2 && result.endpoint.state == .ready
     }
 
-    func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey) -> Bool {
+    func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey, admitting: () -> Bool) -> Bool {
         _ = key
-        return endpoint.generation == 2 && endpoint.state == .ready
+        return endpoint.generation == 2 && endpoint.state == .ready && admitting()
     }
 
     func release(for key: AccessHostStoreKey) {

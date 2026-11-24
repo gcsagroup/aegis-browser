@@ -24,7 +24,9 @@ AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild \
 ```
 
 Preparation builds the pinned bridge in a copy, checks the binding tool pin, and
-leaves the tracked lock unchanged. The output contains the XCFramework, measured
+leaves the tracked lock unchanged. It measures the bridge copy before and after
+gomobile and verifies that digest against the source selected for packaging.
+The output contains the XCFramework, measured
 slice digests, an effective `embedded-core-lock.json`, a build manifest and Xcode's
 input file list. `ci-rebuild` records the actual source-pinned rebuild; the default
 `strict` mode additionally requires the frozen slice digests to match. Neither mode

@@ -56,11 +56,32 @@ public struct AccessRegistration: Codable, Sendable, Equatable, Hashable {
         self.lease = lease
     }
 
+    /// Legacy well-known SOCKS ports are not admitted for app-local listeners.
+    /// This does not constrain any upstream server's port.
+    public var hasAdmittedEndpoint: Bool {
+        endpoint.port != 0 && (transport != .socks5 || endpoint.port != 1080)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try values.decode(AccessRegistrationID.self, forKey: .id),
+                  owner: try values.decode(AccessOwner.self, forKey: .owner),
+                  transport: try values.decode(AccessInboundTransport.self, forKey: .transport),
+                  endpoint: try values.decode(AccessEndpoint.self, forKey: .endpoint),
+                  credentialSlot: try values.decode(AccessCredentialSlot.self, forKey: .credentialSlot),
+                  lease: try values.decode(AccessLease.self, forKey: .lease))
+        guard hasAdmittedEndpoint else { throw AccessContractError.invalidEndpointPort(endpoint.port) }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, owner, transport, endpoint, credentialSlot, lease
+    }
+
     public var generation: UInt64 { lease.generation }
     public var leaseExpiry: Date { lease.expiresAt }
 
     public func isActive(at now: Date, observedGeneration: UInt64) -> Bool {
-        lease.isActive(at: now, observedGeneration: observedGeneration)
+        hasAdmittedEndpoint && lease.isActive(at: now, observedGeneration: observedGeneration)
     }
 
     /// Port recycle / rotate path: same owner+transport, new id + endpoint + lease.
@@ -75,6 +96,9 @@ public struct AccessRegistration: Codable, Sendable, Equatable, Hashable {
         }
         guard lease.generation > self.lease.generation else {
             throw AccessContractError.staleLeaseGeneration(lease.generation)
+        }
+        guard transport != .socks5 || endpoint.port != 1080 else {
+            throw AccessContractError.invalidEndpointPort(endpoint.port)
         }
         return AccessRegistration(
             id: id,

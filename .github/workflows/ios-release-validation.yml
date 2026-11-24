@@ -239,45 +239,16 @@ jobs:
           CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
           CI_RUNNER_NAME: ${{ runner.name }}
         run: python3 -I -B scripts/ci/ios-ci-storage.py prepare --runner-environment "$CI_RUNNER_ENVIRONMENT" --runner-name "$CI_RUNNER_NAME"
-      # Fork PRs land on macos-26 without mise Go; pin the lock's toolchain for both hosted and self-hosted.
-      - name: Install Go for EmbeddedCore prepare
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with:
-          go-version: '1.27.3'
-          cache: false
+      # The supervised worker installs the locked Go release on both runner types.
       - name: Prepare locked EmbeddedCore XCFramework
         env:
           IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
           IOS_CI_SOURCE: ${{ steps.storage.outputs.source }}
         run: |
-          cd -P -- "$IOS_CI_SOURCE" || exit 1
+          cd -P -- "$IOS_CI_SOURCE" 2>/dev/null || exit 1
           test "$PWD" = "$IOS_CI_SOURCE" || exit 1
-          unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_IMPLICIT_WORK_TREE GIT_INDEX_FILE \
-            GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_QUARANTINE_PATH \
-            GIT_GRAFT_FILE GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_SHALLOW_FILE \
-            GIT_NAMESPACE GIT_ATTR_SOURCE
-          export MISE_TRUSTED_CONFIG_PATHS="${MISE_TRUSTED_CONFIG_PATHS:-$PWD}"
-          if command -v mise >/dev/null 2>&1; then
-            GOROOT="$(mise where go@1.27.3 2>/dev/null || true)"
-            if [[ -n "${GOROOT:-}" ]]; then
-              export GOROOT
-              export PATH="$GOROOT/bin:${GOPATH:-$HOME/go}/bin:$PATH"
-            fi
-          fi
-          export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
-          command -v go >/dev/null || { echo "go missing on archive runner" >&2; exit 2; }
-          go version | grep -F 'go1.27.3' >/dev/null || { echo "expected go1.27.3 on archive runner" >&2; go version >&2; exit 2; }
-          if ! command -v gomobile >/dev/null 2>&1; then
-            go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20261011034528-197770444867
-            export PATH="${GOPATH:-$HOME/go}/bin:$PATH"
-            gomobile init
-          fi
-          # Both the bridge and its receipt must use the job-private checkout.
-          AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild \
-            bash scripts/release/prepare-ios-access-core.sh \
-              "$PWD/apps/ios/EmbeddedCore/embedded-core-lock.json" \
-              "$IOS_CI_ROOT/EmbeddedCore"
-          test -d "$IOS_CI_ROOT/EmbeddedCore/AegisEmbeddedCore.xcframework"
+          exec python3 -I -B "$IOS_CI_SOURCE/scripts/ci/ios-archive-supervisor.py" \
+            --prepare-embedded-core "$BASH" "$IOS_CI_SOURCE/scripts/ci/run-ios-embedded-core-prepare.sh"
       - name: Compile uncredentialed native archive
         env:
           IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
