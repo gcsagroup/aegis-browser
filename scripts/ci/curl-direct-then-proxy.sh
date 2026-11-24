@@ -40,14 +40,14 @@ curl_ci_download() {
     route="${routes[$attempt]}"
     case "$route" in
       direct)
-        if "${base[@]}" "${extra[@]}" --proxy '' --noproxy '*' "$url"; then
+        if "${base[@]}" ${extra[@]+"${extra[@]}"} --proxy '' --noproxy '*' "$url"; then
           return 0
         fi
         ;;
       proxy)
         if [[ -z "$proxy" ]]; then
           printf 'Skipping proxy attempt %s: no HTTP(S) proxy configured\n' "$((attempt + 1))" >&2
-        elif "${base[@]}" "${extra[@]}" --proxy "$proxy" --noproxy '' "$url"; then
+        elif "${base[@]}" ${extra[@]+"${extra[@]}"} --proxy "$proxy" --noproxy '' "$url"; then
           return 0
         fi
         ;;

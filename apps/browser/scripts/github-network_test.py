@@ -337,6 +337,80 @@ class GitHubNetworkTests(unittest.TestCase):
                     text,
                 )
 
+    def run_download(self, succeed_at, proxy=None, extra=()):
+        helper = ROOT / 'scripts/ci/curl-direct-then-proxy.sh'
+        log = self.root / 'curl-log-matrix.jsonl'
+        output = self.root / 'download-matrix.bin'
+        fixture_bin = self.root / 'curl-bin-matrix'
+        fixture_bin.mkdir()
+        body = '''import json, os, pathlib, sys
+log = pathlib.Path(os.environ['CURL_LOG'])
+with log.open('a', encoding='utf-8') as handle:
+    handle.write(json.dumps({'args': sys.argv[1:]}) + chr(10))
+count = sum(1 for _ in log.open(encoding='utf-8'))
+if count < int(os.environ['SUCCEED_AT']):
+    raise SystemExit(7)
+pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'ok')
+'''
+        curl = fixture_bin / 'curl'
+        curl.write_text('#!' + sys.executable + chr(10) + body, encoding='utf-8')
+        curl.chmod(0o700)
+        environment = {
+            **self.environment,
+            'PATH': str(fixture_bin) + ':' + os.environ['PATH'],
+            'CURL_LOG': str(log),
+            'SUCCEED_AT': str(succeed_at),
+            'CURL_CI_BACKOFF_BASE_SECONDS': '0',
+        }
+        if proxy:
+            environment['https_proxy'] = proxy
+        script = chr(10).join([
+            'set -euo pipefail',
+            'source "$1"',
+            'curl_ci_download "$2" "$3" "${@:4}"',
+        ])
+        result = subprocess.run(
+            ['/bin/bash', '-c', script, 'download-matrix', str(helper), str(output),
+             'https://github.com/fixture/repo/archive.tar.gz', *extra],
+            env=environment, capture_output=True, text=True, timeout=10)
+        rows = []
+        if log.exists():
+            rows = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+        return result, rows, output
+
+    def test_ci_github_download_without_proxy_skips_proxy_attempts(self):
+        result, rows, output = self.run_download(succeed_at=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.read_bytes(), b'ok')
+        self.assertEqual(len(rows), 3)
+        for row in rows:
+            args = row['args']
+            self.assertEqual(args[args.index('--proxy') + 1], '')
+            self.assertEqual(args[args.index('--noproxy') + 1], '*')
+        self.assertEqual(result.stderr.count('Skipping proxy attempt'), 2)
+
+    def test_ci_github_download_forwards_extra_arguments_under_nounset(self):
+        result, rows, _output = self.run_download(
+            succeed_at=1, proxy=PROXY, extra=('--silent', '--show-error'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(rows), 1)
+        args = rows[0]['args']
+        self.assertIn('--silent', args)
+        self.assertIn('--show-error', args)
+        self.assertEqual(args[-1], 'https://github.com/fixture/repo/archive.tar.gz')
+
+    def test_ci_github_download_without_extra_arguments_under_nounset(self):
+        result, rows, output = self.run_download(succeed_at=1, proxy=PROXY)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(output.read_bytes(), b'ok')
+
+    def test_ci_github_download_fails_after_all_five_attempts(self):
+        result, rows, _output = self.run_download(succeed_at=99, proxy=PROXY)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(rows), 5)
+        self.assertIn('Download failed after', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
