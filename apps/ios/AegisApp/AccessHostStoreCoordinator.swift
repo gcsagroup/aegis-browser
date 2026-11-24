@@ -26,9 +26,21 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     private static let directSitesKey = "browser.locationPrivacy.directSites"
     private static let accelerationModeKey = "browser.websiteAcceleration.mode"
     private static let accelerationChoicesKey = "browser.websiteAcceleration.siteChoices.v1"
+    private static let accelerationCategoriesKey = "browser.websiteAcceleration.categories"
     private let websiteRoutePolicy: AccessWebsiteRoutePolicy
+    let geoSiteCache: AccessGeoSiteCache?
+    private var geoSiteView: AccessGeoSiteCache.View?
+    private var comparingWebsitePolicy = false
+    private var geoSiteRestoreTask: Task<Void, Never>?
+    private let geoSiteTransport: AccessGeoSiteUpdateTransport?
+    private var geoSiteForegroundWindows: [UUID: UUID] = [:]
+    private var geoSiteRefresh: (context: AccessGeoSiteCache.Context, task: Task<Void, Never>)?
+    private static let geoSiteRetry: [TimeInterval] = [60, 300, 1_800, 21_600]
     @Published private(set) var websiteAccelerationMode: AccessWebsiteAccelerationMode = .manual
     private var websiteRouteChoices: [AccessSiteHost: AccessWebsiteRouteChoice] = [:]
+    private let categoryOwner = UUID()
+    private var categorySelectionRevision: UInt64 = 0
+    private var selectedWebsiteCategories: Set<AccessGeoSiteCategory> = []
     private var policyEpoch: UInt64 = 0
     // Website preparation and inherited landings can warm an endpoint.
     // Legacy default privacy and recovery need their own authorization.
@@ -56,7 +68,6 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     /// Site host the probe was started for; results must not survive an in-place navigation.
     private var probeSiteHosts: [String: AccessSiteHost] = [:]
     private var probeRunner = AccessSiteProbeRunner()
-    var tabs: () -> [BrowserTab] = { [] }
     private var sweepTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
 
@@ -68,6 +79,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         defaultLocationPrivacy: Bool = false,
         locationPreferences: UserDefaults? = nil,
         websiteRoutePolicy: AccessWebsiteRoutePolicy = AccessWebsiteRoutePolicy(),
+        geoSiteCache: AccessGeoSiteCache? = nil,
+        geoSiteTransport: AccessGeoSiteUpdateTransport? = nil,
         registry: AccessHostDataStoreRegistry = AccessHostDataStoreRegistry()
     ) {
         self.registry = registry
@@ -78,6 +91,20 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         self.defaultLocationPrivacy = defaultLocationPrivacy
         self.locationPreferences = locationPreferences
         self.websiteRoutePolicy = websiteRoutePolicy
+        self.geoSiteCache = channel == .dev ? geoSiteCache : nil
+        self.geoSiteTransport = self.geoSiteCache == nil ? nil : geoSiteTransport
+        geoSiteView = self.geoSiteCache?.view
+        if self.releaseChannel == .dev {
+            if locationPreferences?.object(forKey: Self.accelerationCategoriesKey) == nil {
+                selectedWebsiteCategories = [.debian]
+                if self.geoSiteCache == nil {
+                    locationPreferences?.set([AccessGeoSiteCategory.debian.rawValue], forKey: Self.accelerationCategoriesKey)
+                }
+            } else {
+                let stored = locationPreferences?.stringArray(forKey: Self.accelerationCategoriesKey) ?? []
+                selectedWebsiteCategories = Set(stored.compactMap(AccessGeoSiteCategory.init(rawValue:)))
+            }
+        }
         if self.releaseChannel == .dev, let locationPreferences {
             websiteAccelerationMode = locationPreferences.string(forKey: Self.accelerationModeKey)
                 .flatMap(AccessWebsiteAccelerationMode.init(rawValue:)) ?? .manual
@@ -94,6 +121,10 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             explicitDirect.insert(key)
             intents[key] = .off
         }
+        if let selection = geoSiteView?.selection {
+            websiteAccelerationMode = selection.mode
+            selectedWebsiteCategories = selection.categories
+        }
         let publisher = self.publisher
         registry.onRetire = { [weak self] key in
             self?.defaultProtectedHosts.remove(key)
@@ -105,11 +136,18 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                 self?.applySharedState(endpoint)
             }
         }
+        if let cache = self.geoSiteCache {
+            cache.onChange = { [weak self] view in self?.applyGeoSiteView(view) }
+            let migration = AccessGeoSiteCache.Selection(mode: websiteAccelerationMode, categories: selectedWebsiteCategories)
+            geoSiteRestoreTask = Task { await cache.restore(migrating: migration) }
+        }
     }
 
     deinit {
         stateTask?.cancel()
         sweepTask?.cancel()
+        geoSiteRestoreTask?.cancel()
+        geoSiteRefresh?.task.cancel()
         timeoutTasks.values.forEach { $0.cancel() }
         probeTasks.values.forEach { $0.cancel() }
     }
@@ -123,11 +161,112 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                 try? await Task.sleep(for: .seconds(15))
                 guard !Task.isCancelled else { return }
                 self?.registry.sweep(now: Date())
+                self?.checkpointGeoSiteClock()
             }
         }
     }
 
     func releaseIdleResources() { registry.releaseIdleStores() }
+
+    var geoSiteStatus: AccessGeoSiteCache.Status? { geoSiteView?.status }
+
+    func setGeoSiteForeground(window: UUID, eligible: Bool) {
+        guard geoSiteCache != nil else { return }
+        if eligible {
+            guard geoSiteForegroundWindows[window] == nil else { return }
+            geoSiteForegroundWindows[window] = UUID()
+            checkpointGeoSiteClock()
+        } else {
+            geoSiteForegroundWindows[window] = nil
+            if let geoSiteTransport { reconcileGeoSiteRefresh(using: geoSiteTransport) }
+        }
+    }
+
+    private func reconcileGeoSiteRefresh(using transport: AccessGeoSiteUpdateTransport) {
+        guard let cache = geoSiteCache else { return }
+        let context = geoSiteForegroundWindows.isEmpty ? nil : cache.updateContext()
+        if let running = geoSiteRefresh {
+            if context != running.context { running.task.cancel() }
+            return
+        }
+        guard let context, cache.refreshState.nextAttempt.map({ $0 <= cache.effectiveTime }) != false else { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.refreshGeoSite(cache, transport: transport, context: context)
+        }
+        geoSiteRefresh = (context, task)
+    }
+
+    private func refreshGeoSite(_ cache: AccessGeoSiteCache, transport: AccessGeoSiteUpdateTransport,
+                                context: AccessGeoSiteCache.Context) async {
+        defer {
+            geoSiteRefresh = nil
+            if cache.updateContext() != context || Task.isCancelled {
+                reconcileGeoSiteRefresh(using: transport)
+            }
+        }
+        guard canPublishGeoSiteRefresh(context) else { return }
+        let now = cache.effectiveTime
+        let prior = cache.refreshState
+        var attempting = prior
+        attempting.lastRequest = now
+        attempting.nextAttempt = now.addingTimeInterval(Self.geoSiteRetry[min(prior.failureCount, 3)])
+        do { try cache.setRefreshState(attempting, using: context) }
+        catch { return }
+
+        do {
+            let conditional = await cache.conditionalReceipt(using: context)
+            guard canPublishGeoSiteRefresh(context) else { return }
+            let result = try await transport.load(etag: conditional?.etag, highWater: cache.highWater, now: now)
+            guard canPublishGeoSiteRefresh(context) else { return }
+            var refreshed = AccessGeoSiteCache.RefreshState(nextAttempt: cache.effectiveTime.addingTimeInterval(86_400),
+                                                            lastRequest: now)
+            switch result {
+            case .candidate(let candidate, let etag):
+                refreshed.etag = etag
+                try await cache.apply(candidate, using: context, refreshed: refreshed)
+            case .notModified(let responseETag):
+                guard let conditional, responseETag == nil || responseETag == conditional.etag,
+                      await cache.conditionalReceipt(using: context) == conditional,
+                      canPublishGeoSiteRefresh(context) else { throw AccessGeoSiteCache.Failure.stale }
+                refreshed.etag = conditional.etag
+                try cache.setRefreshState(refreshed, using: context)
+            }
+        } catch {
+            guard canPublishGeoSiteRefresh(context) else { return }
+            let failures = min(prior.failureCount + 1, Self.geoSiteRetry.count)
+            let next = cache.effectiveTime.addingTimeInterval(Self.geoSiteRetry[failures - 1])
+            try? cache.setRefreshState(.init(failureCount: failures, nextAttempt: next, lastRequest: now), using: context)
+        }
+    }
+
+    private func canPublishGeoSiteRefresh(_ context: AccessGeoSiteCache.Context) -> Bool {
+        !Task.isCancelled && !geoSiteForegroundWindows.isEmpty && geoSiteCache?.updateContext() == context
+    }
+
+    func checkpointGeoSiteClock() {
+        if let cache = geoSiteCache, cache.status == .unavailable, cache.selection == nil {
+            let migration = AccessGeoSiteCache.Selection(mode: websiteAccelerationMode, categories: selectedWebsiteCategories)
+            geoSiteRestoreTask = Task { await cache.restore(migrating: migration) }
+        } else {
+            try? geoSiteCache?.checkpointClock()
+        }
+        if let geoSiteTransport { reconcileGeoSiteRefresh(using: geoSiteTransport) }
+    }
+
+    private func applyGeoSiteView(_ view: AccessGeoSiteCache.View) {
+        let selection = view.selection
+        let modeChanged = selection.map { $0.mode != websiteAccelerationMode } == true
+        changeWebsitePolicy(modeChanged ? .mode : .catalogue) {
+            geoSiteView = view
+            if let selection {
+                websiteAccelerationMode = selection.mode
+                selectedWebsiteCategories = selection.categories
+            }
+            categorySelectionRevision &+= 1
+        }
+        if let geoSiteTransport { reconcileGeoSiteRefresh(using: geoSiteTransport) }
+    }
 
     private func accelerationAllowed(for key: AccessHostStoreKey) -> Bool {
         accelerationAllowed(scopeID: key.scopeID, isPrivate: key.isPrivate)
@@ -150,9 +289,85 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
 
     func setWebsiteAccelerationMode(_ mode: AccessWebsiteAccelerationMode, for tab: BrowserTab) {
         guard offersWebsiteAcceleration(for: tab), websiteAccelerationMode != mode else { return }
-        changeWebsitePolicy {
+        if let geoSiteCache {
+            try? geoSiteCache.setSelection(.init(mode: mode, categories: selectedWebsiteCategories))
+            return
+        }
+        changeWebsitePolicy(.mode) {
+            categorySelectionRevision &+= 1
             websiteAccelerationMode = mode
             locationPreferences?.set(mode.rawValue, forKey: Self.accelerationModeKey)
+        }
+    }
+
+    struct WebsiteCategories {
+        let catalogue: AccessGeoSiteCatalogue
+        let selected: Set<AccessGeoSiteCategory>
+        let scopes: [AccessGeoSiteCategory: AccessGeoSiteCache.Scope]?
+        let staged: [AccessGeoSiteCategory: AccessGeoSiteCache.StagedScope]
+        fileprivate let owner: UUID
+        fileprivate let selectionRevision: UInt64
+    }
+
+    func websiteCategories(for tab: BrowserTab) -> WebsiteCategories? {
+        guard offersWebsiteAcceleration(for: tab), websiteAccelerationMode == .smart else { return nil }
+        if let geoSiteView, geoSiteView.selection == nil || geoSiteView.status != .ready { return nil }
+        let catalogue = geoSiteView.map { view in
+            let available = view.groups.compactMapValues { scope -> AccessGeoSiteCatalogue.Group? in
+                guard case .available(let group, _) = scope else { return nil }
+                return group
+            }
+            let bundle = AccessGeoSiteCatalogue.bundled
+            return AccessGeoSiteCatalogue(tag: bundle.tag, publishedAt: bundle.publishedAt,
+                                          rawSHA256: bundle.rawSHA256, groups: available)
+        } ?? websiteRoutePolicy.catalogue
+        return WebsiteCategories(catalogue: catalogue, selected: selectedWebsiteCategories, scopes: geoSiteView?.groups,
+                                 staged: geoSiteView?.staged ?? [:],
+                                 owner: categoryOwner, selectionRevision: categorySelectionRevision)
+    }
+
+    func setWebsiteCategory(_ category: AccessGeoSiteCategory, selected: Bool,
+                            from displayed: WebsiteCategories, for tab: BrowserTab) {
+        guard let current = websiteCategories(for: tab), displayed.owner == current.owner,
+              displayed.selectionRevision == current.selectionRevision, displayed.catalogue == current.catalogue,
+              current.scopes != nil || current.catalogue.groups[category] != nil,
+              current.selected.contains(category) != selected else { return }
+        if let geoSiteCache {
+            var categories = selectedWebsiteCategories
+            if selected { categories.insert(category) }
+            else { categories.remove(category) }
+            try? geoSiteCache.setSelection(.init(mode: websiteAccelerationMode, categories: categories))
+            return
+        }
+        changeWebsitePolicy(.catalogue) {
+            if selected { selectedWebsiteCategories.insert(category) }
+            else { selectedWebsiteCategories.remove(category) }
+            categorySelectionRevision &+= 1
+            locationPreferences?.set(AccessGeoSiteCategory.allCases.filter { selectedWebsiteCategories.contains($0) }.map(\.rawValue),
+                                     forKey: Self.accelerationCategoriesKey)
+        }
+    }
+
+    func websiteCategoryProposal(_ category: AccessGeoSiteCategory, for browser: BrowserSession) -> AccessGeoSiteCache.Proposal? {
+        guard geoSiteForegroundWindows[browser.standardProfileID] != nil, let tab = browser.activeTab,
+              websiteCategories(for: tab)?.staged[category] != nil else { return nil }
+        return geoSiteCache?.proposal(for: category)
+    }
+
+    func confirmWebsiteCategory(_ proposal: AccessGeoSiteCache.Proposal, for browser: BrowserSession) async -> Bool {
+        guard let cache = geoSiteCache, let tab = browser.activeTab,
+              let window = geoSiteForegroundWindows[browser.standardProfileID],
+              websiteCategoryProposal(proposal.category, for: browser) == proposal else { return false }
+        let tabRevision = browser.tabSelectionRevision
+        do {
+            try await cache.confirm(proposal) {
+                self.geoSiteForegroundWindows[browser.standardProfileID] == window
+                    && browser.tabSelectionRevision == tabRevision && browser.activeTab === tab
+                    && self.offersWebsiteAcceleration(for: tab)
+            }
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -182,7 +397,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     func setWebsiteRouteChoice(_ choice: AccessWebsiteRouteChoice?, for tab: BrowserTab, displayedHost: AccessSiteHost) {
         guard websiteAccelerationHost(for: tab) == displayedHost,
               websiteRouteChoices[displayedHost] != choice else { return }
-        changeWebsitePolicy(for: displayedHost) {
+        changeWebsitePolicy(.exact(displayedHost)) {
             websiteRouteChoices[displayedHost] = choice
             let stored = Dictionary(uniqueKeysWithValues: websiteRouteChoices.map { ($0.key.rawValue, $0.value.rawValue) })
             locationPreferences?.set(stored, forKey: Self.accelerationChoicesKey)
@@ -194,20 +409,61 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         }
     }
 
-    private func changeWebsitePolicy(for editedHost: AccessSiteHost? = nil, _ change: () -> Void) {
-        let tabs = BrowserSession.openTabs().filter { $0.hostCoordinator === self && offersWebsiteAcceleration(for: $0) }
+    private enum WebsitePolicyChange: Equatable {
+        case mode
+        case exact(AccessSiteHost)
+        case catalogue
+    }
+
+    private func boundWebsiteRouteURL(for tab: BrowserTab) -> URL? {
+        [tab.liveCommittedDocumentURL, tab.addressBarURL].compactMap { $0 }
+            .first { Self.httpHost($0)?.rawValue == tab.boundHostName } ?? tab.requestedURL
+    }
+
+    private func changeWebsitePolicy(_ scope: WebsitePolicyChange, _ change: () -> Void) {
+        comparingWebsitePolicy = true
+        defer { comparingWebsitePolicy = false }
+        let tabs = BrowserSession.openTabs().filter { offersWebsiteAcceleration(for: $0) }
         let wasRequired = Set<UUID>(tabs.compactMap { tab in
-            tab.addressBarURL.map { requiresProxy(tab: tab, url: $0) } == true ? tab.instanceID : nil
+            tab.addressBarURL.map { precludesOriginal(tab: tab, url: $0) } == true ? tab.instanceID : nil
         })
+        let catalogueChange = scope == .catalogue
+        let mayProtectOriginal = catalogueChange || scope == .mode
+        var protectedBindings: Set<UUID> = []
+        var originalDocuments: [UUID: URL] = [:]
+        if mayProtectOriginal {
+            for tab in tabs {
+                if tab.boundHostName != nil {
+                    if let url = boundWebsiteRouteURL(for: tab), requiresProxy(tab: tab, url: url) {
+                        protectedBindings.insert(tab.instanceID)
+                    }
+                } else if let url = tab.liveCommittedDocumentURL, Self.httpHost(url) != nil,
+                          !precludesOriginal(tab: tab, url: url) {
+                    originalDocuments[tab.instanceID] = url
+                }
+            }
+        }
         change()
-        // A mode change invalidates the ordinary policy epoch. An exact edit
-        // retires only operations that depend on the edited host.
-        if editedHost == nil { policyEpoch &+= 1 }
+        // Keep equivalent preparations live on catalogue changes, including
+        // a host still protected by another category or an independent grant.
+        if scope == .mode { policyEpoch &+= 1 }
+        let tabsByID = Dictionary(uniqueKeysWithValues: tabs.map { ($0.instanceID.uuidString, $0) })
         var invalidatedTabs: Set<String> = []
         var affectedKeys: Set<AccessHostStoreKey> = []
         for (id, operation) in operations where accelerationAllowed(for: operation.key) {
-            if let editedHost, operation.key.host != editedHost,
-               operation.landingParent?.host != editedHost { continue }
+            switch scope {
+            case .mode, .catalogue: break
+            case .exact(let editedHost):
+                guard operation.key.host == editedHost || operation.landingParent?.host == editedHost else { continue }
+            }
+            if let tab = tabsByID[operation.tabID] {
+                var checked = operation
+                if scope == .mode, checked.policyEpoch != nil { checked.policyEpoch = policyEpoch }
+                if authorizationStillValid(checked, tab: tab) {
+                    operations[id] = checked
+                    continue
+                }
+            }
             operations.removeValue(forKey: id)
             timeoutTasks.removeValue(forKey: id)?.cancel()
             publisher.cancel(operationID: id)
@@ -219,15 +475,19 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         }
         for key in affectedKeys { releaseUnstoredConsumerIfUnused(key) }
         for tab in tabs {
-            let required = tab.addressBarURL.map { requiresProxy(tab: tab, url: $0) } ?? false
-            let boundURL = [tab.addressBarURL, tab.committedMainFrameURL].compactMap { $0 }
-                .first { Self.httpHost($0)?.rawValue == tab.boundHostName }
-            let mustDetach = tab.boundHostName != nil && !((boundURL ?? tab.requestedURL)
+            let required = tab.addressBarURL.map { precludesOriginal(tab: tab, url: $0) } ?? false
+            let boundURL = boundWebsiteRouteURL(for: tab)
+            let mustDetach = tab.boundHostName != nil && (!catalogueChange || protectedBindings.contains(tab.instanceID))
+                && !((boundURL ?? tab.requestedURL)
                 .map { requiresProxy(tab: tab, url: $0) } ?? false)
+            let newlyProtected = required && !wasRequired.contains(tab.instanceID)
             let interrupted = tab.isLoading && (invalidatedTabs.contains(tab.instanceID.uuidString)
                 || required != wasRequired.contains(tab.instanceID))
+            let retireOriginal = mayProtectOriginal && tab.boundHostName == nil
+                && (tab.isLoading && newlyProtected
+                    || originalDocuments[tab.instanceID].map { precludesOriginal(tab: tab, url: $0) } == true)
             // The address bar can show a pending request while the landing is still displayed.
-            let landingURL = [tab.committedMainFrameURL, boundURL].compactMap { $0 }
+            let landingURL = [tab.liveCommittedDocumentURL, boundURL].compactMap { $0 }
                 .first { tab.parentForProxyLanding($0) != nil }
             if let landingURL, let host = Self.httpHost(landingURL), host.rawValue == tab.boundHostName {
                 let key = AccessHostStoreKey(scopeID: tab.browsingScopeID, host: host, isPrivate: false)
@@ -241,18 +501,26 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                     landingBindings.removeValue(forKey: tab.instanceID.uuidString)
                 }
             }
-            guard mustDetach || interrupted else { continue }
+            guard mustDetach || interrupted || retireOriginal else { continue }
             if mustDetach, let bound = tab.boundHostName.flatMap({ try? AccessSiteHost($0) }) {
-                if let release = registry.retainRetiringDocument(scopeID: tab.browsingScopeID, host: bound, isPrivate: false) {
-                    tab.afterCurrentDocumentBecomesInert(release)
-                }
+                let key = AccessHostStoreKey(scopeID: tab.browsingScopeID, host: bound, isPrivate: false)
+                let release = registry.retainRetiringDocument(scopeID: key.scopeID, host: bound, isPrivate: false)
                 registry.unbind(tab.instanceID.uuidString)
+                if let release {
+                    tab.afterCurrentDocumentBecomesInert { [weak self] in
+                        release()
+                        guard let self, !self.operations.values.contains(where: { $0.key == key }) else { return }
+                        self.registry.releaseIdleStore(for: key)
+                    }
+                }
                 websiteBindings.removeValue(forKey: tab.instanceID.uuidString)
                 landingBindings.removeValue(forKey: tab.instanceID.uuidString)
                 if !interrupted, let pending = tab.pendingAddressNavigation,
                    tab.detachStoreDuringProxyHold(pending) { continue }
             }
-            tab.pauseAfterWebsiteRouteChange(detachStore: mustDetach)
+            if retireOriginal, !interrupted, let pending = tab.pendingAddressNavigation,
+               tab.retireOriginalDocumentDuringProxyHold(pending) { continue }
+            tab.pauseAfterWebsiteRouteChange(detachStore: mustDetach, retireOriginalDocument: retireOriginal)
         }
         revision &+= 1
     }
@@ -338,6 +606,16 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         return navigationIntent(tab: tab, key: key, route: route) == .on
     }
 
+    func isMainFrameRouteIndeterminate(tab: BrowserTab, url: URL) -> Bool {
+        guard let host = Self.httpHost(url), tab.hostCoordinator === self, geoSiteCache != nil else { return false }
+        let key = AccessHostStoreKey(scopeID: tab.browsingScopeID, host: host, isPrivate: tab.profile.isPrivate)
+        return websiteRoute(tab: tab, url: url, key: key) == .indeterminate
+    }
+
+    private func precludesOriginal(tab: BrowserTab, url: URL) -> Bool {
+        requiresProxy(tab: tab, url: url) || isMainFrameRouteIndeterminate(tab: tab, url: url)
+    }
+
     private func websiteChoice(for key: AccessHostStoreKey) -> AccessWebsiteRouteChoice? {
         accelerationAllowed(for: key) ? websiteRouteChoices[key.host] : nil
     }
@@ -345,13 +623,14 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     private enum WebsiteRoute: Equatable {
         case legacy
         case original
+        case indeterminate
         case service
         case landing(LandingRoute)
 
         var requiredPreparation: RoutePreparation? {
             switch self {
             case .service, .landing: .website(self)
-            case .legacy, .original: nil
+            case .legacy, .original, .indeterminate: nil
             }
         }
     }
@@ -381,11 +660,23 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         if allowLanding, let landing = landingRoute(tab: tab, url: url, destination: key) {
             return .landing(landing)
         }
-        guard accelerationAllowed(for: key), websiteAccelerationMode == .smart else { return .legacy }
-        if websiteRoutePolicy.matches(url) { return .service }
+        guard accelerationAllowed(for: key) else { return .legacy }
+        let smart = smartMatch(url)
+        if smart == .managed { return .service }
         // A one-shot address action, explicit recovery group, or an already
         // protected document retains its independent authorization.
-        return legacyRouteIntent(tab: tab, key: key) == .on ? .legacy : .original
+        if legacyRouteIntent(tab: tab, key: key) == .on { return .legacy }
+        if smart == .indeterminate { return .indeterminate }
+        return websiteAccelerationMode == .smart ? .original : .legacy
+    }
+
+    private func smartMatch(_ url: URL) -> AccessGeoSiteCache.Match {
+        if let geoSiteCache {
+            let view = comparingWebsitePolicy ? geoSiteView : geoSiteCache.runtimeView()
+            return view?.match(url) ?? .indeterminate
+        }
+        return websiteAccelerationMode == .smart && websiteRoutePolicy.matches(url, categories: selectedWebsiteCategories)
+            ? .managed : .original
     }
 
     private func landingRoute(tab: BrowserTab, url: URL, destination: AccessHostStoreKey) -> LandingRoute? {
@@ -455,7 +746,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
 
     private func navigationIntent(tab: BrowserTab, key: AccessHostStoreKey, route: WebsiteRoute) -> AccessProxyIntentState {
         switch route {
-        case .original: .off
+        case .original, .indeterminate: .off
         case .service, .landing: .on
         case .legacy: legacyRouteIntent(tab: tab, key: key)
         }
@@ -470,7 +761,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     private func routePreparation(tab: BrowserTab, url: URL, key: AccessHostStoreKey) -> RoutePreparation? {
         let route = websiteRoute(tab: tab, url: url, key: key)
         switch route {
-        case .original:
+        case .original, .indeterminate:
             return nil
         case .service:
             return readyWebsiteEndpoint(for: key) == nil ? route.requiredPreparation : nil
@@ -503,6 +794,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         case .service, .landing:
             return tab.boundHostName == host.rawValue && readyWebsiteEndpoint(for: key) != nil
                 && registry.isBound(tab.instanceID.uuidString, to: key)
+        case .indeterminate:
+            return false
         case .original, .legacy:
             // A deferred landing must realign before it can use another route.
             return tab.parentForProxyLanding(url) == nil
@@ -646,6 +939,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             isPrivate: tab.profile.isPrivate
         )
         let route = websiteRoute(tab: tab, url: url, key: key)
+        guard route != .indeterminate else { return nil }
         let intent = navigationIntent(tab: tab, key: key, route: route)
         if route == .service && readyWebsiteEndpoint(for: key) == nil { return nil }
         if case .landing(let landing) = route {
@@ -895,7 +1189,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         if let choice = websiteChoice(for: key) { return choice == .service }
         if accelerationAllowed(for: key), websiteAccelerationMode == .smart, intents[key] != .off,
            !explicitDirect.contains(key), let url = URL(string: "https://\(host.rawValue)/"),
-           websiteRoutePolicy.matches(url) { return true }
+           smartMatch(url) == .managed { return true }
         if BrowserSession.openTabs().contains(where: {
             $0.browsingScopeID == scopeID && $0.profile.isPrivate == isPrivate &&
                 $0.boundHostName == host.rawValue && $0.proxyLandingParent != nil
@@ -1653,7 +1947,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         if let choice = websiteChoice(for: key) { return choice == .service }
         if explicitDirect.contains(key) || intents[key] == .off { return false }
         if accelerationAllowed(for: key), websiteAccelerationMode == .smart,
-           let url = URL(string: "https://\(key.host.rawValue)/"), websiteRoutePolicy.matches(url) { return true }
+           let url = URL(string: "https://\(key.host.rawValue)/"),
+           smartMatch(url) == .managed { return true }
         return intents[key] == .on || defaultProtectedHosts.contains(key)
     }
 

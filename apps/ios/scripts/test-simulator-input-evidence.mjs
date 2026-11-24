@@ -78,6 +78,8 @@ function createFixture(t) {
   }
   write(root, 'apps/ios/Tests/SharedWebExtension/SafariNavigationIdentityTests.mjs', '// Fixture preflight.\n');
   write(root, 'apps/ios/scripts/simulator-fixture-server.py', '# Fixture self-test.\n');
+  write(root, 'apps/ios/scripts/geosite-https-fixture.py',
+    'import subprocess, sys\nsys.exit(subprocess.call(sys.argv[sys.argv.index("--") + 1:]))\n');
   // Upstream Access packaging calls this before xcodegen; keep the fixture self-contained.
   write(root, 'scripts/release/prepare-ios-package-core.sh',
     '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p "${2:?missing EmbeddedCore products}/AegisEmbeddedCore.xcframework"\n' +

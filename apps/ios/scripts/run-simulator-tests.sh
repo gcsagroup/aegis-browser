@@ -8,6 +8,7 @@ IOS_ROOT="$(cd -P -- "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd -P -- "${IOS_ROOT}/../.." && pwd)"
 DERIVED_DATA="${AEGIS_IOS_DERIVED_DATA:-$(dirname "$REPO_ROOT")/GCSA-aegis-build/ios/DerivedData}"
 MODE="dry-run"
+GEOSITE_MODE="fixture"
 PROJECT_PATH=""
 WORKSPACE_PATH=""
 SCHEME="${AEGIS_IOS_SCHEME:-Aegis}"
@@ -36,6 +37,7 @@ usage() {
   --workspace PATH       指定 .xcworkspace
   --scheme NAME          Scheme，默认 Aegis
   --test-plan NAME       可选 Test Plan；未指定时运行 Scheme 中全部测试
+  --geosite-live         仅运行 GeoSite 官方 HTTPS 验收，显式访问 GitHub
   --only-testing PATH    只运行指定测试，可重复（例如 AegisTests/ContentFilterTests）
   --runtime IDENTIFIER   Simulator runtime ID；默认选择最新可用 iOS runtime
   --output-dir PATH      必须是不存在的 /tmp/aegis-ios-* 绝对路径
@@ -88,6 +90,10 @@ while [[ $# -gt 0 ]]; do
       TEST_PLAN="$2"
       shift 2
       ;;
+    --geosite-live)
+      GEOSITE_MODE="live"
+      shift
+      ;;
     --only-testing)
       [[ $# -ge 2 ]] || die "--only-testing 缺少测试路径"
       [[ "$2" =~ ^(AegisTests|AegisUITests)(/[A-Za-z0-9_]+){0,2}$ ]] || die "测试路径格式无效"
@@ -113,6 +119,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$GEOSITE_MODE" == "live" ]]; then
+  [[ -z "${ONLY_TESTING[0]:-}" ]] || die "--geosite-live 已选定唯一用例"
+  ONLY_TESTING=(-only-testing:AegisTests/AccessGeoSiteLiveTransportTests/testCanonicalLatestAndPairedAssetsUsingSystemTrust)
+fi
 
 [[ -z "$PROJECT_PATH" || -z "$WORKSPACE_PATH" ]] || die "--project 与 --workspace 只能指定一个"
 [[ -n "$SCHEME" ]] || die "Scheme 不能为空"
@@ -309,6 +320,14 @@ TABLET_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" test-without-building
   -derivedDataPath "$DERIVED_DATA"
   -parallel-testing-enabled NO -collect-test-diagnostics never
   -resultBundlePath "${OUTPUT_DIR}/iPad.xcresult" ${ONLY_TESTING[@]+"${ONLY_TESTING[@]}"})
+
+if [[ "$GEOSITE_MODE" == "live" ]]; then
+  PHONE_COMMAND=(env TEST_RUNNER_AEGIS_GEOSITE_LIVE=1 "${PHONE_COMMAND[@]}")
+  TABLET_COMMAND=(env TEST_RUNNER_AEGIS_GEOSITE_LIVE=1 "${TABLET_COMMAND[@]}")
+else
+  PHONE_COMMAND=(python3 "${SCRIPT_DIR}/geosite-https-fixture.py" --receipt "${OUTPUT_DIR}/iPhone-geosite-https.json" -- "${PHONE_COMMAND[@]}")
+  TABLET_COMMAND=(python3 "${SCRIPT_DIR}/geosite-https-fixture.py" --receipt "${OUTPUT_DIR}/iPad-geosite-https.json" -- "${TABLET_COMMAND[@]}")
+fi
 
 BUILD_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" build-for-testing
   -destination "$PHONE_XCODE_DESTINATION" -derivedDataPath "$DERIVED_DATA"

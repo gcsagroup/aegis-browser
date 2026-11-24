@@ -293,6 +293,11 @@ public final class AccessHostDataStoreRegistry {
         endpoints[key] = nil
     }
 
+    public func releaseIdleStore(for key: AccessHostStoreKey) {
+        guard entries[key]?.record.isInUse == false else { return }
+        retire(key)
+    }
+
     public func releaseIdleStores() {
         for (key, entry) in entries where !entry.record.isInUse { retire(key) }
     }

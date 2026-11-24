@@ -1197,6 +1197,14 @@
       "标准": {
         "value": "Standard",
         "reason": "Standard is a German noun."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "es": {
@@ -1255,6 +1263,14 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "fr": {
@@ -1349,6 +1365,14 @@
       "紧凑": {
         "value": "Compact",
         "reason": "Compact is a French adjective."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "id": {
@@ -1407,6 +1431,14 @@
       "字体": {
         "value": "Font",
         "reason": "Font is the established Indonesian UI term."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "it": {
@@ -1473,6 +1505,14 @@
       "标准": {
         "value": "Standard",
         "reason": "Standard is an Italian adjective."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "ja": {
@@ -1643,6 +1683,14 @@
       "标准": {
         "value": "Standard",
         "reason": "Standard is the Malay adjective."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "pt": {
@@ -1701,6 +1749,14 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "th": {
@@ -1755,6 +1811,14 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "vi": {
@@ -1813,6 +1877,14 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     }
   },
@@ -2141,7 +2213,6 @@
     "手动",
     "智能",
     "自行选择要加速的网站。",
-    "当前仅自动加速 Debian 相关网站。",
     "选择智能后，其他网站首次打开时不再默认隐藏位置。",
     "加速服务未配置。",
     "下次打开时的连接",
@@ -2151,7 +2222,23 @@
     "清除站点选择",
     "本站连接",
     "站点选择用于此域名的主页面。清除后恢复所选模式和已有隐私设置。",
-    "网站连接方式已更改，请重新打开此页面。"
+    "网站连接方式已更改，请重新打开此页面。",
+    "分类范围",
+    "加速分类",
+    "含大众点评",
+    "含所列域名的子域名。",
+    "域名数",
+    "按所选分类加速网站。",
+    "暂无规则",
+    "未选择",
+    "未选择加速分类。",
+    "美团",
+    "豆瓣",
+    "新增域名数",
+    "仅匹配所列域名。",
+    "页面资源随主页面使用同一连接。",
+    "新增范围过大，无法批准。",
+    "批准新增范围"
   ],
   "ocrMarkdownAddedKeys": [
     "HTTPS 接口地址",

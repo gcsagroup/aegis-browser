@@ -99,6 +99,7 @@ public struct BrowserPendingAddressNavigation: Equatable, Sendable {
 public protocol BrowserHostStoreCoordinating: AnyObject {
     func requiresProxy(tab: BrowserTab, url: URL) -> Bool
     func requiresProxyPreparation(tab: BrowserTab, url: URL) -> Bool
+    func isMainFrameRouteIndeterminate(tab: BrowserTab, url: URL) -> Bool
     func canSendMainFrame(tab: BrowserTab, url: URL) -> Bool
     func prepareProxyNavigation(tab: BrowserTab, request: URLRequest) -> Bool
     func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool
@@ -109,11 +110,14 @@ public protocol BrowserHostStoreCoordinating: AnyObject {
     func tabClosed(_ tab: BrowserTab)
     func ordinaryHostStores() -> [WKWebsiteDataStore]
     func endPrivateSession(scopeID: String)
+    func setGeoSiteForeground(window: UUID, eligible: Bool)
 }
 
 public extension BrowserHostStoreCoordinating {
+    func setGeoSiteForeground(window: UUID, eligible: Bool) {}
     func requiresProxy(tab: BrowserTab, url: URL) -> Bool { false }
     func requiresProxyPreparation(tab: BrowserTab, url: URL) -> Bool { false }
+    func isMainFrameRouteIndeterminate(tab: BrowserTab, url: URL) -> Bool { false }
     func canSendMainFrame(tab: BrowserTab, url: URL) -> Bool { true }
     func prepareProxyNavigation(tab: BrowserTab, request: URLRequest) -> Bool { false }
     func willRestoreOriginalStore(tab: BrowserTab) {}
@@ -162,9 +166,13 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public var boundHostName: String?
     public var browsingScopeID = "ordinary"
     var configurationFactory: ((WKWebsiteDataStore) -> WKWebViewConfiguration)?
+#if DEBUG && targetEnvironment(simulator)
+    var keepsExplicitHTTPForTesting = false
+#endif
     public weak var hostCoordinator: BrowserHostStoreCoordinating?
     private typealias MainFrameAttempt = MainFrameNavigationState.Attempt
     private var committedRequest: MainFrameAttempt?
+    private weak var committedDocumentView: WKWebView?
     /// Only the unit-test commit seam records a document without a WebKit view identity.
     private var committedDocument: (epoch: UInt64, viewID: ObjectIdentifier?)?
     private var websiteRoutePause: (navigationID: String, documentEpoch: UInt64, editableAddress: URL?)?
@@ -303,6 +311,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let scheme = recorded.url.scheme?.lowercased() ?? ""
         guard ["http", "https"].contains(scheme) else { return }
         committedRequest = recorded
+        committedDocumentView = loadedWebView
         committedDocument = (navigationEpoch, nil)
         committedMainFrameURL = recorded.url
         url = recorded.url
@@ -400,6 +409,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public private(set) var requestedURL: URL?
     /// HTTP(S) main document that reached `didCommit`. In-flight `requestedURL` is not authorization.
     public private(set) var committedMainFrameURL: URL?
+    /// The actual committed document in the resident view, including built-in
+    /// pages. A provisional navigation does not replace this document.
+    public var liveCommittedDocumentURL: URL? {
+        guard let view = loadedWebView, view === committedDocumentView else { return nil }
+        return committedRequest?.url
+    }
     @Published public private(set) var protectionIncident: PageProtectionIncident?
     @Published private var protectionNoticePresentation: AegisLocalizedMessage?
     public var protectionNotice: String? { protectionNoticePresentation?.text }
@@ -593,6 +608,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     private func alignStore(for url: URL, previous: URL?, safeToReplay: Bool) -> Bool {
         guard !isDisposed else { return false }
+        guard !rejectIndeterminateRoute(url) else { return false }
         let host = Self.routingHost(of: url)
         let previousHost = previous.flatMap(Self.routingHost)
         let hostChanged = previousHost != nil && host != nil && previousHost != host
@@ -612,6 +628,13 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             return false
         }
         rebindWebsiteDataStore(desired, host: routed == nil ? nil : host)
+        return true
+    }
+
+    private func rejectIndeterminateRoute(_ url: URL) -> Bool {
+        guard hostCoordinator?.isMainFrameRouteIndeterminate(tab: self, url: url) == true else { return false }
+        loadingErrorAllowsProxyRetry = false
+        loadingErrorPresentation = .resource("连接暂不可用")
         return true
     }
 
@@ -798,6 +821,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 return
             }
             let requiresProxy = hostCoordinator.requiresProxy(tab: self, url: url)
+            if rejectIndeterminateRoute(url) {
+                retireUnboundAttempt(navigationID: attempt.navigationID)
+                isLoading = false
+                return
+            }
             if !hostCoordinator.canSendMainFrame(tab: self, url: url)
                 || hostCoordinator.wouldSwitchStore(tab: self, url: url)
                 || (requiresProxy && (boundHostName == nil || hostCoordinator.requiresProxyPreparation(tab: self, url: url))) {
@@ -971,7 +999,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     /// Cancel the load and keep the verified address available for editing the next route.
-    public func pauseAfterWebsiteRouteChange(detachStore: Bool) {
+    public func pauseAfterWebsiteRouteChange(detachStore: Bool, retireOriginalDocument: Bool = false) {
         // Stop retains the address bar's snapshot of the verified site.
         let editableAddress = websiteRouteControlURL == nil ? nil : addressBarURL
         let keepsTerminalFailure = lastMainFrameFailure != nil && editableAddress != nil
@@ -980,8 +1008,10 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             if keepsTerminalFailure { hostCoordinator?.pendingRecoveryInvalidated(tab: self) }
             rebindWebsiteDataStore(originalWebsiteDataStore, host: nil)
             loadingErrorAllowsProxyRetry = false
+        } else if retireOriginalDocument {
+            terminateCurrentDocument()
         }
-        guard detachStore || !keepsTerminalFailure else { return }
+        guard detachStore || retireOriginalDocument || !keepsTerminalFailure else { return }
         // Bind the control to the paused tab state after Stop and any store teardown.
         // The old request and document identities stay retired.
         websiteRoutePause = (attempt.navigationID, navigationEpoch, editableAddress)
@@ -1189,6 +1219,17 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public func detachStoreDuringProxyHold(_ pending: BrowserPendingAddressNavigation) -> Bool {
         guard matchesPendingAddressNavigation(pending), pendingProxyRequest != nil else { return false }
         rebindWebsiteDataStore(originalWebsiteDataStore, host: nil)
+        isLoading = true
+        isSuspended = false
+        return true
+    }
+
+    /// A newly protected displayed page must stop even when another request is held.
+    public func retireOriginalDocumentDuringProxyHold(_ pending: BrowserPendingAddressNavigation) -> Bool {
+        guard matchesPendingAddressNavigation(pending), pendingProxyRequest != nil else { return false }
+        terminateCurrentDocument()
+        // WebView teardown marks the tab suspended. The validated, unsent
+        // address request still owns its preparation and remains loading.
         isLoading = true
         isSuspended = false
         return true
@@ -1576,6 +1617,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if localOrInternal || (attempt.recoveryOperationID != nil && requestURL.scheme == "http") {
             webPreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
         }
+#if DEBUG && targetEnvironment(simulator)
+        if keepsExplicitHTTPForTesting, requestURL.scheme == "http" {
+            webPreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
+        }
+#endif
         webPreferences.preferredContentMode = (site.desktop ?? preferences.values.desktop) ? .desktop : .recommended
         webPreferences.allowsContentJavaScript = site.javaScript ?? preferences.values.javaScript
         let decision = navigationDecision(requestURL, method: navigationAction.request.httpMethod ?? "GET")
@@ -1584,6 +1630,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             blockNavigation(decision)
             lastPolicyIntervention = decision
             pendingNavigation = nil
+            isLoading = false
+            finish(.cancel)
+            return
+        }
+        if rejectIndeterminateRoute(requestURL) {
             isLoading = false
             finish(.cancel)
             return
@@ -1815,6 +1866,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if let navigation, let recorded = navigationState.recorded(for: navigation) {
             let scheme = recorded.url.scheme?.lowercased() ?? ""
             committedRequest = recorded
+            committedDocumentView = webView
             committedDocument = (navigationEpoch, ObjectIdentifier(webView))
             if ["http", "https"].contains(scheme) {
                 committedMainFrameURL = recorded.url
@@ -2327,8 +2379,13 @@ public final class BrowserSession: ObservableObject {
     private var pendingTabDisposals: Set<UUID> = []
     private var ordinaryDisposalStores: [UUID: WKWebsiteDataStore] = [:]
     private var disposalWaiters: [(ids: Set<UUID>, finish: @MainActor () -> Void)] = []
-    @Published public var activeTabID: UUID?
-    @Published public var profile: BrowserProfile = .standard
+    public private(set) var tabSelectionRevision: UInt64 = 0
+    @Published public var activeTabID: UUID? {
+        didSet { if oldValue != activeTabID { tabSelectionRevision &+= 1 } }
+    }
+    @Published public var profile: BrowserProfile = .standard {
+        didSet { if oldValue != profile { publishGeoSiteForeground() } }
+    }
     @Published public private(set) var extensionStatus = "WebExtension 正在初始化"
     @Published public private(set) var bookmarkIsActive = false
     @Published private var sessionErrorPresentation: AegisLocalizedMessage?
@@ -2436,8 +2493,26 @@ public final class BrowserSession: ObservableObject {
     public let standardProfileID = UUID()
     public let privateProfileID = UUID()
     public private(set) var privateSessionID = UUID()
+    private var windowInForeground = false
     public weak var hostCoordinator: BrowserHostStoreCoordinating? {
-        didSet { (standardTabs + privateTabs).forEach { $0.hostCoordinator = hostCoordinator } }
+        didSet {
+            if oldValue !== hostCoordinator {
+                oldValue?.setGeoSiteForeground(window: standardProfileID, eligible: false)
+                publishGeoSiteForeground()
+            }
+            (standardTabs + privateTabs).forEach { $0.hostCoordinator = hostCoordinator }
+        }
+    }
+
+    public func setWindowForeground(_ active: Bool) {
+        guard windowInForeground != active else { return }
+        windowInForeground = active
+        publishGeoSiteForeground()
+    }
+
+    private func publishGeoSiteForeground() {
+        hostCoordinator?.setGeoSiteForeground(window: standardProfileID,
+            eligible: windowInForeground && !isWindowClosed && profile == .standard)
     }
     public let dataStore: BrowserDataStore
     public let workspaceStore: WorkspaceStore
@@ -2587,6 +2662,7 @@ public final class BrowserSession: ObservableObject {
         guard !isWindowClosed else { return }
         persistSession()
         isWindowClosed = true
+        publishGeoSiteForeground()
         presentedAccessDownloads.removeAll(); presentedAccessDownloadOrder.removeAll()
         pendingDownloadURL = nil; pendingMarkdown = nil
         disposeTabs(standardTabs + privateTabs, endingPrivateScopeID: privateSessionID.uuidString)
@@ -2905,11 +2981,16 @@ public final class BrowserSession: ObservableObject {
             let needsProtectedPreparation = self.hostCoordinator?.requiresProxy(tab: tab, url: url) == true
                 && self.hostCoordinator?.requiresProxyPreparation(tab: tab, url: url) == true
             guard !needsProtectedPreparation,
+                  self.hostCoordinator?.isMainFrameRouteIndeterminate(tab: tab, url: url) != true,
                   !(self.hostCoordinator?.wouldSwitchStore(tab: tab, url: url) ?? false) else { return .declined }
             let child = self.makeTab(profile: profile, suppliedConfiguration: configuration,
                                      originalStore: tab.originalWebsiteDataStore)
             child.inheritedHardenedSecurity = hardened
             child.boundHostName = tab.boundHostName
+            guard self.hostCoordinator?.isMainFrameRouteIndeterminate(tab: child, url: url) != true else {
+                self.disposeTabs([child])
+                return .declined
+            }
             let routed = self.hostCoordinator?.dataStoreForMainFrame(tab: child, url: url)
             guard (routed ?? child.originalWebsiteDataStore) === configuration.websiteDataStore,
                   self.hostCoordinator?.requiresProxy(tab: child, url: url) != true || routed != nil,

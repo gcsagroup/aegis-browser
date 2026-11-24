@@ -117,11 +117,21 @@ struct AegisApp: App {
                 _ = hostRegistry.retireListener(identity: identity, finish: finish)
             }
         }
+        let channel = AccessProductChannel.resolve()
+        let geoSiteCache = Self.makeGeoSiteCache(channel: channel, isUITest: isTest)
+#if DEBUG && targetEnvironment(simulator)
+        let isHostedTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+#else
+        let isHostedTest = false
+#endif
+        let refreshGeoSite = channel == .dev && !isTest && !isHostedTest
         let hostStores = AccessHostStoreCoordinator(
             publisher: publisher,
-            channel: AccessProductChannel.resolve(),
+            channel: channel,
             defaultLocationPrivacy: !(publisher is AccessFailClosedProxyEntryPublisher),
             locationPreferences: defaults,
+            geoSiteCache: geoSiteCache,
+            geoSiteTransport: refreshGeoSite ? AccessGeoSiteUpdateTransport() : nil,
             registry: hostRegistry
         )
         retirementOwner = hostStores
@@ -129,6 +139,26 @@ struct AegisApp: App {
         hostStores.startForegroundSweep()
         _accessSiteProxyRegistry = StateObject(wrappedValue: registry)
         _hostStores = StateObject(wrappedValue: hostStores)
+    }
+
+    private static func makeGeoSiteCache(channel: AccessReleaseChannel, isUITest: Bool) -> AccessGeoSiteCache? {
+        guard channel == .dev else { return nil }
+#if DEBUG
+        if isUITest {
+            let arguments = ProcessInfo.processInfo.arguments
+#if targetEnvironment(simulator)
+            if arguments.contains("--ui-testing-geosite-consent-fixture") {
+                guard let storage = try? AccessGeoSiteStorage.consentUITest(keep: true) else { return nil }
+                return AccessGeoSiteCache(storage: storage)
+            }
+#endif
+            guard arguments.contains("--ui-testing-geosite-cache"),
+                  let storage = try? AccessGeoSiteStorage.uiTest(keep: arguments.contains("--ui-testing-geosite-cache-keep"))
+            else { return nil }
+            return AccessGeoSiteCache(storage: storage)
+        }
+#endif
+        return AccessGeoSiteCache(storage: .product())
     }
 
     var body: some Scene {
@@ -155,6 +185,7 @@ struct AegisApp: App {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             subscriptionUsage.setActive(phase == .active)
+            if phase == .active { hostStores.checkpointGeoSiteClock() }
         }
     }
 
@@ -235,9 +266,9 @@ struct AegisApp: App {
 
 /// 浏览会话的生命周期跟随窗口，公共资料与下载仍由 App 持有。
 private struct AegisWindowView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var language: AppLanguageSettings
     @EnvironmentObject private var accessRegistry: AccessSiteProxyStoreRegistry
-    @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
     @StateObject private var browser: BrowserSession
     @StateObject private var lifetime = AegisWindowLifetime()
     @ObservedObject var windows: BrowserWindowStore
@@ -259,16 +290,17 @@ private struct AegisWindowView: View {
                 lifetime.browser = browser
                 lifetime.accessRegistry = accessRegistry
                 windows.register(browser.windowID)
-                hostStores.tabs = { [weak browser] in
-                    guard let browser else { return [] }
-                    return browser.standardTabs + browser.privateTabs
-                }
+                browser.setWindowForeground(scenePhase == .active)
                 browser.persistSession()
             }
             .onChange(of: browser.retiredPrivateWebsiteDataStoreRevision) { _, _ in
                 accessRegistry.release(browser.consumeRetiredPrivateWebsiteDataStores())
             }
+            .onChange(of: scenePhase) { _, phase in
+                browser.setWindowForeground(phase == .active)
+            }
             .onDisappear {
+                browser.setWindowForeground(false)
                 browser.persistSession()
             }
     }

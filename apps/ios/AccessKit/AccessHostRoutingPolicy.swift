@@ -69,7 +69,7 @@ public enum AccessHostRoutingPolicy {
     }
 }
 
-public enum AccessWebsiteAccelerationMode: String, Sendable {
+public enum AccessWebsiteAccelerationMode: String, Codable, Sendable {
     case manual
     case smart
 }
@@ -79,28 +79,34 @@ public enum AccessWebsiteRouteChoice: String, Sendable {
     case service
 }
 
-/// The two Domain records in the pinned DEBIAN group. A match only authorizes
-/// the top-level navigation. Its store remains isolated by exact host.
+/// A category match authorizes the top-level navigation. Its store remains
+/// isolated by exact host.
 public struct AccessWebsiteRoutePolicy: Sendable {
-    private static let debianRoots = ["debian.org", "dotdeb.org"]
-    private let roots: [String]
+    public let catalogue: AccessGeoSiteCatalogue
+    private let fixtureSuffix: String
 
-    public init() {
-        roots = Self.debianRoots
+    public init(catalogue: AccessGeoSiteCatalogue = .bundled) {
+        self.catalogue = catalogue
+        fixtureSuffix = ""
     }
 
     #if DEBUG
     /// Closed fixture projection of the same records. No configurable rules.
-    public static let geositeFixture = Self(roots: debianRoots.map { $0 + ".geosite.invalid" })
+    public static let geositeFixture = Self(fixtureSuffix: ".geosite.invalid")
 
-    private init(roots: [String]) {
-        self.roots = roots
+    private init(fixtureSuffix: String) {
+        catalogue = .bundled
+        self.fixtureSuffix = fixtureSuffix
     }
     #endif
 
-    public func matches(_ url: URL) -> Bool {
-        guard let host = Self.websiteHost(url)?.rawValue else { return false }
-        return roots.contains { host == $0 || host.hasSuffix("." + $0) }
+    public func matches(_ url: URL, categories: Set<AccessGeoSiteCategory> = [.debian]) -> Bool {
+        guard !categories.isEmpty, var host = Self.websiteHost(url)?.rawValue else { return false }
+        if !fixtureSuffix.isEmpty {
+            guard host.hasSuffix(fixtureSuffix) else { return false }
+            host.removeLast(fixtureSuffix.count)
+        }
+        return categories.contains { catalogue.groups[$0]?.rules.contains { $0.matches(host) } == true }
     }
 
     /// Use the parsed navigation host and canonicalize a single DNS root dot.

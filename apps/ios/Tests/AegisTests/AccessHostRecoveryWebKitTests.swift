@@ -2,6 +2,7 @@ import AccessKit
 import Network
 import SwiftUI
 import os
+import Security
 import UIKit
 import WebKit
 import XCTest
@@ -1403,21 +1404,148 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
 
 private final class NavigationSink: NSObject, WKNavigationDelegate {}
 
+@MainActor
+private final class PinnedFixtureNavigation: NSObject, WKNavigationDelegate {
+    private let tab: BrowserTab
+    private let host: String
+    private let certificate: SecCertificate
+    private let leaf: Data
+
+    init(tab: BrowserTab, host: String, certificate: SecCertificate) {
+        self.tab = tab
+        self.host = host
+        self.certificate = certificate
+        leaf = SecCertificateCopyData(certificate) as Data
+    }
+
+    func webView(_ view: WKWebView, respondTo challenge: URLAuthenticationChallenge) async
+        -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        let space = challenge.protectionSpace
+        guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust, space.host == host,
+              let trust = space.serverTrust else {
+            return (.performDefaultHandling, nil)
+        }
+        guard SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, host as CFString)) == errSecSuccess,
+              SecTrustSetAnchorCertificates(trust, [certificate] as CFArray) == errSecSuccess,
+              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
+              SecTrustSetNetworkFetchAllowed(trust, false) == errSecSuccess else {
+            return (.cancelAuthenticationChallenge, nil)
+        }
+        let pinnedLeaf = leaf
+        let matches = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard SecTrustEvaluateWithError(trust, nil),
+                      let certificate = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                continuation.resume(returning: SecCertificateCopyData(certificate) as Data == pinnedLeaf)
+            }
+        }
+        return matches ? (.useCredential, URLCredential(trust: trust)) : (.cancelAuthenticationChallenge, nil)
+    }
+
+    func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction, preferences: WKWebpagePreferences,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        tab.webView(view, decidePolicyFor: action, preferences: preferences, decisionHandler: decisionHandler)
+    }
+
+    func webView(_ view: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        tab.webView(view, decidePolicyFor: response, decisionHandler: decisionHandler)
+    }
+
+    func webView(_ view: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        tab.webView(view, didStartProvisionalNavigation: navigation)
+    }
+
+    func webView(_ view: WKWebView, didCommit navigation: WKNavigation!) {
+        tab.webView(view, didCommit: navigation)
+    }
+
+    func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
+        tab.webView(view, didFinish: navigation)
+    }
+
+    func webView(_ view: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        tab.webView(view, didFailProvisionalNavigation: navigation, withError: error)
+    }
+
+    func webView(_ view: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        tab.webView(view, didFail: navigation, withError: error)
+    }
+}
+
+private final class FixtureOriginTunnels: AccessHTTPTunnelOpening, @unchecked Sendable {
+    private let port: UInt16
+    private let observed = OSAllocatedUnfairLock(initialState: [String]())
+    var authorities: [String] { observed.withLock { $0 } }
+
+    init(port: UInt16) { self.port = port }
+
+    func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
+        observed.withLock { $0.append("\(host):\(port)") }
+        guard port == 443, ["www.douban.com", "beta-hold-control.invalid"].contains(host),
+              let localPort = NWEndpoint.Port(rawValue: self.port) else { throw URLError(.cannotConnectToHost) }
+        return FixtureOriginSocket(port: localPort)
+    }
+
+    private final class FixtureOriginSocket: AccessRealityPathStream, @unchecked Sendable {
+        private let connection: NWConnection
+        private let closed = OSAllocatedUnfairLock(initialState: false)
+        var isOpen: Bool { closed.withLock { !$0 } }
+
+        init(port: NWEndpoint.Port) {
+            connection = NWConnection(host: "127.0.0.1", port: port, using: .tcp)
+            connection.start(queue: DispatchQueue(label: "test.geosite.fixture-tunnel"))
+        }
+
+        func read(maxBytes: Int) async throws -> Data? {
+            try await withCheckedThrowingContinuation { continuation in
+                connection.receive(minimumIncompleteLength: 1, maximumLength: maxBytes) { data, _, _, error in
+                    if let error { continuation.resume(throwing: error) }
+                    else { continuation.resume(returning: data) }
+                }
+            }
+        }
+
+        func write(_ data: Data) async throws {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                connection.send(content: data, completion: .contentProcessed { error in
+                    if let error { continuation.resume(throwing: error) }
+                    else { continuation.resume() }
+                })
+            }
+        }
+
+        func close() {
+            closed.withLock { $0 = true }
+            connection.cancel()
+        }
+    }
+}
+
 private final class OriginReceipt: @unchecked Sendable {
-    let port: UInt16
+    private let requestedPort: UInt16
+    var port: UInt16 { listener?.port?.rawValue ?? requestedPort }
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "access.auto-recovery.origin")
     private let lock = OSAllocatedUnfairLock(initialState: "")
 
     private let body: String
-    init(port: UInt16, body: String = "ok") { self.port = port; self.body = body }
+    private let tls: NWProtocolTLS.Options?
+    init(port: UInt16, body: String = "ok", tls: NWProtocolTLS.Options? = nil) {
+        requestedPort = port
+        self.body = body
+        self.tls = tls
+    }
 
     var transcript: String { lock.withLock { $0 } }
 
     func start() async throws {
-        let parameters = NWParameters.tcp
+        let parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
         parameters.allowLocalEndpointReuse = true
-        guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw URLError(.badURL) }
+        guard let nwPort = NWEndpoint.Port(rawValue: requestedPort) else { throw URLError(.badURL) }
         parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: nwPort)
         let listener = try NWListener(using: parameters)
         listener.newConnectionHandler = { [weak self] connection in
@@ -1483,10 +1611,13 @@ private final class AnsweringOpener: AccessHTTPTunnelOpening, @unchecked Sendabl
     private let body: String?
     private let finishAfterRecording: Bool
     private let redirects: [String: URL]
-    init(body: String? = nil, finishAfterRecording: Bool = false, redirects: [String: URL] = [:]) {
+    private let workerScript: String?
+    init(body: String? = nil, finishAfterRecording: Bool = false, redirects: [String: URL] = [:],
+         workerScript: String? = nil) {
         self.body = body
         self.finishAfterRecording = finishAfterRecording
         self.redirects = redirects
+        self.workerScript = workerScript
     }
     private let lock = OSAllocatedUnfairLock(initialState: "")
     private let authorityLock = OSAllocatedUnfairLock(initialState: [String]())
@@ -1504,7 +1635,7 @@ private final class AnsweringOpener: AccessHTTPTunnelOpening, @unchecked Sendabl
     func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
         authorityLock.withLock { $0.append("\(host):\(port)") }
         if finishAfterRecording { throw URLError(.secureConnectionFailed) }
-        let stream = AnsweringStream(host: host, body: body, redirects: redirects)
+        let stream = AnsweringStream(host: host, body: body, redirects: redirects, workerScript: workerScript)
         if port == 443 { heldTLS.withLock { $0[host, default: []].append(stream) } }
         stream.onRequest = { [weak self] request in
             self?.append(request)
@@ -1532,10 +1663,12 @@ private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendabl
 
     private let body: String?
     private let redirects: [String: URL]
-    init(host: String, body: String? = nil, redirects: [String: URL] = [:]) {
+    private let workerScript: String?
+    init(host: String, body: String? = nil, redirects: [String: URL] = [:], workerScript: String? = nil) {
         self.host = host
         self.body = body
         self.redirects = redirects
+        self.workerScript = workerScript
     }
 
     var isOpen: Bool {
@@ -1583,10 +1716,11 @@ private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendabl
            let destination = redirects[String(target)] {
             return Data("HTTP/1.1 302 Found\r\nLocation: \(destination.absoluteString)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8)
         }
-        let body = self.body.map { request.contains("/pulse") ? "ok" : $0 } ?? (host == "cdn.invalid"
+        let worker = request.hasPrefix("GET /geo-worker.js?") ? workerScript : nil
+        let body = worker ?? self.body.map { request.contains("/pulse") ? "ok" : $0 } ?? (host == "cdn.invalid"
             ? "body{}"
             : "<link rel=\"stylesheet\" href=\"http://cdn.invalid/a.css\">")
-        let type = host == "cdn.invalid" ? "text/css" : "text/html"
+        let type = worker != nil ? "text/javascript" : (host == "cdn.invalid" ? "text/css" : "text/html")
         let header = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
         _ = request
         return Data(header.utf8)
@@ -1826,6 +1960,289 @@ extension AccessHostRecoveryWebKitTests {
     }
 
     #if DEBUG
+    func testSelectingDoubanRetiresOriginalRealmAndPreservesHeldDebianNavigation() async throws {
+        try await assertSelectingDoubanDuringDebianHold(managedPort: 18_631, cancelDebian: false)
+    }
+
+    func testDeselectingDebianAfterDoubanRetirementRejectsLatePreparation() async throws {
+        try await assertSelectingDoubanDuringDebianHold(managedPort: 18_633, cancelDebian: true)
+    }
+
+    func testSelectingDoubanDoesNotRetireTheLiveStartPage() async throws {
+        try await assertSelectingDoubanDuringDebianHold(managedPort: 18_635, cancelDebian: false, visitingStart: true)
+    }
+
+    private func assertSelectingDoubanDuringDebianHold(managedPort: UInt16, cancelDebian: Bool,
+                                                       visitingStart: Bool = false) async throws {
+        let originalPort = managedPort + 1
+        let marker = UUID().uuidString
+        let html = """
+        <title>Original Douban \(marker)</title>
+        <script>if (location.hostname === 'www.douban.com') {
+          setInterval(() => fetch('/pulse?\(marker)', {cache: 'no-store'}), 60);
+        }</script>
+        """
+        // Xcode generates this identity in the test bundle. The two fixture
+        // delegates pin its leaf and all tunnel connections stay on loopback.
+        let resource = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "geosite-beta-hold-test-only",
+                                                               withExtension: "p12"))
+        var imported: CFArray?
+        let options: [String: Any] = [kSecImportExportPassphrase as String: "web-kit-fixture",
+                                      kSecImportToMemoryOnly as String: true]
+        let status = SecPKCS12Import(try Data(contentsOf: resource) as CFData, options as CFDictionary, &imported)
+        XCTAssertEqual(status, errSecSuccess)
+        let item = try XCTUnwrap((imported as? [[String: Any]])?.first?[kSecImportItemIdentity as String])
+        let identity = item as! SecIdentity
+        var importedCertificate: SecCertificate?
+        XCTAssertEqual(SecIdentityCopyCertificate(identity, &importedCertificate), errSecSuccess)
+        let certificate = try XCTUnwrap(importedCertificate)
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, try XCTUnwrap(sec_identity_create(identity)))
+        let origin = OriginReceipt(port: 0, body: html, tls: tls)
+        try await origin.start()
+        defer { origin.stop() }
+        let original = FixtureOriginTunnels(port: origin.port)
+        let managed = AnsweringOpener(finishAfterRecording: true)
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let managedListener = try await makeListener(port: managedPort, tunnels: managed)
+        let originalListener = try await makeListener(port: originalPort, tunnels: original)
+        defer { try? managedListener.stop(); try? originalListener.stop() }
+        try await managedListener.start(at: now)
+        try await originalListener.start(at: now)
+
+        let (defaults, suite) = try makeSmartPreferences()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let gate = WindowPrepareGate()
+        defer { gate.finish() }
+        var provisionReturned = false
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            await gate.wait()
+            provisionReturned = true
+            return .init(endpoint: .init(identity: "category-hold-\(managedPort)", generation: generation,
+                loopbackHost: "127.0.0.1", port: managedPort, state: .ready),
+                listenerReady: true, runtimeHealthy: true, bridgeInstalled: true)
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, channel: .dev, locationPreferences: defaults)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), hostCoordinator: coordinator)
+        let otherBrowser = BrowserSession(dataStore: browser.dataStore, hostCoordinator: coordinator)
+        let tab = try XCTUnwrap(browser.activeTab)
+        let sibling = try XCTUnwrap(otherBrowser.activeTab)
+        let restoreOriginal = try observeOriginalStore(of: tab, port: originalPort)
+        defer { browser.closeWindow(); otherBrowser.closeWindow(); restoreOriginal() }
+        try await tab.prepareContentRulesForTests()
+        try await sibling.prepareContentRulesForTests()
+        let originalView = tab.webView
+        let window = show(originalView)
+        let siblingWindow = show(sibling.webView)
+        let douban = URL(string: "https://www.douban.com/page?\(marker)")!
+        let control = URL(string: "https://beta-hold-control.invalid/page?control")!
+        let originalNavigation = PinnedFixtureNavigation(tab: tab, host: "www.douban.com", certificate: certificate)
+        let controlNavigation = PinnedFixtureNavigation(tab: sibling, host: "beta-hold-control.invalid", certificate: certificate)
+        originalView.navigationDelegate = originalNavigation
+        sibling.webView.navigationDelegate = controlNavigation
+        defer {
+            withExtendedLifetime((originalNavigation, controlNavigation)) {}
+            window.isHidden = true
+            siblingWindow.isHidden = true
+            let receipt = XCTAttachment(string: "managed=\(managed.authorities)\noriginal=\(original.authorities)\n\(origin.transcript)")
+            receipt.name = "Original Douban retirement and held Debian route"
+            receipt.lifetime = .keepAlways
+            add(receipt)
+        }
+        let debian = URL(string: "https://debian.org/held?\(marker)")!
+        let pulse = "/pulse?\(marker)"
+        func pulses() -> Int { origin.transcript.components(separatedBy: pulse).count - 1 }
+
+        tab.loadFromAddressBar(douban)
+        try await waitUntil({ tab.committedMainFrameURL == douban && !tab.isLoading && pulses() >= 3 },
+                            message: "The real original Douban realm must commit and send pulses. \(original.authorities) \(origin.transcript)")
+        _ = try XCTUnwrap(tab.committedMainFrameURL == douban && pulses() >= 3 ? originalView : nil)
+        XCTAssertEqual(originalView.title, "Original Douban \(marker)")
+        XCTAssertTrue(tab.websiteDataStore === tab.originalWebsiteDataStore)
+        XCTAssertTrue(original.authorities.contains("www.douban.com:443"))
+        XCTAssertTrue(managed.authorities.isEmpty)
+
+        if visitingStart {
+            let start = URL(string: "aegis://start")!
+            tab.load(start)
+            try await waitUntil({ originalView.url == start && !tab.isLoading },
+                                message: "The built-in start page must commit in the original view")
+            let document = try await originalView.evaluateJavaScript("window.categoryTestMarker = '\(marker)'")
+            XCTAssertEqual(document as? String, marker)
+            let initial = try XCTUnwrap(coordinator.websiteCategories(for: sibling))
+            coordinator.setWebsiteCategory(.douban, selected: true, from: initial, for: sibling)
+            XCTAssertTrue(coordinator.requiresProxy(tab: tab, url: douban))
+            XCTAssertTrue(tab.isResident)
+            XCTAssertTrue(originalView.superview === window)
+            XCTAssertNil(tab.loadingError)
+            let retained = try await originalView.evaluateJavaScript("window.categoryTestMarker")
+            XCTAssertEqual(retained as? String, marker, "The same start-page realm must stay alive")
+            XCTAssertEqual(originalView.url, start)
+            XCTAssertTrue(managed.authorities.isEmpty)
+            XCTAssertFalse(original.authorities.contains("debian.org:443"))
+            return
+        }
+
+        tab.loadFromAddressBar(debian)
+        try await waitUntil({ gate.started }, message: "Debian must await the held publisher")
+        let pending = try XCTUnwrap(tab.pendingAddressNavigation)
+        XCTAssertEqual(pending.url, debian)
+        XCTAssertTrue(tab.webView === originalView && tab.matchesPendingAddressNavigation(pending))
+        XCTAssertTrue(coordinator.isPreparingAddressProxy(tab: tab))
+        XCTAssertFalse(original.authorities.contains("debian.org:443"))
+
+        let initial = try XCTUnwrap(coordinator.websiteCategories(for: sibling))
+        XCTAssertEqual(initial.selected, [.debian])
+        coordinator.setWebsiteCategory(.douban, selected: true, from: initial, for: sibling)
+        XCTAssertTrue(coordinator.requiresProxy(tab: tab, url: douban))
+        XCTAssertNil(originalView.superview)
+        XCTAssertNil(originalView.load(URLRequest(url: douban)), "The original view must reject further navigation")
+        XCTAssertTrue(tab.matchesPendingAddressNavigation(pending), "Retiring Douban must preserve the exact Debian hold")
+        XCTAssertFalse(tab.isSuspended)
+        var inert = false
+        tab.afterCurrentDocumentBecomesInert { inert = true }
+        try await waitUntil({ inert }, message: "The old WebKit realm must report its terminal document")
+
+        if cancelDebian {
+            let both = try XCTUnwrap(coordinator.websiteCategories(for: sibling))
+            coordinator.setWebsiteCategory(.debian, selected: false, from: both, for: sibling)
+            XCTAssertFalse(tab.matchesPendingAddressNavigation(pending))
+            XCTAssertNil(tab.pendingAddressNavigation)
+            XCTAssertFalse(coordinator.isPreparingAddressProxy(tab: tab))
+        }
+        gate.finish()
+        try await waitUntil({ provisionReturned }, message: "The held provision must return after release")
+        if !cancelDebian {
+            try await waitUntil(seconds: 8, {
+                self.attach(tab.webView, to: window)
+                return managed.authorities.contains("debian.org:443")
+            }, message: "The exact Debian request must send a fresh managed CONNECT after preparation")
+            XCTAssertEqual(tab.boundHostName, "debian.org")
+            XCTAssertFalse(tab.websiteDataStore === tab.originalWebsiteDataStore)
+            XCTAssertFalse(tab.webView === originalView)
+        }
+
+        // Allow any already-issued Douban pulses to drain, then prove that the
+        // original listener can still observe a separate, newly committed page.
+        var lastPulseCount = pulses(), quietSince = Date()
+        try await waitUntil(seconds: 2, {
+            if pulses() != lastPulseCount { lastPulseCount = pulses(); quietSince = Date() }
+            return Date().timeIntervalSince(quietSince) >= 0.25
+        }, message: "Terminal Douban realm must stop sending pulses")
+        let pulseCount = pulses()
+        sibling.loadFromAddressBar(control)
+        try await waitUntil({ sibling.committedMainFrameURL == control && !sibling.isLoading },
+                            message: "The sibling's independent original control must commit")
+        XCTAssertTrue(original.authorities.contains("beta-hold-control.invalid:443"))
+        XCTAssertFalse(managed.authorities.contains("beta-hold-control.invalid:443"))
+        XCTAssertFalse(managed.authorities.contains("www.douban.com:443"), "Old Douban realm must also never replay")
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertEqual(pulses(), pulseCount)
+        XCTAssertFalse(original.authorities.contains("debian.org:443"))
+        if cancelDebian { XCTAssertFalse(managed.authorities.contains("debian.org:443")) }
+    }
+
+    func testGeoSiteSelectedOfficialDoubanUsesManagedWebKitStore() async throws {
+        let managedPort: UInt16 = 18_489
+        let originalPort: UInt16 = 18_490
+        let managed = AnsweringOpener(finishAfterRecording: true)
+        let original = AnsweringOpener(finishAfterRecording: true)
+        let managedListener = try await makeListener(port: managedPort, tunnels: managed)
+        let originalListener = try await makeListener(port: originalPort, tunnels: original)
+        defer { try? managedListener.stop(); try? originalListener.stop() }
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        try await managedListener.start(at: startedAt)
+        try await originalListener.start(at: startedAt)
+
+        let (defaults, suite) = try makeSmartPreferences()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["DOUBAN"], forKey: "browser.websiteAcceleration.categories")
+        let gate = WindowPrepareGate()
+        defer { gate.finish() }
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            await gate.wait()
+            return .init(endpoint: .init(identity: "official-categories", generation: generation,
+                loopbackHost: "127.0.0.1", port: managedPort, state: .ready),
+                listenerReady: true, runtimeHealthy: true, bridgeInstalled: true)
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, channel: .dev, locationPreferences: defaults)
+        let session = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), hostCoordinator: coordinator)
+        let secondSession = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), hostCoordinator: coordinator)
+        let tab = try XCTUnwrap(session.activeTab)
+        let sibling = try XCTUnwrap(secondSession.activeTab)
+        try await tab.prepareContentRulesForTests()
+        try await sibling.prepareContentRulesForTests()
+        let restoreOriginal = try observeOriginalStore(of: tab, port: originalPort)
+        defer {
+            withExtendedLifetime(coordinator) { session.closeWindow(); secondSession.closeWindow() }
+            restoreOriginal()
+        }
+        let window = show(tab.webView)
+        let secondWindow = show(sibling.webView)
+        defer {
+            window.isHidden = true
+            secondWindow.isHidden = true
+            let receipt = XCTAttachment(string: "managed=\(managed.authorities)\noriginal=\(original.authorities)")
+            receipt.name = "Official category CONNECT witnesses"
+            receipt.lifetime = .keepAlways
+            add(receipt)
+        }
+
+        // Both local observers stop at CONNECT, before TLS or DNS for the target.
+        func witness(_ host: String, managed expectedManaged: Bool, tab: BrowserTab, window: UIWindow,
+                     duringLoad: (@MainActor () async throws -> Void)? = nil) async throws {
+            let url = try XCTUnwrap(URL(string: "https://\(host)/"))
+            let authority = "\(host):443"
+            let priorManaged = managed.authorities.filter { $0 == authority }.count
+            let priorOriginal = original.authorities.filter { $0 == authority }.count
+            tab.loadFromAddressBar(url)
+            try await duringLoad?()
+            try await waitUntil(seconds: 12, {
+                self.attach(tab.webView, to: window)
+                return managed.authorities.filter { $0 == authority }.count > priorManaged
+                    || original.authorities.filter { $0 == authority }.count > priorOriginal
+            }, message: "Expected either local listener to record CONNECT \(authority)")
+            try await waitUntil(seconds: 12, { !tab.webView.isLoading },
+                                message: "WebKit did not finish the controlled CONNECT attempt for \(authority)")
+            XCTAssertEqual(managed.authorities.filter { $0 == authority }.count > priorManaged,
+                           expectedManaged, "Managed CONNECT \(authority)")
+            XCTAssertEqual(original.authorities.filter { $0 == authority }.count > priorOriginal,
+                           !expectedManaged, "Original CONNECT \(authority)")
+            XCTAssertEqual(tab.websiteDataStore === tab.originalWebsiteDataStore, !expectedManaged)
+        }
+
+        try await witness("original-control.geosite.invalid", managed: false, tab: tab, window: window)
+        try await witness("notdouban.com", managed: false, tab: tab, window: window)
+        try await witness("debian.org", managed: false, tab: tab, window: window)
+        try await witness("www.meituan.com", managed: false, tab: tab, window: window)
+        try await witness("www.douban.com", managed: true, tab: tab, window: window) {
+            try await self.waitUntil { gate.started }
+            let pending = try XCTUnwrap(tab.pendingAddressNavigation)
+            let onlyDouban = try XCTUnwrap(coordinator.websiteCategories(for: sibling))
+            coordinator.setWebsiteCategory(.meituan, selected: true, from: onlyDouban, for: sibling)
+            let both = try XCTUnwrap(coordinator.websiteCategories(for: sibling))
+            coordinator.setWebsiteCategory(.meituan, selected: false, from: both, for: sibling)
+            XCTAssertEqual(tab.pendingAddressNavigation, pending)
+            XCTAssertTrue(coordinator.isPreparingAddressProxy(tab: tab))
+            gate.finish()
+        }
+
+        let initial = try XCTUnwrap(coordinator.websiteCategories(for: sibling))
+        coordinator.setWebsiteCategory(.douban, selected: false, from: initial, for: sibling)
+        XCTAssertTrue(tab.websiteDataStore === tab.originalWebsiteDataStore, "The same owner's managed document must detach")
+        XCTAssertTrue(try XCTUnwrap(coordinator.websiteCategories(for: tab)).selected.isEmpty)
+        try await witness("second-original-control.geosite.invalid", managed: false, tab: sibling, window: secondWindow)
+        try await witness("www.douban.com", managed: false, tab: sibling, window: secondWindow)
+
+        let empty = try XCTUnwrap(coordinator.websiteCategories(for: tab))
+        coordinator.setWebsiteCategory(.debian, selected: true, from: empty, for: tab)
+        let debian = try XCTUnwrap(coordinator.websiteCategories(for: tab))
+        coordinator.setWebsiteCategory(.meituan, selected: true, from: debian, for: tab)
+        try await witness("debian.org", managed: true, tab: sibling, window: secondWindow)
+        try await witness("www.meituan.com", managed: true, tab: sibling, window: secondWindow)
+        try await witness("www.dianping.com", managed: true, tab: sibling, window: secondWindow)
+    }
+
     @MainActor
     func testGeoSiteTopLevelNavigationSelectsManagedOrOriginal() async throws {
         let managedPort: UInt16 = 18_471
@@ -2177,6 +2594,179 @@ extension AccessHostRecoveryWebKitTests {
         XCTAssertEqual(tab.recoveryLoadCount, 0)
         XCTAssertTrue(coordinator.registry.endpointSnapshot.isEmpty)
     }
+
+#if DEBUG && targetEnvironment(simulator)
+    func testOfficialGeoSiteConsentAndWithdrawalRetireOnlyAffectedLiveTraffic() async throws {
+        let fixture = try GeoSiteHTTPSFixture()
+        try await fixture.select("expand", version: 1, reset: true)
+        let simulatedOffset = OSAllocatedUnfairLock(initialState: 0.0)
+        let location = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storage = AccessGeoSiteStorage(directory: location, service: "geosite-switch." + UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: location)
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                           kSecAttrService as String: storage.service] as CFDictionary)
+        }
+        let cache = AccessGeoSiteCache(storage: storage, time: .init(wall: { Date().addingTimeInterval(simulatedOffset.withLock { $0 }) }))
+        await cache.restore(migrating: .init(mode: .smart, categories: [.debian, .douban]))
+        XCTAssertEqual(cache.status, .ready)
+
+        func page(_ title: String) -> String {
+            """
+            <title>\(title)</title><script>
+            const path = location.pathname;
+            fetch('/pulse-resource' + path, {cache: 'no-store'});
+            setInterval(() => fetch('/pulse-script' + path, {cache: 'no-store'}), 80);
+            window.worker = new Worker('/geo-worker.js?' + path);
+            </script>
+            """
+        }
+        let script = """
+        const path = self.location.search.slice(1);
+        setInterval(() => fetch('/pulse-worker' + path, {cache: 'no-store'}), 100);
+        """
+        let managed = AnsweringOpener(body: page("Managed GeoSite"), workerScript: script)
+        let original = AnsweringOpener(body: page("Original GeoSite"), workerScript: script)
+        let managedPort: UInt16 = 18_641
+        let originalPort: UInt16 = 18_642
+        let managedListener = try await makeListener(port: managedPort, tunnels: managed)
+        defer { try? managedListener.stop() }
+        let originalListener = try await makeListener(port: originalPort, tunnels: original)
+        defer { try? originalListener.stop() }
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        try await managedListener.start(at: date)
+        try await originalListener.start(at: date)
+        let coordinator = AccessHostStoreCoordinator(publisher: readyPublisher(port: managedPort), channel: .dev,
+            geoSiteCache: cache, geoSiteTransport: fixture.transport())
+        let (defaults, suite) = try makeSmartPreferences()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = BrowserPreferences(defaults: defaults)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), preferences: preferences,
+                                     hostCoordinator: coordinator)
+        let other = BrowserSession(dataStore: browser.dataStore, preferences: preferences, hostCoordinator: coordinator)
+        let tab = try XCTUnwrap(browser.activeTab)
+        let sibling = try XCTUnwrap(other.activeTab)
+        tab.keepsExplicitHTTPForTesting = true
+        sibling.keepsExplicitHTTPForTesting = true
+        let restoreOriginal = try observeOriginalStore(of: tab, port: originalPort)
+        defer { browser.closeWindow(); other.closeWindow(); restoreOriginal() }
+        try await tab.prepareContentRulesForTests()
+        try await sibling.prepareContentRulesForTests()
+        let window = show(tab.webView)
+        let otherWindow = show(sibling.webView)
+        defer {
+            window.isHidden = true
+            otherWindow.isHidden = true
+            let receipt = XCTAttachment(string: """
+            original authorities=\(Set(original.authorities).sorted())
+            managed authorities=\(Set(managed.authorities).sorted())
+            original resource=\(requests(original, "/pulse-resource/original")) script=\(requests(original, "/pulse-script/original")) worker=\(requests(original, "/pulse-worker/original"))
+            managed write=\(requests(managed, "POST /written")) script=\(requests(managed, "/pulse-script/written")) worker=\(requests(managed, "/pulse-worker/written"))
+            independent script=\(requests(managed, "/pulse-script/independent")) worker=\(requests(managed, "/pulse-worker/independent"))
+            """)
+            receipt.name = "GeoSite switch listener witnesses"
+            receipt.lifetime = .keepAlways
+            add(receipt)
+        }
+
+        func requests(_ listener: AnsweringOpener, _ path: String) -> Int {
+            listener.transcript.components(separatedBy: path + " ").count - 1
+        }
+        func route(_ path: String, host: String = "expanded.example.com") -> URL {
+            URL(string: "http://\(host)/\(path)")!
+        }
+        func awaitPage(_ tab: BrowserTab, in window: UIWindow, title: String,
+                       listener: AnsweringOpener, path: String) async throws {
+            func pageIsLive() -> Bool {
+                self.attach(tab.webView, to: window)
+                return tab.webView.title == title && requests(listener, "/pulse-resource/" + path) > 0
+                    && requests(listener, "/pulse-script/" + path) > 1 && requests(listener, "/pulse-worker/" + path) > 1
+            }
+            try await waitUntil(seconds: 12, pageIsLive, message: "Expected page, resource, script and worker at \(path)")
+            _ = try XCTUnwrap(pageIsLive() ? tab.webView.title : nil,
+                "Fixture traffic never became live. Title: \(tab.webView.title ?? "") error: \(tab.loadingError ?? "")")
+        }
+        func proveStopped(_ oldView: WKWebView, listener: AnsweringOpener, path: String) async throws {
+            try await waitUntil(seconds: 8, { oldView.url?.absoluteString == "about:blank" },
+                                message: "The affected WebKit document must become inert")
+            XCTAssertNil(oldView.load(URLRequest(url: route("resurrect"))))
+            try await Task.sleep(for: .milliseconds(180))
+            let scriptCount = requests(listener, "/pulse-script/" + path)
+            let workerCount = requests(listener, "/pulse-worker/" + path)
+            let controlCount = requests(managed, "/pulse-worker/independent")
+            try await Task.sleep(for: .milliseconds(420))
+            XCTAssertEqual(requests(listener, "/pulse-script/" + path), scriptCount)
+            XCTAssertEqual(requests(listener, "/pulse-worker/" + path), workerCount)
+            XCTAssertGreaterThan(requests(managed, "/pulse-worker/independent"), controlCount)
+        }
+
+        // The active tabs schedule their own start-page loads. Let those
+        // commits settle before sending either test document.
+        func windowsAreReady() -> Bool {
+            [tab, sibling].allSatisfy {
+                $0.liveCommittedDocumentURL?.absoluteString == "aegis://start" && !$0.isLoading
+            }
+        }
+        try await waitUntil(seconds: 8, windowsAreReady, message: "Both initial WebKit documents must finish")
+        guard windowsAreReady() else { throw CocoaError(.featureUnsupported) }
+        let oldOriginal = tab.webView
+        tab.load(route("original"))
+        sibling.load(route("independent", host: "independent.dotdeb.org"))
+        try await awaitPage(tab, in: window, title: "Original GeoSite", listener: original, path: "original")
+        try await awaitPage(sibling, in: otherWindow, title: "Managed GeoSite", listener: managed, path: "independent")
+        XCTAssertFalse(managed.authorities.contains("expanded.example.com:80"))
+        XCTAssertFalse(original.authorities.contains("independent.dotdeb.org:80"))
+
+        other.setWindowForeground(true)
+        try await waitUntil(seconds: 8, { cache.highWater?.releaseID == 1001 }, message: "First official response should stage Douban")
+        XCTAssertTrue(tab.webView === oldOriginal, "Refreshing alone does not provide consent")
+        let stale = try XCTUnwrap(coordinator.websiteCategoryProposal(.douban, for: other))
+        XCTAssertEqual(stale.addedRules.map(\.host), ["expanded.example.com"])
+
+        try await fixture.select("expand", version: 2)
+        simulatedOffset.withLock { $0 += 86_401 }
+        coordinator.checkpointGeoSiteClock()
+        try await waitUntil(seconds: 8, { cache.highWater?.releaseID == 1002 }, message: "Second official candidate should replace the first")
+        XCTAssertEqual(try XCTUnwrap(cache.highWater).releaseID, 1002)
+        let staleAccepted = await coordinator.confirmWebsiteCategory(stale, for: other)
+        XCTAssertFalse(staleAccepted)
+        XCTAssertTrue(tab.webView === oldOriginal)
+        let fresh = try XCTUnwrap(coordinator.websiteCategoryProposal(.douban, for: other))
+        XCTAssertNotEqual(stale.version, fresh.version)
+        let accepted = await coordinator.confirmWebsiteCategory(fresh, for: other)
+        XCTAssertTrue(accepted)
+        try await proveStopped(oldOriginal, listener: original, path: "original")
+
+        tab.load(route("entry"))
+        try await awaitPage(tab, in: window, title: "Managed GeoSite", listener: managed, path: "entry")
+        var post = URLRequest(url: route("written"))
+        post.httpMethod = "POST"
+        post.httpBody = Data("test-write".utf8)
+        tab.load(post)
+        try await awaitPage(tab, in: window, title: "Managed GeoSite", listener: managed, path: "written")
+        let oldManaged = tab.webView
+        let oldStore = tab.websiteDataStore
+        XCTAssertFalse(oldStore.proxyConfigurations.isEmpty)
+        XCTAssertEqual(requests(managed, "POST /written"), 1)
+        XCTAssertEqual(requests(original, "POST /written"), 0)
+
+        try await fixture.select("removed", version: 3)
+        simulatedOffset.withLock { $0 += 86_401 }
+        coordinator.checkpointGeoSiteClock()
+        try await waitUntil(seconds: 8, { cache.highWater?.releaseID == 1003 }, message: "Valid newer withdrawal should commit")
+        try await proveStopped(oldManaged, listener: managed, path: "written")
+        XCTAssertTrue(oldStore.proxyConfigurations.isEmpty, "Release the withdrawn store after its final document stops")
+        XCTAssertEqual(requests(managed, "POST /written"), 1)
+        XCTAssertEqual(requests(original, "POST /written"), 0)
+        XCTAssertFalse(original.transcript.contains("/pulse-script/written"))
+        XCTAssertFalse(managed.transcript.contains("/pulse-script/original"))
+
+        tab.load(route("reopened"))
+        try await awaitPage(tab, in: window, title: "Original GeoSite", listener: original, path: "reopened")
+        XCTAssertFalse(managed.transcript.contains("/pulse-script/reopened"))
+    }
+
+#endif
 
     func testGeoSiteLoadsRedirectedPageAndItsResourcesAndDoesNotReplayWritesAcrossStores() async throws {
         let managedPort: UInt16 = 18_474

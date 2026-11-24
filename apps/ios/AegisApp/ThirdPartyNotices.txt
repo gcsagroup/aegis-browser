@@ -335,8 +335,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 ========================================================================
-V2Fly domain-list-community — DEBIAN — MIT — https://github.com/v2fly/domain-list-community
+XTLS/Xray-rules-dat 20261120235103 — GeoSite — MIT
 Source file: scripts/licenses/access-core/v2fly-domain-list-community.txt
+
+Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261120235103
+DEBIAN, DOUBAN and MEITUAN are unmodified groups inherited from V2Fly domain-list-community.
+Source: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/README.md
+Inherited license: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited
 
 MIT License
 

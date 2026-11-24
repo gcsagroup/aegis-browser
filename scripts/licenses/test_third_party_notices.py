@@ -52,9 +52,12 @@ class NoticePackageTests(unittest.TestCase):
         model = view.split("struct ThirdPartyNoticesDocument {", 1)[1].split(
             "\nstruct ThirdPartyNoticesView:", 1)[0]
         generated = notices.render("ios")
-        self.assertEqual(len(generated), 208174)
+        self.assertEqual(len(generated), 208531)
         expected_sources = re.findall(rb"^Source file: (.+)$", generated, re.MULTILINE)
         self.assertEqual(len(expected_sources), 28)
+        inherited = notices.read(notices.ROOT, f"{notices.ACCESS}/v2fly-domain-list-community.txt")
+        self.assertEqual(hashlib.sha256(inherited).hexdigest(), "b9d84a22870d3f21c91a4c6e410c9cc51d00902f5233ad0c84011479244bf7d2")
+        self.assertIn(b"LICENSE-inherited\n\n" + inherited.rstrip() + b"\n", generated)
         program = "import Foundation\nstruct ThirdPartyNoticesDocument {" + model + r'''
 let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
 let text = String(decoding: data, as: UTF8.self)
@@ -121,7 +124,13 @@ for notice in document.notices.dropFirst(6) {
 precondition(presented.contains { $0.body.contains("Source snapshot: https://github.com/publicsuffix/list/blob/") })
 precondition(presented.contains { $0.title.contains("Xray-core") && $0.body.contains("Mozilla Public License Version 2.0") })
 precondition(presented.contains { $0.title.contains("libXray") && $0.body.contains("MIT License") })
-precondition(presented.contains { $0.title.contains("V2Fly domain-list-community") && $0.body.contains("Copyright (c) 2018-2019 V2Ray") })
+precondition(presented.contains {
+    $0.title == "XTLS/Xray-rules-dat 20261120235103 — GeoSite — MIT"
+        && $0.body.contains("DEBIAN, DOUBAN and MEITUAN are unmodified groups inherited from V2Fly domain-list-community.")
+        && $0.body.contains("https://github.com/XTLS/Xray-rules-dat/releases/tag/20261120235103")
+        && $0.body.contains("d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited")
+        && $0.body.contains("Copyright (c) 2018-2019 V2Ray")
+})
 precondition(!presented.contains { $0.body.contains("Source file:") })
 
 func replacingSection(_ index: Int, with replacement: String) -> String {
