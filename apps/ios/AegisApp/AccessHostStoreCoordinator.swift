@@ -326,6 +326,11 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         reconcileGeoSiteRefresh(using: transport)
     }
 
+    func cancelOverseasPreview(for tab: BrowserTab) {
+        guard offersWebsiteAcceleration(for: tab) else { return }
+        geoSiteCache?.cancelOverseasPreview()
+    }
+
     struct OverseasSettingsConfirmation: Identifiable {
         let offer: AccessGeoSiteCache.OverseasConfirmation
         fileprivate let window: UUID

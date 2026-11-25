@@ -293,6 +293,92 @@ final class AccessGeoSiteFullFrozenAdmissionTests: XCTestCase {
 final class AccessOverseasAdmissionTests: XCTestCase {
     private typealias Vector = AccessGeoSiteTestVector
 
+    func testMixedIntersectionSealsAndRecoversBothSourceExceptionSets() throws {
+        let choice = AccessOverseasSelection(enabled: true, mode: .all)
+        let shared = [Vector.rule(2, "example.com")]
+        let prior = try AccessOverseasCacheSnapshot(overseasCandidate(shared + [Vector.rule(2, "example.org")],
+            excluding: (0..<512).map { Vector.rule(2, "old-\($0).example.com") })).approving(choice)
+        let offered = try AccessOverseasCacheSnapshot(overseasCandidate(shared + [Vector.rule(2, "example.net")],
+            excluding: (0..<512).map { Vector.rule(3, "new-\($0).example.com") }, newer: true))
+        let intersection = try XCTUnwrap(offered.narrowed(to: choice, retaining: prior))
+
+        let recovered = try roundTrip(intersection, approved: choice)
+        XCTAssertEqual(recovered.exclusions.count, 1_024)
+        XCTAssertTrue(recovered.matches(try url("safe.example.com")))
+        XCTAssertTrue(recovered.matches(try url("child.new-511.example.com")))
+        for host in ["child.old-511.example.com", "new-511.example.com", "example.org", "example.net"] {
+            XCTAssertFalse(recovered.matches(try url(host)), host)
+        }
+    }
+
+    func testChainedIntersectionKeepsProvableCoverageWhenExceptionsOverflow() throws {
+        let rules = [Vector.rule(2, "example.com"), Vector.rule(2, "safe.example.com"),
+                     Vector.rule(2, "example.org"), Vector.rule(3, "keep.example.com")]
+        func policy(_ prefix: String) throws -> AccessOverseasCatalogue.Policy {
+            let exclusions = (0..<512).map { Vector.rule(2, "\(prefix)-\($0).example.com") }
+            let candidate = try overseasCandidate(rules, excluding: exclusions)
+            return try XCTUnwrap(candidate.overseas).policy(for: .all)
+        }
+        let first = try policy("a")
+        let second = try policy("b")
+        let third = try policy("c")
+        let prior = try XCTUnwrap(first.intersection(with: second))
+        let intersection = try XCTUnwrap(third.intersection(with: prior))
+
+        XCTAssertEqual(intersection, prior.intersection(with: third))
+        for host in ["example.com", "keep.example.com", "child.safe.example.com", "child.example.org"] {
+            XCTAssertTrue(intersection.matches(try url(host)), host)
+        }
+        for host in ["a-511.example.com", "b-511.example.com", "c-511.example.com", "child.keep.example.com"] {
+            XCTAssertFalse(intersection.matches(try url(host)), host)
+        }
+    }
+
+    func testMixedIntersectionKeepsProvableCoverageWhenSnapshotBytesOverflow() throws {
+        let choice = AccessOverseasSelection(enabled: true, mode: .all)
+        let label = String(repeating: "a", count: 63)
+        let longPrefix = [label, label, label, String(repeating: "b", count: 44)].joined(separator: ".")
+        func hosts(under domain: String) -> [Data] {
+            (1_000...9_189).map { Vector.rule(3, "\(longPrefix).\($0).\(domain)") }
+        }
+        let shared = [Vector.rule(3, "keep.example.org")]
+        let prior = try AccessOverseasCacheSnapshot(overseasCandidate(
+            [Vector.rule(2, "example.com")] + shared + hosts(under: "example.net"))).approving(choice)
+        let offered = try AccessOverseasCacheSnapshot(overseasCandidate(
+            [Vector.rule(2, "example.net")] + shared + hosts(under: "example.com"), newer: true))
+        let intersection = try XCTUnwrap(offered.narrowed(to: choice, retaining: prior))
+
+        let recovered = try roundTrip(intersection, approved: choice)
+        XCTAssertGreaterThan(recovered.rules.count, 8_192)
+        XCTAssertLessThan(recovered.rules.count, 16_381)
+        XCTAssertTrue(recovered.matches(try url("keep.example.org")))
+        XCTAssertFalse(recovered.matches(try url("unlisted.example.net")))
+    }
+
+    private func overseasCandidate(_ rules: [Data], excluding exclusions: [Data] = [], newer: Bool = false) throws
+        -> AccessGeoSiteAdmission.Candidate {
+        let database = Vector.group("GFWLIST-CN", rules: rules) + Vector.group("GFWLIST-CN-EXCLUDE", rules: exclusions)
+        return try Vector.admit(database, newer: newer, includeOverseas: true)
+    }
+
+    private func roundTrip(_ snapshot: AccessOverseasCacheSnapshot, approved: AccessOverseasSelection) throws
+        -> AccessOverseasCatalogue.Policy {
+        let owner = UUID()
+        let storage = AccessGeoSiteStorage(directory: FileManager.default.temporaryDirectory.appendingPathComponent(owner.uuidString),
+                                          service: "aegis.geosite.test." + owner.uuidString)
+        defer { try? FileManager.default.removeItem(at: storage.directory) }
+        let reference = try snapshot.seal(owner: owner, storage: storage)
+        XCTAssertLessThan(reference.length, 4 * 1024 * 1024)
+        let recovered = try AccessOverseasCacheSnapshot.recover(reference, owner: owner, approved: approved,
+                                                              storage: storage, now: Vector.now)
+        XCTAssertEqual(recovered.policy, snapshot.policy)
+        return recovered.policy
+    }
+
+    private func url(_ host: String) throws -> URL {
+        try XCTUnwrap(URL(string: "https://\(host)/"))
+    }
+
     func testExactCategoryDeltaOnlyReportsNewlyReachableHosts() throws {
         let mother = Vector.group("GFWLIST-CN", rules: [Vector.rule(2, "google.com"), Vector.rule(3, "chatgpt.com")])
         let topic = Vector.group("GOOGLE-GEMINI", rules: [Vector.rule(3, "gemini.google.com")])

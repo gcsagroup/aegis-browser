@@ -86,7 +86,7 @@ struct AccessGeoSiteUpdateTransport: Sendable {
                                      limit: AccessGeoSiteAdmission.maximumDatabaseBytes)
         let candidate = try AccessGeoSiteAdmission.admit(receipt: receipt, database: database.bytes,
                                                          checksum: pair.bytes, now: now, highWater: highWater,
-                                                         includeOverseas: includeOverseas)
+                                                         includeOverseas: includeOverseas, allowDomesticFallback: true)
         return .candidate(candidate, etag: Self.validETag(metadata.etag))
     }
 

@@ -54,6 +54,12 @@ struct OverseasAccelerationSettingsView: View {
                         if isWaitingForRules {
                             Text(state.refreshFailed ? "下载失败" : "正在更新规则…")
                         }
+                        if state.previewRequested && !state.selection.enabled {
+                            Button("取消") {
+                                hostStores.cancelOverseasPreview(for: tab)
+                                isWaitingForRules = false
+                            }
+                        }
                     }
                 }
                 if let message { Section { Text(message).foregroundStyle(.secondary) } }

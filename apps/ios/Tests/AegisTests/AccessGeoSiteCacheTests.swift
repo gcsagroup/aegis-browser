@@ -16,6 +16,43 @@ final class AccessGeoSiteCacheTests: XCTestCase {
     private let outside = URL(string: "https://example.net/")!
     private let smartAll = Cache.Selection(mode: .smart, categories: [.debian, .douban, .meituan])
 
+    func testRejectedOverseasRulesPublishDomesticUpdateAndSuppressConditionalRefresh() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        try cache.requestOverseasPreview()
+        cache.cancelOverseasPreview()
+        XCTAssertFalse(cache.wantsOverseasRules)
+        XCTAssertNotNil(cache.updateContext())
+        try cache.requestOverseasPreview()
+        let initial = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(initial, using: XCTUnwrap(cache.updateContext()))
+        let selection = AccessOverseasSelection(enabled: true, categories: [.ai])
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: selection)) { true }
+        let gemini = URL(string: "https://gemini.google.com")!
+        XCTAssertEqual(cache.runtimeView().overseas.match(gemini), .managed)
+
+        let database = Vector.group("DEBIAN", rules: [Vector.rule(3, "debian.org")])
+        let receipt = try Self.candidate(2, database: database).receipt
+        let checksum = try Vector.release(database).checksum
+        let candidate = try AccessGeoSiteAdmission.admit(receipt: receipt, database: database, checksum: checksum,
+            now: Vector.now, includeOverseas: true, allowDomesticFallback: true)
+        XCTAssertTrue(candidate.overseasRejected)
+        try await cache.apply(candidate, using: XCTUnwrap(cache.updateContext()), refreshed: .init(etag: "\"domestic\""))
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.highWater, receipt)
+        let domestic = try XCTUnwrap(cold.proposal(for: .debian))
+        try await cold.confirm(domestic)
+        XCTAssertEqual(cold.match(URL(string: "https://debian.org")!), .managed)
+        XCTAssertTrue(cold.view.overseas.refreshFailed)
+        XCTAssertNil(cold.overseasPreview)
+        XCTAssertNotEqual(cold.runtimeView().overseas.match(gemini), .managed)
+        let conditional = try await cold.conditionalReceipt(using: XCTUnwrap(cold.updateContext()))
+        XCTAssertNil(conditional)
+    }
+
     func testFreshOfflineBaselineHasNoCalendarExpiryAndEmptySelectionSurvives() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
@@ -446,7 +483,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertEqual(candidate.newRules.map(\.value), ["claude.ai"])
     }
 
-    func testOverseasAllScopeHoldsWhenSafeDomainIntersectionExceedsCapacity() async throws {
+    func testOverseasAllScopeRetainsDomainAcrossTwoFullExceptionSets() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
         let cache = fixture.cache()
@@ -463,7 +500,9 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         let cold = fixture.cache()
         await cold.restore()
         XCTAssertTrue(cold.view.overseas.awaitingExpansion)
-        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://unchanged.example.com")!), .indeterminate)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://unchanged.example.com")!), .managed)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://old-1.example.com")!), .original)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://new-1.example.com")!), .original)
         XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
         await expectExpansionTooLarge { try await cold.overseasConfirmation(for: all) }
         let flight = try cold.beginOverseasRefresh(using: XCTUnwrap(cold.updateContext()))
@@ -471,10 +510,11 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         let interrupted = fixture.cache()
         await interrupted.restore()
         XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
-        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.net")!), .indeterminate)
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.net")!), .original)
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://unchanged.example.com")!), .indeterminate)
         fixture.clock.advance(by: 8 * 86_400)
         XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
-        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.net")!), .indeterminate)
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.net")!), .original)
         fixture.clock.setWall(fixture.clock.wall.addingTimeInterval(-600))
         XCTAssertEqual(interrupted.runtimeView().status, .clockRollback)
         XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
@@ -726,6 +766,68 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertEqual(cold.runtimeView().overseas.match(target), .indeterminate)
         try cold.disableOverseas()
         XCTAssertEqual(cold.runtimeView().overseas.match(target), .original)
+    }
+
+    func testInterruptedOverseasRefreshRestoresPriorIntersectionAfterExactReplay() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        let v2 = try Self.overseas(2, positive: ["google.com", "fast.com"], excluding: [])
+        try await cache.apply(v2, using: XCTUnwrap(cache.updateContext()))
+
+        let approved = URL(string: "https://www.google.com")!
+        let added = URL(string: "https://fast.com")!
+        XCTAssertEqual(cache.runtimeView().overseas.match(approved), .managed)
+        _ = try XCTUnwrap(cache.beginOverseasRefresh(using: XCTUnwrap(cache.updateContext())))
+
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.runtimeView().overseas.match(approved), .indeterminate)
+        XCTAssertNil(cold.overseasPreview)
+        let retry = try XCTUnwrap(cold.beginOverseasRefresh(using: XCTUnwrap(cold.updateContext())))
+        cold.endOverseasRefresh(retry)
+        let resumed = fixture.cache()
+        await resumed.restore()
+        XCTAssertEqual(resumed.runtimeView().overseas.match(approved), .indeterminate)
+        try await resumed.apply(v2, using: XCTUnwrap(resumed.updateContext()))
+
+        let reopened = fixture.cache()
+        await reopened.restore()
+        XCTAssertEqual(reopened.runtimeView().overseas.match(approved), .managed)
+        XCTAssertEqual(reopened.runtimeView().overseas.match(added), .original)
+        XCTAssertTrue(reopened.view.overseas.awaitingExpansion)
+        let expansion = try await reopened.overseasConfirmation(for: all)
+        XCTAssertEqual(expansion.newRules.map(\.value), ["fast.com"])
+        XCTAssertTrue(expansion.removedExclusions.isEmpty)
+    }
+
+    func testUnreadableOverseasRefreshJournalCannotRestorePriorApprovalOnExactReplay() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        _ = try XCTUnwrap(cache.beginOverseasRefresh(using: XCTUnwrap(cache.updateContext())))
+        try fixture.storage.writeOverseasFlight(Data("damaged".utf8))
+
+        let cold = fixture.cache()
+        await cold.restore()
+        let target = URL(string: "https://www.google.com")!
+        XCTAssertEqual(cold.runtimeView().overseas.match(target), .indeterminate)
+        XCTAssertNil(cold.overseasPreview)
+        try await cold.apply(v1, using: XCTUnwrap(cold.updateContext()))
+        XCTAssertEqual(cold.runtimeView().overseas.match(target), .indeterminate)
+        await expectExpansionTooLarge { try await cold.overseasConfirmation(for: all) }
     }
 
     func testUnknownOverseasRecoveryHoldSurvivesFailedRetryAndCorruptJournal() async throws {
