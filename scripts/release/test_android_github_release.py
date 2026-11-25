@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
+from urllib.parse import quote
 import zipfile
 
 
@@ -58,14 +60,17 @@ def evidence(profile='release', symbols=True, observed_at=None):
             'current_sha': SHA, 'current_tree': TREE,
             'package_run': workflow_run(PACKAGE_RUN, '.github/workflows/android-delivery.yml',
                                         [job(11, 'delivery / package', PACKAGE_RUN), job(12, 'delivery / store', PACKAGE_RUN)]),
+            'upload_run': workflow_run(PACKAGE_RUN, '.github/workflows/android-delivery.yml',
+                                       [job(12, 'delivery / store', PACKAGE_RUN)]),
             'package_record': {'origin': origin, 'profile': profile, 'version': version, 'build': build,
                                'package_job_id': 11, 'artifact_id': 70, 'artifact_name': f'android-package-{PACKAGE_RUN}-1',
                                'artifact_digest': 'sha256:' + '11' * 32},
             'package_artifact': {'id': 70, 'name': f'android-package-{PACKAGE_RUN}-1', 'expired': False,
                                  'digest': 'sha256:' + '11' * 32},
             'manifest': manifest, 'manifest_sha256': DIGEST, 'upload_start': intent,
-            'upload_result': {'intent': intent, 'result': {'status': 'uploaded_draft', 'packageName': release.APPLICATION_ID,
-                                                           'track': 'internal', 'releaseStatus': 'draft'}},
+            'upload_result': {'intent': intent, 'uploadRunId': PACKAGE_RUN, 'uploadRunAttempt': 1,
+                              'result': {'status': 'uploaded_draft', 'packageName': release.APPLICATION_ID,
+                                         'track': 'internal', 'releaseStatus': 'draft', 'versionCode': int(build)}},
             'status_run': workflow_run(STATUS_RUN, '.github/workflows/android-delivery.yml',
                                        [job(21, 'delivery / query', STATUS_RUN)]),
             'status_artifact': {'id': 80, 'name': f'android-release-status-{STATUS_RUN}-1', 'expired': False,
@@ -84,7 +89,17 @@ class ReleaseEvidenceTests(unittest.TestCase):
         candidate = release.validate_delivery_evidence(evidence(), 'stable', 'prerelease')
         first = release.build_release_plan(candidate)
         changed = release.build_release_plan({**candidate, 'artifactId': 71})
-        promoted = release.build_release_plan(release.validate_delivery_evidence(evidence(), 'stable', 'stable'))
+        stable = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
+        promoted = release.build_release_plan(stable, stable_release_id=37)
+        replacement = release.build_release_plan(stable, stable_release_id=38)
+        self.assertNotIn('releaseId', first)
+        self.assertEqual(promoted['releaseId'], 37)
+        self.assertNotEqual(promoted['planSha256'], replacement['planSha256'])
+        self.assertEqual(promoted['releaseIdentitySha256'], replacement['releaseIdentitySha256'])
+        self.assertEqual(release._expected_tag_message(promoted), release._expected_tag_message(replacement))
+        for invalid in (None, True, 0, -1, '37'):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'positive GitHub Release ID'):
+                release.build_release_plan(stable, stable_release_id=invalid)
         self.assertNotEqual(first['planSha256'], changed['planSha256'])
         self.assertEqual(first['releaseIdentitySha256'], changed['releaseIdentitySha256'])
         self.assertEqual(first['releaseIdentitySha256'], promoted['releaseIdentitySha256'])
@@ -114,10 +129,20 @@ class ReleaseEvidenceTests(unittest.TestCase):
             bundle.write_bytes(blob)
             release.extract_verified_status_archive(bundle, Path(temp) / 'status.json', digest)
             self.assertEqual((Path(temp) / 'status.json').read_text(), '{"ok":true}')
-        sample = 'jar verified.\nSHA-256: ' + ':'.join(DIGEST[index:index + 2] for index in range(0, 64, 2))
-        self.assertEqual(verifier.parse_certificate(sample), DIGEST)
-        with self.assertRaises(ValueError):
-            verifier.parse_certificate('jar verified.\nSHA256: aa:bb\nSHA-256: cc:dd')
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'bundle.aab'
+            with zipfile.ZipFile(path, 'w') as bundle:
+                bundle.writestr('BundleConfig.pb', b'config')
+            with mock.patch.object(verifier.subprocess, 'run',
+                                   return_value=mock.Mock(returncode=0, stdout=DIGEST + '\n')) as java:
+                self.assertEqual(verifier.certificate_sha256(path), DIGEST)
+                args = java.call_args.args[0]
+                self.assertEqual(args[0], 'java')
+                self.assertTrue(args[1].endswith('VerifiedAabCertificate.java'))
+            with mock.patch.object(verifier.subprocess, 'run', return_value=mock.Mock(returncode=1)):
+                with self.assertRaisesRegex(ValueError, 'single verified certificate'):
+                    verifier.certificate_sha256(path)
+
 
     def test_ruleset_allows_omitted_bypass_and_promotion_needs_a_prerelease(self):
         desired = json.loads((Path(__file__).resolve().parents[2] / release.TAG_RULESET).read_text())
@@ -138,7 +163,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         finally:
             release._api = original
         candidate = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
-        plan = release.build_release_plan(candidate)
+        plan = release.build_release_plan(candidate, stable_release_id=37)
 
         def missing(path, payload=None, method=None):
             if path.startswith('releases/tags/'):
@@ -147,14 +172,40 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 return []
             raise AssertionError(path)
 
-        release._current_repository = lambda: ({}, SHA, TREE)
-        release._api = missing
-        try:
-            with self.assertRaises(ValueError) as caught:
+        with (mock.patch.object(release, '_current_repository', return_value=({}, SHA, TREE)),
+              mock.patch.object(release, '_api', side_effect=missing)):
+            with self.assertRaisesRegex(ValueError, 'public prerelease'):
                 release._promote_to_stable(plan)
-        finally:
-            release._api = original
-        self.assertIn('prerelease', str(caught.exception).lower())
+
+    def test_stable_promotion_rejects_retagged_prerelease_before_patch(self):
+        candidate = release.validate_delivery_evidence(evidence(), 'stable', 'stable')
+        plan = release.build_release_plan(candidate, stable_release_id=37)
+        prerelease = {'id': 37, 'tag_name': plan['tag'], 'draft': False, 'prerelease': True,
+                      'assets': [{'name': name, 'state': 'uploaded', 'digest': 'sha256:' + digest}
+                                 for name, digest in plan['assets'].items()]}
+        original_tag = quote(plan['tag'], safe='')
+        tag_sha = 'c' * 40
+        responses = {
+            f'releases/tags/{original_tag}': prerelease,
+            f'git/ref/tags/{original_tag}': {'object': {'type': 'tag', 'sha': tag_sha}},
+            f'git/tags/{tag_sha}': {'object': {'type': 'commit', 'sha': SHA},
+                                   'message': release._expected_tag_message(plan)},
+            'releases/37': {**prerelease, 'tag_name': 'android/retagged'},
+        }
+
+        with (mock.patch.dict(release.os.environ, {'GITHUB_RUN_ID': '51'}),
+              mock.patch.object(release, '_current_repository', return_value=({}, SHA, TREE)),
+              mock.patch.object(release, '_check_approval'),
+              mock.patch.object(release, '_api', side_effect=responses.__getitem__) as api):
+            with self.assertRaisesRegex(ValueError, 'Release ID or tag changed'):
+                release._promote_to_stable(plan)
+
+        self.assertEqual(api.call_args_list, [
+            mock.call(f'releases/tags/{original_tag}'),
+            mock.call(f'git/ref/tags/{original_tag}'), mock.call(f'git/tags/{tag_sha}'),
+            mock.call(f'git/ref/tags/{original_tag}'), mock.call(f'git/tags/{tag_sha}'),
+            mock.call('releases/37'),
+        ])
 
     def test_seal_round_trip(self):
         with tempfile.TemporaryDirectory() as temp:

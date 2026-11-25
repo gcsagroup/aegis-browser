@@ -1,3 +1,3 @@
-"NSCameraUsageDescription" = "Aegis meminta izin sebelum situs web menggunakan kamera Anda.";
+"NSCameraUsageDescription" = "Aegis meminta izin sebelum situs web menggunakan kamera Anda atau Anda memindai kode QR node uji.";
 "NSMicrophoneUsageDescription" = "Aegis meminta izin sebelum situs web menggunakan mikrofon Anda.";
 "Markdown 文档" = "Dokumen Markdown";

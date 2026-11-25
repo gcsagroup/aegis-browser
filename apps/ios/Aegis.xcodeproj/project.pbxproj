@@ -126,6 +126,7 @@
 		57DB9D8788751B444E94B39D /* AccessRealityProbeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93283F2F66AED8C73215F4F2 /* AccessRealityProbeError.swift */; };
 		57F7D0DE7179CAB59B1C9E4D /* AgentContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B191048BDD989006216DCB6 /* AgentContracts.swift */; };
 		58050E252DB5F6270E949D4F /* BrowserSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B953D0FA16C857B4161F1341 /* BrowserSettings.swift */; };
+		4E2B2943B3DE678576877ED0 /* OverseasAccelerationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A792F6A78C93F8C8101F62 /* OverseasAccelerationSettingsView.swift */; };
 		58077271AD465AE7E7F3DC0B /* AccessXrayDigestVerifying.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8689B1B38C23556721AA3C3 /* AccessXrayDigestVerifying.swift */; };
 		5863057A32B87E3566A64989 /* icon-64.png in Resources */ = {isa = PBXBuildFile; fileRef = 17E9584164590A3AADF9AEAD /* icon-64.png */; };
 		58DBFB099C3AEB133708A0FD /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 8FF23EC4AC2439B1E18C02A5 /* background.js */; };
@@ -139,6 +140,8 @@
 		5DF6C5DD65244348EE137046 /* AccessUsagePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE69F147725CCB975EFDA4B /* AccessUsagePage.swift */; };
 		5E0260208A956B2D7C036DB8 /* icon-256.png in Resources */ = {isa = PBXBuildFile; fileRef = 79B8057C45E31C106CCBD50F /* icon-256.png */; };
 		5E94F6A20FEE46649FAE643D /* FirebaseInstallationCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76362E1332AEE6CE280B693 /* FirebaseInstallationCleanup.swift */; };
+		5EE75D92D196BC21A04D1C12 /* AccessGeoSiteAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04669089BD3A65A732EB0F23 /* AccessGeoSiteAdmission.swift */; };
+		5790653A43C5D48811FFC2D2 /* AccessOverseasCatalogue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8827DE3A86197F24420757F5 /* AccessOverseasCatalogue.swift */; };
 		5F330B083DC9F2371801C627 /* AccessDevAllowBlockSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DFE3B27F6365B330F0E739 /* AccessDevAllowBlockSectionView.swift */; };
 		5F3417E7B4BCA29FBC13A8EC /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 68E446701B5F847B61CB3995 /* PrivacyInfo.xcprivacy */; };
 		5F49F1C483F473646F56D052 /* ReadingLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9594C0B3C26733D2849ABD0 /* ReadingLibraryView.swift */; };
@@ -224,6 +227,7 @@
 		990490FD4684FC60F2FA14AE /* WebKitProtectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314FC38B754B637D425BB05B /* WebKitProtectionTests.swift */; };
 		99624D1147C31EBCB96730B6 /* WebpageCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D324E04F80A7EAFB7DED6B43 /* WebpageCaptureView.swift */; };
 		99AED4C64DE01AA2DA8A5E9E /* AccessAccountUsagePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13251A4612ABBF216EAFF447 /* AccessAccountUsagePresentation.swift */; };
+		9B1953760AA59D2808FB9BD1 /* AccessGeoSiteCatalogue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC02B6D11358636A4317F95E /* AccessGeoSiteCatalogue.swift */; };
 		9C972E800FB85060344EF675 /* AccessEmbeddedCoreLiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02B2EB0A2F688C7DC60173B7 /* AccessEmbeddedCoreLiveTests.swift */; };
 		9D099B8550D3EA4AE3858E8D /* AccessRealityProbeExecuting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F4FD6207031E55916E22E9 /* AccessRealityProbeExecuting.swift */; };
 		9DB590ACA11210E6059645E2 /* AccessHTTPConnectSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD471098DA4859D3734133C0 /* AccessHTTPConnectSession.swift */; };
@@ -241,6 +245,7 @@
 		A3D7B09E532CEACA66A14C52 /* FirebaseInstallPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */; };
 		A40DD7C450CBA04822B373DE /* AccessSOCKS5InboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D84634472E2C87E1E94807 /* AccessSOCKS5InboundListener.swift */; };
 		A5A1195ADA40E0F62926A870 /* AccessSiteProxySessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A3D7253C7215FF069464853 /* AccessSiteProxySessionStore.swift */; };
+		B9B75E526C8F2D85476A19E7 /* AccessInternalTestNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B1425D481624E85A5DE5EC /* AccessInternalTestNode.swift */; };
 		A5A816B1F50CAB795957DF4E /* AccessLocalV2RayConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00C47D09251B2A788E7A60D /* AccessLocalV2RayConfig.swift */; };
 		A5D16577C28F1F3AAE156C2A /* SettingsLayoutUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0510756A74BFFCEF7ECFDE21 /* SettingsLayoutUITests.swift */; };
 		A75E140D24416D324155FAD6 /* BrowserKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -298,6 +303,7 @@
 		C7DD24CEA48B657275D6EDE3 /* WebKitTestWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DC4FF97239A8336FD50ABC /* WebKitTestWindows.swift */; };
 		C7F29894ACF611B73F67D456 /* LinkSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4E50D21E8474FF97F7DAE7 /* LinkSanitizerTests.swift */; };
 		C830E4C24B4ED81BBA760F93 /* AccessKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8A17DFAF27700574B0C5F4C4 /* AccessKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		C90FC0B5EEA9A2AEBACA4DA1 /* AegisPolicyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; };
 		C97391F838CD807B58557C14 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C5C0AD744FA049B26B540464 /* PrivacyInfo.xcprivacy */; };
 		CA92CBFB98831AD27A506098 /* AccessHTTPRealityPathError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120EB135A02BAC203C205177 /* AccessHTTPRealityPathError.swift */; };
 		CAA549556B28B5982130EC4D /* FirebaseRemoteDiagnosticsSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A181126D7E0D4639B4FC047 /* FirebaseRemoteDiagnosticsSource.swift */; };
@@ -318,6 +324,7 @@
 		D2EC2DA381CB86BB45A7C476 /* AccessWebKitRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F0B7B7172BCFC7AF4AD7AB /* AccessWebKitRoutingCapabilityTests.swift */; };
 		D35B3481239DE8C4774C0956 /* WorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0193749B7636A106F72F9642 /* WorkflowTests.swift */; };
 		D3C0C38220BB297F3A973AC3 /* BrowserKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; };
+		D3E812CDF18D6E59014C5AE4 /* AccessGeoSiteAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 312850823718580735F43C85 /* AccessGeoSiteAdmissionTests.swift */; };
 		D4108FECB3D2DED44456BD69 /* RegisteredDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F854D004C62FE3098042103 /* RegisteredDomain.swift */; };
 		D52CDAFFC1D391D3D1468A1C /* AccessAccountEntitlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBBBF79C916B9D98ED59ED9 /* AccessAccountEntitlement.swift */; };
 		D5FEAE2F2E083C5543A08A26 /* AccessAccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DF45A378A2A00CBA326CA3 /* AccessAccountSession.swift */; };
@@ -360,6 +367,7 @@
 		ECF024EB3FCFED40407E6CE6 /* AccessHTTPSInboundFrontPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9AA2751CA8E3CDE65D7779D /* AccessHTTPSInboundFrontPlan.swift */; };
 		ED984C0A15E2D7E9FE8E2CDE /* RemoteDiagnosticsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A09F47015C4CF1148C86C78 /* RemoteDiagnosticsPolicy.swift */; };
 		EE37D813D0D8FC497087CBA0 /* enhancements_shared in Resources */ = {isa = PBXBuildFile; fileRef = BAF2AA6253F933AA8EF47610 /* enhancements_shared */; };
+		EEA6F079B54F71682D31FEC4 /* AccessGeoSiteSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11407544FE931A82D1CAB39E /* AccessGeoSiteSelectionTests.swift */; };
 		EEF3036CF71240B396A67F91 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9E49E3A13317A299E03EC0 /* WorkspaceStore.swift */; };
 		EF9FD91A54EB1C28D06D9F0E /* SettingsFormControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8082F09623C73FCCCE2FD4D7 /* SettingsFormControls.swift */; };
 		F0358664B6B9171AD9B429F9 /* SafariWebExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4BED1A1355A1EB0F9884D002 /* SafariWebExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -384,6 +392,17 @@
 		FE9F0161923B4F3B8113E7BA /* AccessSOCKS5InboundParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C847A626F65D47D1D17E704 /* AccessSOCKS5InboundParser.swift */; };
 		FF0A91425480299B9A465E34 /* ExternalPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2D2FFC6E99254E69EFC1E7 /* ExternalPageLink.swift */; };
 		FFD0D8F1BB9920FE7C0C3B35 /* ThreeXUISubscriptionRedirectFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EEC6BC393F5B54A72EFBC2B /* ThreeXUISubscriptionRedirectFixtureTests.swift */; };
+		CF40698120DE47BCA6C9C7C3 /* AccessGeoSiteCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 884B39628C0654FC1D223CF0 /* AccessGeoSiteCache.swift */; };
+		503DF5E6426186EEF75FCB2C /* AccessOverseasCacheSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E73AA0415908BA35EBC4068 /* AccessOverseasCacheSnapshot.swift */; };
+		1E28A7D21BD347D1E4758CD4 /* AccessGeoSiteUpdateTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAE0CA05715F3CBE5D0B9326 /* AccessGeoSiteUpdateTransport.swift */; };
+		E44C81770C4E6E49CF5AAF0F /* AccessGeoSiteCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4957F47D9F5EAA2BFCB08D5F /* AccessGeoSiteCacheTests.swift */; };
+		F7941A2A40B34C362D948844 /* AccessGeoSiteUpdateTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C1A6CE3C985BE392417071 /* AccessGeoSiteUpdateTransportTests.swift */; };
+		D981D18A6B11AC36AD8CF19F /* AccessCommonPilotDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58F3FE915EE8BE8171573239 /* AccessCommonPilotDeviceTests.swift */; };
+		FBF116CA04747DB1D0951076 /* AccessCampaignBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AE929429093DF4E1A99CCE2 /* AccessCampaignBudgetTests.swift */; };
+		54E49E445CD6C20C7655974F /* AccessTestNodeEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 726F6C2DE67B2577C793481D /* AccessTestNodeEditorTests.swift */; };
+		E177F2E434D17AE05D898DF2 /* AccessTestNodeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D41ABAFC3BD71A202D11BC /* AccessTestNodeViews.swift */; };
+		E8B84191174402DB083F8AFA /* AccessTestNodeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B50A15B5EA6602740DA3945 /* AccessTestNodeEditor.swift */; };
+		FE428CCFC1490FE96988057C /* AccessTestNode.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E1BC3C9EC5D9A8F5CF6FF41A /* AccessTestNode.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -449,6 +468,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7B29AD1496FC1D1ADFB7B324;
 			remoteInfo = Aegis;
+		};
+		9EA3F4DB8C98DC9160187A4B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A79F0FC08A942DD42F3FFB96;
+			remoteInfo = AegisPolicyKit;
 		};
 		A1A34477FA7F5FDE39DC2E0D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -548,6 +574,8 @@
 		02B2EB0A2F688C7DC60173B7 /* AccessEmbeddedCoreLiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreLiveTests.swift; sourceTree = "<group>"; };
 		02D5318F98B98D709C5312B7 /* AccessHostSelectiveProxyCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostSelectiveProxyCapabilityTests.swift; sourceTree = "<group>"; };
 		037C51E582A13D84AA1C122E /* AccessHTTPConnectError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectError.swift; sourceTree = "<group>"; };
+		04669089BD3A65A732EB0F23 /* AccessGeoSiteAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteAdmission.swift; sourceTree = "<group>"; };
+		8827DE3A86197F24420757F5 /* AccessOverseasCatalogue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessOverseasCatalogue.swift; sourceTree = "<group>"; };
 		0510756A74BFFCEF7ECFDE21 /* SettingsLayoutUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsLayoutUITests.swift; sourceTree = "<group>"; };
 		0566DCB113FA458049F3395C /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		0733E717B779380580E227F2 /* AssistantTaskStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTaskStoreTests.swift; sourceTree = "<group>"; };
@@ -568,6 +596,7 @@
 		0D70A73F99051BB71BD7B95D /* ShareInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInbox.swift; sourceTree = "<group>"; };
 		0DE63E988392D6223E06F425 /* AccessHTTPSInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundListener.swift; sourceTree = "<group>"; };
 		0FFDCC53F63E9D3E369DF57B /* AccessAccountUsageRefreshCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessAccountUsageRefreshCoordinator.swift; sourceTree = "<group>"; };
+		11407544FE931A82D1CAB39E /* AccessGeoSiteSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteSelectionTests.swift; sourceTree = "<group>"; };
 		120EB135A02BAC203C205177 /* AccessHTTPRealityPathError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPRealityPathError.swift; sourceTree = "<group>"; };
 		12381FD7114703959852EF0B /* AccessEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEndpoint.swift; sourceTree = "<group>"; };
 		1246D801533AFA1F4A96EBA5 /* ModelClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelClientTests.swift; sourceTree = "<group>"; };
@@ -603,6 +632,7 @@
 		2EE7B919E8B6217D8E182DE0 /* AccessSitePhase1EvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceTests.swift; sourceTree = "<group>"; };
 		2F854D004C62FE3098042103 /* RegisteredDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisteredDomain.swift; sourceTree = "<group>"; };
 		305B6EC96A25E9841F83ACF6 /* ms */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ms; path = ms.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		312850823718580735F43C85 /* AccessGeoSiteAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteAdmissionTests.swift; sourceTree = "<group>"; };
 		314FC38B754B637D425BB05B /* WebKitProtectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebKitProtectionTests.swift; sourceTree = "<group>"; };
 		32783A7E424C96D3999B5E17 /* AccessProxyConfigurationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationError.swift; sourceTree = "<group>"; };
 		3299797CAEBA995C451E1395 /* AccessHostRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostRoutingPolicy.swift; sourceTree = "<group>"; };
@@ -791,6 +821,7 @@
 		A90ED978B671DD9BF0DD0B06 /* FirebaseInstallPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseInstallPreferences.swift; sourceTree = "<group>"; };
 		AA4E50D21E8474FF97F7DAE7 /* LinkSanitizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSanitizerTests.swift; sourceTree = "<group>"; };
 		ABC674B39EE41277890C67F8 /* AegisRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AegisRootView.swift; sourceTree = "<group>"; };
+		AC02B6D11358636A4317F95E /* AccessGeoSiteCatalogue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteCatalogue.swift; sourceTree = "<group>"; };
 		AC946B5F634860F4DB4118FB /* AgentWorkflows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflows.swift; sourceTree = "<group>"; };
 		AD0127E44118628F804FA3F2 /* AccessProxyRegistrationFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyRegistrationFixture.swift; sourceTree = "<group>"; };
 		AD1107BF8B5F9C3A1C6E7F51 /* AccessRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRegistration.swift; sourceTree = "<group>"; };
@@ -806,6 +837,7 @@
 		B5DFA8B92557D78E2EFD667C /* WebsiteEnhancementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteEnhancementsView.swift; sourceTree = "<group>"; };
 		B6ACB6005A464DF3215AFD90 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		B953D0FA16C857B4161F1341 /* BrowserSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSettings.swift; sourceTree = "<group>"; };
+		76A792F6A78C93F8C8101F62 /* OverseasAccelerationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverseasAccelerationSettingsView.swift; sourceTree = "<group>"; };
 		B97844B59A1122231CA84A1B /* read-only.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "read-only.js"; sourceTree = "<group>"; };
 		B98D531DE803E5B9336A16DB /* AccessOutboundProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessOutboundProfile.swift; sourceTree = "<group>"; };
 		B9FE210ED1BDE1C207768CB4 /* RemoteDiagnosticsPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsPolicyTests.swift; sourceTree = "<group>"; };
@@ -820,6 +852,7 @@
 		BC98286B9A862ED718BF8D5A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		BCE5417970C2B1407C37C098 /* AccessAccountUsageRefreshCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessAccountUsageRefreshCoordinatorTests.swift; sourceTree = "<group>"; };
 		BF3882C9101F2E7A348FF20A /* PIIScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PIIScanner.swift; sourceTree = "<group>"; };
+		C0B1425D481624E85A5DE5EC /* AccessInternalTestNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessInternalTestNode.swift; sourceTree = "<group>"; };
 		C00C47D09251B2A788E7A60D /* AccessLocalV2RayConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLocalV2RayConfig.swift; sourceTree = "<group>"; };
 		C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPlanTests.swift; sourceTree = "<group>"; };
 		C1007077C6F4B017DC7EE5E3 /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fixtures; path = Tests/Fixtures; sourceTree = SOURCE_ROOT; };
@@ -919,6 +952,17 @@
 		FC3FF8FFFFB7624BE852E341 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCenterView.swift; sourceTree = "<group>"; };
 		FDEB860E4BF7C92C09B917CB /* BrowserOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserOperationsView.swift; sourceTree = "<group>"; };
+		884B39628C0654FC1D223CF0 /* AccessGeoSiteCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteCache.swift; sourceTree = "<group>"; };
+		0E73AA0415908BA35EBC4068 /* AccessOverseasCacheSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessOverseasCacheSnapshot.swift; sourceTree = "<group>"; };
+		DAE0CA05715F3CBE5D0B9326 /* AccessGeoSiteUpdateTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteUpdateTransport.swift; sourceTree = "<group>"; };
+		4957F47D9F5EAA2BFCB08D5F /* AccessGeoSiteCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteCacheTests.swift; sourceTree = "<group>"; };
+		01C1A6CE3C985BE392417071 /* AccessGeoSiteUpdateTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGeoSiteUpdateTransportTests.swift; sourceTree = "<group>"; };
+		31D41ABAFC3BD71A202D11BC /* AccessTestNodeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessTestNodeViews.swift; sourceTree = "<group>"; };
+		5B50A15B5EA6602740DA3945 /* AccessTestNodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessTestNodeEditor.swift; sourceTree = "<group>"; };
+		58F3FE915EE8BE8171573239 /* AccessCommonPilotDeviceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessCommonPilotDeviceTests.swift; sourceTree = "<group>"; };
+		6AE929429093DF4E1A99CCE2 /* AccessCampaignBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessCampaignBudgetTests.swift; sourceTree = "<group>"; };
+		726F6C2DE67B2577C793481D /* AccessTestNodeEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessTestNodeEditorTests.swift; sourceTree = "<group>"; };
+		E1BC3C9EC5D9A8F5CF6FF41A /* AccessTestNode.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AccessTestNode.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -926,6 +970,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C90FC0B5EEA9A2AEBACA4DA1 /* AegisPolicyKit.framework in Frameworks */,
 				4CA79BF45CD8160FBE76B2B9 /* AegisEmbeddedCore.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1093,6 +1138,10 @@
 				DC56926562D9076C19AFB2B2 /* AccessAccountSessionTests.swift */,
 				5F62B80D46D679DE30F6D623 /* AccessAccountUsagePresentationTests.swift */,
 				BCE5417970C2B1407C37C098 /* AccessAccountUsageRefreshCoordinatorTests.swift */,
+				312850823718580735F43C85 /* AccessGeoSiteAdmissionTests.swift */,
+				4957F47D9F5EAA2BFCB08D5F /* AccessGeoSiteCacheTests.swift */,
+				01C1A6CE3C985BE392417071 /* AccessGeoSiteUpdateTransportTests.swift */,
+				11407544FE931A82D1CAB39E /* AccessGeoSiteSelectionTests.swift */,
 				AFC664B288C30F20D35AADCA /* AccessHostRecoveryWebKitTests.swift */,
 				02D5318F98B98D709C5312B7 /* AccessHostSelectiveProxyCapabilityTests.swift */,
 				CBD9FA1DC64B384D1718A498 /* AccessHostWebKitRouteTests.swift */,
@@ -1102,6 +1151,9 @@
 				8639BBDA3C7A77E352404520 /* AccessProxyRecoveryViewTests.swift */,
 				F2E3ECA8DE63818F6343B787 /* AccessSiteProxyToggleModelTests.swift */,
 				456A92525770EAEB36370B28 /* AccessSubscriptionUsageTests.swift */,
+				6AE929429093DF4E1A99CCE2 /* AccessCampaignBudgetTests.swift */,
+				58F3FE915EE8BE8171573239 /* AccessCommonPilotDeviceTests.swift */,
+				726F6C2DE67B2577C793481D /* AccessTestNodeEditorTests.swift */,
 				A5EAEF8ED14775D028597AA8 /* AccessThreeXUIWebEntryTests.swift */,
 				92F0B7B7172BCFC7AF4AD7AB /* AccessWebKitRoutingCapabilityTests.swift */,
 				BAD0A9BE1373C1BED239FB08 /* AppLanguageTests.swift */,
@@ -1325,6 +1377,9 @@
 				20C10BC131ADACB5AA3380EB /* AccessEmbeddedRealityDialer.swift */,
 				12381FD7114703959852EF0B /* AccessEndpoint.swift */,
 				753BFC176DC983DD55DB1017 /* AccessFailClosedProxyEntryPublisher.swift */,
+				04669089BD3A65A732EB0F23 /* AccessGeoSiteAdmission.swift */,
+				8827DE3A86197F24420757F5 /* AccessOverseasCatalogue.swift */,
+				AC02B6D11358636A4317F95E /* AccessGeoSiteCatalogue.swift */,
 				E32CFDCF103DF2CE4B825E4E /* AccessGoEmbeddedCore.swift */,
 				68987EA5CADDABC9488D27A8 /* AccessHostDataStoreRegistry.swift */,
 				3299797CAEBA995C451E1395 /* AccessHostRoutingPolicy.swift */,
@@ -1347,6 +1402,7 @@
 				5053A89698AD0E575CB19539 /* AccessInboundStartErrorBox.swift */,
 				5A398A9E34522F0CA1E2490F /* AccessInboundTransport.swift */,
 				9A85EF94DBA62C58F6F16EDB /* AccessLease.swift */,
+				C0B1425D481624E85A5DE5EC /* AccessInternalTestNode.swift */,
 				C00C47D09251B2A788E7A60D /* AccessLocalV2RayConfig.swift */,
 				DF43E3E0C6CE65CB593CE859 /* AccessLocalV2RayConfigError.swift */,
 				688AE4D4C530053E1731F802 /* AccessLocalV2RayConfigLoader.swift */,
@@ -1477,6 +1533,9 @@
 				C2B79C736ADF82E18868CE1B /* AccessAccountUsageView.swift */,
 				A2BEA4361879D2CEE0ED1B87 /* AccessDevAllowBlockSectionModel.swift */,
 				21DFE3B27F6365B330F0E739 /* AccessDevAllowBlockSectionView.swift */,
+				884B39628C0654FC1D223CF0 /* AccessGeoSiteCache.swift */,
+				0E73AA0415908BA35EBC4068 /* AccessOverseasCacheSnapshot.swift */,
+				DAE0CA05715F3CBE5D0B9326 /* AccessGeoSiteUpdateTransport.swift */,
 				E40AA63717545D841D62E3FD /* AccessHostStoreCoordinator.swift */,
 				848462AF10B5714544903958 /* AccessProxyCapabilityPresentation.swift */,
 				2A3D7253C7215FF069464853 /* AccessSiteProxySessionStore.swift */,
@@ -1485,6 +1544,9 @@
 				76A7A3DC4F70E812DCA5DA4B /* AccessSiteProxyToggleView.swift */,
 				3E6C902394C2430A497155B6 /* AccessSubscriptionUsageSession.swift */,
 				A7FF10EF054B2E1A9B253FE0 /* AccessSubscriptionUsageView.swift */,
+				31D41ABAFC3BD71A202D11BC /* AccessTestNodeViews.swift */,
+				5B50A15B5EA6602740DA3945 /* AccessTestNodeEditor.swift */,
+				E1BC3C9EC5D9A8F5CF6FF41A /* AccessTestNode.xcstrings */,
 				F8125D6AEB6AD1F1B223D1B9 /* AccessThreeXUIWebEntry.swift */,
 				0CE69F147725CCB975EFDA4B /* AccessUsagePage.swift */,
 				A71C6CF9E940DE74ED2C5C5B /* AccessUsageSummaryView.swift */,
@@ -1506,6 +1568,7 @@
 				15D44CBFD21B83115C3FF15C /* BrowserPresentationCoordinator.swift */,
 				EF223CC2570947757394BED8 /* BrowserRouteAlert.swift */,
 				B953D0FA16C857B4161F1341 /* BrowserSettings.swift */,
+				76A792F6A78C93F8C8101F62 /* OverseasAccelerationSettingsView.swift */,
 				EB170DE68954D6F73F5CC161 /* BrowserWindowsView.swift */,
 				A4B4D9F94AAEDB08545CAF89 /* ContentFilterSettingsView.swift */,
 				E78E3F01D2FB48ECD1891483 /* DownloadsView.swift */,
@@ -1607,6 +1670,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D49277A57583B3AA12C26B2D /* Build configuration list for PBXNativeTarget "AegisTests" */;
 			buildPhases = (
+				26A20EEC22288995A15CAAC8 /* Generate GeoSite WebKit test identity */,
 				C3B60DD9AC74606C4C52DF6A /* Sources */,
 				19A7FD5C5BA9079DFCD53418 /* Resources */,
 				AA7F0325B0B522BF94DEB1FA /* Frameworks */,
@@ -1788,6 +1852,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				94F81DAAA85390CB58B17B87 /* PBXTargetDependency */,
 			);
 			name = AccessKit;
 			packageProductDependencies = (
@@ -1890,6 +1955,7 @@
 				DC77D9043FD789C47428971A /* Assets.xcassets in Resources */,
 				966EA9CF1919C20609D86F5A /* InfoPlist.strings in Resources */,
 				F8BA4DB858988A9CEDBA5BB9 /* Localizable.xcstrings in Resources */,
+				FE428CCFC1490FE96988057C /* AccessTestNode.xcstrings in Resources */,
 				C97391F838CD807B58557C14 /* PrivacyInfo.xcprivacy in Resources */,
 				48C622C40381439576402C2A /* ThirdPartyNotices.txt in Resources */,
 				34CAF16DE691E1CC97FEA976 /* _locales in Resources */,
@@ -1985,6 +2051,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/scripts/private_test_node.py\"\n";
+		};
+		26A20EEC22288995A15CAAC8 /* Generate GeoSite WebKit test identity */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/generate-geosite-webkit-test-identity.sh",
+			);
+			name = "Generate GeoSite WebKit test identity";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/geosite-beta-hold-test-only.p12",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SCRIPT_INPUT_FILE_0}\"";
 		};
 		410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2175,6 +2262,9 @@
 				977CAEE8B502DAB3E58DD8A0 /* AccessAccountUsageView.swift in Sources */,
 				D2A8C3B83A86549918A5C5D4 /* AccessDevAllowBlockSectionModel.swift in Sources */,
 				5F330B083DC9F2371801C627 /* AccessDevAllowBlockSectionView.swift in Sources */,
+				CF40698120DE47BCA6C9C7C3 /* AccessGeoSiteCache.swift in Sources */,
+				503DF5E6426186EEF75FCB2C /* AccessOverseasCacheSnapshot.swift in Sources */,
+				1E28A7D21BD347D1E4758CD4 /* AccessGeoSiteUpdateTransport.swift in Sources */,
 				F7ADDDE71FC0B0F0615BADD9 /* AccessHostStoreCoordinator.swift in Sources */,
 				60B3F5A46ED48E0EEE59FDEC /* AccessProxyCapabilityPresentation.swift in Sources */,
 				A5A1195ADA40E0F62926A870 /* AccessSiteProxySessionStore.swift in Sources */,
@@ -2183,6 +2273,8 @@
 				C53281994D7A64D56514744D /* AccessSiteProxyToggleView.swift in Sources */,
 				8F1191F2E7F99D45A44715A5 /* AccessSubscriptionUsageSession.swift in Sources */,
 				5605CEDA844AB6D0C7B46FA6 /* AccessSubscriptionUsageView.swift in Sources */,
+				E177F2E434D17AE05D898DF2 /* AccessTestNodeViews.swift in Sources */,
+				E8B84191174402DB083F8AFA /* AccessTestNodeEditor.swift in Sources */,
 				03260D511FCB04A738F9D49F /* AccessThreeXUIWebEntry.swift in Sources */,
 				5DF6C5DD65244348EE137046 /* AccessUsagePage.swift in Sources */,
 				857C11DBFB6FC8DD89F67A46 /* AccessUsageSummaryView.swift in Sources */,
@@ -2204,6 +2296,7 @@
 				C414022703C90EE7B567897D /* BrowserPresentationCoordinator.swift in Sources */,
 				3EB45DDACE820BD8BCBBF15E /* BrowserRouteAlert.swift in Sources */,
 				58050E252DB5F6270E949D4F /* BrowserSettings.swift in Sources */,
+				4E2B2943B3DE678576877ED0 /* OverseasAccelerationSettingsView.swift in Sources */,
 				B5565A2C2BA929602423178D /* BrowserWindowsView.swift in Sources */,
 				3364AC7B9A571CED5F9F3CA6 /* ContentFilterSettingsView.swift in Sources */,
 				4A5E0ED5967D285295EE1C0E /* DownloadsView.swift in Sources */,
@@ -2253,6 +2346,10 @@
 				9C972E800FB85060344EF675 /* AccessEmbeddedCoreLiveTests.swift in Sources */,
 				E2BE9949ADFB26BD89B28E43 /* AccessEmbeddedCoreManifestTests.swift in Sources */,
 				24F51C670915D79EBA8F8045 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */,
+				D3E812CDF18D6E59014C5AE4 /* AccessGeoSiteAdmissionTests.swift in Sources */,
+				E44C81770C4E6E49CF5AAF0F /* AccessGeoSiteCacheTests.swift in Sources */,
+				F7941A2A40B34C362D948844 /* AccessGeoSiteUpdateTransportTests.swift in Sources */,
+				EEA6F079B54F71682D31FEC4 /* AccessGeoSiteSelectionTests.swift in Sources */,
 				6EBBC2FDFD05EB0CB7E7895A /* AccessHTTPConnectTests.swift in Sources */,
 				3D59E66EA76B0E1A0061BAB8 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				63EED4653D8F58BE5002F8AD /* AccessHTTPRealityPathTests.swift in Sources */,
@@ -2282,6 +2379,9 @@
 				A7982EBA1F2A58A980A4C00F /* AccessSiteSessionControllerTests.swift in Sources */,
 				E47B18287F4109FDBDB633A9 /* AccessSiteSessionFaultTests.swift in Sources */,
 				CD318826AF80CE30677BD379 /* AccessSubscriptionUsageTests.swift in Sources */,
+				FBF116CA04747DB1D0951076 /* AccessCampaignBudgetTests.swift in Sources */,
+				D981D18A6B11AC36AD8CF19F /* AccessCommonPilotDeviceTests.swift in Sources */,
+				54E49E445CD6C20C7655974F /* AccessTestNodeEditorTests.swift in Sources */,
 				BE30DFF3E6CC18A7B4A48FE0 /* AccessThreeXUIWebEntryTests.swift in Sources */,
 				D2EC2DA381CB86BB45A7C476 /* AccessWebKitRoutingCapabilityTests.swift in Sources */,
 				66B205148868B0DA0BCC1A41 /* AccessXrayAssetPinTests.swift in Sources */,
@@ -2348,6 +2448,9 @@
 				00E93231AE7435980CB5B5D1 /* AccessEmbeddedRealityDialer.swift in Sources */,
 				B25CEDCB03B98DF07727ED85 /* AccessEndpoint.swift in Sources */,
 				E467E400761B3747835C82CE /* AccessFailClosedProxyEntryPublisher.swift in Sources */,
+				5EE75D92D196BC21A04D1C12 /* AccessGeoSiteAdmission.swift in Sources */,
+				5790653A43C5D48811FFC2D2 /* AccessOverseasCatalogue.swift in Sources */,
+				9B1953760AA59D2808FB9BD1 /* AccessGeoSiteCatalogue.swift in Sources */,
 				8946A639356E25B573D8FE76 /* AccessGoEmbeddedCore.swift in Sources */,
 				5C8B2D0685911D3B6C598530 /* AccessHTTPConnectError.swift in Sources */,
 				046436D9AF085D3C39F114C8 /* AccessHTTPConnectParser.swift in Sources */,
@@ -2370,6 +2473,7 @@
 				D18520E7A699B422B2FABDD0 /* AccessInboundStartErrorBox.swift in Sources */,
 				B1F8182A6E6E62899F34FB74 /* AccessInboundTransport.swift in Sources */,
 				F3F21A9A81F21149A43B8A33 /* AccessLease.swift in Sources */,
+				B9B75E526C8F2D85476A19E7 /* AccessInternalTestNode.swift in Sources */,
 				A5A816B1F50CAB795957DF4E /* AccessLocalV2RayConfig.swift in Sources */,
 				DBDAB280B700F4F92C53EEB0 /* AccessLocalV2RayConfigError.swift in Sources */,
 				A31A7D6BA786ABD964C0A2A7 /* AccessLocalV2RayConfigLoader.swift in Sources */,
@@ -2480,6 +2584,11 @@
 			isa = PBXTargetDependency;
 			target = A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */;
 			targetProxy = 92D758CAC3BA36BE1614E6CD /* PBXContainerItemProxy */;
+		};
+		94F81DAAA85390CB58B17B87 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */;
+			targetProxy = 9EA3F4DB8C98DC9160187A4B /* PBXContainerItemProxy */;
 		};
 		A0068FE7656406742A030CD2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -2717,6 +2826,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_ACCESS_RELEASE_CHANNEL = release;
+				AEGIS_ACCESS_INTERNAL_OPTIONS = NO;
 				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -2781,6 +2891,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_ACCESS_RELEASE_CHANNEL = dev;
+				AEGIS_ACCESS_INTERNAL_OPTIONS = YES;
 				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

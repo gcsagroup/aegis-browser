@@ -156,6 +156,26 @@ source_set("prefs") {
   ]
 }
 
+source_set("webpage_capture") {
+  sources = [
+    "webpage_capture.cc",
+    "webpage_capture.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common:constants",
+    "//chrome/common:mojo_bindings",
+    "//components/lens:lens_mojo",
+    "//components/prefs",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//third_party/blink/public/common",
+    "//ui/gfx/geometry",
+    "//url",
+  ]
+}
+
 source_set("aegis") {
   sources = [
     "aegis_ai_control.cc",
@@ -192,13 +212,12 @@ source_set("aegis") {
     "summary_policy.h",
     "threat_feed_updater.cc",
     "threat_feed_updater.h",
-    "webpage_capture.cc",
-    "webpage_capture.h",
   ]
   public_deps = [
     ":download_prefs",
     ":prefs",
     ":profile_support",
+    ":webpage_capture",
   ]
   deps = [
     ":model_provider_policy",
@@ -375,6 +394,7 @@ if (!is_android) {
       "//base/test:test_support",
       "//build:chromeos_buildflags",
       "//chrome/browser:browser_process",
+      "//chrome/browser/actor",
       "//chrome/browser/aegis/access:access_browser_request_adapter",
       "//chrome/browser/aegis/access:access_identity_generation_source",
       "//chrome/browser/aegis/access:access_network_context_transport",
@@ -416,6 +436,7 @@ if (!is_android) {
       "//chrome/common/aegis",
       "//chrome/test:test_support",
       "//chrome/test:test_support_ui",
+      "//components/actor/core",
       "//components/aegis_access",
       "//components/aegis_access:access_identity_generation_state",
       "//components/aegis_access:access_proxy_selection_generation_state",

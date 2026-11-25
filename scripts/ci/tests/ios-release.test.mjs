@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFileSync, mkdtempSync, rmSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {copyFileSync, readFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parse} from 'yaml';
@@ -148,11 +148,74 @@ test('unsigned archive isolates fork PRs and tolerates missing runner labels', (
   assert(trusted >= 0 && trusted < selfHosted, 'fork PRs must select the hosted fallback');
   assert(route.endsWith("|| 'macos-26' }}"), 'unsigned validation uses the standard hosted Mac fallback');
   assert(!workflow.jobs['ios-archive'].environment, 'unsigned validation must not require a protected signing environment');
-  const goSetup = workflow.jobs['ios-archive'].steps.find(s => String(s.uses ?? '').startsWith('actions/setup-go@'));
-  assert.equal(goSetup?.with?.['go-version'], '1.27.3', 'hosted archive must install lock Go before prepare');
-  assert.equal(goSetup?.with?.cache, false, 'archive Go install must not rely on module cache restoration');
+  assert(!workflow.jobs['ios-archive'].steps.some(s => String(s.uses ?? '').startsWith('actions/setup-go@')),
+    'unsigned archive must keep Go setup inside the supervisor');
   const prepare = workflow.jobs['ios-archive'].steps.find(s => s.name === 'Prepare locked EmbeddedCore XCFramework');
-  assert(String(prepare?.run ?? '').includes('expected go1.27.3'), 'prepare must refuse a mismatched Go toolchain');
+  assert.match(prepare?.run ?? '', /--prepare-embedded-core/u, 'prepare must run behind the iOS archive supervisor');
+  assert.equal(prepare?.env?.IOS_CI_SOURCE, '${{ steps.storage.outputs.source }}');
+});
+
+test('archive EmbeddedCore preparation uses the private script, bridge root and Git HEAD', () => {
+  const workflow = parse(readFileSync('.github/workflows/ios-release-validation.yml', 'utf8'));
+  const prepare = workflow.jobs['ios-archive'].steps.find(step => step.name === 'Prepare locked EmbeddedCore XCFramework');
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'embedded-core-source-'));
+  const shared = join(root, 'shared checkout');
+  const source = join(root, 'Source');
+  const bin = join(root, 'bin');
+  const receipt = join(root, 'fixture-receipt.txt');
+  const lock = 'apps/ios/EmbeddedCore/embedded-core-lock.json';
+  const gitEnv = {HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_ALLOW_PROTOCOL: 'file', PATH: process.env.PATH};
+  const identities = new Map();
+  try {
+    for (const [checkout, marker] of [[shared, 'shared'], [source, 'private']]) {
+      const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.autocrlf=false',
+        '-c', 'user.name=EmbeddedCore Fixture', '-c', 'user.email=embedded-core@example.invalid', ...args], {
+        cwd: checkout, encoding: 'utf8', env: {...gitEnv,
+          GIT_AUTHOR_DATE: '2020-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z'},
+      }).trim();
+      mkdirSync(join(checkout, 'scripts/release'), {recursive: true});
+      mkdirSync(join(checkout, 'apps/ios/EmbeddedCore/bridge'), {recursive: true});
+      writeFileSync(join(checkout, lock), '{}\n');
+      writeFileSync(join(checkout, 'apps/ios/EmbeddedCore/bridge/origin'), marker);
+      writeFileSync(join(checkout, 'scripts/release/prepare-ios-access-core.sh'), `#!/bin/bash
+set -euo pipefail
+source_sha="$(git rev-parse HEAD)"
+source_tree="$(git rev-parse 'HEAD^{tree}')"
+git diff-index --cached --quiet HEAD --
+printf '%s\\n' '${marker}' "$(cat apps/ios/EmbeddedCore/bridge/origin)" "$source_sha" "$source_tree" \
+  "$PWD" "$1" "$AEGIS_EMBEDDED_CORE_DIGEST_MODE" > "$EMBEDDED_TEST_RECEIPT"
+mkdir -p "$2/AegisEmbeddedCore.xcframework"
+`);
+      git('init', '--quiet', '--template=');
+      git('add', '--', 'apps', 'scripts');
+      git('commit', '--quiet', '--no-gpg-sign', '-m', `${marker} fixture`);
+      identities.set(marker, git('rev-parse', 'HEAD', 'HEAD^{tree}').split('\n'));
+    }
+    mkdirSync(join(source, 'scripts/ci'));
+    for (const file of ['ios-archive-supervisor.py', 'run-ios-embedded-core-prepare.sh']) {
+      copyFileSync(`scripts/ci/${file}`, join(source, 'scripts/ci', file));
+    }
+    mkdirSync(bin);
+    writeFileSync(join(source, 'scripts/ci/ios-archive-go.py'), `import sys\nfrom pathlib import Path\n`
+      + `root = Path(sys.argv[2]) / "go/bin"\nroot.mkdir(parents=True)\n`);
+    writeFileSync(join(bin, 'gomobile'), '#!/bin/bash\nexit 2\n', {mode: 0o755});
+    const run = privateSource => spawnSync('bash', ['-e', '-o', 'pipefail', '-c', prepare.run], {
+      cwd: shared, encoding: 'utf8', env: {...gitEnv, PATH: `${bin}:${process.env.PATH}`,
+        GIT_DIR: join(shared, '.git'), GIT_WORK_TREE: shared, GIT_COMMON_DIR: join(shared, '.git'),
+        GIT_OBJECT_DIRECTORY: join(shared, '.git', 'objects'), GIT_INDEX_FILE: join(shared, '.git', 'index'),
+        IOS_CI_ROOT: root, IOS_CI_SOURCE: privateSource, EMBEDDED_TEST_RECEIPT: receipt},
+    });
+    const prepared = run(source);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    assert.deepEqual(readFileSync(receipt, 'utf8').trim().split('\n'),
+      ['private', 'private', ...identities.get('private'), source, join(source, lock), 'ci-rebuild']);
+    rmSync(receipt);
+    const missing = run(join(root, 'missing'));
+    assert.equal(missing.status, 1, missing.stderr);
+    assert.throws(() => readFileSync(receipt), {code: 'ENOENT'});
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
 });
 test('every protected delivery route depends on Admin admission and normalized operation', () => {
   const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
@@ -171,7 +234,8 @@ test('every protected delivery route depends on Admin admission and normalized o
       const guard = job.steps.findIndex(s => s.run?.includes('ios-operator.mjs --context') || s.run?.includes('ios-cloud-poc-admission.mjs'));
       assert(guard >= 0, name+' requires manual Admin guard');
       if (name === 'ios-release-validation' && job.environment !== 'aegis-ios-cloud-poc') assert.equal(job.steps[guard].if, "${{ github.event_name == 'workflow_dispatch' }}");
-      const expensive = job.steps.findIndex(s => s.run?.includes('bundle exec') || s.run?.includes('xcodebuild ') || s.run?.includes('run-simulator-tests.sh'));
+      const expensive = job.steps.findIndex(s => s.run?.includes('bundle exec') || s.run?.includes('xcodebuild ') ||
+        s.run?.includes('run-ios-unsigned-archive.sh') || s.run?.includes('run-simulator-tests.sh'));
       if (expensive >= 0) assert(guard < expensive, name+' must authorize before expensive work');
     }
   }

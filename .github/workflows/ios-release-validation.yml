@@ -239,53 +239,25 @@ jobs:
           CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
           CI_RUNNER_NAME: ${{ runner.name }}
         run: python3 -I -B scripts/ci/ios-ci-storage.py prepare --runner-environment "$CI_RUNNER_ENVIRONMENT" --runner-name "$CI_RUNNER_NAME"
-      # Fork PRs land on macos-26 without mise Go; pin the lock's toolchain for both hosted and self-hosted.
-      - name: Install Go for EmbeddedCore prepare
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with:
-          go-version: '1.27.3'
-          cache: false
+      # The supervised worker installs the locked Go release on both runner types.
       - name: Prepare locked EmbeddedCore XCFramework
         env:
           IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
+          IOS_CI_SOURCE: ${{ steps.storage.outputs.source }}
         run: |
-          export MISE_TRUSTED_CONFIG_PATHS="${MISE_TRUSTED_CONFIG_PATHS:-$PWD}"
-          if command -v mise >/dev/null 2>&1; then
-            GOROOT="$(mise where go@1.27.3 2>/dev/null || true)"
-            if [[ -n "${GOROOT:-}" ]]; then
-              export GOROOT
-              export PATH="$GOROOT/bin:${GOPATH:-$HOME/go}/bin:$PATH"
-            fi
-          fi
-          export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
-          command -v go >/dev/null || { echo "go missing on archive runner" >&2; exit 2; }
-          go version | grep -F 'go1.27.3' >/dev/null || { echo "expected go1.27.3 on archive runner" >&2; go version >&2; exit 2; }
-          if ! command -v gomobile >/dev/null 2>&1; then
-            go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20261011034528-197770444867
-            export PATH="${GOPATH:-$HOME/go}/bin:$PATH"
-            gomobile init
-          fi
-          # Hosted gomobile slices drift across clean runners; keep source pins
-          # strict in the build script, but accept the rebuild digests for archive.
-          AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild \
-            bash scripts/release/prepare-ios-access-core.sh \
-              apps/ios/EmbeddedCore/embedded-core-lock.json "$IOS_CI_ROOT/EmbeddedCore"
-          test -d "$IOS_CI_ROOT/EmbeddedCore/AegisEmbeddedCore.xcframework"
+          cd -P -- "$IOS_CI_SOURCE" 2>/dev/null || exit 1
+          test "$PWD" = "$IOS_CI_SOURCE" || exit 1
+          exec python3 -I -B "$IOS_CI_SOURCE/scripts/ci/ios-archive-supervisor.py" \
+            --prepare-embedded-core "$BASH" "$IOS_CI_SOURCE/scripts/ci/run-ios-embedded-core-prepare.sh"
       - name: Compile uncredentialed native archive
         env:
           IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
+          IOS_CI_SOURCE: ${{ steps.storage.outputs.source }}
+        # exec so cancellation signals the archive wrapper directly.
         run: |
-          set -euo pipefail
-          source apps/browser/scripts/common.sh
-          configure_git_for_chromium_fetch
-          export TMPDIR="$IOS_CI_ROOT/tmp"
-          export CLANG_MODULE_CACHE_PATH="$IOS_CI_ROOT/ModuleCache"
-          python3 -B scripts/release/ios_embedded_core.py verify --root "$PWD" \
-            --source-lock apps/ios/EmbeddedCore/embedded-core-lock.json --products "$IOS_CI_ROOT/EmbeddedCore"
-          xcodebuild -scmProvider system -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_CI_ROOT/Aegis.xcarchive" -derivedDataPath "$IOS_CI_ROOT/DerivedData" -clonedSourcePackagesDirPath "$IOS_CI_ROOT/SourcePackages" -packageCachePath "$IOS_CI_ROOT/PackageCache" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 AEGIS_EMBEDDED_CORE_PRODUCTS="$IOS_CI_ROOT/EmbeddedCore" archive 2>&1 | tee "$IOS_CI_ROOT/xcodebuild.log"
-          python3 scripts/release/verify-ios-archive.py "$IOS_CI_ROOT/Aegis.xcarchive" 1.0.0 1
-          python3 -B scripts/release/test_ios_linked_bundle.py "$IOS_CI_ROOT/Aegis.xcarchive/Products/Applications/Aegis.app" "$IOS_CI_ROOT/EmbeddedCore" "$IOS_CI_ROOT/DerivedData" device
-          python3 -I -B scripts/ci/ios-ci-storage.py seal --root "$IOS_CI_ROOT"
+          cd -P -- "$IOS_CI_SOURCE" || exit 1
+          test "$PWD" = "$IOS_CI_SOURCE" || exit 1
+          exec bash "$IOS_CI_SOURCE/scripts/ci/run-ios-unsigned-archive.sh"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ success() && steps.storage.outcome == 'success' }}
         with:

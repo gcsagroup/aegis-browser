@@ -48,11 +48,14 @@ def sections(binary):
 
 
 def linked_paths(derived, platform, arch):
+    derived = derived.resolve(strict=True)
     config = "Debug-iphonesimulator" if platform == "simulator" else "*-iphoneos"
     # K has a fresh DerivedData and the unsigned archive has a dedicated CI root.
     records = list(derived.glob(f"**/{config}/AccessKit.build/Objects-normal/{arch}/AccessKit_dependency_info.dat"))
     if len(records) != 1:
         raise ValueError("expected a single AccessKit linker dependency record")
+    if records[0].resolve(strict=True) != records[0] or not records[0].is_file() or records[0].stat().st_nlink != 1:
+        raise ValueError("AccessKit linker dependency record is not an ordinary file in DerivedData")
     entries = records[0].read_bytes().split(b"\0")
     def unique_path(tag, suffix):
         paths = {Path(os.fsdecode(row[1:])) for row in entries if row[:1] == tag and row.endswith(suffix.encode())}
@@ -67,7 +70,14 @@ def loads(binary, arch, install_name):
     return any(row.strip().split(" (", 1)[0] == install_name for row in rows)
 
 
-def verify_link(bundle, products, derived, platform):
+def require_owned_linker_path(path, *roots):
+    if (not path.is_absolute() or ".." in path.parts
+            or not any(path.is_relative_to(root) for root in roots)
+            or path.resolve(strict=True) != path or not path.is_file() or path.stat().st_nlink != 1):
+        raise ValueError("linker dependency path is outside the current archive inputs")
+
+
+def verify_link(bundle, products, derived, platform, *, owned_linker_paths=False):
     if platform not in ("simulator", "device"):
         raise ValueError("a target platform is required for core verification")
     carrier = bundle / "Frameworks" / ACCESS
@@ -90,6 +100,9 @@ def verify_link(bundle, products, derived, platform):
         if not loads(loader, arch, "@rpath/" + ACCESS):
             raise ValueError("app does not load the bundled AccessKit image")
         linked_input, linked_output = linked_paths(derived, platform, arch)
+        if owned_linker_paths:
+            require_owned_linker_path(linked_input, derived, products)
+            require_owned_linker_path(linked_output, derived)
         uuid_pattern = rf"UUID: ([0-9A-Fa-f-]+) \({re.escape(arch)}\)"
         image_uuid = re.search(uuid_pattern, output("dwarfdump", "--uuid", carrier))
         linked_uuid = re.search(uuid_pattern, output("dwarfdump", "--uuid", linked_output))

@@ -60,7 +60,7 @@ QUIC/Alt-Svc/UDP 旁路按冻结协议覆盖明确阻止或受控降级到已验
 
 Network Service 重启必须使旧 registration、ACK 和 request capability 失效；新 context 先完成可信 owner、当前快照/端点注册及精确 ACK，再开放受约束新请求。Chromium 会重建断开的 factory，但这不等于 Aegis 自定义策略自动恢复。[重启机制](https://chromium.googlesource.com/chromium/src/+/main/services/network/README.md)
 
-W1 还必须完成 P0/A78 的最小 HTTP/SOCKS5 Profile 认证与隔离原型，再进入 G0 判断。当前 adapter 仅支持 HTTP；Chromium 官方说明原生 SOCKSv5 不提供认证，因此本项目的 SOCKS5 需要在固定版本做浏览器认证适配，不能只配置 Xray 用户密码。正确凭据成功、错误/跨 Profile 凭据拒绝、仅 loopback、未登记代理不获凭据及 Profile 关闭后认证失效均须实际运行；失败时阻止 G0/G1。W5 才扩展完整两入站×两出站及临时上下文矩阵。[Chromium SOCKS5 边界](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md)
+W1 还必须完成 P0/A78 的 HTTP/SOCKS5 两种无认证入站独立运行验证（冻结修订 5），再进入 G0 判断。当前 adapter 仅支持 HTTP；Chromium 原生 SOCKSv5 只提议无认证，与修订 5 合同一致，但仍须补 SOCKS5 transport 与受信登记接线，不能只配置 Xray 入站就视为浏览器可用。已登记端点真实转发且零本地凭据、未知/过期/跨 owner 登记拒绝、仅 loopback、撤销或 Profile 关闭后旧流终止均须实际运行；失败时阻止 G0/G1。W5 才扩展完整两入站×两出站及临时上下文矩阵。[Chromium SOCKS5 边界](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md)
 
 ### 2.4 事务与迁移
 
@@ -105,7 +105,7 @@ W2 在实际 Linux 服务端适用路径及客户端适用快路径绑定 Xray c
 | 工作包 | 最小证据 | 冻结关联 |
 | --- | --- | --- |
 | W0 固定 native 底座 | 同一候选下必要 unit/browser targets 实际编译运行；候选、工具、过滤器、匹配数、退出码与首个失败可追溯；已有必需入口矩阵不缩减 | P0，G0 部分证据 |
-| W1 请求级路由 | 两顶层网站共用 CDN 的 X/Y、DIRECT/PROXY/REJECT；不同 host 异组；scheme/port/redirect；两个 Profile；旧连接/身份/配置与重启；首次 POST/PATCH 不重复不旁路；HTTP/SOCKS5 最小认证/隔离原型 | A10/A11/A15/A16/A53/A76/A78/A108/A113/A115，PF01–PF03；各行仅相应用例 |
+| W1 请求级路由 | 两顶层网站共用 CDN 的 X/Y、DIRECT/PROXY/REJECT；不同 host 异组；scheme/port/redirect；两个 Profile；旧连接/身份/配置与重启；首次 POST/PATCH 不重复不旁路；HTTP/SOCKS5 无认证入站登记隔离原型 | A10/A11/A15/A16/A53/A76/A78/A108/A113/A115，PF01–PF03；各行仅相应用例 |
 | W2 计量可行性 | 固定真实拓扑长连接计量、耗尽、故障恢复和快路径对照；性能与误差原始数据 | A118、PF04/PF09；其他账本/额度行需继续逐项映射 |
 | W3 最小纵向验证 | 可信网站开关 → 真实 HTTP→REALITY → 失败关闭 → Network Service 重启恢复 → 两 Profile；两个 UI 观察同一真实状态，持久化失败不显示成功 | P1/P2/P3/P5/P6 的子集，不单独等于 G0/G1 |
 | W4–W6 扩展与交付 | 完整 G1；再补 P1–P7 全部适用项及 PF，最后最终包 | G1 → G2 → G3 原定义不变 |
@@ -122,7 +122,7 @@ W0 的全量既有必需回归 PASS 是后续浏览器产品能力扩展的前�
 | --- | --- | --- |
 | W1a 可信上下文接线清单 | 为导航、redirect、子资源及后台入口逐一列出当前文件/签名/调用序列、owner 来源、跨进程序列化与失效点；标明既有能力和拟新增字段 | 每个载体都能追溯到 browser-owned owner；缺失/伪造/过期输入的失败路径；仅存在结构体不算真实接线 |
 | W1b 多组路由最小执行器 | 使用当前 matcher 和版本合同，把不可变决定送到实际 proxy/stream；端点注册、准备等待和热路径分离；不得用请求前切换 partition 全局配置实现并发 | 同 CDN 异组及不同 host 异组同时到达对应受控出口；原生未命中流量不变，首次 POST/PATCH 无重放；#162 保护的移除需与替代能力证明同审 |
-| W1c 复用/重启与最小认证 | 对连接池、HTTP/2、CONNECT、auth/retry cache、旧 registration 和重启逐项给出兼容/失效策略；完成 HTTP/SOCKS5 两种入口的最小 Profile 认证适配 | 正确凭据成功、跨 Profile/未登记/过期凭据拒绝，关闭 Profile 后失效；复用实际连接的隔离与重启正反控制；未通过不能判 W1 或 G0 |
+| W1c 复用/重启与登记隔离 | 对连接池、HTTP/2、CONNECT、auth/retry cache、旧 registration 和重启逐项给出兼容/失效策略；完成 HTTP/SOCKS5 两种无认证入站的登记、隔离与撤销接线（修订 5） | 已登记端点成功且零本地凭据，跨 owner/未登记/过期登记拒绝，撤销或关闭 Profile 后旧流终止；复用实际连接的隔离与重启正反控制；未通过不能判 W1 或 G0 |
 | W2a 计量与预算实验协议 | 先绑定受控节点/执行人、Xray commit/二进制、OS/内核、flow/配置、权威计数点、耐久策略、误差及超额预算，再执行第 3 节矩阵 | 区分实际字节与预留余额；原始长连接/耗尽/kill-restart/splice 数据及覆盖；资源未绑定为 BLOCKED，不生成假运行数据 |
 | W3 集成清单 | 只消费已验证的路由能力、实际身份/节点提交和计量预算接口；明确 Profile 创建/关闭、Network Service 重启、发布与持久化失败的状态转换 | 同一产品产物和匹配服务配置完成纵向路径；独立原型各自通过不能直接拼成集成 PASS |
 

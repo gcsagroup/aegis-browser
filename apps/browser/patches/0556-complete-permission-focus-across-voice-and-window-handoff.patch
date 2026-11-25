@@ -1,0 +1,524 @@
+From ca44b2893dd07d691af642f98e2a2561bd0645db Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 04:13:12 +0800
+Subject: [PATCH] Preserve permission focus through voice mode and native
+ activation
+
+---
+ .../resources/omnibox_popup/aim/aim_app.ts    |   5 +-
+ .../omnibox_popup/aim/omnibox_composebox.ts   |  30 +++
+ .../omnibox/omnibox_aim_popup_browsertest.cc  | 210 +++++++++++++++++-
+ .../omnibox/omnibox_popup_aim_presenter.cc    |  14 +-
+ .../omnibox/omnibox_popup_full_presenter.cc   |  21 +-
+ .../omnibox/omnibox_popup_full_presenter.h    |   5 +-
+ .../omnibox/omnibox_popup_presenter_base.cc   |   4 -
+ .../omnibox/omnibox_popup_presenter_base.h    |   3 +-
+ 8 files changed, 265 insertions(+), 27 deletions(-)
+
+diff --git a/chrome/browser/resources/omnibox_popup/aim/aim_app.ts b/chrome/browser/resources/omnibox_popup/aim/aim_app.ts
+index 5293e3677628f252b265d0224f0840d25ab86b85..d149af7ed240e5a83cd65d90aa71fcaef2f485e4 100644
+--- a/chrome/browser/resources/omnibox_popup/aim/aim_app.ts
++++ b/chrome/browser/resources/omnibox_popup/aim/aim_app.ts
+@@ -86,7 +86,8 @@ export class OmniboxAimAppElement extends CrLitElement {
+     this.listenerIds_ = [
+       router.onPopupShown.addListener(this.onPopupShown_.bind(this)),
+       router.addContext.addListener(this.addContext_.bind(this)),
+-      router.focusInput.addListener(() => this.$.composebox.focusInput()),
++      router.focusInput.addListener(
++          () => this.$.composebox.focusInputWhenVisible()),
+       router.clearPopup.addListener(this.clearPopup_.bind(this)),
+       router.setPreserveContextOnClose.addListener(
+           this.setPreserveContextOnClose_.bind(this)),
+@@ -113,6 +114,7 @@ export class OmniboxAimAppElement extends CrLitElement {
+   private onPopupShown_(context: SearchContext) {
+     this.querySubmitted_ = false;
+     const composebox = this.$.composebox;
++    composebox.cancelPendingInputFocus();
+     if (!this.preserveContextOnClose_) {
+       // Avoid showing the glow animation when coming back from a preserved
+       // context on close as this indicates that the user is returning to the
+@@ -137,6 +139,7 @@ export class OmniboxAimAppElement extends CrLitElement {
+   private async clearPopup_():
+       Promise<{input: string, querySubmitted: boolean}> {
+     const composebox = this.$.composebox;
++    composebox.cancelPendingInputFocus();
+     const input = composebox.input;
+     const querySubmitted = this.querySubmitted_;
+     this.querySubmitted_ = false;
+diff --git a/chrome/browser/resources/omnibox_popup/aim/omnibox_composebox.ts b/chrome/browser/resources/omnibox_popup/aim/omnibox_composebox.ts
+index b335ec24a412f82d6ef97feb67ff0fd36c581f77..65c1aba117977ae71b1e8313f64df7c098ec4d3c 100644
+--- a/chrome/browser/resources/omnibox_popup/aim/omnibox_composebox.ts
++++ b/chrome/browser/resources/omnibox_popup/aim/omnibox_composebox.ts
+@@ -194,6 +194,7 @@ export class OmniboxComposeboxElement extends ComposeboxEmbedderMixin
+   private onVisibilityChange_ = () => {
+     if (document.visibilityState === 'hidden') {
+       this.isLensSearchEligible_ = false;
++      this.cancelPendingInputFocus();
+     }
+   };
+ 
+@@ -201,6 +202,7 @@ export class OmniboxComposeboxElement extends ComposeboxEmbedderMixin
+   private searchboxCallbackRouter_: SearchboxPageCallbackRouter;
+   private searchboxHandler_: SearchboxPageHandlerRemote;
+   private listenerIds_: number[] = [];
++  private pendingInputFocus_: boolean = false;
+   /**
+    * Whether this session opened the composebox without suggestions and should
+    * animate the contextual suggestions when they arrive. Set in
+@@ -245,6 +247,7 @@ export class OmniboxComposeboxElement extends ComposeboxEmbedderMixin
+     ];
+ 
+     document.addEventListener('visibilitychange', this.onVisibilityChange_);
++    window.addEventListener('blur', this.cancelPendingInputFocus);
+   }
+ 
+   override disconnectedCallback() {
+@@ -254,6 +257,8 @@ export class OmniboxComposeboxElement extends ComposeboxEmbedderMixin
+     }
+     this.listenerIds_ = [];
+     document.removeEventListener('visibilitychange', this.onVisibilityChange_);
++    window.removeEventListener('blur', this.cancelPendingInputFocus);
++    this.cancelPendingInputFocus();
+   }
+ 
+   override willUpdate(changedProperties: PropertyValues<this>) {
+@@ -320,6 +325,16 @@ export class OmniboxComposeboxElement extends ComposeboxEmbedderMixin
+ 
+   override updated(changedProperties: PropertyValues<this>) {
+     super.updated(changedProperties);
++    if (this.pendingInputFocus_ && changedProperties.has('inVoiceSearchMode')) {
++      this.cancelPendingInputFocus();
++      if (!this.inVoiceSearchMode && this.isConnected && !document.hidden &&
++          document.hasFocus() &&
++          this.getInputElement().inputElement.checkVisibility(
++              {checkVisibilityCSS: true})) {
++        this.focusInput();
++      }
++    }
++
+     const changedPrivateProperties =
+         changedProperties as Map<PropertyKey, unknown>;
+     if (changedPrivateProperties.has('result')) {
+@@ -443,6 +458,21 @@ export class OmniboxComposeboxElement extends ComposeboxEmbedderMixin
+   // Host API
+   // ===========================================================================
+ 
++  // A browser focus request can arrive while the voice UI hides the editor.
++  // Let that session finish before focusing the editor in the rendered UI.
++  focusInputWhenVisible() {
++    if (this.inVoiceSearchMode &&
++        !this.getInputElement().inputElement.checkVisibility()) {
++      this.pendingInputFocus_ = !document.hidden;
++      return;
++    }
++    this.focusInput();
++  }
++
++  cancelPendingInputFocus = () => {
++    this.pendingInputFocus_ = false;
++  };
++
+   // Force the button to keep its hover background visually while
+   // the menu is open, even if the mouse doesn't move out of the button
+   // area after clicking.
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index 2c143536e4611aca398d6f7252d6ee71b049cf9c..14f69b246c0223345c939257cc0a1b2a57a4acb6 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -1181,6 +1181,50 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+   api.manager()->Dismiss(/*prompt_options=*/std::monostate());
+ }
+ 
++IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
++                       TabMicrophonePromptRemovedDuringHandoffBlursFullPopup) {
++  auto* other_browser = CreateBrowser(browser()->GetProfile());
++  ASSERT_TRUE(other_browser);
++  auto* other_view = BrowserView::GetBrowserViewForBrowser(other_browser);
++  ASSERT_TRUE(other_view && other_view->GetWidget());
++  auto* other_widget = other_view->GetWidget();
++  auto* browser_widget = location_bar()->GetWidget()->GetTopLevelWidget();
++  browser_widget->Activate();
++  ui_test_utils::WaitUntilBrowserBecomeActive(browser());
++
++  ASSERT_NO_FATAL_FAILURE(ShowFocusedFullPopupWithTabMicrophonePrompt());
++  auto* controller = location_bar()->GetOmniboxController();
++  auto* presenter = location_bar()->GetOmniboxPopupView()->presenter();
++  test::PermissionRequestManagerTestApi api(browser());
++  auto* prompt_widget = api.GetPromptWindow();
++  ASSERT_TRUE(prompt_widget && prompt_widget->IsActive());
++  const auto prompt = prompt_widget->GetWeakPtr();
++  ASSERT_FALSE(other_widget->IsActive());
++
++  // Tear down the exact prompt in the same turn that it loses the key window.
++  // Its posted blur must run after the manager has removed the prompt.
++  other_widget->Activate();
++  ASSERT_TRUE(other_widget->IsActive());
++  ASSERT_TRUE(prompt && !prompt->IsActive() && !prompt->IsClosed());
++  ASSERT_FALSE(browser_widget->IsActive());
++  ASSERT_FALSE(presenter->GetWidget()->IsActive());
++  ASSERT_TRUE(controller->edit_model()->has_focus());
++  api.manager()->Dismiss(/*prompt_options=*/std::monostate());
++  ASSERT_FALSE(api.manager()->IsRequestInProgress());
++  ASSERT_FALSE(api.GetPromptWindow());
++  ASSERT_TRUE(!prompt || prompt->IsClosed());
++  ASSERT_TRUE(controller->edit_model()->has_focus());
++
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return !controller->edit_model()->has_focus() &&
++           controller->popup_state_manager()->popup_state() ==
++               OmniboxPopupState::kNone;
++  }));
++  EXPECT_FALSE(presenter->IsShown());
++  EXPECT_FALSE(presenter->IsPermissionPromptPreventingClose());
++  EXPECT_TRUE(other_widget->IsActive());
++}
++
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupFullWebUIBrowserTest,
+                        BackgroundTabPromptRemovalDoesNotActivateAim) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+@@ -1337,6 +1381,7 @@ class OmniboxAimPopupEmbeddedPermissionBrowserTest
+     ASSERT_TRUE(prompt_ && prompt_->IsVisible() && !prompt_->IsClosed());
+   }
+ 
++  void WaitForAimWidgetRestoredAfterPromptClose();
+   void VerifyAimRestoredAfterPromptClose();
+ 
+   base::WeakPtr<views::Widget> browser_widget_;
+@@ -1349,7 +1394,7 @@ class OmniboxAimPopupEmbeddedPermissionBrowserTest
+ };
+ 
+ void OmniboxAimPopupEmbeddedPermissionBrowserTest::
+-    VerifyAimRestoredAfterPromptClose() {
++    WaitForAimWidgetRestoredAfterPromptClose() {
+   const bool restored = base::test::RunUntil([&] {
+     const auto* manager = GetPermissionManager();
+     const auto* presenter = GetAimPresenter();
+@@ -1388,6 +1433,11 @@ void OmniboxAimPopupEmbeddedPermissionBrowserTest::
+                                presenter->IsPermissionPromptPreventingClose())
+                          : "presenter unavailable");
+   }
++}
++
++void OmniboxAimPopupEmbeddedPermissionBrowserTest::
++    VerifyAimRestoredAfterPromptClose() {
++  ASSERT_NO_FATAL_FAILURE(WaitForAimWidgetRestoredAfterPromptClose());
+   auto* presenter = GetAimPresenter();
+   auto* content =
+       static_cast<OmniboxAimPopupWebUIContent*>(presenter->GetWebUIContent());
+@@ -1482,6 +1532,164 @@ IN_PROC_BROWSER_TEST_F(
+   ASSERT_NO_FATAL_FAILURE(VerifyAimRestoredAfterPromptClose());
+ }
+ 
++IN_PROC_BROWSER_TEST_F(
++    OmniboxAimPopupEmbeddedPermissionWebUILocationBarBrowserTest,
++    EmbeddedPromptEscapeRestoresInputAfterVoiceModeEnds) {
++  auto* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
++  ASSERT_TRUE(browser_view);
++  ASSERT_FALSE(browser_view->GetLocationBarView());
++  auto* bar = browser_view->GetLocationBar();
++  ASSERT_TRUE(bar);
++  ASSERT_TRUE(base::test::RunUntil([&] { return bar->GetAnchorOrNull(); }));
++
++  ASSERT_NO_FATAL_FAILURE(ShowFocusedAimPopup());
++  ASSERT_EQ(true, content::EvalJs(aim_contents_.get(), R"(
++    (async () => {
++      const app = document.querySelector('omnibox-aim-app');
++      const box = app.$.composebox;
++      // Recreate the recognizer with a local stand-in for audio/speech only.
++      // The rendered microphone still runs the real composebox click handler.
++      box.showVoiceSearch = false;
++      await box.updateComplete;
++      let speechStarts = 0;
++      window.webkitSpeechRecognition = class {
++        started = false;
++        start() {
++          this.started = true;
++          ++speechStarts;
++        }
++        stop() {
++          this.abort();
++        }
++        abort() {
++          if (this.started) {
++            this.started = false;
++            queueMicrotask(() => this.onend());
++          }
++        }
++      };
++      box.searchboxLayoutMode = 'TallBottomContext';
++      box.showVoiceSearch = true;
++      await box.updateComplete;
++      const voice = box.shadowRoot.querySelector('#voiceSearch');
++      await voice.updateComplete;
++      const input = box.getInputElement().inputElement;
++      const microphone = box.shadowRoot.querySelector('#voiceSearchButton');
++      if (!input.checkVisibility() || !microphone?.checkVisibility()) {
++        return false;
++      }
++      microphone.focus();
++      if (box.getActiveElement() !== microphone || box.isFocusInInput()) {
++        return false;
++      }
++      microphone.click();
++      await box.updateComplete;
++      window.aimVoiceTest = {box, voice, input, focusRequests: 0};
++      // Observe the existing Mojo callback without changing what it does.
++      const router = app.browserProxy_.callbackRouter;
++      const id = router.focusInput.addListener(() => {
++        ++window.aimVoiceTest.focusRequests;
++        router.removeListener(id);
++      });
++      return speechStarts === 1 && box.inVoiceSearchMode &&
++          !input.checkVisibility() && !box.isFocusInInput();
++    })()
++  )"));
++
++  ASSERT_NO_FATAL_FAILURE(ShowEmbeddedMicrophonePrompt());
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return prompt_ && prompt_->IsActive() &&
++           content::EvalJs(aim_contents_.get(), R"(
++             window.aimVoiceTest.voice.isPermissionPromptOpen
++           )")
++               .ExtractBool();
++  }));
++  auto* dialog =
++      views::AsViewClass<views::DialogClientView>(prompt_->client_view());
++  ASSERT_TRUE(dialog);
++  ASSERT_TRUE(dialog->AcceleratorPressed(
++      ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE)));
++  if (prompt_) {
++    EXPECT_EQ(views::Widget::ClosedReason::kEscKeyPressed,
++              prompt_->closed_reason());
++  }
++  ASSERT_NO_FATAL_FAILURE(WaitForAimWidgetRestoredAfterPromptClose());
++
++  // Wait for the actual browser focus message while the editor is still
++  // hidden. Activating the widget alone cannot satisfy the DOM focus check.
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(aim_contents_.get(), R"(
++      document.hasFocus() && window.aimVoiceTest.focusRequests === 1 &&
++          !window.aimVoiceTest.voice.isPermissionPromptOpen
++    )")
++        .ExtractBool();
++  }));
++  EXPECT_EQ(true, content::EvalJs(aim_contents_.get(), R"(
++    (async () => {
++      const {box, voice, input} = window.aimVoiceTest;
++      if (!box.inVoiceSearchMode || input.checkVisibility() ||
++          box.isFocusInInput()) {
++        return false;
++      }
++      const exit = voice.shadowRoot.querySelector('#closeButton, #stopButton');
++      if (!exit?.checkVisibility()) {
++        return false;
++      }
++      exit.focus();
++      exit.click();
++      await box.updateComplete;
++      return document.hasFocus() && !box.inVoiceSearchMode &&
++          input.checkVisibility() && input.getRootNode().activeElement === input;
++    })()
++  )"));
++}
++
++IN_PROC_BROWSER_TEST_F(OmniboxAimPopupEmbeddedPermissionBrowserTest,
++                       AimActivationBeforeDeferredRestoreStillFocusesInput) {
++  ASSERT_NO_FATAL_FAILURE(ShowFocusedAimPopup());
++  ASSERT_EQ(true, content::EvalJs(aim_contents_.get(), R"(
++    (async () => {
++      const box = document.querySelector('omnibox-aim-app').$.composebox;
++      box.searchboxLayoutMode = 'TallBottomContext';
++      await box.updateComplete;
++      const microphone = box.shadowRoot.querySelector('#voiceSearchButton');
++      microphone.focus();
++      return box.getActiveElement() === microphone && !box.isFocusInInput();
++    })()
++  )"));
++  ASSERT_NO_FATAL_FAILURE(ShowEmbeddedMicrophonePrompt());
++  ASSERT_TRUE(
++      base::test::RunUntil([&] { return prompt_ && prompt_->IsActive(); }));
++
++  auto* other_browser = CreateBrowser(browser()->GetProfile());
++  ASSERT_TRUE(other_browser);
++  auto* other_view = BrowserView::GetBrowserViewForBrowser(other_browser);
++  ASSERT_TRUE(other_view && other_view->GetWidget());
++  auto* other_widget = other_view->GetWidget();
++  other_widget->Activate();
++  ASSERT_TRUE(base::test::RunUntil([&] { return other_widget->IsActive(); }));
++  auto* presenter = GetAimPresenter();
++  ASSERT_TRUE(presenter && presenter->IsShown() && presenter->GetWidget());
++  auto* popup_widget = presenter->GetWidget();
++  auto* manager = GetPermissionManager();
++  ASSERT_TRUE(manager && manager->GetCurrentPrompt());
++  ASSERT_TRUE(prompt_ && !prompt_->IsActive());
++
++  // Keep the owner inactive during removal to queue the deferred restore.
++  // Return key status directly to AIM before pumping the task runner.
++  manager->Dismiss(/*prompt_options=*/std::monostate());
++  ASSERT_FALSE(manager->GetCurrentPrompt());
++  ASSERT_TRUE(other_widget->IsActive());
++  ASSERT_FALSE(browser_widget_->IsActive());
++  ASSERT_FALSE(popup_widget->IsActive());
++  ASSERT_TRUE(presenter->IsPermissionPromptPreventingClose());
++  popup_widget->Activate();
++  ASSERT_TRUE(popup_widget->IsActive());
++  ASSERT_FALSE(presenter->IsPermissionPromptPreventingClose())
++      << "Activation has cleared the close guard before the DOM restore task";
++  ASSERT_NO_FATAL_FAILURE(VerifyAimRestoredAfterPromptClose());
++}
++
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupEmbeddedPermissionBrowserTest,
+                        BackgroundEmbeddedPromptCloseDoesNotActivateAim) {
+   ASSERT_NO_FATAL_FAILURE(ShowFocusedAimPopup());
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc
+index e792b306d8de7f111c7641c4212b88c7786576be..f3c7c766b55201f3e732368d4346c96a890a6106 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.cc
+@@ -126,7 +126,9 @@ bool OmniboxPopupAimPresenter::
+     ShouldRestoreFocusAfterPermissionPromptDismissed() const {
+   const auto* widget = GetWidget();
+   return widget && HasOpenWidget() && widget->IsVisible() &&
+-         widget->CanActivate() && ShouldReceiveFocus();
++         widget->CanActivate() && ShouldReceiveFocus() &&
++         controller()->popup_state_manager()->popup_state() ==
++             OmniboxPopupState::kAim;
+ }
+ 
+ bool OmniboxPopupAimPresenter::IsBrowserOrPopupActive() const {
+@@ -149,19 +151,17 @@ void OmniboxPopupAimPresenter::RequestFocusAfterPermissionPromptDismissed() {
+   // A closing native prompt can return activation to the owner asynchronously.
+   // Recheck actual activation after the close, including when another window
+   // already holds focus and the request was removed in the background.
++  // An activation notification can clear the close guard before this runs.
+   pending_permission_focus_restore_.Reset(base::BindOnce(
+-      [](base::WeakPtr<OmniboxPopupAimPresenter> presenter) {
+-        if (presenter && presenter->IsPermissionPromptFocusRestorePending()) {
+-          presenter->RestorePermissionPromptFocusIfActive();
+-        }
+-      },
++      &OmniboxPopupAimPresenter::RestorePermissionPromptFocusIfActive,
+       weak_factory_.GetWeakPtr()));
+   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+       FROM_HERE, pending_permission_focus_restore_.callback());
+ }
+ 
+ void OmniboxPopupAimPresenter::RestorePermissionPromptFocusIfActive() {
+-  if (ShouldRestoreFocusAfterPermissionPromptDismissed() &&
++  if (!IsPermissionPromptShowing() &&
++      ShouldRestoreFocusAfterPermissionPromptDismissed() &&
+       IsBrowserOrPopupActive()) {
+     RequestFocusAndFocusInput();
+   }
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
+index 62116483610cf01e5678034a84030466a690237b..0b9e8bf115cc2b2af1326de1beb4b16b0711f21f 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
+@@ -171,6 +171,7 @@ void OmniboxPopupFullPresenter::Show() {
+ 
+ void OmniboxPopupFullPresenter::Hide() {
+   permission_prompt_widget_observation_.Reset();
++  pending_permission_blur_.Cancel();
+   pending_focus_task_.Cancel();
+   refocus_on_activation_ = false;
+   // The popup stops being observed before it's hidden.
+@@ -445,11 +446,11 @@ void OmniboxPopupFullPresenter::OnWidgetActivationChanged(views::Widget* widget,
+                                                           bool active) {
+   if (permission_prompt_widget_observation_.IsObservingSource(widget)) {
+     if (!active) {
++      pending_permission_blur_.Reset(base::BindOnce(
++          &OmniboxPopupFullPresenter::OnPermissionPromptDeactivated,
++          weak_factory_.GetWeakPtr()));
+       base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+-          FROM_HERE,
+-          base::BindOnce(
+-              &OmniboxPopupFullPresenter::OnPermissionPromptDeactivated,
+-              weak_factory_.GetWeakPtr(), widget->GetWeakPtr()));
++          FROM_HERE, pending_permission_blur_.callback());
+     }
+     return;
+   }
+@@ -639,13 +640,10 @@ void OmniboxPopupFullPresenter::BlurIfBrowserOrPopupInactive() {
+   BlurForWindowDeactivation();
+ }
+ 
+-void OmniboxPopupFullPresenter::OnPermissionPromptDeactivated(
+-    base::WeakPtr<views::Widget> widget) {
+-  // Closing a prompt also deactivates it. Let the manager restore focus on
+-  // dismissal, and reconsider ordinary blur only while the prompt stays live.
+-  if (widget &&
+-      permission_prompt_widget_observation_.IsObservingSource(widget.get()) &&
+-      IsOwnedPermissionPromptWidget(*widget)) {
++void OmniboxPopupFullPresenter::OnPermissionPromptDeactivated() {
++  // The prompt may have closed during the handoff. Check where activation
++  // settled, including any currently active owned prompt.
++  if (HasOpenWidget() && GetWidget()->IsVisible()) {
+     BlurIfBrowserOrPopupInactive();
+   }
+ }
+@@ -871,6 +869,7 @@ void OmniboxPopupFullPresenter::OnWidgetPresentedChanged(bool presented) {
+ 
+ void OmniboxPopupFullPresenter::WidgetDestroyed() {
+   permission_prompt_widget_observation_.Reset();
++  pending_permission_blur_.Cancel();
+   event_monitor_.reset();
+   forward_events_timer_.Stop();
+   popup_widget_observation_.Reset();
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h
+index 26c55952374aaacaac9c0b7b8d7c58b90a9e4099..75c89cb7605fa2581d7d249344c3069fcd10e091 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.h
+@@ -155,7 +155,7 @@ class OmniboxPopupFullPresenter : public OmniboxPopupPresenterBase,
+   // active. Any other window taking activation, including a bubble anchored to
+   // the browser window, blurs it, as with the Views omnibox.
+   void BlurIfBrowserOrPopupInactive();
+-  void OnPermissionPromptDeactivated(base::WeakPtr<views::Widget> widget);
++  void OnPermissionPromptDeactivated();
+   // If the omnibox is focused with the full popup open, blurs it after another
+   // window, such as a bubble, took activation, and sets what the browser window
+   // restores focus to when it's reactivated.
+@@ -235,6 +235,9 @@ class OmniboxPopupFullPresenter : public OmniboxPopupPresenterBase,
+   // Pending asynchronous focus and activation task.
+   base::CancelableOnceClosure pending_focus_task_;
+ 
++  // Rechecks activation for this showing after an owned prompt loses it.
++  base::CancelableOnceClosure pending_permission_blur_;
++
+   // Set when `RequestFocus()` couldn't activate the popup because another
+   // window held activation, leaving the omnibox focused with the popup open
+   // but inactive. Cleared once the browser window or popup is activated again,
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+index 60e86c7e7bbf59e24ebc2a0c8e506492aa5cf352..dabacaa963c99822edbc83479b4343c1d485728c 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+@@ -959,10 +959,6 @@ bool OmniboxPopupPresenterBase::IsPermissionPromptPreventingClose() const {
+   return IsPermissionPromptShowing() || is_handling_prompt_dismissal_;
+ }
+ 
+-bool OmniboxPopupPresenterBase::IsPermissionPromptFocusRestorePending() const {
+-  return is_handling_prompt_dismissal_ && !IsPermissionPromptShowing();
+-}
+-
+ views::Widget* OmniboxPopupPresenterBase::GetActivePermissionPromptWidget(
+     const views::Widget* browser_widget) const {
+   if (!browser_widget || !IsPermissionPromptShowing()) {
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+index f200a0e51dbb7134547cddb21081904efaaf559c..6b1863882bfd6c180abe1e771a1f4437af96a4b2 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+@@ -335,7 +335,7 @@ class OmniboxPopupPresenterBase
+   bool IsOwnedPermissionPromptWidget(const views::Widget& widget) const;
+ 
+   void FinishPermissionPromptFocusRestore();
+-  bool IsPermissionPromptFocusRestorePending() const;
++  bool IsPermissionPromptShowing() const;
+   virtual bool ShouldRestoreFocusAfterPermissionPromptDismissed() const;
+   virtual void RequestFocusAfterPermissionPromptDismissed();
+ 
+@@ -361,7 +361,6 @@ class OmniboxPopupPresenterBase
+   class RequestingPromptObservation;
+   std::unique_ptr<RequestingPromptObservation> requesting_prompt_observation_;
+ 
+-  bool IsPermissionPromptShowing() const;
+   void RestoreFocusAfterPermissionPromptDismissed();
+ 
+   // Set to true when a permission prompt is added/showing.

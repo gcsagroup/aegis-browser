@@ -57,6 +57,9 @@ enum AccessSiteProxyIntentStatusId: String, Equatable, Sendable {
     case offBrowserDefault
     case automaticConnected
     case automaticUnavailable
+    case overseasProtected
+    case overseasOnNextOpen
+    case overseasUnavailable
     case allowNotConnected
     case allowConnected
     case blockLocalRefuse
@@ -84,6 +87,8 @@ struct AccessSiteProxyToggleSnapshot: Equatable, Sendable {
     var connectionStatus: AccessSiteProxyConnectionStatusId = .idle
     var failureReason: String?
     var attachment: AccessProxyAttachment = .notAttached
+    /// Verified scope that authorized the bound document's overseas route.
+    var overseasGrant: AccessGeoSiteCache.OverseasView.Grant?
     /// 「本站打不开时自动重试」. Distinct from the explicit whole-page proxy intent.
     var autoRecoveryEnabled: Bool = false
     var autoRecoveryLine: String?
@@ -202,6 +207,12 @@ enum AccessSiteProxyToggleModel {
             return "自动重试已连接"
         case .automaticUnavailable:
             return "自动重试连接不可用"
+        case .overseasProtected:
+            return "此网站使用国外加速"
+        case .overseasOnNextOpen:
+            return "重新打开此网站时使用国外加速"
+        case .overseasUnavailable:
+            return "国外加速连接不可用"
         case .allowNotConnected:
             return "已开启，等待连接"
         case .allowConnected:
@@ -209,6 +220,20 @@ enum AccessSiteProxyToggleModel {
         case .blockLocalRefuse:
             return "已在本机停用"
         }
+    }
+
+    static func siteStatusLine(_ snapshot: AccessSiteProxyToggleSnapshot) -> String {
+        if snapshot.attachment == .attachedUnavailable {
+            return "连接失败，未切回原连接"
+        }
+        if snapshot.intentStatus == .overseasUnavailable {
+            return intentLine(for: snapshot.intentStatus)
+        }
+        if snapshot.connectionStatus == .connecting || snapshot.connectionStatus == .unavailable
+            || snapshot.intentStatus == .allowConnected {
+            return connectionLine(for: snapshot.connectionStatus)
+        }
+        return intentLine(for: snapshot.intentStatus)
     }
 
     static func connectionLine(for status: AccessSiteProxyConnectionStatusId) -> String {

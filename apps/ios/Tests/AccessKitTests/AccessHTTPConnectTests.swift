@@ -40,11 +40,11 @@ final class AccessHTTPConnectTests: XCTestCase {
             credentialSlot: try AccessCredentialSlot(id: "cred-http-connect"),
             lease: try AccessLease(
                 generation: 1,
-                expiresAt: Date(timeIntervalSince1970: 1_700_000_000 + 60)
+                expiresAt: Date().addingTimeInterval(60)
             )
         )
         let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let now = Date()
         try await listener.start(at: now)
 
         let response = expectation(description: "200 connection established")
@@ -88,11 +88,11 @@ final class AccessHTTPConnectTests: XCTestCase {
             credentialSlot: try AccessCredentialSlot(id: "cred-http-connect-get"),
             lease: try AccessLease(
                 generation: 1,
-                expiresAt: Date(timeIntervalSince1970: 1_700_000_000 + 60)
+                expiresAt: Date().addingTimeInterval(60)
             )
         )
         let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
-        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        try await listener.start()
 
         let response = expectation(description: "405 method not allowed")
         let connection = NWConnection(

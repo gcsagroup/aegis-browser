@@ -1,0 +1,514 @@
+From 8ba6574d3e5d0316cb6c7a3b5bb06830a0841411 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 23:46:24 +0800
+Subject: [PATCH] fix(access): preserve live requests and browser process
+ factory hooks
+
+---
+ .../aegis/access/access_async_rule_store.cc   | 20 ++++--
+ .../aegis/access/access_async_rule_store.h    |  2 +
+ ...proxying_url_loader_factory_browsertest.cc | 70 +++++++++++++++++--
+ .../access/access_service_coordinator.cc      | 31 ++++++--
+ .../aegis/access/access_service_coordinator.h |  3 +
+ chrome/browser/predictors/prefetch_manager.cc |  8 ++-
+ .../views/location_bar/location_bar_view.cc   | 28 ++++----
+ .../omnibox_popup_visibility_browsertest.cc   | 23 +++---
+ content/browser/storage_partition_impl.cc     | 23 +++---
+ content/public/browser/BUILD.gn               |  1 +
+ .../browser_process_url_loader_factory.h      | 27 +++++++
+ 11 files changed, 185 insertions(+), 51 deletions(-)
+ create mode 100644 content/public/browser/browser_process_url_loader_factory.h
+
+diff --git a/chrome/browser/aegis/access/access_async_rule_store.cc b/chrome/browser/aegis/access/access_async_rule_store.cc
+index a04895f3c8b4ba3f659882a79fe03f63be987695..f6e5cf6493bd3032363fc2c83fb8c6da327114fb 100644
+--- a/chrome/browser/aegis/access/access_async_rule_store.cc
++++ b/chrome/browser/aegis/access/access_async_rule_store.cc
+@@ -57,17 +57,20 @@ class AccessAsyncRuleStore::Worker {
+   StoreResult<PendingMutationRecord> Commit(const PendingMutationRecord& expected) {
+     return store_.CommitPreparedMutation(expected);
+   }
+-  AsyncAccessStoreRestoration RecoverFailedMutation(
+-      const PendingMutationRecord& expected) {
++  StoreStatus Supersede(const PendingMutationRecord& expected) {
+     const auto& partition = expected.owner.storage_partition_token;
+     if (!initialized_.contains(partition) ||
+         expected.owner.channel != store_.binding().channel() ||
+         expected.owner.profile_token != store_.binding().runtime_profile_token())
+-      return {.status = StoreStatus::kConflict, .detail = "mutation_owner_mismatch"};
+-    const auto status = store_.SupersedePreparedMutation(expected.operation_id,
+-                                                        expected.request_fingerprint);
++      return StoreStatus::kConflict;
++    return store_.SupersedePreparedMutation(expected.operation_id,
++                                            expected.request_fingerprint);
++  }
++  AsyncAccessStoreRestoration RecoverFailedMutation(
++      const PendingMutationRecord& expected) {
++    const auto status = Supersede(expected);
+     if (status != StoreStatus::kValid) return {.status = status};
+-    return ReserveCommitted(partition);
++    return ReserveCommitted(expected.owner.storage_partition_token);
+   }
+   StoreResult<StoredPolicySnapshot> ReadCommitted(const std::string& partition) {
+     return store_.ReadCommittedSnapshot(partition);
+@@ -112,6 +115,11 @@ void AccessAsyncRuleStore::Commit(PendingMutationRecord expected,
+   worker_.AsyncCall(&Worker::Commit).WithArgs(std::move(expected))
+       .Then(std::move(completion));
+ }
++void AccessAsyncRuleStore::Supersede(PendingMutationRecord expected,
++    base::OnceCallback<void(StoreStatus)> completion) {
++  worker_.AsyncCall(&Worker::Supersede).WithArgs(std::move(expected))
++      .Then(std::move(completion));
++}
+ void AccessAsyncRuleStore::RecoverFailedMutation(PendingMutationRecord expected,
+     base::OnceCallback<void(AsyncAccessStoreRestoration)> completion) {
+   worker_.AsyncCall(&Worker::RecoverFailedMutation).WithArgs(std::move(expected))
+diff --git a/chrome/browser/aegis/access/access_async_rule_store.h b/chrome/browser/aegis/access/access_async_rule_store.h
+index 774fe7282d59aa3a020984c914496110854b60d5..7ec31154d42953d0c2f1278c2292bc7f61ef7323 100644
+--- a/chrome/browser/aegis/access/access_async_rule_store.h
++++ b/chrome/browser/aegis/access/access_async_rule_store.h
+@@ -36,6 +36,8 @@ class AccessAsyncRuleStore {
+       base::OnceCallback<void(AsyncAccessStorePrepared)> completion);
+   void Commit(PendingMutationRecord expected,
+       base::OnceCallback<void(StoreResult<PendingMutationRecord>)> completion);
++  void Supersede(PendingMutationRecord expected,
++      base::OnceCallback<void(StoreStatus)> completion);
+   void RecoverFailedMutation(PendingMutationRecord expected,
+       base::OnceCallback<void(AsyncAccessStoreRestoration)> completion);
+   void ReadCommitted(std::string partition,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 9d40bbc7cf13d45f979a2c3f74363af687f84473..af4e6091a473b98c3ba2e6fa78a17eb4fddf961a 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -23,6 +23,7 @@
+ #include "base/run_loop.h"
+ #include "base/synchronization/lock.h"
+ #include "base/unguessable_token.h"
++#include "base/test/bind.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+@@ -69,6 +70,7 @@
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "content/public/test/test_navigation_observer.h"
++#include "content/public/test/url_loader_interceptor.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "net/base/auth.h"
+@@ -77,6 +79,7 @@
+ #include "net/dns/mock_host_resolver.h"
+ #include "net/http/http_status_code.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "net/test/embedded_test_server/controllable_http_response.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+ #include "net/test/embedded_test_server/http_request.h"
+ #include "net/test/embedded_test_server/http_response.h"
+@@ -610,6 +613,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+         &ServiceWorkerOriginReply, base::Unretained(&origin_requests_)));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &CountAndReply, base::Unretained(&origin_requests_), "origin"));
++    held_proxy_response_.emplace(&proxy_server_, "/held-access-response");
+     proxy_server_.RegisterRequestHandler(
+         base::BindRepeating(&IgnoreAutomaticFavicon));
+     proxy_server_.RegisterRequestHandler(base::BindRepeating(
+@@ -1401,6 +1405,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+   std::optional<aegis_access::PolicyPublicationIdentity> last_lifecycle_ack_;
+   net::test_server::EmbeddedTestServer target_origin_;
+   net::test_server::EmbeddedTestServer proxy_server_;
++  std::optional<net::test_server::ControllableHttpResponse> held_proxy_response_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+   std::optional<aegis_access::OwnershipKey> owner_;
+ };
+@@ -2140,6 +2145,13 @@ IN_PROC_BROWSER_TEST_F(AccessRestoredProxyRuleBrowserTest,
+        CurrentBaseProxyGeneration()});
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+   ExpectRoutingDelta(0, 0, /*origin_delta=*/0u, /*proxy_delta=*/1u);
++  // Hold a response from the selected proxy across the rejected publication.
++  ASSERT_TRUE(content::ExecJs(web_contents(), R"(
++      window.redirectResult =
++          fetch('/held-access-response').then(response => response.text());
++      true;
++  )"));
++  held_proxy_response_->WaitForRequest();
+   auto request = PreparedNavigationRequest(*owner_);
+   for (auto& member : request.candidate_members) {
+     member.proxy_group_id = "conflicting-group";
+@@ -2160,10 +2172,13 @@ IN_PROC_BROWSER_TEST_F(AccessRestoredProxyRuleBrowserTest,
+   EXPECT_EQ(result.Get().store_status, StoreStatus::kValid);
+   const auto* restored = runtime->GetPublishedPolicySnapshot(*owner_);
+   ASSERT_TRUE(restored);
+-  EXPECT_EQ(restored->owner, published_before.owner);
+-  EXPECT_EQ(restored->rules, published_before.rules);
+-  // Recovery reserves a new publication for the same committed rules.
+-  EXPECT_GT(restored->policy_generation, published_before.policy_generation);
++  EXPECT_EQ(*restored, published_before);
++  held_proxy_response_->Send(
++      "HTTP/1.1 302 Found\r\nLocation: /after-inflight-redirect\r\n"
++      "Content-Length: 0\r\n\r\n");
++  held_proxy_response_->Done();
++  EXPECT_EQ("proxy", content::EvalJs(web_contents(), "window.redirectResult"));
++  ExpectRoutingDelta(0, 0, /*origin_delta=*/0u, /*proxy_delta=*/2u);
+   const auto persisted =
+       coordinator->ReadCommittedSnapshot(owner_->storage_partition_token);
+   ASSERT_TRUE(persisted.value);
+@@ -2952,9 +2967,25 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        BlockBarrierTerminatesInFlightProxyRequest) {
+   PublishProxyPolicy(/*publish_endpoint=*/true);
++  content::WebContents* selected_tab = web_contents();
++  auto* survivor_frame = ui_test_utils::NavigateToURLWithDisposition(
++      browser(), target_url(), WindowOpenDisposition::kNewBackgroundTab,
++      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
++  ASSERT_TRUE(survivor_frame);
++  ASSERT_EQ(web_contents(), selected_tab);
++  ASSERT_NE(survivor_frame, selected_tab->GetPrimaryMainFrame());
++  ASSERT_EQ(survivor_frame->GetBrowserContext(),
++            selected_tab->GetBrowserContext());
++  ASSERT_TRUE(content::ExecJs(survivor_frame, R"(
++      window.survivorResult =
++          fetch('/held-access-response').then(response => response.text());
++      true;
++  )"));
++  held_proxy_response_->WaitForRequest();
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+   StartPendingFetch(hanging_url());
+   ASSERT_TRUE(base::test::RunUntil([&] {
+-    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
++    return proxy_requests_.load(std::memory_order_relaxed) == proxy_before + 1;
+   }));
+   EXPECT_EQ(PendingFetchState(), "pending");
+ 
+@@ -2963,9 +2994,9 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   auto* dispatch_state =
+       AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+   ASSERT_NE(dispatch_state, nullptr);
+-  // Other page requests may also be registered for this profile.
++  // Both documents now have a live request at the selected proxy.
+   const size_t ownership_before = dispatch_state->ownership().size();
+-  ASSERT_GE(ownership_before, 1u);
++  ASSERT_GE(ownership_before, 2u);
+   const AccessBlockAndCancelResult result =
+       dispatch_state->InstallBlockBarrierAndCancelMatching(
+           {"block-browser-0136", 1, std::move(selector)});
+@@ -2979,6 +3010,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ 
+   EXPECT_TRUE(base::test::RunUntil(
+       [&] { return PendingFetchState() == "blocked"; }));
++  held_proxy_response_->Send(net::HTTP_OK, "text/plain", "surviving-proxy-body");
++  held_proxy_response_->Done();
++  EXPECT_EQ("surviving-proxy-body",
++            content::EvalJs(survivor_frame, "window.survivorResult"));
+   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
+@@ -3103,6 +3138,27 @@ IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
+                      /*proxy_delta=*/1u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
++                       FreshFactoryPreservesBrowserProcessInterceptor) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  const GURL resource = target_url().Resolve("/intercepted-prefetch");
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++  std::atomic<int> observations{0};
++  content::URLLoaderInterceptor interceptor(base::BindLambdaForTesting(
++      [&](content::URLLoaderInterceptor::RequestParams* params) {
++        if (params->url_request.url == resource &&
++            params->process_id == network::mojom::kBrowserProcessId) {
++          ++observations;
++        }
++        return false;  // Continue through the installed private terminal.
++      }));
++  ASSERT_EQ(StartPrefetchAndWait(resource), net::OK);
++  EXPECT_EQ(observations.load(), 1);
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/1u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
+                        WithoutEndpointFailsClosed) {
+   // Prove this fixture can observe a completed origin request before checking
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index fbc06cf441a257021671d13a5b9e2e9ea1f10547..32388038c0a36ee63cd26f26fc17774069a2ef9e 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -591,14 +591,23 @@ void AccessServiceCoordinator::FailTransaction(
+     }
+   }
+   if (async_store_) {
+-    if (!transaction->pending.operation_id.empty()) {
+-      const auto pending = transaction->pending;
+-      async_store_->RecoverFailedMutation(pending,
+-          base::BindOnce(&AccessServiceCoordinator::OnAsyncRecovered,
+-              weak_factory_.GetWeakPtr(), std::move(transaction), result));
+-    } else {
++    if (transaction->pending.operation_id.empty()) {
+       Finish(std::move(transaction->completion), result);
++      return;
++    }
++    const auto pending = transaction->pending;
++    if (!transaction->runtime_published) {
++      // No live policy was replaced. Existing requests still own its generation.
++      async_store_->Supersede(
++          pending, base::BindOnce(&AccessServiceCoordinator::OnAsyncSuperseded,
++                                  weak_factory_.GetWeakPtr(),
++                                  std::move(transaction), result));
++      return;
+     }
++    async_store_->RecoverFailedMutation(
++        pending, base::BindOnce(&AccessServiceCoordinator::OnAsyncRecovered,
++                                weak_factory_.GetWeakPtr(),
++                                std::move(transaction), result));
+     return;
+   }
+   if (transaction->runtime_published) {
+@@ -614,6 +623,16 @@ void AccessServiceCoordinator::FailTransaction(
+   }
+   Finish(std::move(transaction->completion), result);
+ }
++void AccessServiceCoordinator::OnAsyncSuperseded(
++    std::unique_ptr<MutationTransaction> transaction,
++    AccessMutationTransactionResult failure, StoreStatus status) {
++  if (status != StoreStatus::kValid) {
++    recovery_required_ = true;
++    failure.store_status = status;
++  }
++  Finish(std::move(transaction->completion), failure);
++}
++
+ void AccessServiceCoordinator::OnAsyncRecovered(
+     std::unique_ptr<MutationTransaction> transaction,
+     AccessMutationTransactionResult failure, AsyncAccessStoreRestoration result) {
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index 2b9e76626e05f8ababf7d96d2ede25f63b54bb51..8fe10186e806944c380b44ee997c84e45910db78 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -96,6 +96,9 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+                        AsyncAccessStorePrepared result);
+   void OnAsyncCommitted(std::unique_ptr<MutationTransaction> transaction,
+                        StoreResult<PendingMutationRecord> result);
++  void OnAsyncSuperseded(std::unique_ptr<MutationTransaction> transaction,
++                         AccessMutationTransactionResult failure,
++                         StoreStatus status);
+   void OnAsyncRecovered(std::unique_ptr<MutationTransaction> transaction,
+       AccessMutationTransactionResult failure, AsyncAccessStoreRestoration result);
+   std::optional<AccessMutationTransactionResult> PrepareCandidate(
+diff --git a/chrome/browser/predictors/prefetch_manager.cc b/chrome/browser/predictors/prefetch_manager.cc
+index e515b971513d09ddd0b317bbbd00e7808d084948..5d9ee3c39aa3a5f95b8d821e20044bd324edc46e 100644
+--- a/chrome/browser/predictors/prefetch_manager.cc
++++ b/chrome/browser/predictors/prefetch_manager.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/predictors/prefetch_traffic_annotation.h"
+ #include "chrome/browser/predictors/resource_prefetch_predictor.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "content/public/browser/browser_process_url_loader_factory.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/connection_allowlist_util.h"
+ #include "content/public/browser/global_request_id.h"
+@@ -35,6 +36,7 @@
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
++#include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
+ #include "services/network/public/mojom/fetch_api.mojom.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ #include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
+@@ -328,9 +330,9 @@ void PrefetchManager::PrefetchUrl(
+       MaybeProxyBrowserProcessPrefetch(profile_, storage_partition,
+                                        factory_builder);
+   if (factory_builder.RequiresFreshFactory()) {
+-    factory = std::move(factory_builder)
+-                  .Finish(storage_partition->GetNetworkContext(),
+-                          storage_partition->CreateURLLoaderFactoryParams());
++    factory = base::MakeRefCounted<network::WrapperSharedURLLoaderFactory>(
++        content::CreateBrowserProcessURLLoaderFactory(
++            *storage_partition, std::move(factory_builder)));
+   } else {
+     factory = std::move(factory_builder).Finish(factory);
+   }
+diff --git a/chrome/browser/ui/views/location_bar/location_bar_view.cc b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+index 9b1e2e529e6e9c03175ad5d3f3159533eb24c40c..c4d60fb5d1b1b16dc899c323d6970602bb80f790 100644
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -1270,19 +1270,21 @@ bool LocationBarView::is_full_webui_omnibox() const {
+ // ensures the omnibox knows as soon as possible and ignores focus-loss events
+ // during the whole time that the embedded permission prompt is showing.
+ void LocationBarView::SetPermissionPromptShowing(bool showing) {
+-  OmniboxPopupPresenterBase* presenter = nullptr;
+-  // Get Omnibox popup presenter for AIM or normal omnibox, depending
+-  // on which is showing.
+-  if (auto* aim_presenter = GetOmniboxPopupAimPresenter();
+-      aim_presenter && aim_presenter->IsShown()) {
+-    presenter = aim_presenter;
+-  } else if (auto* popup_view = GetOmniboxPopupView();
+-             popup_view && popup_view->presenter() &&
+-             popup_view->presenter()->IsShown()) {
+-    presenter = popup_view->presenter();
+-  }
+-  if (presenter) {
+-    presenter->SetPermissionPromptShowing(showing);
++  auto* aim = GetOmniboxPopupAimPresenter();
++  auto* popup = GetOmniboxPopupView();
++  auto* regular = popup ? popup->presenter() : nullptr;
++  if (!showing) {
++    // AppKit may have ordered the owning widget out during the prompt.
++    if (aim) {
++      aim->SetPermissionPromptShowing(false);
++    }
++    if (regular) {
++      regular->SetPermissionPromptShowing(false);
++    }
++  } else if (aim && aim->IsShown()) {
++    aim->SetPermissionPromptShowing(true);
++  } else if (regular && regular->IsShown()) {
++    regular->SetPermissionPromptShowing(true);
+   }
+ }
+ 
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+index 25eeeac43b48081f34557e335972c3a7384811ca..55ce913662c24acead44b8722b20733f7298f9ac 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+@@ -4,9 +4,11 @@
+ 
+ #include "base/auto_reset.h"
+ #include "base/functional/callback_helpers.h"
+-#include "base/run_loop.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
++#include "base/test/scoped_run_loop_timeout.h"
++#include "base/test/test_future.h"
++#include "base/test/test_timeouts.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/ui/omnibox/omnibox_controller.h"
+ #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
+@@ -152,17 +154,21 @@ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+         [&]() { return !location_bar->in_popup_state_transition(); }));
+     location_bar->GetOmniboxController()->popup_state_manager()->SetPopupState(
+         OmniboxPopupState::kAim);
+-    ASSERT_TRUE(aim->IsShown());
+-    ASSERT_TRUE(aim->GetWidget());
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return aim->HasOpenWidget() && aim->GetWidget()->IsVisible() &&
++             !location_bar->in_popup_state_transition();
++    }));
+     ASSERT_TRUE(aim->GetWidget()->GetCompositor());
+-    base::RunLoop presented;
++    base::test::ScopedRunLoopTimeout timeout(FROM_HERE,
++                                           TestTimeouts::action_timeout());
++    base::test::TestFuture<void> presented;
+     aim->GetWidget()
+         ->GetCompositor()
+         ->RequestSuccessfulPresentationTimeForNextFrame(
+-            base::BindOnce(base::IgnoreArgs<const viz::FrameTimingDetails&>(
+-                presented.QuitClosure())));
++            base::IgnoreArgs<const viz::FrameTimingDetails&>(
++                presented.GetCallback()));
+     aim->GetWidget()->GetCompositor()->ScheduleFullRedraw();
+-    presented.Run();
++    ASSERT_TRUE(presented.Wait());
+     EXPECT_EQ(content::Visibility::VISIBLE, contents->GetVisibility());
+ 
+     location_bar->GetOmniboxController()->popup_state_manager()->SetPopupState(
+@@ -208,7 +214,8 @@ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+   EXPECT_FALSE(aim->IsShown());
+   EXPECT_TRUE(controller->IsPopupOpen());
+ 
+-  aim->SetPermissionPromptShowing(false);
++  bar->SetPermissionPromptShowing(false);
++  EXPECT_FALSE(aim->IsPermissionPromptPreventingClose());
+   controller->popup_state_manager()->SetPopupState(OmniboxPopupState::kNone);
+   EXPECT_FALSE(controller->IsPopupOpen());
+   EXPECT_FALSE(aim->HasOpenWidget());
+diff --git a/content/browser/storage_partition_impl.cc b/content/browser/storage_partition_impl.cc
+index 969d2800a10cf718071265899bfd85b5f5cac362..ca4f4425f2e38ff44e36cfdeace3765edb470b11 100644
+--- a/content/browser/storage_partition_impl.cc
++++ b/content/browser/storage_partition_impl.cc
+@@ -103,6 +103,7 @@
+ #include "content/browser/worker_host/shared_worker_service_impl.h"
+ #include "content/common/features.h"
+ #include "content/public/browser/browser_context.h"
++#include "content/public/browser/browser_process_url_loader_factory.h"
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/browsing_data_filter_builder.h"
+@@ -3669,19 +3670,25 @@ StoragePartitionImpl::CreateURLLoaderFactoryParams() {
+   return params;
+ }
+ 
+-void StoragePartitionImpl::CreateURLLoaderFactoryForBrowserProcessInternal(
+-    mojo::PendingRemote<network::mojom::URLLoaderFactory>* out_factory) {
++mojo::PendingRemote<network::mojom::URLLoaderFactory>
++CreateBrowserProcessURLLoaderFactory(
++    StoragePartition& partition,
++    network::URLLoaderFactoryBuilder factory_builder) {
+   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+-
+-  network::URLLoaderFactoryBuilder factory_builder;
+   if (url_loader_factory::GetTestingInterceptor()) {
+     url_loader_factory::GetTestingInterceptor().Run(
+         network::mojom::kBrowserProcessId, factory_builder);
+   }
+-  *out_factory =
+-      std::move(factory_builder)
+-          .Finish<mojo::PendingRemote<network::mojom::URLLoaderFactory>>(
+-              GetNetworkContext(), CreateURLLoaderFactoryParams());
++  return std::move(factory_builder)
++      .Finish<mojo::PendingRemote<network::mojom::URLLoaderFactory>>(
++          partition.GetNetworkContext(),
++          partition.CreateURLLoaderFactoryParams());
++}
++
++void StoragePartitionImpl::CreateURLLoaderFactoryForBrowserProcessInternal(
++    mojo::PendingRemote<network::mojom::URLLoaderFactory>* out_factory) {
++  *out_factory = CreateBrowserProcessURLLoaderFactory(
++      *this, network::URLLoaderFactoryBuilder());
+ }
+ 
+ void StoragePartition::SetDefaultQuotaSettingsForTesting(
+diff --git a/content/public/browser/BUILD.gn b/content/public/browser/BUILD.gn
+index 71911ca209bad418bdb3b1eb42c8d907cd5e9277..5488b1c3efd8e7c34f2aafd710981ef196719d7a 100644
+--- a/content/public/browser/BUILD.gn
++++ b/content/public/browser/BUILD.gn
+@@ -81,6 +81,7 @@ source_set("browser_sources") {
+     "browser_plugin_guest_delegate.h",
+     "browser_plugin_guest_manager.cc",
+     "browser_plugin_guest_manager.h",
++    "browser_process_url_loader_factory.h",
+     "browser_task_traits.h",
+     "browser_thread.h",
+     "browser_url_handler.h",
+diff --git a/content/public/browser/browser_process_url_loader_factory.h b/content/public/browser/browser_process_url_loader_factory.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..edd2745ae7d8cd49eb6aad9d82769edcc6c4d173
+--- /dev/null
++++ b/content/public/browser/browser_process_url_loader_factory.h
+@@ -0,0 +1,27 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CONTENT_PUBLIC_BROWSER_BROWSER_PROCESS_URL_LOADER_FACTORY_H_
++#define CONTENT_PUBLIC_BROWSER_BROWSER_PROCESS_URL_LOADER_FACTORY_H_
++
++#include "content/common/content_export.h"
++#include "mojo/public/cpp/bindings/pending_remote.h"
++#include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
++
++namespace network {
++class URLLoaderFactoryBuilder;
++}
++
++namespace content {
++class StoragePartition;
++
++// Finishes a fresh factory on the UI thread with the partition's browser-
++// process parameters and the browser-process URLLoaderInterceptor, if present.
++CONTENT_EXPORT mojo::PendingRemote<network::mojom::URLLoaderFactory>
++CreateBrowserProcessURLLoaderFactory(StoragePartition& partition,
++                                     network::URLLoaderFactoryBuilder builder);
++
++}  // namespace content
++
++#endif  // CONTENT_PUBLIC_BROWSER_BROWSER_PROCESS_URL_LOADER_FACTORY_H_

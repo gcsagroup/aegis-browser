@@ -96,6 +96,9 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
                        AsyncAccessStorePrepared result);
   void OnAsyncCommitted(std::unique_ptr<MutationTransaction> transaction,
                        StoreResult<PendingMutationRecord> result);
+  void OnAsyncSuperseded(std::unique_ptr<MutationTransaction> transaction,
+                         AccessMutationTransactionResult failure,
+                         StoreStatus status);
   void OnAsyncRecovered(std::unique_ptr<MutationTransaction> transaction,
       AccessMutationTransactionResult failure, AsyncAccessStoreRestoration result);
   std::optional<AccessMutationTransactionResult> PrepareCandidate(

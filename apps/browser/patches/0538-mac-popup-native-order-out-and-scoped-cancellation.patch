@@ -1,0 +1,297 @@
+From dfddee5449e27789575c81dc9ccc92e5ef6e14c1 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 20:23:25 +0800
+Subject: [PATCH] fix(mac): account for externally hidden omnibox windows
+
+---
+ ...proxying_url_loader_factory_browsertest.cc |  5 +-
+ .../views/location_bar/location_bar_view.cc   | 12 +++-
+ .../omnibox/omnibox_aim_popup_browsertest.cc  | 67 ++++++++++++++++---
+ .../omnibox/omnibox_popup_presenter_base.cc   |  6 +-
+ .../omnibox/omnibox_popup_presenter_base.h    |  4 ++
+ .../omnibox_popup_visibility_browsertest.cc   | 45 +++++++++++++
+ 6 files changed, 127 insertions(+), 12 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 415ba8b4c62f01e533349044dfc826fcf55e79ec..9d40bbc7cf13d45f979a2c3f74363af687f84473 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -2963,6 +2963,9 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   auto* dispatch_state =
+       AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+   ASSERT_NE(dispatch_state, nullptr);
++  // Other page requests may also be registered for this profile.
++  const size_t ownership_before = dispatch_state->ownership().size();
++  ASSERT_GE(ownership_before, 1u);
+   const AccessBlockAndCancelResult result =
+       dispatch_state->InstallBlockBarrierAndCancelMatching(
+           {"block-browser-0136", 1, std::move(selector)});
+@@ -2972,7 +2975,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+             aegis_access::RequestOwnershipStatus::kOk);
+   EXPECT_EQ(result.matched_requests, 1u);
+   EXPECT_EQ(result.terminated_requests, 1u);
+-  EXPECT_EQ(dispatch_state->ownership().size(), 0u);
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before - 1u);
+ 
+   EXPECT_TRUE(base::test::RunUntil(
+       [&] { return PendingFetchState() == "blocked"; }));
+diff --git a/chrome/browser/ui/views/location_bar/location_bar_view.cc b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+index 5a4f8681856d82278a33dc77e344be2ec0b74771..9b1e2e529e6e9c03175ad5d3f3159533eb24c40c 100644
+--- a/chrome/browser/ui/views/location_bar/location_bar_view.cc
++++ b/chrome/browser/ui/views/location_bar/location_bar_view.cc
+@@ -2070,11 +2070,19 @@ void LocationBarView::ValidatePopupState(OmniboxPopupState state) {
+           << ": classic=" << classic_is_open << " aim=" << aim_is_shown;
+       break;
+     }
+-    case OmniboxPopupState::kAim:
+-      DCHECK(!classic_is_open && aim_is_shown)
++    case OmniboxPopupState::kAim: {
++      // AppKit can leave the native child window hidden even after a fullscreen
++      // request has been declined. The presenter still owns that open widget
++      // until it receives a close or the model dismisses it.
++      const bool aim_is_open =
++          aim_is_shown ||
++          (BUILDFLAG(IS_MAC) && omnibox_popup_aim_presenter_ &&
++           omnibox_popup_aim_presenter_->HasOpenWidget());
++      DCHECK(!classic_is_open && aim_is_open)
+           << "Widget state mismatch in kAim: classic=" << classic_is_open
+           << " aim=" << aim_is_shown;
+       break;
++    }
+   }
+ }
+ 
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index a850c1ad437be3e09b4b6d71de30169611c9f02e..bd40004bc93d6208c7a603122e458cf872ad8895 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -13,6 +13,7 @@
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
++#include "build/build_config.h"
+ #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+@@ -49,6 +50,7 @@
+ #include "components/permissions/test/mock_permission_prompt_factory.h"
+ #include "components/permissions/test/mock_permission_request.h"
+ #include "components/permissions/test/permission_request_observer.h"
++#include "components/tabs/public/tab_interface.h"
+ #include "components/variations/service/variations_service.h"
+ #include "content/public/browser/file_select_listener.h"
+ #include "content/public/browser/render_widget_host.h"
+@@ -57,6 +59,8 @@
+ #include "content/public/test/browser_test_utils.h"
+ #include "content/public/test/test_utils.h"
+ #include "testing/gmock/include/gmock/gmock.h"
++#include "testing/gmock/include/gmock/gmock.h"
++#include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/input/web_input_event.h"
+ #include "third_party/blink/public/mojom/choosers/file_chooser.mojom.h"
+ #include "ui/actions/actions.h"
+@@ -69,6 +73,10 @@
+ #include "url/gurl.h"
+ #include "url/url_constants.h"
+ 
++#if BUILDFLAG(IS_MAC)
++#include "ui/base/test/scoped_fake_nswindow_fullscreen.h"
++#endif
++
+ namespace {
+ 
+ std::unique_ptr<KeyedService> BuildMockAimEligibilityService(
+@@ -112,7 +120,8 @@ class OmniboxAimPopupBrowserTest : public InProcessBrowserTest {
+  public:
+   OmniboxAimPopupBrowserTest() {
+     feature_list_.InitWithFeatures({omnibox::internal::kWebUIOmniboxAimPopup,
+-                                    omnibox::internal::kWebUIOmniboxPopup},
++                                    omnibox::internal::kWebUIOmniboxPopup,
++                                    blink::features::kUserMediaElement},
+                                    {features::kWebUILocationBar});
+   }
+ 
+@@ -855,12 +864,14 @@ namespace {
+ class TestPermissionPromptDelegate
+     : public permissions::PermissionPrompt::Delegate {
+  public:
+-  explicit TestPermissionPromptDelegate(content::WebContents* web_contents)
++  explicit TestPermissionPromptDelegate(
++      content::WebContents* web_contents,
++      std::unique_ptr<permissions::PermissionRequest> request =
++          std::make_unique<permissions::MockPermissionRequest>(
++              permissions::RequestType::kMicStream,
++              permissions::PermissionRequestGestureType::GESTURE))
+       : web_contents_(web_contents) {
+-    request_list_.push_back(
+-        std::make_unique<permissions::MockPermissionRequest>(
+-            permissions::RequestType::kMicStream,
+-            permissions::PermissionRequestGestureType::GESTURE));
++    request_list_.push_back(std::move(request));
+   }
+ 
+   const std::vector<std::unique_ptr<permissions::PermissionRequest>>& Requests()
+@@ -994,12 +1005,49 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupBrowserTest,
+   EXPECT_FALSE(presenter->IsPermissionPromptPreventingClose());
+ }
+ 
+-// Verifies that if prompt creation returns `nullptr`, the presenter flag is
+-// reset.
++// An embedded microphone prompt cannot open while another tab-modal UI owns
++// the tab. Observe the presenter's lock inside prompt creation and after it.
+ IN_PROC_BROWSER_TEST_F(
+     OmniboxAimPopupBrowserTest,
+     PermissionPromptCreationResetsLockIfPromptCreationFails) {
+   ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/empty.html")));
++  ASSERT_TRUE(ShowPopupAndGetWebUIContent());
++  auto* presenter = location_bar()->GetOmniboxPopupAimPresenter();
++  ASSERT_TRUE(presenter->IsShown());
++  ASSERT_FALSE(presenter->IsPermissionPromptPreventingClose());
++
++  auto* contents = browser()->GetTabStripModel()->GetActiveWebContents();
++  auto* tab = tabs::TabInterface::GetFromContents(contents);
++  auto modal = tab->ShowModalUI();
++  ASSERT_FALSE(tab->CanShowModalUI());
++
++  class EmbeddedMicDelegate : public TestPermissionPromptDelegate {
++   public:
++    using TestPermissionPromptDelegate::TestPermissionPromptDelegate;
++    MOCK_METHOD(permissions::EmbeddedPermissionPromptFlowModel*,
++                GetEmbeddedPromptFlowModel,
++                (),
++                (const, override));
++  };
++  EmbeddedMicDelegate delegate(
++      contents, std::make_unique<permissions::MockPermissionRequest>(
++                    GURL(permissions::MockPermissionRequest::kDefaultOrigin),
++                    permissions::RequestType::kMicStream,
++                    /*embedded_permission_element_initiated=*/true));
++  EXPECT_CALL(delegate, GetEmbeddedPromptFlowModel()).WillOnce([&] {
++    EXPECT_TRUE(presenter->IsPermissionPromptPreventingClose());
++    return nullptr;
++  });
++  EXPECT_FALSE(CreatePermissionPrompt(contents, &delegate));
++  EXPECT_FALSE(presenter->IsPermissionPromptPreventingClose());
++}
++
++IN_PROC_BROWSER_TEST_F(
++    OmniboxAimPopupBrowserTest,
++    FullscreenDropsQuietPermissionRequestBeforeLockingPresenter) {
++  ASSERT_TRUE(embedded_test_server()->Start());
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+       browser(), embedded_test_server()->GetURL("/empty.html")));
+ 
+@@ -1015,6 +1063,9 @@ IN_PROC_BROWSER_TEST_F(
+ 
+   // Set full screen so prompt will fail to render once. Because the prompt
+   // is allowed to drop, the prompt will not show at all.
++#if BUILDFLAG(IS_MAC)
++  ui::test::ScopedFakeNSWindowFullscreen fake_fullscreen;
++#endif
+   ui_test_utils::ToggleFullscreenModeAndWait(browser());
+ 
+   // Directly call `PermissionPromptFactory::CreatePermissionPrompt`
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+index cd2395036d94b3c3a9a612598f0b1ecf48537277..ad7b70401945ae7583cf49d15cde14bfaf559457 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+@@ -318,7 +318,7 @@ void OmniboxPopupPresenterBase::Hide() {
+     // If external code already hid the widget (e.g. ash on a user switch), then
+     // we need to destroy the widget to prevent the external code from
+     // re-showing the widget.
+-    const bool hidden_externally = is_open_ && !widget_->IsVisible();
++    const bool hidden_externally = HasOpenWidget() && !widget_->IsVisible();
+     is_open_ = false;
+     widget_->Hide();
+     if (auto* content = GetWebUIContent()) {
+@@ -350,6 +350,10 @@ bool OmniboxPopupPresenterBase::IsShown() const {
+   return is_deferred_ || (widget_ && widget_->IsVisible());
+ }
+ 
++bool OmniboxPopupPresenterBase::HasOpenWidget() const {
++  return is_open_ && widget_;
++}
++
+ void OmniboxPopupPresenterBase::OnContentHeightChanged(int content_height) {
+   if (ShouldDrawShadowInWebUI()) {
+     // The WebUI reserves the shadow margin inside its own document, so the
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+index 6d893cc5f1b3400603dfdf303ddab43bcbd2c31b..9cb5e96eb1829f3b87be9c75f467e037c0dfd948 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+@@ -115,6 +115,10 @@ class OmniboxPopupPresenterBase
+   // Tells whether the popup widget exists.
+   bool IsShown() const;
+ 
++  // A native widget for which the presenter has issued a show and has not
++  // since received a close or issued a hide. Window visibility is asynchronous.
++  bool HasOpenWidget() const;
++
+   // Request focus on the popup widget and its web contents.
+   virtual void RequestFocus();
+ 
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+index ffb7c159571e8997fbd4ba81c7a667b99e7acab2..25eeeac43b48081f34557e335972c3a7384811ca 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+@@ -7,6 +7,7 @@
+ #include "base/run_loop.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
++#include "build/build_config.h"
+ #include "chrome/browser/ui/omnibox/omnibox_controller.h"
+ #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
+ #include "chrome/browser/ui/omnibox/omnibox_popup_state_manager.h"
+@@ -171,6 +172,50 @@ IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
+   }
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++IN_PROC_BROWSER_TEST_P(OmniboxPopupVisibilityBrowserTest,
++                       NativeOrderOutPreservesPopupOwnership) {
++  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
++  auto* bar = BrowserView::GetBrowserViewForBrowser(browser())
++                  ->toolbar()
++                  ->location_bar_view();
++  auto* controller = bar->GetOmniboxController();
++  auto* aim = bar->GetOmniboxPopupAimPresenter();
++  ASSERT_TRUE(aim);
++  ASSERT_TRUE(aim->GetWebUIContent());
++  auto* contents = aim->GetWebUIContent()->GetWrappedWebContents();
++  ASSERT_TRUE(contents);
++  ASSERT_TRUE(content::WaitForLoadStop(contents));
++  content::SimulateEndOfPaintHoldingOnPrimaryMainFrame(contents);
++  controller->popup_state_manager()->SetPopupState(OmniboxPopupState::kAim);
++  // IsShown() includes a pending first frame. Wait until the presenter has
++  // actually issued its show and AppKit reports that native window visible.
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return aim->HasOpenWidget() && aim->GetWidget()->IsVisible() &&
++           !bar->in_popup_state_transition();
++  }));
++
++  // Keep the popup logically open across focus loss while the native window
++  // is ordered out independently of the presenter.
++  bar->SetPermissionPromptShowing(true);
++  ASSERT_TRUE(aim->IsPermissionPromptPreventingClose());
++  const auto widget = aim->GetWidget()->GetWeakPtr();
++  widget->Hide();
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return !widget || !widget->IsVisible(); }));
++  ASSERT_TRUE(aim->HasOpenWidget());
++  EXPECT_EQ(aim->GetWidget(), widget.get());
++  EXPECT_FALSE(aim->IsShown());
++  EXPECT_TRUE(controller->IsPopupOpen());
++
++  aim->SetPermissionPromptShowing(false);
++  controller->popup_state_manager()->SetPopupState(OmniboxPopupState::kNone);
++  EXPECT_FALSE(controller->IsPopupOpen());
++  EXPECT_FALSE(aim->HasOpenWidget());
++  EXPECT_FALSE(aim->GetWidget());
++}
++#endif  // BUILDFLAG(IS_MAC)
++
+ INSTANTIATE_TEST_SUITE_P(AllPopupModes,
+                          OmniboxPopupVisibilityBrowserTest,
+                          testing::Bool());

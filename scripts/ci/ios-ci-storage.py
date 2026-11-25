@@ -202,6 +202,12 @@ def host_storage(runner_name, config_path):
     return root, mount, digest
 
 
+def source_git_environment():
+    return dict({key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+                GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1", GIT_CONFIG_NOSYSTEM="1",
+                GIT_CONFIG_GLOBAL=os.devnull, GIT_ATTR_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+
+
 def source_metadata(environment):
     for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
         require(re.fullmatch(r"[1-9][0-9]*", environment.get(key, "")), "invalid CI run metadata")
@@ -215,9 +221,7 @@ def source_metadata(environment):
     require(workspace.is_absolute() and str(workspace) == workspace_text
             and workspace.resolve(strict=True) == workspace and workspace.is_dir(),
             "source workspace must be an absolute canonical directory")
-    git_env = dict({key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-                   GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1", GIT_CONFIG_NOSYSTEM="1",
-                   GIT_CONFIG_GLOBAL=os.devnull, GIT_ATTR_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+    git_env = source_git_environment()
     # Each Git argv is literal and uses the verified directory only as cwd.
     # Disable inherited configuration and repository-local command execution.
     head = subprocess.check_output(  # nosec B603
@@ -249,6 +253,27 @@ def source_metadata(environment):
                 run_attempt=environment["GITHUB_RUN_ATTEMPT"], job=environment["GITHUB_JOB"])
 
 
+def checkout_archive_source(root, environment, metadata):
+    source = root / "Source"
+    source.mkdir(mode=0o700)
+    ordinary_directory(source)
+    require(source.stat().st_dev == root.stat().st_dev, "archive source backing differs from the job")
+    # Fetch the pinned commit into an independent object store, without copying
+    # the runner checkout's configuration, credentials or untracked files.
+    workspace_url = Path(environment["GITHUB_WORKSPACE"]).as_uri()
+    for arguments in (
+        ["init", "--quiet", "--template="],
+        ["-c", "protocol.file.allow=always", "fetch", "--quiet", "--no-tags", "--depth=1",
+         "--no-write-fetch-head", workspace_url, metadata["source_sha"]],
+        ["checkout", "--quiet", "--detach", metadata["source_sha"]],
+    ):
+        subprocess.run(  # nosec B603 - fixed Git operations on the verified local source.
+            ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", *arguments],
+            cwd=source, env=source_git_environment(), shell=False, check=True, timeout=300)
+    require(source_metadata(dict(environment, GITHUB_WORKSPACE=str(source))) == metadata,
+            "archive source differs from the admitted checkout")
+
+
 def write_json(path, document):
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "w") as stream:
@@ -278,8 +303,9 @@ def prepare(environment, runner_environment, runner_name, *, config_path=CONFIG)
     ordinary_directory(root)
     require(root.stat().st_dev == volume.stat().st_dev, "job backing differs from its admitted volume")
     require(not acl_entries(root), "new private job directory has an ACL")
-    for name in ("tmp", "DerivedData", "SourcePackages", "PackageCache", "ModuleCache"):
+    for name in ("SourcePackages", "PackageCache", "ModuleCache"):
         (root / name).mkdir(mode=0o700)
+    checkout_archive_source(root, environment, metadata)
     seed_digest, seed_count = (seed_artifacts(base, root / "PackageCache", volume)
                                if runner_environment == "self-hosted" else (None, 0))
     if runner_environment == "self-hosted":
@@ -294,12 +320,34 @@ def prepare(environment, runner_environment, runner_name, *, config_path=CONFIG)
     return root
 
 
-def seal(root, environment):
+def seal_derived_data(root, derived, environment):
+    scratch = Path(environment["IOS_CI_SCRATCH"])
+    require(scratch.parent == root.parent and scratch.name.startswith(".aegis-ios-scratch-")
+            and scratch.resolve(strict=True) == scratch and derived == scratch / "DerivedData",
+            "linker evidence is outside the current archive scratch")
+    ordinary_directory(scratch)
+    ordinary_directory(derived)
+    info = scratch.stat()
+    derived_info = derived.stat()
+    require(f"{info.st_dev}:{info.st_ino}" == environment.get("IOS_CI_SCRATCH_ID")
+            and info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) == 0o700
+            and f"{derived_info.st_dev}:{derived_info.st_ino}" == environment.get("IOS_CI_DERIVED_ID")
+            and derived_info.st_uid == os.getuid() and derived_info.st_dev == info.st_dev == root.stat().st_dev,
+            "archive scratch identity changed")
+    return derived
+
+
+def seal(root, environment, *, derived=None):
     root = Path(root)
     ordinary_directory(root)
     state, _ = private_json(root / ".storage-state.json")
     metadata = source_metadata(environment)
     require(all(state[key] == value for key, value in metadata.items()), "prepared source or CI run changed")
+    workspace = root / "Source"
+    ordinary_directory(workspace)
+    require(workspace.stat().st_dev == state["device"], "archive source backing differs from the job")
+    require(source_metadata(dict(environment, GITHUB_WORKSPACE=str(workspace))) == metadata,
+            "archive source or CI run changed")
     require(str(root) == state["root"] and (root.stat().st_dev, root.stat().st_ino) == (state["device"], state["inode"]),
             "prepared storage directory identity changed")
     if state["placement"] == "enrolled-external-apfs":
@@ -313,14 +361,14 @@ def seal(root, environment):
             path = Path(directory) / name
             require(not path.is_symlink() or path.resolve().is_relative_to(archive), "archive symlink escapes its root")
     embedded_core = None
-    workspace = Path(environment["GITHUB_WORKSPACE"])
     source_lock = workspace / "apps/ios/EmbeddedCore/embedded-core-lock.json"
     if source_lock.is_file():
+        derived = seal_derived_data(root, derived, environment)
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
         import ios_embedded_core as verifier
         embedded_core = verifier.verify(workspace, source_lock, root / "EmbeddedCore")
         embedded_core.update(verifier.verify_bundle(archive / "Products/Applications/Aegis.app", root / "EmbeddedCore",
-                                                    root / "DerivedData", "device"))
+                                                    derived, "device", owned_linker_paths=True))
     target = root / "Aegis.xcarchive.zip"
     require(not target.exists() and not target.is_symlink(), "archive evidence already exists")
     # Fixed archiver operation; both operands are absolute paths inside the revalidated job root.
@@ -343,6 +391,7 @@ def main():
     prepare_parser.add_argument("--runner-name", required=True)
     seal_parser = sub.add_parser("seal")
     seal_parser.add_argument("--root", required=True, type=Path)
+    seal_parser.add_argument("--derived", required=True, type=Path)
     doctor_parser = sub.add_parser("doctor")
     doctor_parser.add_argument("--runner-name", required=True)
     args = parser.parse_args()
@@ -350,8 +399,9 @@ def main():
         root = prepare(os.environ, args.runner_environment, args.runner_name)
         with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
             stream.write(f"root={root}\n")
+            stream.write(f"source={root / 'Source'}\n")
     elif args.operation == "seal":
-        seal(args.root, os.environ)
+        seal(args.root, os.environ, derived=args.derived)
     else:
         root, volume, enrollment = host_storage(args.runner_name, CONFIG)
         require(available_bytes(volume) >= MIN_FREE_BYTES, "unsigned iOS CI storage capacity is below 20 GiB")

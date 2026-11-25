@@ -6,6 +6,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
+TEST_ROOTS=(--root apps/ios/Tests/AccessKitTests --root apps/ios/Tests/AegisTests)
+CLASS_FILTER="${AEGIS_IOS_ACCESS_TEST_CLASSES:-}"
+SELECTORS="$(python3 -B scripts/release/ios_access_test_gate.py "${TEST_ROOTS[@]}" --selection "$CLASS_FILTER")"
+ONLY=()
+while IFS= read -r selector; do
+  ONLY+=(-only-testing:"AegisTests/${selector}")
+done <<< "$SELECTORS"
+
 if ! command -v xcodebuild >/dev/null 2>&1; then
   printf 'iOS Access simulator tests need xcodebuild on the self-hosted Mac.\n' >&2
   exit 2
@@ -49,78 +57,6 @@ mkdir -p "$RUN_ROOT"
 LOG="$RUN_ROOT/xcodebuild.log"
 RESULT="$RUN_ROOT/result.xcresult"
 
-DISCOVERED=()
-while IFS= read -r class_name; do
-  [[ -n "$class_name" ]] && DISCOVERED+=("$class_name")
-done < <(python3 - <<'PY'
-import re
-from pathlib import Path
-roots = [Path("apps/ios/Tests/AccessKitTests"), Path("apps/ios/Tests/AegisTests")]
-class_re = re.compile(r"^(?:final )?class ([A-Za-z0-9_]+)\b")
-func_re = re.compile(r"^\s+func test")
-found = []
-for root in roots:
-    for path in sorted(root.rglob("*.swift")):
-        current = ""
-        has_test = False
-        for line in path.read_text(encoding="utf-8").splitlines():
-            match = class_re.match(line)
-            if match:
-                if current and has_test and (current.startswith("Access") or "Access" in path.name):
-                    found.append(current)
-                current = match.group(1)
-                has_test = False
-            elif func_re.match(line):
-                has_test = True
-        if current and has_test and (current.startswith("Access") or "Access" in path.name):
-            found.append(current)
-for name in dict.fromkeys(found):
-    print(name)
-PY
-)
-
-CLASSES=()
-if [[ -n "${AEGIS_IOS_ACCESS_TEST_CLASSES:-}" ]]; then
-  IFS=',' read -r -a REQUESTED <<< "$AEGIS_IOS_ACCESS_TEST_CLASSES"
-  if [[ ${#REQUESTED[@]} -eq 0 ]]; then
-    printf 'Access test class filter matched nothing.\n' >&2
-    exit 2
-  fi
-  for class_name in "${REQUESTED[@]}"; do
-    class_name="${class_name// /}"
-    [[ -z "$class_name" ]] && continue
-    found=0
-    for discovered in "${DISCOVERED[@]}"; do
-      if [[ "$discovered" == "$class_name" ]]; then
-        found=1
-        break
-      fi
-    done
-    if [[ $found -eq 0 ]]; then
-      printf 'Unknown Access test class: %s\n' "$class_name" >&2
-      exit 2
-    fi
-    CLASSES+=("$class_name")
-  done
-else
-  # Real-node tests are mandatory in the dedicated K gate.
-  for class_name in "${DISCOVERED[@]}"; do
-    [[ "$class_name" == AccessEmbeddedCoreLiveTests ]] || CLASSES+=("$class_name")
-  done
-fi
-
-if [[ ${#CLASSES[@]} -eq 0 ]]; then
-  printf 'Access test class list is empty.\n' >&2
-  exit 2
-fi
-
-ONLY=()
-GATE_CLASSES=()
-for class_name in "${CLASSES[@]}"; do
-  GATE_CLASSES+=(--class "$class_name")
-  ONLY+=(-only-testing:"AegisTests/${class_name}")
-done
-
 PRODUCTS="${AEGIS_EMBEDDED_CORE_PRODUCTS:-$RUN_ROOT/EmbeddedCore}"
 if [[ -n "${AEGIS_EMBEDDED_CORE_PRODUCTS:-}" ]]; then
   python3 -B scripts/release/ios_embedded_core.py verify --root "$ROOT" \
@@ -148,5 +84,4 @@ set -e
 python3 scripts/release/ios_access_test_gate.py \
   --log "$LOG" \
   --status "$STATUS" \
-  --root apps/ios/Tests/AccessKitTests --root apps/ios/Tests/AegisTests \
-  "${GATE_CLASSES[@]}"
+  "${TEST_ROOTS[@]}" --selection "$CLASS_FILTER"

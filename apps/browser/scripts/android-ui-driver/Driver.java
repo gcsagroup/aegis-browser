@@ -378,6 +378,9 @@ public final class Driver extends Instrumentation {
     String end = "end\0";
     String opened = "81a4\0" + profile + "/Default/History\0";
     String aliasEntry = "81a4\0" + alias + "/Profile 1/History\0";
+    String defaultRoot = packageRoot + "/app_chrome";
+    String defaultEntry = "81a4\0" + defaultRoot + "/Default/History\0";
+    String otherEntry = "81a4\0" + packageRoot + "/aegis-test-user-data-other/Default/History\0";
     String reader = profileReader();
     String readerFixture = "sleep 30 </dev/null >/dev/null 2>&1 &\n"
         + "holder=$!\ntrap 'kill \"$holder\" 2>/dev/null || :; wait \"$holder\" 2>/dev/null || :' EXIT\n"
@@ -386,10 +389,16 @@ public final class Driver extends Instrumentation {
     check(TEST_PROFILE.matcher(profile).matches(), "当前浏览器的独立 Profile 被拒绝");
     check(observed.endsWith("\0" + end) && !shellWithScript("set -- 0\n" + reader, "sh -s").endsWith(end),
         "描述符命令完成标记不可靠");
-    check(hasActiveProfile(opened + aliasEntry + end, profile),
-        "未将 /data/data 别名绑定到同一个 Profile");
+    check(hasActiveProfile(opened + end, profile), "未识别规范路径下打开的 Profile");
+    check(hasActiveProfile(aliasEntry + end, profile) && hasActiveProfile(opened + aliasEntry + end, profile)
+        && !hasActiveProfile(aliasEntry + end, alias), "未将 /data/data 别名绑定到同一个 Profile");
+    check(!TEST_PROFILE.matcher(alias).matches() && !TEST_PROFILE.matcher(defaultRoot).matches(),
+        "接受了别名或默认 Profile 作为请求目录");
     for (String invalid : new String[] {
+        end,
         opened,
+        defaultEntry + end,
+        otherEntry + end,
         opened + "?\0unknown\0" + end,
         "41ed\0" + profile + "/Default\0" + end,
         "41ed\0" + profile + "/Default/Local Storage\0" + end,
@@ -397,18 +406,29 @@ public final class Driver extends Instrumentation {
         "81a4\0" + profile + "/Default/..\0" + end,
         "81a4\0" + profile + "/Default/History\n" + DELETED + "\0" + end,
         "81a4\0/fixture/2 -> " + profile + "/Default/History\0" + end,
-        "81a4\0/data/user/0/app.gcsa.aegis" + fixture + "/Default/History\0" + end,
-        "81a4\0" + packageRoot + ".other" + fixture + "/Default/History\0" + end,
     }) {
       check(!hasActiveProfile(invalid, profile), "接受了未经证实的独立 Profile");
     }
-    for (String other : new String[] {
-        packageRoot + "/Default/History",
-        DATA_ALIAS + BROWSER + "/Profile 1/History",
-        packageRoot + "/app_chrome/Default",
-        packageRoot + "/app_chrome/Default/History" + DELETED,
+    for (String wrong : new String[] {
+        DATA_ROOT + "app.gcsa.aegis" + fixture,
+        packageRoot + ".other" + fixture,
+        DATA_ROOT + "com-gcsa.aegis" + fixture,
+        DATA_ROOT + "com.gcsa-aegis" + fixture,
+        "/data/user/10/" + BROWSER + fixture,
     }) {
-      check(!hasActiveProfile(opened + "41ed\0" + other + "\0" + end, profile),
+      String wrongEntry = "81a4\0" + wrong + "/Default/History\0" + end;
+      check(!TEST_PROFILE.matcher(wrong).matches() && !hasActiveProfile(wrongEntry, wrong)
+          && !hasActiveProfile(wrongEntry, profile), "接受了其他包或 Android 用户的 Profile");
+    }
+    for (String other : new String[] {
+        "81a4\0" + packageRoot + "/Default/History\0",
+        "81a4\0" + DATA_ALIAS + BROWSER + "/Profile 1/History\0",
+        "41ed\0" + packageRoot + "/app_chrome/Default\0",
+        "81a4\0" + packageRoot + "/app_chrome/Default/History" + DELETED + "\0",
+        defaultEntry,
+        otherEntry,
+    }) {
+      check(!hasActiveProfile(opened + other + end, profile),
           "未拒绝与默认 Profile 混用的独立资料");
     }
   }

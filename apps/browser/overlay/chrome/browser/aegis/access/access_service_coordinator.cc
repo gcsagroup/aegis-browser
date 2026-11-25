@@ -312,12 +312,10 @@ void AccessServiceCoordinator::OnAsyncPrepared(
     return;
   }
   transaction->candidate = std::move(*result.candidate);
-  if (transaction->pending.candidate.group.website_context) {
-    if (auto failure = ValidateTransportScope(*transaction,
-            transaction->pending.candidate.members.front().policy.mode)) {
-      FailTransaction(std::move(transaction), *failure);
-      return;
-    }
+  if (auto failure = ValidateTransportScope(
+          *transaction, transaction->pending.candidate.members.front().policy.mode)) {
+    FailTransaction(std::move(transaction), *failure);
+    return;
   }
   if (auto failure = BeginPublication(*transaction)) {
     FailTransaction(std::move(transaction), *failure);
@@ -593,14 +591,23 @@ void AccessServiceCoordinator::FailTransaction(
     }
   }
   if (async_store_) {
-    if (!transaction->pending.operation_id.empty()) {
-      const auto pending = transaction->pending;
-      async_store_->RecoverFailedMutation(pending,
-          base::BindOnce(&AccessServiceCoordinator::OnAsyncRecovered,
-              weak_factory_.GetWeakPtr(), std::move(transaction), result));
-    } else {
+    if (transaction->pending.operation_id.empty()) {
       Finish(std::move(transaction->completion), result);
+      return;
     }
+    const auto pending = transaction->pending;
+    if (!transaction->runtime_published) {
+      // No live policy was replaced. Existing requests still own its generation.
+      async_store_->Supersede(
+          pending, base::BindOnce(&AccessServiceCoordinator::OnAsyncSuperseded,
+                                  weak_factory_.GetWeakPtr(),
+                                  std::move(transaction), result));
+      return;
+    }
+    async_store_->RecoverFailedMutation(
+        pending, base::BindOnce(&AccessServiceCoordinator::OnAsyncRecovered,
+                                weak_factory_.GetWeakPtr(),
+                                std::move(transaction), result));
     return;
   }
   if (transaction->runtime_published) {
@@ -616,6 +623,16 @@ void AccessServiceCoordinator::FailTransaction(
   }
   Finish(std::move(transaction->completion), result);
 }
+void AccessServiceCoordinator::OnAsyncSuperseded(
+    std::unique_ptr<MutationTransaction> transaction,
+    AccessMutationTransactionResult failure, StoreStatus status) {
+  if (status != StoreStatus::kValid) {
+    recovery_required_ = true;
+    failure.store_status = status;
+  }
+  Finish(std::move(transaction->completion), failure);
+}
+
 void AccessServiceCoordinator::OnAsyncRecovered(
     std::unique_ptr<MutationTransaction> transaction,
     AccessMutationTransactionResult failure, AsyncAccessStoreRestoration result) {

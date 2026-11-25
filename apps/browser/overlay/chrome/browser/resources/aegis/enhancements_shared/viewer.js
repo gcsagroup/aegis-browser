@@ -321,6 +321,7 @@
   window.addEventListener("message", (event) => {
     if (event.source !== parent || event.origin !== "chrome://aegis") return;
     if (event.data?.type === "load") load(event.data.value);
+    else if (event.data?.type === "ready-request") send("ready-response", true);
     else if (event.data?.type === "print") window.print();
     else if (event.data?.type === "configure") configure(event.data.value);
     else if (event.data?.type === "command") command(event.data.value);

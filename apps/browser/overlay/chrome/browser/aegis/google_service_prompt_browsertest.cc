@@ -19,6 +19,7 @@
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "google_apis/google_api_keys.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -27,6 +28,13 @@
 namespace aegis {
 class GoogleServicePromptBrowserTest : public InProcessBrowserTest {
  protected:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    InProcessBrowserTest::SetUpCommandLine(command_line);
+    // Match Chromium's translate-manager fixture: exercise command behavior
+    // without waiting for a separately downloaded language-detection model.
+    command_line->AppendSwitch(::switches::kOverrideLanguageDetection);
+  }
+
   content::WebContents* contents() {
     return browser()->GetTabStripModel()->GetActiveWebContents();
   }
@@ -95,7 +103,7 @@ IN_PROC_BROWSER_TEST_F(GoogleServicePromptBrowserTest,
   const int tab_count = browser()->GetTabStripModel()->count();
   const GURL original_url = contents()->GetLastCommittedURL();
   EXPECT_EQ(0u, GooglePromptCount());
-  SigninViewController::From(browser())->ShowDiceEnableSyncTab(
+  SigninViewController::From(browser())->ShowEnableHistorySyncTab(
       signin_metrics::AccessPoint::kSettings,
       signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO, std::string());
   EXPECT_EQ(1u, GooglePromptCount());

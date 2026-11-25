@@ -143,7 +143,7 @@ final class BrowserContentWebView: WKWebView {
             finish?()
         }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                     decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
             decisionHandler(completion != nil && action.request.url?.absoluteString == "about:blank" ? .allow : .cancel)
         }
         deinit {

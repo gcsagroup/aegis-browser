@@ -8,6 +8,7 @@ import Network
 public final class AccessSOCKS5InboundSession: @unchecked Sendable {
     public enum Outcome: Equatable, Sendable {
         case established(AccessSOCKS5ConnectRequest)
+        case admitted(AccessSOCKS5ConnectRequest, Data)
         case rejected(AccessSOCKS5InboundError)
     }
 
@@ -23,20 +24,33 @@ public final class AccessSOCKS5InboundSession: @unchecked Sendable {
     private var phase: Phase = .greeting
     private var finished = false
     private let onOutcome: (Outcome) -> Void
+    private let defersSuccessReply: Bool
+    private var admissionTimeout: DispatchWorkItem?
 
     public init(
         connection: NWConnection,
         queue: DispatchQueue,
+        defersSuccessReply: Bool = false,
         onOutcome: @escaping (Outcome) -> Void
     ) {
         self.connection = connection
         self.queue = queue
+        self.defersSuccessReply = defersSuccessReply
         self.onOutcome = onOutcome
     }
 
     public func start() {
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, !self.finished else { return }
+            self.finish(.rejected(.incompleteRequest))
+            self.connection.cancel()
+        }
+        admissionTimeout = timeout
+        queue.asyncAfter(deadline: .now() + 15, execute: timeout)
         receiveMore()
     }
+
+    deinit { admissionTimeout?.cancel() }
 
     private func receiveMore() {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1_024) { [weak self] data, _, isComplete, error in
@@ -126,6 +140,12 @@ public final class AccessSOCKS5InboundSession: @unchecked Sendable {
     }
 
     private func writeSuccess(for request: AccessSOCKS5ConnectRequest) {
+        if defersSuccessReply {
+            let remainder = buffer
+            buffer.removeAll()
+            finish(.admitted(request, remainder))
+            return
+        }
         let reply = AccessSOCKS5InboundParser.successReply()
         connection.send(content: reply, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
@@ -164,6 +184,8 @@ public final class AccessSOCKS5InboundSession: @unchecked Sendable {
     private func finish(_ outcome: Outcome) {
         guard !finished else { return }
         finished = true
+        admissionTimeout?.cancel()
+        admissionTimeout = nil
         onOutcome(outcome)
     }
 }

@@ -45,12 +45,7 @@ struct AccessSiteProxyToggleView: View {
             .accessibilityIdentifier("access-site-proxy-toggle")
 
             if snap.hasTrustedSite {
-                let line = attachment == .attachedUnavailable
-                    ? "连接失败，未切回原连接"
-                    : (snap.connectionStatus == .connecting || snap.connectionStatus == .unavailable || snap.intentStatus == .allowConnected
-                        ? AccessSiteProxyToggleModel.connectionLine(for: snap.connectionStatus)
-                        : AccessSiteProxyToggleModel.intentLine(for: snap.intentStatus))
-                Text(LocalizedStringKey(line)).font(.subheadline)
+                Text(LocalizedStringKey(AccessSiteProxyToggleModel.siteStatusLine(snap))).font(.subheadline)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("access-site-proxy-connection")
                 if attachment == .notAttached, snap.toggleOn, let tab,

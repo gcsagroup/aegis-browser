@@ -27,7 +27,8 @@ public final class AccessFailClosedProxyEntryPublisher: AccessProxyEntryPublishi
         return false
     }
 
-    public func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey) -> Bool {
+    public func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey,
+                       admitting: () -> Bool) -> Bool {
         _ = endpoint
         _ = key
         return false

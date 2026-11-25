@@ -1197,6 +1197,14 @@
       "标准": {
         "value": "Standard",
         "reason": "Standard is a German noun."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "es": {
@@ -1255,6 +1263,14 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "fr": {
@@ -1349,6 +1365,14 @@
       "紧凑": {
         "value": "Compact",
         "reason": "Compact is a French adjective."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "id": {
@@ -1407,6 +1431,14 @@
       "字体": {
         "value": "Font",
         "reason": "Font is the established Indonesian UI term."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "it": {
@@ -1473,6 +1505,14 @@
       "标准": {
         "value": "Standard",
         "reason": "Standard is an Italian adjective."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "ja": {
@@ -1643,6 +1683,14 @@
       "标准": {
         "value": "Standard",
         "reason": "Standard is the Malay adjective."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "pt": {
@@ -1701,6 +1749,14 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "th": {
@@ -1755,6 +1811,14 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     },
     "vi": {
@@ -1813,21 +1877,29 @@
       "繁體中文": {
         "value": "繁體中文",
         "reason": "Language autonym retained in the language picker."
+      },
+      "豆瓣": {
+        "value": "Douban",
+        "reason": "Official category brand spelling"
+      },
+      "美团": {
+        "value": "Meituan",
+        "reason": "Official category brand spelling"
       }
     }
   },
   "preservedInfoPlistPrefixes": {
     "en": {
-      "sha256": "f8f73c562ecada52276c56f13294bbf19f0c7a4333e59681912aaa403b1a9048",
-      "byteCount": 194
+      "sha256": "4f5e38a54f8fa9a7e1f72fbfe21508aff2e393a8529b5319a1723c3a86f4267e",
+      "byteCount": 226
     },
     "zh-Hans": {
-      "sha256": "c6b2b7927bf5111d4767a319ca4f3697ad6c4cbb9aa0814d8335ba6c900e2d59",
-      "byteCount": 199
+      "sha256": "09ea6c26eac022c4b068f2952b8f1e1e74d62730039a4c7752eb4dbf1f114bef",
+      "byteCount": 238
     },
     "zh-Hant": {
-      "sha256": "1488e64dee14e47d07561c8b0ca0797cafa9f9d3c8c51fb4e9b2043a18165b29",
-      "byteCount": 199
+      "sha256": "4f330f0beb2f0b1a2fe16d8c73595756a3501a01d70e54ca4f856f1b13b40ad6",
+      "byteCount": 232
     }
   },
   "preservedAddedLocaleKeys": [
@@ -2134,6 +2206,76 @@
   ],
   "markdownInputAddedKeys": [
     "无法打开内容"
+  ],
+  "websiteAccelerationAddedKeys": [
+    "未启用",
+    "按网站主机选择连接。页面内资源可能共用该连接。本站选择优先。",
+    "获取官方规则",
+    "海外加速（针对大陆地区）",
+    "加速范围",
+    "按分类",
+    "全部名单",
+    "使用本版本已通过校验的网站规则，含未归类网站。",
+    "检查并应用",
+    "来源规则",
+    "分类入口",
+    "通过主机校验",
+    "例外规则",
+    "新增范围",
+    "取消的例外",
+    "未采用的规则",
+    "主机校验未通过",
+    "关键词",
+    "视频与直播",
+    "AI 工具",
+    "网页与搜索",
+    "社交与通讯",
+    "新闻资讯",
+    "开发与代码",
+    "百科与学术",
+    "办公与网盘",
+    "网站加速",
+    "国内加速",
+    "手动",
+    "智能",
+    "自行选择要加速的网站。",
+    "选择智能后，其他网站首次打开时不再默认隐藏位置。",
+    "加速服务未配置。",
+    "下次打开时的连接",
+    "使用连接服务",
+    "使用原有连接",
+    "按现有规则选择连接",
+    "清除站点选择",
+    "本站连接",
+    "站点选择用于此域名的主页面。清除后恢复所选模式和已有隐私设置。",
+    "网站连接方式已更改，请重新打开此页面。",
+    "分类范围",
+    "加速分类",
+    "含大众点评",
+    "含所列域名的子域名。",
+    "域名数",
+    "按所选分类加速网站。",
+    "暂无规则",
+    "未选择",
+    "未选择加速分类。",
+    "美团",
+    "豆瓣",
+    "新增域名数",
+    "仅匹配所列域名。",
+    "页面资源随主页面使用同一连接。",
+    "新增范围过大，无法批准。",
+    "批准新增范围",
+    "国外加速",
+    "自动加速清单内网站",
+    "导入域名清单",
+    "域名数量",
+    "域名清单无法验证。",
+    "请导入现有的国外加速域名清单。",
+    "开启后，清单网站及页面内资源会使用 Access。逐站选择优先。",
+    "此网站使用国外加速",
+    "重新打开此网站时使用国外加速",
+    "国外加速连接不可用",
+    "网站打不开时将自动重试"
   ],
   "ocrMarkdownAddedKeys": [
     "HTTPS 接口地址",

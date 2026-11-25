@@ -24,6 +24,6 @@
 
 ## 本轮证据
 
-本地证据目录：`/Users/lazy/Projects/GCSA-aegis/.artifacts/chromium-upstream/heartbeat-20261115/`。
+本地证据目录：`.artifacts/chromium-upstream/heartbeat-20261115/`。
 
 官方核查结果、测试日志、完整补丁回放、各平台条件、冻结提交和推送回读分别记录；主目录、远端main和隔离候选的pin不互相替代。后续构建前重新检查远端、并行写入和凭据；不更换发行身份或替换在用App。

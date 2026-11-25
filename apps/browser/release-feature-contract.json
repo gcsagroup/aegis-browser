@@ -149,7 +149,15 @@
         "mac-arm64",
         "win-x64",
         "android-arm64"
-      ]
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "TabAndSurfaceIds/AegisAgentActorSurfaceBrowserTest.*"
+        ],
+        "win-x64": [
+          "TabAndSurfaceIds/AegisAgentActorSurfaceBrowserTest.*"
+        ]
+      }
     },
     {
       "id": "kAegisAgentBrowserTools",
@@ -200,6 +208,7 @@
           "AccessBrowserRequestAdapterBrowserTest.*",
           "AccessLoadingPredictorPrefetchBrowserTest.*",
           "AccessProxyingURLLoaderFactoryBrowserTest.*",
+          "AccessRestoredProxyRuleBrowserTest.*",
           "AccessProxyingURLLoaderFactorySameFrameBrowserTest.*",
           "SiteTokenChainingBrowserTest.*"
         ],
@@ -207,6 +216,7 @@
           "AccessBrowserRequestAdapterBrowserTest.*",
           "AccessLoadingPredictorPrefetchBrowserTest.*",
           "AccessProxyingURLLoaderFactoryBrowserTest.*",
+          "AccessRestoredProxyRuleBrowserTest.*",
           "AccessProxyingURLLoaderFactorySameFrameBrowserTest.*",
           "SiteTokenChainingBrowserTest.*"
         ]
@@ -321,12 +331,14 @@
       "testFiltersByPlatform": {
         "mac-arm64": [
           "AegisAgentUrlMonitorBrowserTest.*",
+          "AegisAgentColdStartMonitorBrowserTest.RestoresUrlStatusWithoutOpeningPanel",
           "AegisAgentMonitorWithoutGlicBrowserTest.*",
           "AegisAgentServiceTest.*Monitor*",
           "AegisAgentTaskStoreTest.*Monitor*"
         ],
         "win-x64": [
           "AegisAgentUrlMonitorBrowserTest.*",
+          "AegisAgentColdStartMonitorBrowserTest.RestoresUrlStatusWithoutOpeningPanel",
           "AegisAgentMonitorWithoutGlicBrowserTest.*",
           "AegisAgentServiceTest.*Monitor*",
           "AegisAgentTaskStoreTest.*Monitor*"
@@ -416,7 +428,8 @@
           "AegisAgentBrowserTest.SettingsCommandsPreserveRoutes",
           "AegisAgentBrowserTest.ProfileIsolationAndRestrictedProfiles",
           "AegisAgentInteractiveUiTest.SettingsEntryOpensAgentSidePanel",
-          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety"
+          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety",
+          "AegisAgentBrowserTest.SettingsRoutesUnmountPreviousAegisPage"
         ],
         "win-x64": [
           "AegisUIHandlerTest.SettingsKeepLocalPacksWithoutExemptingWebOrigins",
@@ -425,7 +438,8 @@
           "AegisAgentBrowserTest.SettingsCommandsPreserveRoutes",
           "AegisAgentBrowserTest.ProfileIsolationAndRestrictedProfiles",
           "AegisAgentInteractiveUiTest.SettingsEntryOpensAgentSidePanel",
-          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety"
+          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety",
+          "AegisAgentBrowserTest.SettingsRoutesUnmountPreviousAegisPage"
         ]
       },
       "sourceRegressionTests": [
@@ -513,9 +527,14 @@
       ],
       "additionalChecks": "使用本次产物截取长页和图片，核对裁剪像素、复制/保存/分享、离线简繁英文识字；服务器识字仅在预览目标与图片并由用户确认后发送，覆盖取消、目标设置变更、超限、超时、失败重试和资料隔离。JS/服务夹具只验证边界，不能代替真实图像识别或App验收。",
       "androidAcceptance": "在真实ARM64设备验证长按图片识字、长截图和系统分享/安装确认；不得套用桌面菜单或模拟器结果。",
-      "testFilters": [
-        "*WebpageCaptureCommandBrowserTest.*"
-      ]
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "ActionsAndLegacy/WebpageCaptureCommandBrowserTest.*"
+        ],
+        "win-x64": [
+          "ActionsAndLegacy/WebpageCaptureCommandBrowserTest.*"
+        ]
+      }
     },
     {
       "id": "devtools-mcp-isolation",

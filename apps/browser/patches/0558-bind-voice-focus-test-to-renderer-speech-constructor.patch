@@ -1,0 +1,128 @@
+From dfc7f3c3e19f0cec3042f338442c7356c344330a Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 04:41:58 +0800
+Subject: [PATCH] Use the renderer speech constructor for the AIM focus
+ regression
+
+---
+ .../data/webui/omnibox_popup/aim_app_test.ts  | 69 +++++++++++++------
+ 1 file changed, 47 insertions(+), 22 deletions(-)
+
+diff --git a/chrome/test/data/webui/omnibox_popup/aim_app_test.ts b/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
+index 0cbee1cb7e5e850382aaeb2512ae7f91293b0874..f4763cc14f955845661a1548f56558d6a7ed30c9 100644
+--- a/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
++++ b/chrome/test/data/webui/omnibox_popup/aim_app_test.ts
+@@ -6,7 +6,6 @@ import {aimBrowserProxyFactory, ComposeboxProxyImpl, OmniboxPopupAimPageHandlerR
+ import type {OmniboxAimAppElement, OmniboxPopupAimPageRemote} from 'chrome://omnibox-popup.top-chrome/omnibox_popup_aim.js';
+ import {PageHandlerRemote as ComposeboxPageHandlerRemote} from 'chrome://resources/cr_components/composebox/composebox.mojom-webui.js';
+ import type {ComposeboxVoiceSearchElement} from 'chrome://resources/cr_components/composebox/composebox_voice_search.js';
+-import {WindowProxy} from 'chrome://resources/cr_components/composebox/window_proxy.js';
+ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+ import type {PageCallbackRouter as SearchboxPageCallbackRouter, PageHandlerRemote as SearchboxPageHandlerRemote} from 'chrome://resources/mojo/components/omnibox/browser/searchbox.mojom-webui.js';
+ import {InputType} from 'chrome://resources/mojo/components/omnibox/composebox/composebox_query.mojom-webui.js';
+@@ -547,24 +546,38 @@ suite('AimAppTest', function() {
+   });
+ 
+   test('RestoresInputFocusAfterVoiceModeEnds', async () => {
+-    const originalWindowProxy = WindowProxy.getInstance();
+-    const speech = new EventTarget() as unknown as SpeechRecognition & {
+-      onend?: (event: Event) => void,
+-    };
+-    let recognizing = false;
+-    speech.start = () => {
+-      recognizing = true;
+-    };
+-    speech.abort = () => {
+-      if (recognizing) {
+-        recognizing = false;
+-        queueMicrotask(() => speech.onend?.(new Event('end')));
++    let speech: FakeSpeechRecognition|undefined;
++    class FakeSpeechRecognition {
++      recognizing = false;
++      onend: ((event: Event) => void)|null = null;
++
++      constructor() {
++        speech = this;
++      }
++
++      start() {
++        this.recognizing = true;
++      }
++
++      abort() {
++        if (this.recognizing) {
++          this.recognizing = false;
++          queueMicrotask(() => this.onend?.(new Event('end')));
++        }
+       }
++
++      stop() {
++        this.abort();
++      }
++    }
++
++    const speechWindow = window as Window&{
++      webkitSpeechRecognition: typeof SpeechRecognition,
+     };
+-    WindowProxy.setInstance(Object.assign(new WindowProxy(), {
+-      hasWebkitSpeechRecognition: () => true,
+-      createSpeechRecognition: () => speech,
+-    }));
++    const originalSpeechRecognition = speechWindow.webkitSpeechRecognition;
++    const systemVoiceSearchWasEnabled =
++        loadTimeData.valueExists('isSystemVoiceSearchEnabled') &&
++        loadTimeData.getBoolean('isSystemVoiceSearchEnabled');
+     testProxy.handler.setPromiseResolveFor<'getInputState'>('getInputState', {
+       state: {
+         ...createDefaultInputState(),
+@@ -572,8 +585,14 @@ suite('AimAppTest', function() {
+       },
+     });
+ 
+-    const app = document.createElement('omnibox-aim-app');
++    let app: OmniboxAimAppElement|undefined;
+     try {
++      speechWindow.webkitSpeechRecognition =
++          FakeSpeechRecognition as unknown as typeof SpeechRecognition;
++      if (systemVoiceSearchWasEnabled) {
++        loadTimeData.overrideValues({isSystemVoiceSearchEnabled: false});
++      }
++      app = document.createElement('omnibox-aim-app');
+       document.body.appendChild(app);
+       const composebox = app.$.composebox;
+       composebox.setBaseSearchboxLayoutModeForTesting('TallBottomContext');
+@@ -592,7 +611,9 @@ suite('AimAppTest', function() {
+       microphone.click();
+       await microtasksFinished();
+ 
+-      assertTrue(recognizing, 'The microphone button must start recognition');
++      assertTrue(
++          !!speech?.recognizing,
++          'The microphone button must start recognition');
+       assertTrue(composebox.inVoiceSearchMode);
+       assertFalse(input.checkVisibility(), 'Voice mode must hide the input');
+       assertNotEquals(input, inputHost.shadowRoot.activeElement);
+@@ -626,7 +647,8 @@ suite('AimAppTest', function() {
+ 
+       closeButton.click();
+       await microtasksFinished();
+-      assertFalse(recognizing, 'The voice close button must end recognition');
++      assertFalse(
++          speech.recognizing, 'The voice close button must end recognition');
+       assertFalse(composebox.inVoiceSearchMode);
+       assertTrue(input.checkVisibility());
+       assertTrue(document.hasFocus(), 'The AIM test page must stay focused');
+@@ -634,8 +656,11 @@ suite('AimAppTest', function() {
+           input, inputHost.shadowRoot.activeElement,
+           'The browser focus request must reach the input after voice mode');
+     } finally {
+-      app.remove();
+-      WindowProxy.setInstance(originalWindowProxy);
++      app?.remove();
++      speechWindow.webkitSpeechRecognition = originalSpeechRecognition;
++      if (systemVoiceSearchWasEnabled) {
++        loadTimeData.overrideValues({isSystemVoiceSearchEnabled: true});
++      }
+     }
+   });
+ 

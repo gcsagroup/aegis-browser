@@ -81,9 +81,14 @@ def assert_symbols(path):
     require(libraries, 'Android symbols archive contains no native libraries')
 
 
+def _require_bounded_flat_archive(path):
+    require(path.is_file() and not path.is_symlink(), 'Sealed package archive is missing')
+    require(path.stat().st_size <= MAX_MEMBER, 'Sealed Android package ZIP exceeds the archive size limit')
+
+
 def extract_flat(archive, destination):
     archive, destination = Path(archive), Path(destination)
-    require(archive.is_file() and not archive.is_symlink(), 'Sealed package archive is missing')
+    _require_bounded_flat_archive(archive)
     require(not destination.exists() and not destination.is_symlink(), 'Import destination must be new')
     with zipfile.ZipFile(archive) as source:
         rows = source.infolist()
@@ -160,8 +165,13 @@ def seal(directory, manifest, origin, signature, files):
 def zip_flat(directory, archive):
     directory, archive = Path(directory), Path(archive)
     require(not archive.exists() and not archive.is_symlink(), 'Refusing to overwrite a sealed Android archive')
+    members = sorted(directory.iterdir())
+    for path in members:
+        require(path.is_file() and not path.is_symlink() and allowed_name(path.name), 'Unexpected sealed file')
+    require(0 < len(members) <= 20 and sum(path.stat().st_size for path in members) <= MAX_MEMBER,
+            'Sealed Android package members exceed the import limits')
     archive.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, 'x') as zipped:
-        for path in sorted(directory.iterdir()):
-            require(path.is_file() and not path.is_symlink() and allowed_name(path.name), 'Unexpected sealed file')
+        for path in members:
             zipped.write(path, path.name)
+    _require_bounded_flat_archive(archive)

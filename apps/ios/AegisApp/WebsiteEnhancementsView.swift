@@ -582,6 +582,7 @@ private struct CurrentWebsitePanel: View {
         .onAppear { accessSiteProxy.hostRouting = hostStores }
         .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
       AccessDevAllowBlockSectionView(store: accessSiteProxy, url: tab.url)
+      AccessTestNodeOptionsLink(isPrivate: isPrivate)
       if let url = tab.url, ScriptMatch.origin(url) != nil {
         Section {
           Text(verbatim: AccessSiteDisplayName.title(url.host)).font(.headline).textSelection(.enabled)

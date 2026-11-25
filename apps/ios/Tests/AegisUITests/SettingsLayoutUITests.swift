@@ -47,6 +47,51 @@ final class SettingsLayoutUITests: XCTestCase {
         XCTAssertTrue((field.value as? String ?? "").contains("example.invalid"))
     }
 
+    func testOriginalWebsiteChoiceOffersAnOriginalRetryWithLocationPrivacyEnabled() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        defer { app.terminate() }
+
+        let address = app.textFields["address-field"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        address.tap()
+        address.typeText("https://example.invalid/\n")
+        let privacy = app.buttons["address-location-privacy"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 10))
+        XCTAssertFalse(privacy.isSelected)
+        privacy.tap()
+        let proxyRetry = app.buttons["page-load-proxy-retry"]
+        XCTAssertTrue(proxyRetry.waitForExistence(timeout: 12))
+        XCTAssertTrue(privacy.isSelected)
+
+        app.buttons["browser-more"].tap()
+        app.buttons["open-browser-settings"].tap()
+        let entry = app.buttons["domestic-acceleration-link"]
+        XCTAssertTrue(reveal(entry, app))
+        entry.tap()
+        let original = app.buttons["使用原有连接"]
+        XCTAssertTrue(reveal(original, app))
+        original.tap()
+        XCTAssertTrue(original.isSelected)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["settings-done"].tap()
+
+        let retry = app.buttons["page-load-retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 8), "The explicit original route must have an actionable retry")
+        XCTAssertFalse(proxyRetry.exists)
+        let stopLoading = app.buttons["停止加载"]
+        XCTAssertFalse(stopLoading.exists)
+        retry.tap()
+
+        // WebKit may present its own HTTPS interstitial for this reserved host.
+        // Observe a new load instead of requiring a second app-level DNS error.
+        XCTAssertTrue(stopLoading.waitForExistence(timeout: 8))
+        XCTAssertTrue((address.value as? String ?? "").contains("example.invalid"))
+        XCTAssertTrue(privacy.isSelected)
+        XCTAssertFalse(proxyRetry.exists)
+    }
+
     func testLocationPrivacyControlsHideNodeDetailsAndKeepFailedTarget() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -76,6 +121,93 @@ final class SettingsLayoutUITests: XCTestCase {
         XCTAssertFalse(app.buttons["access-dev-allow-block-allow"].exists)
         assertInsideWindow(toggle, app)
         capture("当前网站-隐藏地理位置", app)
+    }
+
+    func testInternalNodeEditorKeepsTextEntryAvailableAfterCameraUnavailable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "-AppleLanguages", "(en)",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        defer { app.terminate() }
+        let entry = app.buttons["access-test-node-options"]
+        XCTAssertTrue(reveal(entry, app))
+        entry.tap()
+        let profile = app.buttons["access-test-profile"]
+        XCTAssertTrue(reveal(profile, app))
+        profile.tap()
+        let saved = app.staticTexts["access-test-node-saved"]
+        XCTAssertFalse(saved.exists, "The UI test launch must start with an empty profile")
+        let scan = app.buttons["access-test-node-scan"]
+        XCTAssertTrue(reveal(scan, app))
+        scan.tap()
+        let cameraError = app.staticTexts["access-test-node-error"]
+        XCTAssertTrue(reveal(cameraError, app))
+        XCTAssertEqual(cameraError.label, "Camera scanning is unavailable. You can still enter a node link.")
+
+        let field = app.secureTextFields["access-test-node-link"]
+        XCTAssertTrue(reveal(field, app, scrollDown: true))
+        field.tap()
+        let syntheticLink = "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.10:443"
+            + "?type=tcp&security=reality&flow=xtls-rprx-vision&sni=www.example.com"
+            + "&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=&spx=%2Fsynthetic"
+            + "&support-x25519mlkem768=true#synthetic-node"
+        field.typeText(syntheticLink)
+        let preview = app.buttons["access-test-node-preview"]
+        XCTAssertTrue(reveal(preview, app))
+        preview.tap()
+        let redacted = app.staticTexts["access-test-node-redacted-preview"]
+        XCTAssertTrue(reveal(redacted, app))
+        XCTAssertEqual(redacted.label, "3X-UI test node")
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "synthetic-node")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "198.51.100.10")).firstMatch.exists)
+        let apply = app.buttons["access-test-node-apply"]
+        XCTAssertTrue(reveal(apply, app))
+        XCTAssertTrue(apply.isEnabled)
+        let discard = app.buttons["access-test-node-discard"]
+        XCTAssertTrue(reveal(discard, app))
+        discard.tap()
+        XCTAssertFalse(redacted.exists)
+        // Removing the draft section can reset this virtualized Form's scroll
+        // position, especially with a saved node and accessibility text sizes.
+        XCTAssertTrue(reveal(apply, app))
+        XCTAssertFalse(apply.isEnabled)
+
+        XCTAssertTrue(reveal(field, app, scrollDown: true))
+        field.tap()
+        field.typeText(syntheticLink)
+        XCTAssertTrue(reveal(preview, app))
+        preview.tap()
+        XCTAssertTrue(reveal(apply, app))
+        apply.tap()
+        XCTAssertTrue(reveal(saved, app, scrollDown: true))
+        XCTAssertEqual(saved.label, "Node saved.")
+        // The saved section includes a URL TextField. Start below-viewport
+        // scrolling in the form gutter so text interaction cannot absorb it.
+        XCTAssertTrue(reveal(apply, app, dragOffsetX: 0.96))
+        XCTAssertFalse(apply.isEnabled)
+        let remove = app.buttons["access-test-node-remove"]
+        XCTAssertTrue(reveal(remove, app, dragOffsetX: 0.96))
+        XCTAssertTrue(remove.isEnabled)
+        remove.tap()
+        // UIKit may expose both a popup wrapper and its button with this identifier.
+        let confirm = app.sheets.buttons.matching(identifier: "access-test-node-confirm-remove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "One tap on Remove must present confirmation")
+        confirm.tap()
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(remove.waitForNonExistence(timeout: 5), "Confirmation must remove the visible saved-node action")
+        XCTAssertTrue(saved.waitForNonExistence(timeout: 5))
+
+        let profileBar = app.navigationBars["3X-UI test profile"]
+        if profileBar.exists {
+            let back = profileBar.buttons.firstMatch
+            XCTAssertTrue(back.isHittable)
+            back.tap()
+        }
+        XCTAssertTrue(reveal(profile, app))
+        profile.tap()
+        let emptyProfile = app.staticTexts["access-test-node-empty"]
+        XCTAssertTrue(reveal(emptyProfile, app))
+        XCTAssertEqual(emptyProfile.label, "No node saved.")
     }
 
     func testAccountUsageEntryShowsHonestEmptyStateInChinese() {
@@ -121,6 +253,353 @@ final class SettingsLayoutUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["access-usage-used"].exists)
         capture("账号与用量-\(language)-\(largeText ? "最大字体" : "普通字体")", app)
     }
+
+    #if DEBUG
+    func testWebsiteAccelerationBetaIsReadableAtLargestTextSize() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "-AppleLanguages", "(en)",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+        app.launch()
+        defer { app.terminate() }
+        let domestic = app.buttons["domestic-acceleration-link"]
+        XCTAssertTrue(reveal(domestic, app))
+        domestic.tap()
+        let smart = app.buttons["website-acceleration-smart"]
+        XCTAssertTrue(reveal(smart, app))
+        smart.tap()
+        let categories = app.buttons["website-acceleration-categories"]
+        XCTAssertTrue(reveal(categories, app))
+        XCTAssertEqual(categories.label, "Acceleration Categories Beta")
+        XCTAssertEqual(categories.value as? String, "Debian")
+        assertInsideWindow(categories, app)
+        capture("Acceleration Categories Beta - Largest Text", app)
+        XCTAssertFalse(app.staticTexts["Beta"].exists, "The visual tag is part of the single accessible navigation row")
+        categories.tap()
+        let meituan = app.buttons["website-acceleration-category-MEITUAN"]
+        XCTAssertTrue(reveal(meituan, app))
+        assertInsideWindow(meituan, app)
+        XCTAssertEqual(meituan.value as? String, "Includes Dianping")
+        capture("Acceleration Categories - Largest Text", app)
+    }
+
+    func testWebsiteAccelerationBetaIsHiddenInPrivateSettings() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+        app.launch()
+        defer { app.terminate() }
+        let more = app.buttons["browser-more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        openSettings(app)
+        let domestic = app.buttons["domestic-acceleration-link"]
+        XCTAssertTrue(reveal(domestic, app))
+        domestic.tap()
+        let smart = app.buttons["website-acceleration-smart"]
+        XCTAssertTrue(reveal(smart, app))
+        smart.tap()
+        XCTAssertTrue(app.buttons["website-acceleration-categories"].waitForExistence(timeout: 5))
+        app.navigationBars["国内加速"].buttons.element(boundBy: 0).tap()
+        app.buttons["settings-done"].tap()
+
+        more.tap()
+        let profiles = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "profile-menu", "普通")).firstMatch
+        XCTAssertTrue(profiles.waitForExistence(timeout: 5))
+        profiles.tap()
+        let privateProfile = app.buttons["私密"]
+        XCTAssertTrue(privateProfile.waitForExistence(timeout: 5))
+        privateProfile.tap()
+        XCTAssertEqual(app.buttons["page-protection"].value as? String, "私密浏览：不记录历史，保存和发送资料前需确认")
+        openSettings(app)
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
+        XCTAssertFalse(domestic.exists)
+        XCTAssertFalse(app.buttons["overseas-acceleration-link"].exists)
+        XCTAssertFalse(app.buttons["website-acceleration-categories"].exists)
+        capture("私密浏览-设置隐藏国内加速", app)
+    }
+
+    func testWebsiteAccelerationBetaSelectionAndPersistence() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "--ui-testing-geosite-cache",
+                               "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+        app.launch()
+        defer { app.terminate() }
+
+        func openDomesticAcceleration() {
+            XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
+            let entry = app.buttons["domestic-acceleration-link"]
+            XCTAssertTrue(reveal(entry, app))
+            entry.tap()
+        }
+
+        openDomesticAcceleration()
+        let manual = app.buttons["website-acceleration-manual"]
+        let smart = app.buttons["website-acceleration-smart"]
+        let categories = app.buttons["website-acceleration-categories"]
+        XCTAssertTrue(manual.waitForExistence(timeout: 5))
+        XCTAssertTrue(manual.isSelected)
+        XCTAssertFalse(categories.exists)
+        XCTAssertTrue(reveal(smart, app))
+        smart.tap()
+        capture("网站加速-智能-Beta 入口", app)
+        XCTAssertTrue(categories.waitForExistence(timeout: 5), "智能模式必须显示可导航的加速分类 Beta")
+        XCTAssertEqual(categories.label, "加速分类 Beta")
+        XCTAssertEqual(categories.value as? String, "Debian")
+        XCTAssertTrue(reveal(categories, app))
+        categories.tap()
+
+        let debian = app.buttons["website-acceleration-category-DEBIAN"]
+        let douban = app.buttons["website-acceleration-category-DOUBAN"]
+        let meituan = app.buttons["website-acceleration-category-MEITUAN"]
+        XCTAssertTrue(app.navigationBars["加速分类"].waitForExistence(timeout: 5))
+        XCTAssertTrue(debian.isSelected)
+        XCTAssertFalse(douban.isSelected)
+        XCTAssertFalse(meituan.isSelected)
+        XCTAssertEqual(douban.label, "豆瓣")
+        XCTAssertEqual(meituan.label, "美团")
+        XCTAssertEqual(meituan.value as? String, "含大众点评")
+        douban.tap()
+        XCTAssertTrue(douban.isSelected)
+        debian.tap()
+        XCTAssertFalse(debian.isSelected)
+        meituan.tap()
+        XCTAssertTrue(meituan.isSelected)
+        meituan.tap()
+        XCTAssertFalse(meituan.isSelected)
+        capture("加速分类-豆瓣单选", app)
+
+        let back = app.navigationBars["加速分类"].buttons.element(boundBy: 0)
+        back.tap()
+        XCTAssertEqual(categories.value as? String, "豆瓣")
+        manual.tap()
+        XCTAssertFalse(categories.exists)
+        smart.tap()
+        XCTAssertTrue(reveal(categories, app))
+        XCTAssertEqual(categories.value as? String, "豆瓣")
+        categories.tap()
+        douban.tap()
+        XCTAssertFalse(douban.isSelected)
+        back.tap()
+        XCTAssertEqual(categories.value as? String, "未选择")
+        XCTAssertTrue(app.staticTexts["未选择加速分类。"].exists)
+
+        app.terminate()
+        app.launchArguments.append("--ui-testing-geosite-cache-keep")
+        app.launch()
+        openDomesticAcceleration()
+        XCTAssertTrue(reveal(categories, app))
+        XCTAssertEqual(categories.value as? String, "未选择")
+        categories.tap()
+        XCTAssertFalse(debian.isSelected)
+        XCTAssertFalse(douban.isSelected)
+        XCTAssertFalse(meituan.isSelected)
+        capture("加速分类-重新启动后保留空选", app)
+    }
+
+    func testWebsiteAccelerationConsentAndRelaunch() throws {
+        guard ProcessInfo.processInfo.environment["AEGIS_GEOSITE_METADATA"] != nil else {
+            throw XCTSkip("First prepare the GeoSite consent cache with the isolated HTTPS fixture")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "--ui-testing-geosite-consent-fixture",
+                               "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+        defer { app.terminate() }
+
+        func open() {
+            app.launch()
+            XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
+            let entry = app.buttons["domestic-acceleration-link"]
+            XCTAssertTrue(reveal(entry, app))
+            entry.tap()
+            let link = app.buttons["website-acceleration-categories"]
+            XCTAssertTrue(reveal(link, app))
+            link.tap()
+            XCTAssertTrue(app.navigationBars["加速分类"].waitForExistence(timeout: 5))
+        }
+
+        func control(_ identifier: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+        }
+
+        open()
+        let douban = app.buttons["website-acceleration-category-DOUBAN"]
+        XCTAssertTrue(douban.isSelected)
+        XCTAssertEqual(douban.value as? String, "等待确认")
+        let details = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@",
+            "豆瓣", "website-acceleration-category-DOUBAN")).firstMatch
+        let candidate = control("website-acceleration-candidate-DOUBAN")
+        let approve = app.buttons["website-acceleration-approve-DOUBAN"]
+        XCTAssertFalse(candidate.exists)
+        XCTAssertFalse(approve.exists)
+        XCTAssertTrue(reveal(details, app))
+        details.tap()
+        XCTAssertTrue(reveal(candidate, app))
+        XCTAssertTrue(reveal(app.staticTexts["expanded.example.com"], app))
+        XCTAssertTrue(reveal(approve, app))
+        approve.tap()
+        XCTAssertTrue(approve.waitForNonExistence(timeout: 10))
+        XCTAssertFalse(candidate.exists)
+        XCTAssertTrue(douban.isSelected)
+
+        app.terminate()
+        open()
+        XCTAssertTrue(douban.isSelected)
+        XCTAssertNotEqual(douban.value as? String, "等待确认")
+        XCTAssertTrue(reveal(details, app))
+        details.tap()
+        XCTAssertFalse(approve.exists)
+        let verifiedDomains = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "expanded.example.com")).firstMatch
+        XCTAssertTrue(reveal(verifiedDomains, app))
+        capture("加速分类-批准新增范围并重新启动", app)
+    }
+
+    func testOverseasSettingsRequiresExplicitConfirmationAndRestoresChoice() throws {
+        guard ProcessInfo.processInfo.environment["AEGIS_OVERSEAS_UI_READY"] == "1" else {
+            throw XCTSkip("The hosted overseas snapshot fixture must be staged first")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "--ui-testing-overseas-fixture",
+                               "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+        app.launch()
+        defer { app.terminate() }
+        func open() {
+            XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
+            let domestic = app.buttons["domestic-acceleration-link"]
+            XCTAssertTrue(reveal(domestic, app))
+            let domesticPage = app.navigationBars["国内加速"]
+            // The first settings update after launch can recreate the link.
+            domestic.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+            if !domesticPage.waitForExistence(timeout: 3), domestic.exists, domestic.isHittable {
+                domestic.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+            }
+            XCTAssertTrue(domesticPage.waitForExistence(timeout: 5))
+            let smart = app.buttons["website-acceleration-smart"]
+            XCTAssertTrue(smart.waitForExistence(timeout: 5))
+            if !smart.isSelected { smart.tap() }
+            let overseas = app.buttons["overseas-acceleration-link"]
+            XCTAssertTrue(reveal(overseas, app))
+            overseas.tap()
+            XCTAssertTrue(app.navigationBars["海外加速（针对大陆地区）"].waitForExistence(timeout: 5))
+        }
+        open()
+        let disabled = app.staticTexts["overseas-disabled"]
+        XCTAssertTrue(disabled.exists)
+        let ai = app.switches["overseas-category-AI"]
+        XCTAssertTrue(reveal(ai, app))
+        XCTAssertEqual(ai.value as? String, "0")
+        ai.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertEqual(ai.value as? String, "1")
+        let review = app.buttons["overseas-review-choice"]
+        XCTAssertTrue(reveal(review, app))
+        review.tap()
+        let confirm = app.buttons["overseas-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
+        XCTAssertTrue(reveal(disabled, app))
+        XCTAssertTrue(reveal(review, app))
+        review.tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        let disable = app.buttons["overseas-disable"]
+        XCTAssertTrue(disable.waitForExistence(timeout: 10))
+        app.terminate()
+        app.launch()
+        open()
+        XCTAssertTrue(disable.waitForExistence(timeout: 10))
+        XCTAssertTrue(reveal(ai, app))
+        XCTAssertEqual(ai.value as? String, "1")
+        XCTAssertTrue(reveal(disable, app))
+        disable.tap()
+        XCTAssertTrue(disabled.waitForExistence(timeout: 5))
+    }
+
+    func testWebsiteAccelerationModesInDevSettings() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
+        app.launch()
+        defer { app.terminate() }
+
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
+        let entry = app.buttons["domestic-acceleration-link"]
+        XCTAssertTrue(reveal(entry, app), "设置中的国内加速入口必须可见且可点击")
+        assertInsideWindow(entry, app)
+        XCTAssertEqual(entry.label, "国内加速")
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["国内加速"].waitForExistence(timeout: 5))
+        let website = app.descendants(matching: .any)["website-acceleration-section"]
+        XCTAssertTrue(website.waitForExistence(timeout: 5))
+        XCTAssertEqual(website.label, "网站加速")
+        XCTAssertFalse(app.staticTexts["位置加速"].exists)
+
+        let manual = app.buttons["website-acceleration-manual"]
+        let smart = app.buttons["website-acceleration-smart"]
+        let manualHint = app.staticTexts.matching(NSPredicate(format: "label == %@", "自行选择要加速的网站。"))
+        let smartHint = app.staticTexts.matching(NSPredicate(format: "label == %@", "按所选分类加速网站。"))
+        let serviceNotice = app.staticTexts.matching(NSPredicate(format: "label == %@", "加速服务未配置。"))
+        let smartPrivacyNotice = app.descendants(matching: .any)["website-acceleration-smart-location-privacy"]
+        let engineeringDetails = app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS[c] %@ OR label CONTAINS %@ OR label CONTAINS %@",
+            "debian.org", "系统代理", "原有的选路规则"
+        ))
+        XCTAssertTrue(manual.waitForExistence(timeout: 5))
+        XCTAssertTrue(smart.waitForExistence(timeout: 5))
+        XCTAssertEqual(manual.label, "手动")
+        XCTAssertEqual(smart.label, "智能")
+        // --ui-testing resets the isolated preferences suite on launch.
+        XCTAssertTrue(manual.isSelected)
+        XCTAssertFalse(smart.isSelected)
+        XCTAssertEqual(manualHint.count, 1)
+        XCTAssertFalse(smartHint.firstMatch.exists)
+        XCTAssertEqual(serviceNotice.count, 1)
+        XCTAssertEqual(serviceNotice.firstMatch.identifier, "website-acceleration-service-unavailable")
+        capture("国内加速-网站加速-手动", app)
+
+        XCTAssertTrue(reveal(smart, app))
+        smart.tap()
+        XCTAssertTrue(smart.isSelected)
+        XCTAssertFalse(manual.isSelected)
+        XCTAssertEqual(smartHint.count, 1)
+        XCTAssertFalse(manualHint.firstMatch.exists)
+        XCTAssertFalse(engineeringDetails.firstMatch.exists)
+        // Without a configured service there is no default location-privacy attempt to replace.
+        XCTAssertFalse(smartPrivacyNotice.exists)
+        XCTAssertEqual(serviceNotice.count, 1)
+        XCTAssertEqual(serviceNotice.firstMatch.identifier, "website-acceleration-service-unavailable")
+        capture("国内加速-网站加速-智能", app)
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(reveal(entry, app))
+        entry.tap()
+        XCTAssertTrue(smart.waitForExistence(timeout: 5))
+        XCTAssertTrue(smart.isSelected)
+        XCTAssertEqual(smartHint.count, 1)
+        XCTAssertFalse(manualHint.firstMatch.exists)
+
+        app.terminate()
+        app.launchArguments.append("--ui-testing-preferences-keep")
+        app.launch()
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
+        XCTAssertTrue(reveal(entry, app))
+        entry.tap()
+        XCTAssertTrue(smart.waitForExistence(timeout: 5))
+        XCTAssertTrue(smart.isSelected)
+        XCTAssertFalse(manual.isSelected)
+        XCTAssertEqual(smartHint.count, 1)
+        XCTAssertFalse(manualHint.firstMatch.exists)
+
+        XCTAssertTrue(reveal(manual, app))
+        manual.tap()
+        XCTAssertTrue(manual.isSelected)
+        XCTAssertFalse(smart.isSelected)
+        XCTAssertEqual(manualHint.count, 1)
+        XCTAssertFalse(smartHint.firstMatch.exists)
+    }
+    #endif
 
     func testSettingsPagesAtStandardSize() {
         inspectSettings(largeText: false)

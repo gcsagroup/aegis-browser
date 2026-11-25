@@ -8,6 +8,7 @@ IOS_ROOT="$(cd -P -- "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd -P -- "${IOS_ROOT}/../.." && pwd)"
 DERIVED_DATA="${AEGIS_IOS_DERIVED_DATA:-$(dirname "$REPO_ROOT")/GCSA-aegis-build/ios/DerivedData}"
 MODE="dry-run"
+GEOSITE_MODE="fixture"
 PROJECT_PATH=""
 WORKSPACE_PATH=""
 SCHEME="${AEGIS_IOS_SCHEME:-Aegis}"
@@ -16,10 +17,15 @@ ONLY_TESTING=()
 RUNTIME_ID="${AEGIS_IOS_RUNTIME_ID:-}"
 OUTPUT_DIR="${AEGIS_IOS_OUTPUT_DIR:-/tmp/aegis-ios-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 
+DEFAULT_PHONE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
+DEFAULT_TABLET_TYPE="com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4"
 PHONE_NAME="Aegis CI com.gcsa.aegis iPhone 17"
-PHONE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
+PHONE_TYPE="$DEFAULT_PHONE_TYPE"
 TABLET_NAME="Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)"
-TABLET_TYPE="com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4"
+TABLET_TYPE="$DEFAULT_TABLET_TYPE"
+TABLET_ENABLED="yes"
+DEVICE_TYPE_PATTERN='^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9.-]+$'
+UDID_PATTERN='^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
 
 usage() {
   cat <<'EOF'
@@ -36,8 +42,11 @@ usage() {
   --workspace PATH       指定 .xcworkspace
   --scheme NAME          Scheme，默认 Aegis
   --test-plan NAME       可选 Test Plan；未指定时运行 Scheme 中全部测试
+  --geosite-live         仅运行 GeoSite 官方 HTTPS 验收，显式访问 GitHub
   --only-testing PATH    只运行指定测试，可重复（例如 AegisTests/ContentFilterTests）
   --runtime IDENTIFIER   Simulator runtime ID；默认选择最新可用 iOS runtime
+  --phone-device-type ID   iPhone 设备类型 identifier，默认 com.apple.CoreSimulator.SimDeviceType.iPhone-17
+  --tablet-device-type ID  iPad 设备类型 identifier；传 none 则只跑 iPhone（runtime 不支持 iPad 时使用）
   --output-dir PATH      必须是不存在的 /tmp/aegis-ios-* 绝对路径
   -h, --help             显示帮助
 
@@ -88,6 +97,10 @@ while [[ $# -gt 0 ]]; do
       TEST_PLAN="$2"
       shift 2
       ;;
+    --geosite-live)
+      GEOSITE_MODE="live"
+      shift
+      ;;
     --only-testing)
       [[ $# -ge 2 ]] || die "--only-testing 缺少测试路径"
       [[ "$2" =~ ^(AegisTests|AegisUITests)(/[A-Za-z0-9_]+){0,2}$ ]] || die "测试路径格式无效"
@@ -97,6 +110,22 @@ while [[ $# -gt 0 ]]; do
     --runtime)
       [[ $# -ge 2 ]] || die "--runtime 缺少 identifier"
       RUNTIME_ID="$2"
+      shift 2
+      ;;
+    --phone-device-type)
+      [[ $# -ge 2 ]] || die "--phone-device-type 缺少 identifier"
+      [[ "$2" =~ $DEVICE_TYPE_PATTERN ]] || die "设备类型格式无效：$2"
+      PHONE_TYPE="$2"
+      shift 2
+      ;;
+    --tablet-device-type)
+      [[ $# -ge 2 ]] || die "--tablet-device-type 缺少 identifier 或 none"
+      if [[ "$2" == "none" ]]; then
+        TABLET_ENABLED="no"
+      else
+        [[ "$2" =~ $DEVICE_TYPE_PATTERN ]] || die "设备类型格式无效：$2"
+        TABLET_TYPE="$2"
+      fi
       shift 2
       ;;
     --output-dir)
@@ -113,6 +142,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$GEOSITE_MODE" == "live" ]]; then
+  [[ -z "${ONLY_TESTING[0]:-}" ]] || die "--geosite-live 已选定唯一用例"
+  ONLY_TESTING=(-only-testing:AegisTests/AccessGeoSiteLiveTransportTests/testCanonicalLatestAndPairedAssetsUsingSystemTrust)
+fi
 
 [[ -z "$PROJECT_PATH" || -z "$WORKSPACE_PATH" ]] || die "--project 与 --workspace 只能指定一个"
 [[ -n "$SCHEME" ]] || die "Scheme 不能为空"
@@ -156,7 +190,11 @@ runtime_available="$({ xcrun simctl list runtimes -j; } | env AEGIS_RUNTIME_ID="
 [[ "$runtime_available" == "yes" ]] || die "runtime 不可用：$RUNTIME_ID"
 
 device_types_json="$(xcrun simctl list devicetypes -j)"
-for required_type in "$PHONE_TYPE" "$TABLET_TYPE"; do
+REQUIRED_TYPES=("$PHONE_TYPE")
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  REQUIRED_TYPES+=("$TABLET_TYPE")
+fi
+for required_type in "${REQUIRED_TYPES[@]}"; do
   type_available="$(printf '%s' "$device_types_json" | env AEGIS_DEVICE_TYPE="$required_type" node -e '
     const fs = require("node:fs");
     const payload = JSON.parse(fs.readFileSync(0, "utf8"));
@@ -164,7 +202,35 @@ for required_type in "$PHONE_TYPE" "$TABLET_TYPE"; do
     process.stdout.write(found ? "yes" : "no");
   ')"
   [[ "$type_available" == "yes" ]] || die "设备类型不可用：$required_type"
+  type_supported="$({ xcrun simctl list runtimes -j; } | env AEGIS_RUNTIME_ID="$RUNTIME_ID" AEGIS_DEVICE_TYPE="$required_type" node -e '
+    const fs = require("node:fs");
+    const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+    const runtime = (payload.runtimes ?? []).find((item) => item.identifier === process.env.AEGIS_RUNTIME_ID);
+    const supported = runtime?.supportedDeviceTypes;
+    const ok = !Array.isArray(supported) || supported.some((item) => item.identifier === process.env.AEGIS_DEVICE_TYPE);
+    process.stdout.write(ok ? "yes" : "no");
+  ')"
+  [[ "$type_supported" == "yes" ]] || die "runtime 不支持设备类型：${required_type}（runtime=${RUNTIME_ID}）；可用 --phone-device-type 或 --tablet-device-type none 调整"
 done
+
+device_type_label() {
+  printf '%s' "$device_types_json" | env AEGIS_DEVICE_TYPE="$1" node -e '
+    const fs = require("node:fs");
+    const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+    const item = (payload.devicetypes ?? []).find((entry) => entry.identifier === process.env.AEGIS_DEVICE_TYPE);
+    process.stdout.write(item?.name ?? "");
+  '
+}
+if [[ "$PHONE_TYPE" != "$DEFAULT_PHONE_TYPE" ]]; then
+  phone_label="$(device_type_label "$PHONE_TYPE")"
+  [[ -n "$phone_label" ]] || die "无法读取设备类型名称：$PHONE_TYPE"
+  PHONE_NAME="Aegis CI com.gcsa.aegis ${phone_label}"
+fi
+if [[ "$TABLET_ENABLED" == "yes" && "$TABLET_TYPE" != "$DEFAULT_TABLET_TYPE" ]]; then
+  tablet_label="$(device_type_label "$TABLET_TYPE")"
+  [[ -n "$tablet_label" ]] || die "无法读取设备类型名称：$TABLET_TYPE"
+  TABLET_NAME="Aegis CI com.gcsa.aegis ${tablet_label}"
+fi
 
 if [[ -z "$PROJECT_PATH" && -z "$WORKSPACE_PATH" ]]; then
   if [[ -d "${IOS_ROOT}/Aegis.xcworkspace" ]]; then
@@ -253,8 +319,9 @@ ensure_device() {
         print_command xcrun simctl create "$name" "$type" "$RUNTIME_ID" >&2
         printf 'name=%s' "$name"
       else
-        udid="$(xcrun simctl create "$name" "$type" "$RUNTIME_ID")"
-        [[ -n "$udid" ]] || die "创建 Simulator 未返回 UDID：$name"
+        udid="$(xcrun simctl create "$name" "$type" "$RUNTIME_ID")" \
+          || die "创建 Simulator 失败：${name}（runtime=${RUNTIME_ID}, type=${type}）"
+        [[ "$udid" =~ $UDID_PATTERN ]] || die "创建 Simulator 返回的不是 UDID：$name ($udid)"
         printf '已创建专用 Simulator：%s (%s)\n' "$name" "$udid" >&2
         printf '%s' "$udid"
       fi
@@ -272,7 +339,10 @@ ensure_device() {
 }
 
 PHONE_DESTINATION="$(ensure_device "$PHONE_NAME" "$PHONE_TYPE")"
-TABLET_DESTINATION="$(ensure_device "$TABLET_NAME" "$TABLET_TYPE")"
+TABLET_DESTINATION=""
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  TABLET_DESTINATION="$(ensure_device "$TABLET_NAME" "$TABLET_TYPE")"
+fi
 
 COMMON_ARGS=("${CONTAINER_ARGS[@]}" -scheme "$SCHEME" -configuration Debug -enableCodeCoverage YES)
 if [[ -n "$TEST_PLAN" ]]; then
@@ -289,7 +359,10 @@ destination_for() {
 }
 
 PHONE_XCODE_DESTINATION="$(destination_for "$PHONE_DESTINATION")"
-TABLET_XCODE_DESTINATION="$(destination_for "$TABLET_DESTINATION")"
+TABLET_XCODE_DESTINATION=""
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  TABLET_XCODE_DESTINATION="$(destination_for "$TABLET_DESTINATION")"
+fi
 
 printf '\nAegis iOS Simulator 测试计划\n'
 printf '  模式：%s\n' "$MODE"
@@ -310,6 +383,34 @@ TABLET_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" test-without-building
   -parallel-testing-enabled NO -collect-test-diagnostics never
   -resultBundlePath "${OUTPUT_DIR}/iPad.xcresult" ${ONLY_TESTING[@]+"${ONLY_TESTING[@]}"})
 
+if [[ "$GEOSITE_MODE" == "live" ]]; then
+  PHONE_COMMAND=(env TEST_RUNNER_AEGIS_GEOSITE_LIVE=1 "${PHONE_COMMAND[@]}")
+  TABLET_COMMAND=(env TEST_RUNNER_AEGIS_GEOSITE_LIVE=1 "${TABLET_COMMAND[@]}")
+else
+  PHONE_COMMAND=(python3 "${SCRIPT_DIR}/geosite-https-fixture.py" --receipt "${OUTPUT_DIR}/iPhone-geosite-https.json" -- "${PHONE_COMMAND[@]}")
+  TABLET_COMMAND=(python3 "${SCRIPT_DIR}/geosite-https-fixture.py" --receipt "${OUTPUT_DIR}/iPad-geosite-https.json" -- "${TABLET_COMMAND[@]}")
+fi
+
+OVERSEAS_UI_TEST="AegisUITests/SettingsLayoutUITests/testOverseasSettingsRequiresExplicitConfirmationAndRestoresChoice"
+RUN_OVERSEAS_UI=0
+if [[ -z "${ONLY_TESTING[0]:-}" ]]; then RUN_OVERSEAS_UI=1; fi
+for filter in "${ONLY_TESTING[@]+${ONLY_TESTING[@]}}"; do
+  case "$filter" in
+    -only-testing:AegisUITests|-only-testing:AegisUITests/SettingsLayoutUITests|-only-testing:"$OVERSEAS_UI_TEST")
+      RUN_OVERSEAS_UI=1 ;;
+  esac
+done
+overseas_seed_command() {
+  OVERSEAS_SEED_COMMAND=(env TEST_RUNNER_AEGIS_OVERSEAS_UI_SEED=1 xcodebuild "${COMMON_ARGS[@]}" test-without-building
+    -destination "$2" -derivedDataPath "$DERIVED_DATA" -parallel-testing-enabled NO -collect-test-diagnostics never
+    -resultBundlePath "${OUTPUT_DIR}/$1-overseas-seed.xcresult"
+    -only-testing:AegisTests/AccessGeoSiteCacheTests/testPrepareOverseasSettingsFixture)
+}
+if [[ "$RUN_OVERSEAS_UI" == 1 ]]; then
+  PHONE_COMMAND=(env TEST_RUNNER_AEGIS_OVERSEAS_UI_READY=1 "${PHONE_COMMAND[@]}")
+  TABLET_COMMAND=(env TEST_RUNNER_AEGIS_OVERSEAS_UI_READY=1 "${TABLET_COMMAND[@]}")
+fi
+
 BUILD_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" build-for-testing
   -destination "$PHONE_XCODE_DESTINATION" -derivedDataPath "$DERIVED_DATA"
   "AEGIS_EMBEDDED_CORE_PRODUCTS=$DERIVED_DATA/EmbeddedCore")
@@ -318,8 +419,18 @@ if [[ "$MODE" == "dry-run" ]]; then
   printf '构建时递增 project.yml 构建号，并在固定路径 %s 生成一次测试包。\n' "$DERIVED_DATA"
   print_command "${BUILD_COMMAND[@]}"
   printf '\n将执行：\n'
+  if [[ "$RUN_OVERSEAS_UI" == 1 ]]; then
+    overseas_seed_command iPhone "$PHONE_XCODE_DESTINATION"
+    print_command "${OVERSEAS_SEED_COMMAND[@]}"
+  fi
   print_command "${PHONE_COMMAND[@]}"
-  print_command "${TABLET_COMMAND[@]}"
+  if [[ "$TABLET_ENABLED" == "yes" ]]; then
+    if [[ "$RUN_OVERSEAS_UI" == 1 ]]; then
+      overseas_seed_command iPad "$TABLET_XCODE_DESTINATION"
+      print_command "${OVERSEAS_SEED_COMMAND[@]}"
+    fi
+    print_command "${TABLET_COMMAND[@]}"
+  fi
   printf '\nDRY_RUN=PASS（未创建设备、未启动测试、未创建输出目录）\n'
   exit 0
 fi
@@ -378,7 +489,11 @@ xcrun simctl list runtimes -j \
   printf 'developer_dir=%s\n' "$(xcode-select -p)"
   printf 'node_version=%s\n' "$(node --version)"
   printf 'iphone=%s|%s\n' "$PHONE_NAME" "$PHONE_DESTINATION"
-  printf 'ipad=%s|%s\n' "$TABLET_NAME" "$TABLET_DESTINATION"
+  if [[ "$TABLET_ENABLED" == "yes" ]]; then
+    printf 'ipad=%s|%s\n' "$TABLET_NAME" "$TABLET_DESTINATION"
+  else
+    printf 'ipad=<skipped>\n'
+  fi
   xcodebuild -version
 } > "${OUTPUT_DIR}/run-metadata.txt"
 
@@ -526,10 +641,32 @@ PYTHON
 phone_status=0
 tablet_status=0
 input_status=0
-run_test "iPhone" "${OUTPUT_DIR}/iPhone.xcresult" "${OUTPUT_DIR}/iPhone-xcodebuild.log" \
-  "${PHONE_COMMAND[@]}" || phone_status=$?
-run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
-  "${TABLET_COMMAND[@]}" || tablet_status=$?
+seed_overseas_settings() {
+  if [[ "$RUN_OVERSEAS_UI" == 0 ]]; then return; fi
+  overseas_seed_command "$1" "$2"
+  "${OVERSEAS_SEED_COMMAND[@]}" > "${OUTPUT_DIR}/$1-overseas-seed.log" 2>&1 || return "$?"
+  xcrun xcresulttool get test-results summary --path "${OUTPUT_DIR}/$1-overseas-seed.xcresult" \
+    --format json > "${OUTPUT_DIR}/$1-overseas-seed-summary.json" || return "$?"
+  node -e 'const s = require(process.argv[1]); if (s.passedTests !== 1 || s.totalTestCount !== 1) process.exit(1);' \
+    "${OUTPUT_DIR}/$1-overseas-seed-summary.json"
+}
+if seed_overseas_settings iPhone "$PHONE_XCODE_DESTINATION"; then
+  run_test "iPhone" "${OUTPUT_DIR}/iPhone.xcresult" "${OUTPUT_DIR}/iPhone-xcodebuild.log" \
+    "${PHONE_COMMAND[@]}" || phone_status=$?
+else
+  phone_status=$?
+fi
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  if seed_overseas_settings iPad "$TABLET_XCODE_DESTINATION"; then
+    run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
+      "${TABLET_COMMAND[@]}" || tablet_status=$?
+  else
+    tablet_status=$?
+  fi
+  tablet_exit_record="${tablet_status}"
+else
+  tablet_exit_record="skipped"
+fi
 
 write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-after.txt" "$DERIVED_DATA/EmbeddedCore"
 if ! cmp -s \
@@ -540,7 +677,7 @@ if ! cmp -s \
 fi
 
 printf 'iphone_exit=%s\nipad_exit=%s\ninput_stability_exit=%s\nfinished_at_utc=%s\n' \
-  "$phone_status" "$tablet_status" "$input_status" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  "$phone_status" "$tablet_exit_record" "$input_status" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >> "${OUTPUT_DIR}/run-metadata.txt"
 
 printf '\n测试产物：%s\n' "$OUTPUT_DIR"

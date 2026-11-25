@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import runpy
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('candidate', Path(__file__).with_name('candidate.py'))
@@ -62,6 +63,23 @@ class CandidateTests(unittest.TestCase):
             value['checks'][key] = 'skipped'
             with self.assertRaises(ValueError):
                 ci.validate_receipt(value, 'aaa', '1')
+
+    def test_android_gn_contract_handles_comments_without_ignoring_duplicates(self):
+        checker = Path(__file__).resolve().parents[4] / 'scripts/ci/check-android-platform-inputs.py'
+        verify = runpy.run_path(str(checker))['verify_gn_settings']
+        expected = {'target_cpu': 'arm64'}
+        verify('target_cpu = "arm64" # Android ABI', expected)
+        with self.assertRaisesRegex(ValueError, 'target_cpu'):
+            verify('target_cpu = "arm64"\ntarget_cpu = "x64" # duplicate', expected)
+
+    def test_required_android_pin_cannot_fall_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            browser = Path(directory)
+            (browser / 'CHROMIUM_VERSION').write_text('158.0.8127.37', encoding='ascii')
+            (browser / 'CHROMIUM_COMMIT').write_text('a' * 40, encoding='ascii')
+            with self.assertRaisesRegex(ValueError, '缺少独立平台 pin'):
+                ci.read_candidate_pin('android', browser, require_override=True)
+            self.assertEqual(ci.read_candidate_pin('windows', browser)[0]['version'], '158.0.8127.37')
 
     def test_platform_pin_does_not_borrow_desktop_version(self):
         with tempfile.TemporaryDirectory() as directory:

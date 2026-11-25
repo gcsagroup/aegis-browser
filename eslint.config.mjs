@@ -73,6 +73,8 @@ export default tseslint.config(
       "apps/browser/scripts/macos-access-phase1-evidence.mjs",
       "apps/ios/scripts/simulator-input-manifest.mjs",
       "apps/ios/scripts/test-simulator-input-evidence.mjs",
+      "scripts/ci/platform-tests/kcov-fixture.test.mjs",
+      "scripts/dev/compile-geosite.mjs",
       "packages/core/src/script-risk/evaluation/blind-protocol.test.ts"
 ],
     plugins: {security},
