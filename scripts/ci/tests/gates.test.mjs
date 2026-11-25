@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, join, relative, resolve, sep} from 'node:path';
+import {basename, dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
@@ -415,14 +415,14 @@ test('push and dispatch identity admit configured maintenance lines while reject
 });
 
 test('workflow validator enforces automatic platform reporting and its execution boundaries', () => {
-  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml']
+  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml', 'sync-merge-method.yml']
     .map((name) => join(root, '.github/workflows', name));
   const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
   const validate = (args, cwd) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args], {cwd});
-  const fixedPaths = paths.slice(0, -1);
+  const fixedPaths = paths.slice(0, 6);
   const result = validate(fixedPaths);
   assert.equal(result.status, 0, result.stderr);
-  assert.notEqual(validate(paths).status, 0, 'the iOS workflow path cannot be overridden');
+  assert.notEqual(validate(paths.slice(0, 7)).status, 0, 'the iOS workflow path cannot be overridden');
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'];
   const reportingJobs = [
@@ -564,21 +564,36 @@ test('workflow validator enforces automatic platform reporting and its execution
     [4, (w) => { w.jobs['normalize-title'].steps[1].uses = 'actions/github-script@v8'; }],
     [4, (w) => { w.jobs['normalize-title'].steps[1].with['github-token'] = '${{ secrets.GITHUB_TOKEN }}'; }],
     [4, (w) => { w.jobs['normalize-title'].steps.push({name: 'unsafe', run: 'node candidate.mjs'}); }],
+    [7, (w) => { w.on.pull_request_target.types.push('synchronize'); }, 'only auto-merge enablement is admitted'],
+    [7, (w) => { w.on.pull_request_target.branches = ['main']; }, 'must cover both integration branches'],
+    [7, (w) => { w.permissions.contents = 'write'; }, 'contents must stay read-only'],
+    [7, (w) => { w.concurrency['cancel-in-progress'] = true; }, 'a mutation must complete before the next run'],
+    [7, (w) => { delete w.jobs['enforce-merge-method'].if; }, 'do not allocate a runner for cross-repository PRs'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[0].with.ref = '${{ github.event.pull_request.head.sha }}'; }, 'only the trusted base can execute'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[0].with['persist-credentials'] = true; }, 'checkout may not persist credentials'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].uses = 'actions/github-script@v8'; }, 'pin the metadata action'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].with['github-token'] = '${{ secrets.APP_TOKEN }}'; }, 'do not expose repository secrets'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].with.script += 'process.exit(0);'; }, 'only invoke the trusted guard'],
   ];
   try {
-    const iosFixture = join(directory, '.github/workflows/ios-release-validation.yml');
-    mkdirSync(dirname(iosFixture), {recursive: true});
-    writeFileSync(iosFixture, readFileSync(paths[6]));
+    const fixtures = paths.map((path, index) => index < fixedPaths.length ? null :
+      join(directory, '.github/workflows', basename(path)));
+    mkdirSync(dirname(fixtures[6]), {recursive: true});
+    for (const [index, path] of fixtures.entries()) {
+      if (path) writeFileSync(path, readFileSync(paths[index]));
+    }
     const control = validate(fixedPaths, directory);
     assert.equal(control.status, 0, control.stderr);
     for (const [number, [index, mutate, reason]] of mutations.entries()) {
       const copy = structuredClone(originals[index]);
       mutate(copy);
-      const path = index === 6 ? iosFixture : join(directory, `mutation-${number}.yml`);
+      const fixture = fixtures[index];
+      const path = fixture ?? join(directory, `mutation-${number}.yml`);
       writeFileSync(path, YAML.stringify(copy));
       const args = [...fixedPaths];
-      if (index !== 6) args[index] = path;
-      assert.notEqual(validate(args, index === 6 ? directory : root).status, 0, `workflow mutation ${number} (${paths[index]}: ${reason ?? 'existing contract'}) unexpectedly passed`);
+      if (!fixture) args[index] = path;
+      assert.notEqual(validate(args, fixture ? directory : root).status, 0, `workflow mutation ${number} (${paths[index]}: ${reason ?? 'existing contract'}) unexpectedly passed`);
+      if (fixture) writeFileSync(path, readFileSync(paths[index]));
     }
   } finally {
     rmSync(directory, {recursive: true, force: true});

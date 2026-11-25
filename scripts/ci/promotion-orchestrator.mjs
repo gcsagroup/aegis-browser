@@ -81,7 +81,7 @@ export async function validateActivePull(active, config, deps = {}) {
   const expectedRepo = candidate.kind === 'promotion' ? config.upstreamRepo : config.personalRepo;
   const expectedBase = candidate.kind === 'promotion' ? 'main' : 'develop';
   if (repo !== expectedRepo || pr.base?.repo?.full_name !== expectedRepo || pr.base?.ref !== expectedBase ||
-      pr.head?.repo?.full_name !== config.personalRepo || pr.auto_merge) {
+      pr.head?.repo?.full_name !== config.personalRepo || (pr.auto_merge && pr.auto_merge.merge_method !== 'merge')) {
     throw new Error('Candidate identity changed or unverified auto-merge is enabled');
   }
   const fetched = (deps.fetchBranch ?? fetchBranch)(config.personalRepo, candidate.branch, config.forkToken);
@@ -162,7 +162,7 @@ export async function createCandidatePull(config, state, candidate, overrides = 
   const subjects = ops.git('log', '--reverse', '--format=%s', `${candidate.base}..${head}`).split('\n');
   const title = promotion ? inferPromotionTitle(subjects) : 'chore(sync): backflow upstream main into develop';
   if (!title) throw new Error('No Conventional Commit title available for candidate');
-  const body = `Frozen ${candidate.kind} batch.\n\n- source: \`${candidate.source}\`\n- initial base: \`${candidate.base}\`\n- current head: \`${head}\`\n- review fixes may be appended; every new head requires fresh review and CI\n- merge method: merge commit; no automatic merge\n- upstream promotion requires Codacy and applicable native validation\n- personal main is an exact upstream mirror; all fixes return to develop\n`;
+  const body = `Frozen ${candidate.kind} batch.\n\n- source: \`${candidate.source}\`\n- initial base: \`${candidate.base}\`\n- current head: \`${head}\`\n- review fixes may be appended; every new head requires fresh review and CI\n- merge method: merge commit; coordinator owns any auto-merge setting\n- upstream promotion requires Codacy and applicable native validation\n- personal main is an exact upstream mirror; all fixes return to develop\n`;
   await ops.assertHeads([...sourceRefs(config, state),
     headRef(config.personalRepo, candidate.branch, head, config.forkToken)]);
   // Concurrency groups cannot serialize other human/automation writers.
