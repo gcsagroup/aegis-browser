@@ -9,7 +9,8 @@ import select
 import shutil
 import signal
 import stat
-import subprocess
+# Used for the fixed process census and its error types.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import time
@@ -273,23 +274,27 @@ def wait_until_exit(pid, cancelled):
 
 
 def run_stage(command, environment, cancelled, signal_worker):
-    # Verify process enumeration is available before starting anything that
-    # might leave a helper in a second process group.
     if cancelled():
         return None
+    executable = command[0]
+    if not os.path.isabs(executable):
+        raise OSError(errno.EINVAL, "archive stage executable must be absolute")
+    # Verify process enumeration is available before starting anything that
+    # might leave a helper in a second process group.
     process_states()
     if cancelled():
         return None
     # Transport configuration can change between fetches. Discard child output
     # at spawn so no stage bytes can reach the console or retained status log.
     # Keep the direct parent, atomic session creation and runner tracking env.
-    pid = os.posix_spawn(
-        command[0], command, environment, setsid=True, setsigmask=(),
-        setsigdef=(signal.SIGINT, signal.SIGTERM, signal.SIGPIPE),
-        file_actions=[
-            (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
-            (os.POSIX_SPAWN_DUP2, 1, 2),
-        ])
+    # The admitted CI entrypoints supply the executable and stage-specific argv.
+    # nosemgrep: dangerous-spawn-process-audit, dangerous-spawn-process-tainted-env-args
+    pid = os.posix_spawn(executable, command, environment, setsid=True, setsigmask=(),
+                         setsigdef=(signal.SIGINT, signal.SIGTERM, signal.SIGPIPE),
+                         file_actions=[
+                             (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
+                             (os.POSIX_SPAWN_DUP2, 1, 2),
+                         ])
     try:
         wait_until_exit(pid, cancelled)
     finally:

@@ -68,18 +68,21 @@ def private_path(path):
     return str(path)
 
 
+def source_git(root, arguments, *, input_data=None, check=True):
+    # The root is the working directory. Callers supply fixed commands and validated object IDs.
+    return subprocess.run(["/usr/bin/git", "--no-replace-objects", "--no-optional-locks", *arguments],
+                          cwd=root, input=input_data, capture_output=True, check=check, shell=False)  # nosec B603
+
+
 def prepared_source_commit(root):
-    git = ["git", "--no-replace-objects", "-C", str(root)]
-    result = subprocess.run([*git, "rev-parse", "--show-toplevel", "HEAD"],  # nosec B603 B607
-                            capture_output=True, text=True, check=False)
+    result = source_git(root, ("rev-parse", "--show-toplevel", "HEAD"), check=False)
     if result.returncode:
         return None
-    lines = result.stdout.splitlines()
+    lines = os.fsdecode(result.stdout).splitlines()
     if len(lines) != 2 or Path(lines[0]).resolve() != root or not re.fullmatch(r"[0-9a-f]{40}", lines[1]):
         return None
-    status = subprocess.run([*git, "--no-optional-locks", "status", "--porcelain",  # nosec B603 B607
-                             "--untracked-files=normal", "--", "apps/ios"],
-                            capture_output=True, text=True, check=False)
+    status = source_git(root, ("-c", "core.fsmonitor=false", "status", "--porcelain",
+                               "--untracked-files=normal", "--", "apps/ios"), check=False)
     return lines[1] if status.returncode == 0 and not status.stdout else None
 
 
@@ -91,9 +94,29 @@ def snapshot_path(name):
     return path
 
 
+def snapshot_blobs(root, blob_ids):
+    batch = b"".join(blob + b"\n" for blob in blob_ids)
+    result = source_git(root, ("cat-file", "--batch"), input_data=batch)
+    contents = {}
+    with io.BytesIO(result.stdout) as stream:
+        for blob in blob_ids:
+            fields = stream.readline().split()
+            if len(fields) != 3 or fields[:2] != [blob, b"blob"] or not fields[2].isdigit():
+                raise ValueError("unexpected Git object in Alpha source")
+            size = int(fields[2])
+            data = stream.read(size)
+            if len(data) != size or stream.read(1) != b"\n":
+                raise ValueError("incomplete Git blob in Alpha source")
+            contents[blob] = data
+        if stream.read(1):
+            raise ValueError("unexpected Git object in Alpha source")
+    return contents
+
+
 def snapshot_source(root, commit, destination):
-    git = ["git", "--no-replace-objects", "-C", str(root)]
-    listing = subprocess.check_output([*git, "ls-tree", "-r", "-z", "--full-tree", commit, "--", *SNAPSHOT_PATHS])  # nosec B603 B607
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("invalid Alpha source commit")
+    listing = source_git(root, ("ls-tree", "-r", "-z", "--full-tree", commit, "--", *SNAPSHOT_PATHS)).stdout
     expected = {}
     directories = set()
     for entry in listing.split(b"\0")[:-1]:
@@ -104,12 +127,13 @@ def snapshot_source(root, commit, destination):
         relative = snapshot_path(os.fsdecode(name))
         if relative in expected:
             raise ValueError("duplicate Git tree entry in Alpha source")
-        expected[relative] = (mode == b"100755", blob.decode("ascii"))
+        expected[relative] = (mode == b"100755", blob)
         directories.update(parent for parent in relative.parents if parent.parts)
 
     # The tar digest alone cannot detect local export attributes that omit or
-    # substitute files. Verify every member against the unreplaced Git tree.
-    data = subprocess.check_output([*git, "archive", commit, "--", *SNAPSHOT_PATHS])  # nosec B603 B607
+    # substitute files. Compare every member with its committed Git blob bytes.
+    blobs = snapshot_blobs(root, dict.fromkeys(blob for _, blob in expected.values()))
+    data = source_git(root, ("archive", "--format=tar", commit, "--", *SNAPSHOT_PATHS)).stdout
     seen_files, seen_dirs = set(), set()
     destination.mkdir()
     with tarfile.open(fileobj=io.BytesIO(data)) as archive:
@@ -127,13 +151,13 @@ def snapshot_source(root, commit, destination):
                 executable, blob = expected[relative]
                 if bool(member.mode & 0o100) != executable:
                     raise ValueError("Alpha source archive changed a Git executable mode")
-                actual = hashlib.sha1(f"blob {member.size}\0".encode("ascii"), usedforsecurity=False)
-                with archive.extractfile(member) as source, path.open("xb") as output:
-                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                        actual.update(chunk)
-                        output.write(chunk)
-                if actual.hexdigest() != blob:
+                if member.size != len(blobs[blob]):
                     raise ValueError("Alpha source archive changed Git blob contents")
+                with archive.extractfile(member) as source, path.open("xb") as output:
+                    contents = source.read()
+                    if contents != blobs[blob]:
+                        raise ValueError("Alpha source archive changed Git blob contents")
+                    output.write(contents)
                 path.chmod(0o755 if executable else 0o644)
                 seen_files.add(relative)
             else:

@@ -93,16 +93,37 @@ def download(url, destination, expected_sha256, *, gitiles_text=False):
     return actual
 
 
-def verify_inputs(root, head, overlay):
+def git_executable():
+    # Windows can implicitly search the current directory for a bare command.
+    # Use only absolute entries from the runner's PATH and require a native EXE.
+    for entry in os.get_exec_path():
+        directory = Path(entry.strip('"'))
+        if not directory.is_absolute():
+            continue
+        candidate = directory / "git.exe"
+        if candidate.is_file():
+            executable = candidate.resolve(strict=True)
+            if executable.suffix.lower() == ".exe":
+                return str(executable)
+    raise RuntimeError("Native Git executable not found in the runner's PATH")
+
+
+def git_output(executable, root, *args):
+    # The executable comes from the runner's absolute PATH entries. The fixture
+    # supplies fixed Git operations, repository paths and a checked-out SHA.
+    # nosemgrep: dangerous-subprocess-use-audit
+    return subprocess.check_output(  # nosec B603
+        [executable, *args], cwd=root, shell=False).strip()
+
+
+def verify_inputs(git, root, head, overlay):
     for name in SOURCES:
         relative = f"apps/browser/overlay/{name}"
-        committed = subprocess.check_output(
-            ["git", "rev-parse", f"{head}:{relative}"], cwd=root).strip()
+        committed = git_output(git, root, "rev-parse", f"{head}:{relative}")
         # Honor Git's clean conversion for text (e.g. Windows autocrlf), but
         # require byte identity for the icon. hash-object without -w is read-only.
         options = ["--no-filters"] if name.endswith(".ico") else ["--path", relative]
-        actual = subprocess.check_output(
-            ["git", "hash-object", *options, str(overlay / name)], cwd=root).strip()
+        actual = git_output(git, root, "hash-object", *options, str(overlay / name))
         if committed != actual:
             raise RuntimeError(f"Fixture input differs from tested SHA: {name}")
 
@@ -174,18 +195,17 @@ def main():
     try:
         if os.name != "nt":
             raise RuntimeError("Native Windows is required")
-        head = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
-        if head != args.tested_sha:
+        git = git_executable()
+        head = git_output(git, root, "rev-parse", "HEAD").decode("ascii")
+        if not re.fullmatch(r"[0-9a-f]{40}", head) or head != args.tested_sha:
             raise RuntimeError("Tested SHA does not match checkout")
-        chromium_pin = subprocess.check_output(
-            ["git", "show", f"{head}:apps/browser/CHROMIUM_COMMIT"], cwd=root, text=True).strip()
+        chromium_pin = git_output(git, root, "show", f"{head}:apps/browser/CHROMIUM_COMMIT").decode("ascii")
         if not re.fullmatch(r"[0-9a-f]{40}", chromium_pin):
             raise RuntimeError("Tested Chromium pin must be a full SHA")
         report["chromiumPin"] = chromium_pin
         headers = pinned_headers(chromium_pin)
         overlay = root / "apps/browser/overlay"
-        verify_inputs(root, head, overlay)
+        verify_inputs(git, root, head, overlay)
         hashes = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
         report["inputHashes"] = hashes
         fixture = report_dir / "fixture"

@@ -302,12 +302,22 @@ func diagnosticConfig(t *testing.T, path, mask string, generation int64) string 
 	return string(data)
 }
 
-func requireNativeLog(t *testing.T, path, marker string) {
+func nativeLogRoot(t *testing.T) *os.Root {
+	t.Helper()
+	logs, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logs.Close() })
+	return logs
+}
+
+func requireNativeLog(t *testing.T, logs *os.Root, name, marker string) {
 	t.Helper()
 	clog.Record(&clog.GeneralMessage{Severity: clog.Severity_Info, Content: marker})
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		data, _ := os.ReadFile(path)
+		data, _ := logs.ReadFile(name)
 		if strings.Contains(string(data), marker) {
 			return
 		}
@@ -317,14 +327,15 @@ func requireNativeLog(t *testing.T, path, marker string) {
 }
 
 func TestRotatedCaptureOutlivesRuntimeThatOpenedIt(t *testing.T) {
-	directory := t.TempDir()
-	oldPath, resumedPath := filepath.Join(directory, "old.log"), filepath.Join(directory, "resumed.log")
+	logs := nativeLogRoot(t)
+	const oldLog, resumedLog = "old.log", "resumed.log"
+	oldPath, resumedPath := filepath.Join(logs.Name(), oldLog), filepath.Join(logs.Name(), resumedLog)
 	first, second := NewRuntime(), NewRuntime()
 	if err := first.Start(diagnosticConfig(t, oldPath, "", 0)); err != nil {
 		t.Fatal(err)
 	}
 	defer first.Stop()
-	requireNativeLog(t, oldPath, "old-capture-only")
+	requireNativeLog(t, logs, oldLog, "old-capture-only")
 	if err := second.Start(diagnosticConfig(t, resumedPath, "", 0)); err != nil {
 		t.Fatal(err)
 	}
@@ -335,14 +346,16 @@ func TestRotatedCaptureOutlivesRuntimeThatOpenedIt(t *testing.T) {
 	if !first.IsRunning() || clog.GetSeverity() != clog.Severity_Info {
 		t.Fatal("expected surviving runtime and info logger")
 	}
-	requireNativeLog(t, resumedPath, "surviving-runtime-marker")
-	if data, err := os.ReadFile(resumedPath); err != nil || strings.Contains(string(data), "old-capture-only") {
+	requireNativeLog(t, logs, resumedLog, "surviving-runtime-marker")
+	if data, err := logs.ReadFile(resumedLog); err != nil || strings.Contains(string(data), "old-capture-only") {
 		t.Fatalf("old capture record reached the resumed sink: %v", err)
 	}
 }
 
 func TestQuietStartAndLoggerFailureKeepTheActiveNativeSink(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "active.log")
+	logs := nativeLogRoot(t)
+	const activeLog = "active.log"
+	path := filepath.Join(logs.Name(), activeLog)
 	first, quiet := NewRuntime(), NewRuntime()
 	if err := first.Start(diagnosticConfig(t, path, "", 0)); err != nil {
 		t.Fatal(err)
@@ -351,22 +364,23 @@ func TestQuietStartAndLoggerFailureKeepTheActiveNativeSink(t *testing.T) {
 	if err := quiet.Start(diagnosticConfig(t, path, "invalid-mask", 0)); err == nil {
 		t.Fatal("expected a failed logging startup")
 	}
-	requireNativeLog(t, path, "after-failed-logging-start")
+	requireNativeLog(t, logs, activeLog, "after-failed-logging-start")
 	if err := quiet.Start(freedomConfig); err != nil {
 		t.Fatal(err)
 	}
 	defer quiet.Stop()
-	requireNativeLog(t, path, "while-quiet-runtime-is-live")
+	requireNativeLog(t, logs, activeLog, "while-quiet-runtime-is-live")
 	if err := quiet.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	requireNativeLog(t, path, "after-quiet-runtime-stop")
+	requireNativeLog(t, logs, activeLog, "after-quiet-runtime-stop")
 }
 
 func TestLateStartCannotRestoreRetiredCapture(t *testing.T) {
-	directory := t.TempDir()
-	oldPath := filepath.Join(directory, "retired.log")
-	newPath := filepath.Join(directory, "resumed.log")
+	logs := nativeLogRoot(t)
+	const oldLog, newLog = "retired.log", "resumed.log"
+	oldPath := filepath.Join(logs.Name(), oldLog)
+	newPath := filepath.Join(logs.Name(), newLog)
 	oldGeneration := NewLogCaptureGeneration()
 	oldConfig := diagnosticConfig(t, oldPath, "", oldGeneration)
 	RetireLogCaptureGeneration(oldGeneration)
@@ -390,12 +404,12 @@ func TestLateStartCannotRestoreRetiredCapture(t *testing.T) {
 	if err := late.Start(oldConfig); err != nil || !late.IsRunning() {
 		t.Fatalf("late runtime did not start: %v", err)
 	}
-	requireNativeLog(t, newPath, "after-late-start")
+	requireNativeLog(t, logs, newLog, "after-late-start")
 	if err := resumed.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	requireNativeLog(t, newPath, "after-new-runtime-stop")
-	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+	requireNativeLog(t, logs, newLog, "after-new-runtime-stop")
+	if _, err := logs.Stat(oldLog); !os.IsNotExist(err) {
 		t.Fatalf("retired capture reopened: %v", err)
 	}
 }

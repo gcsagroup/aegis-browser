@@ -60,7 +60,9 @@ def install(lock, scratch):
         raise ValueError("Go archive differs from the published digest")
     subprocess.run(["/usr/bin/tar", "-xzf", str(archive), "-C", str(scratch)], check=True)  # nosec B603
     go = scratch / "go/bin/go"
-    output = subprocess.check_output([str(go), "version"],  # nosec B603 - verified archive and fixed subcommand.
+    # The executable is from the size- and SHA-256-verified Go release in job-private scratch.
+    # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+    output = subprocess.check_output([str(go), "version"], shell=False,  # nosec B603
                                      env=dict(os.environ, GOROOT=str(go.parent.parent), GOTOOLCHAIN="local"))
     if output != f"go version go{version} darwin/{arch}\n".encode("ascii"):
         raise ValueError("installed Go identity differs from the source lock")

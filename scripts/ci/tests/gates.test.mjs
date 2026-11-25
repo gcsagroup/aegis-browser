@@ -414,6 +414,17 @@ test('push and dispatch identity admit configured maintenance lines while reject
   for (const event of ['push', 'workflow_dispatch']) assert.notEqual(verify(event, 'refs/heads/develop', unrelated).status, 0, 'unrelated base must fail');
 });
 
+test('the sync merge guard selects only the corresponding trusted integration branch', () => {
+  const path = join(root, '.github/workflows/sync-merge-method.yml');
+  const workflow = YAML.parse(readFileSync(path, 'utf8'));
+  const checkouts = workflow.jobs['enforce-merge-method'].steps
+    .filter((step) => step.uses.startsWith('actions/checkout@'));
+  assert.deepEqual(checkouts.map((step) => [step.if, step.with.ref]), [
+    ["${{ github.base_ref == 'develop' }}", 'refs/heads/develop'],
+    ["${{ github.base_ref == 'main' }}", 'refs/heads/main'],
+  ]);
+});
+
 test('workflow validator enforces automatic platform reporting and its execution boundaries', () => {
   const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml', 'sync-merge-method.yml']
     .map((name) => join(root, '.github/workflows', name));
@@ -570,10 +581,12 @@ test('workflow validator enforces automatic platform reporting and its execution
     [7, (w) => { w.concurrency['cancel-in-progress'] = true; }, 'a mutation must complete before the next run'],
     [7, (w) => { delete w.jobs['enforce-merge-method'].if; }, 'do not allocate a runner for cross-repository PRs'],
     [7, (w) => { w.jobs['enforce-merge-method'].steps[0].with.ref = '${{ github.event.pull_request.head.sha }}'; }, 'only the trusted base can execute'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].with.ref = 'refs/pull/1/merge'; }, 'main cannot execute a PR merge ref'],
+    [7, (w) => { delete w.jobs['enforce-merge-method'].steps[0].if; }, 'checkout must match the PR target'],
     [7, (w) => { w.jobs['enforce-merge-method'].steps[0].with['persist-credentials'] = true; }, 'checkout may not persist credentials'],
-    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].uses = 'actions/github-script@v8'; }, 'pin the metadata action'],
-    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].with['github-token'] = '${{ secrets.APP_TOKEN }}'; }, 'do not expose repository secrets'],
-    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].with.script += 'process.exit(0);'; }, 'only invoke the trusted guard'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps.at(-1).uses = 'actions/github-script@v8'; }, 'pin the metadata action'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps.at(-1).with['github-token'] = '${{ secrets.APP_TOKEN }}'; }, 'do not expose repository secrets'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps.at(-1).with.script += 'process.exit(0);'; }, 'only invoke the trusted guard'],
   ];
   try {
     const fixtures = paths.map((path, index) => index < fixedPaths.length ? null :

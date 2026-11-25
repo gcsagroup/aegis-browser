@@ -1,18 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {runInContext} from 'node:vm';
 import {JSDOM} from 'jsdom';
 
 const root = new URL('../../overlay/chrome/browser/resources/aegis/', import.meta.url);
-const read = path => fs.readFileSync(new URL(path, root), 'utf8');
+const parentHTML = fs.readFileSync(new URL('markdown.html', root), 'utf8');
+const childHTML = fs.readFileSync(new URL('enhancements_shared/viewer.html', root), 'utf8');
+const parentScript = fs.readFileSync(new URL('markdown.js', root), 'utf8')
+  .replace(/^import .*;\n/gm, '');
+const sharedScripts = [
+  fs.readFileSync(new URL('enhancements_shared/i18n.js', root), 'utf8'),
+  fs.readFileSync(new URL('enhancements_shared/core.js', root), 'utf8'),
+];
+const childScripts = [
+  fs.readFileSync(new URL('enhancements_shared/vendor/markdown-it.min.js', root), 'utf8'),
+  fs.readFileSync(new URL('enhancements_shared/vendor/task-lists.min.js', root), 'utf8'),
+  fs.readFileSync(new URL('enhancements_shared/vendor/highlight.min.js', root), 'utf8'),
+  fs.readFileSync(new URL('enhancements_shared/vendor/purify.min.js', root), 'utf8'),
+  ...sharedScripts,
+  fs.readFileSync(new URL('enhancements_shared/viewer.js', root), 'utf8'),
+];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function harness({holdReadyRequest = false} = {}) {
   let pendingReadyRequest;
-  const parent = new JSDOM(read('markdown.html'), {
+  const parent = new JSDOM(parentHTML, {
     url: 'chrome://aegis/markdown.html', runScripts: 'outside-only',
   });
-  const child = new JSDOM(read('enhancements_shared/viewer.html'), {
+  const child = new JSDOM(childHTML, {
     url: 'chrome-untrusted://aegis-markdown/viewer.html', runScripts: 'outside-only',
   });
   const p = parent.window, c = child.window;
@@ -54,15 +70,14 @@ function harness({holdReadyRequest = false} = {}) {
     p, c, messages, requests,
     deliverReadyRequest() { pendingReadyRequest(); },
     startChild() {
-      for (const script of ['vendor/markdown-it.min.js', 'vendor/task-lists.min.js',
-        'vendor/highlight.min.js', 'vendor/purify.min.js', 'i18n.js', 'core.js', 'viewer.js'])
-        c.eval(read('enhancements_shared/' + script));
+      const context = child.getInternalVMContext();
+      for (const script of childScripts) runInContext(script, context);
     },
     async startParent() {
-      p.eval(read('enhancements_shared/i18n.js'));
-      p.eval(read('enhancements_shared/core.js'));
-      const code = read('markdown.js').replace(/^import .*;\n/gm, '');
-      await p.eval(`(async () => { ${code}\n })()`);
+      const context = parent.getInternalVMContext();
+      for (const script of sharedScripts) runInContext(script, context);
+      // Run the checked-in entry point with the mocked Chrome imports above.
+      await runInContext(`(async () => { ${parentScript}\n })()`, context, {filename: 'markdown.js'});
     },
     close() { p.close(); c.close(); },
   };

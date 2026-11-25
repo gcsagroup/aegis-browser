@@ -9,6 +9,7 @@ test('shell coverage runner parses and its Bash parent and child enforce the fix
   execFileSync('bash', ['-n', join(import.meta.dirname, '../run-shell-coverage.sh')]);
   const parent = join(import.meta.dirname, 'kcov-parent-fixture.sh');
   const child = join(import.meta.dirname, 'kcov-child-fixture.sh');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The checked-in parent is a fixed file beside this test.
   const entry = lstatSync(parent);
   assert.ok(entry.isFile());
   assert.equal(entry.mode & 0o111, 0);
@@ -19,11 +20,12 @@ test('shell coverage runner parses and its Bash parent and child enforce the fix
   t.after(() => rmSync(directory, {recursive: true, force: true}));
   const copiedParent = join(directory, 'kcov-parent-fixture.sh');
   copyFileSync(parent, copiedParent);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Create a fixed filename in this test's private temporary directory.
   writeFileSync(join(directory, 'kcov-child-fixture.sh'), [
     'printf "child invoked with %s\\n" "$1" >&2',
     'printf "child-process-covered\\n"',
     'exit 23',
-  ].join('\n'));
+  ].join('\n'), {flag: 'wx'});
 
   const result = spawnSync('bash', [copiedParent], {encoding: 'utf8'});
   assert.equal(result.stderr, 'child invoked with child-process-covered\n');
