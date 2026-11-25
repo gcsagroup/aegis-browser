@@ -370,9 +370,10 @@ test('runner can run iPhone only with another phone type when the runtime has no
   const result = runFixture(createFixture(t), {EVIDENCE_SUPPORTED_TYPES: duoType, EVIDENCE_NO_DEVICES: '1'},
     '--execute', ['--phone-device-type', duoType, '--tablet-device-type', 'none']);
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  const lines = readText(path.join(result.report, 'run-metadata.txt')).split('\n');
+  const metadata = readText(path.join(result.report, 'run-metadata.txt'));
+  const lines = metadata.split('\n');
   assert.ok(lines.includes('iphone=Aegis CI com.gcsa.aegis iPhone Duo|' + createdUdid));
-  assert.ok(lines.includes('ipad=<skipped>'));
+  assert.match(metadata, /(?:^|\n)ipad=<skipped>(?:\n|$)/);
   assert.ok(lines.includes('ipad_exit=skipped'));
   assert.ok(!lines.includes('ipad_exit=0'));
   assert.ok(exists(path.join(result.report, 'iPhone.xcresult')));

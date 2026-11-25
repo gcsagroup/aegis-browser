@@ -105,6 +105,7 @@ try {
   }
   const manifest = JSON.parse(candidateBytes.toString('utf8'));
   const files = validateManifest(manifest);
+  const trustedFiles = new Map(Object.entries(baselineManifest?.files ?? {}));
   for (const [name, contract] of files) {
     ensureRelativePath(name);
     if (name.includes('/') || name.includes('\\')) {
@@ -113,7 +114,7 @@ try {
     const relativePath = `${freezeDirectory}/${name}`;
     const absolutePath = join(cwd, relativePath);
     const current = readFileSync(absolutePath);
-    const trustedContract = baselineManifest?.files?.[name];
+    const trustedContract = trustedFiles.get(name);
     const contractUnchanged = trustedContract?.sha256 === contract.sha256 && trustedContract?.bytes === contract.bytes;
     if (trustedAvailable && (!migration || contractUnchanged)) {
       const trusted = gitFile(baseline, relativePath, cwd);

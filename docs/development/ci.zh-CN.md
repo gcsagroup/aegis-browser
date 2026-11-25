@@ -159,7 +159,7 @@ PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API �
 
 普通功能/修复 PR → develop 使用 squash；晋升 PR → upstream/main 与上游回流 PR → develop 使用 merge commit，保留来源与修复的祖先关系。仅在最终 HEAD 检查和 Review 齐备后由协调者合并；控制器不批准、合并或启用候选 auto-merge。已知 CI/Review 阻塞不得通过管理员身份绕过。
 
-`Sync PR Merge Method` 使用 `pull_request_target: auto_merge_enabled` 处理同仓库的 `main` 或 `codex/backflow-<完整SHA>` → develop，以及 `codex/promote-<D完整SHA>-<B完整SHA>` → main。它使用目标分支的 base SHA 和 `GITHUB_TOKEN` 检查 PR 当前的合并方式，关闭仍启用的 squash/rebase auto-merge，并在 PR 留言提示协调者在最终 HEAD 验收后使用 merge commit。控制器仅接受未启用 auto-merge 或使用 merge commit 的候选。
+`Sync PR Merge Method` 使用 `pull_request_target: auto_merge_enabled` 处理同仓库的 `main` 或 `codex/backflow-<完整SHA>` → develop，以及 `codex/promote-<D完整SHA>-<B完整SHA>` → main。它按目标分支检出同仓库的固定引用 `refs/heads/develop` 或 `refs/heads/main`，用 `GITHUB_TOKEN` 检查当前的合并方式，关闭仍启用的 squash/rebase auto-merge，并在 PR 留言提示协调者在最终 HEAD 验收后使用 merge commit。控制器仅接受未启用 auto-merge 或使用 merge commit 的候选。
 
 该 workflow 是异步纠正措施。它只能关闭尚未执行的 auto-merge，跨仓库晋升 PR 和手动合并仍由协调者核对合并方式。
 

@@ -3,13 +3,16 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import plistlib
 import shutil
-import subprocess
+# Local test fixtures use system Git with no shell.
+import subprocess  # nosec B404
 import tarfile
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("alpha_device", HERE / "prepare-alpha-device-project.py")
@@ -45,6 +48,26 @@ class AlphaDeviceProjectTest(unittest.TestCase):
     def hashes(self):
         return {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in self.root.rglob("*") if p.is_file()}
+
+    def git(self, *arguments, text=True):
+        # Every argument comes from the fixture or its temporary Git repository.
+        output = subprocess.check_output(["/usr/bin/git", *arguments],
+                                         cwd=self.root, text=text, shell=False)  # nosec B603
+        return output.strip() if text else output
+
+    def commit_fixture(self, message):
+        self.git("init", "-q")
+        self.git("add", ".")
+        self.git("-c", "user.name=Test Fixture", "-c", "user.email=fixture@example.invalid",
+                 "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", message)
+        return self.git("rev-parse", "HEAD")
+
+    def commit_snapshot_fixture(self):
+        for relative in module.SNAPSHOT_PATHS[1:]:
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fixture\0\n")
+        return self.commit_fixture("source snapshot")
 
     def test_isolated_spec_preserves_sources_targets_permissions_and_build_contract(self):
         before = self.hashes()
@@ -102,9 +125,6 @@ class AlphaDeviceProjectTest(unittest.TestCase):
         self.assertIn(module.GROUP, local.read_text())
 
     def test_only_clean_git_inputs_stamp_the_prepared_app(self):
-        def git(*arguments):
-            return subprocess.check_output(["git", "-C", str(self.root), *arguments], text=True).strip()
-
         self.assertIsNone(module.prepared_source_commit(self.root))
         # Keep a minimal but complete synthetic source tree for all XcodeGen
         # source entries, including those outside apps/ios.
@@ -122,28 +142,24 @@ class AlphaDeviceProjectTest(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("// committed inputs\n")
         substitution = self.ios / "Tests/AegisTests/Export.swift"
-        substitution.write_text('// approved literal $Format:%H$\n')
+        substitution.write_text('// approved literal $Format:%an$\n')
         executable = self.ios / "AegisApp/helper.sh"
         executable.write_text("#!/bin/sh\n")
         executable.chmod(0o755)
         (self.root / ".gitignore").write_text("Ignored.swift\n")
-        git("init", "-q")
-        git("add", ".")
-        git("-c", "user.name=Synthetic Fixture", "-c", "user.email=fixture@example.invalid",
-            "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture")
-        commit = git("rev-parse", "HEAD")
+        commit = self.commit_fixture("fixture")
         files_to_mutate[0].write_text("// replacement bytes must not compile\n")
-        git("add", str(files_to_mutate[0]))
-        replacement = git("-c", "user.name=Synthetic Fixture", "-c", "user.email=fixture@example.invalid",
-                          "-c", "commit.gpgSign=false", "commit-tree", git("write-tree"), "-m", "replacement")
-        git("restore", "--staged", "--worktree", str(files_to_mutate[0]))
-        git("replace", commit, replacement)
-        archive_git = ["git", "-C", str(self.root), "archive", commit, "--", *module.SNAPSHOT_PATHS]
-        replaced = subprocess.check_output(archive_git)
+        self.git("add", str(files_to_mutate[0]))
+        replacement = self.git("-c", "user.name=Synthetic Fixture", "-c", "user.email=fixture@example.invalid",
+                               "-c", "commit.gpgSign=false", "commit-tree", self.git("write-tree"), "-m", "replacement")
+        self.git("restore", "--staged", "--worktree", str(files_to_mutate[0]))
+        self.git("replace", commit, replacement)
+        archive_args = ("archive", commit, "--", *module.SNAPSHOT_PATHS)
+        replaced = self.git(*archive_args, text=False)
         with tarfile.open(fileobj=io.BytesIO(replaced)) as archive:
             synthetic = archive.extractfile(str(files_to_mutate[0].relative_to(self.root))).read()
         self.assertEqual(synthetic, b"// replacement bytes must not compile\n")
-        original = subprocess.check_output([archive_git[0], "--no-replace-objects", *archive_git[1:]])
+        original = self.git("--no-replace-objects", *archive_args, text=False)
         self.assertNotEqual(replaced, original)
         self.assertEqual(module.prepared_source_commit(self.root), commit)
         (self.ios / "AegisApp/Ignored.swift").write_text("// ignored input must never compile\n")
@@ -173,19 +189,21 @@ class AlphaDeviceProjectTest(unittest.TestCase):
             self.assertEqual(compiled.parent.stat().st_mode & 0o777, 0o555)
         self.assertFalse((self.out / "source/apps/ios/AegisApp/Ignored.swift").exists())
         for path in files_to_mutate:
-            git("--no-replace-objects", "restore", str(path))
+            self.git("--no-replace-objects", "restore", str(path))
         attrs = self.root / ".git/info/attributes"
         for path, attribute, failure in [(files_to_mutate[1], "export-ignore", "omitted Git tree entries"),
                                          (substitution, "export-subst", "changed Git blob contents")]:
             with self.subTest(attribute=attribute):
                 attrs.write_text(path.relative_to(self.root).as_posix() + f" {attribute}\n")
-                altered = subprocess.check_output([archive_git[0], "--no-replace-objects", *archive_git[1:]])
+                altered = self.git("--no-replace-objects", *archive_args, text=False)
                 with tarfile.open(fileobj=io.BytesIO(altered)) as archive:
                     self.assertTrue(archive.getmember("apps/ios/Tests/AegisTests").isdir())
                     if attribute == "export-ignore":
                         self.assertNotIn(path.relative_to(self.root).as_posix(), archive.getnames())
                     else:
-                        self.assertNotEqual(archive.extractfile(path.relative_to(self.root).as_posix()).read(), path.read_bytes())
+                        altered_blob = archive.extractfile(path.relative_to(self.root).as_posix()).read()
+                        self.assertEqual(len(altered_blob), path.stat().st_size)
+                        self.assertNotEqual(altered_blob, path.read_bytes())
                 self.out = self.base / attribute
                 with self.assertRaisesRegex(ValueError, failure):
                     self.prepare()
@@ -199,15 +217,23 @@ class AlphaDeviceProjectTest(unittest.TestCase):
             stream.write(b"\n")
         self.assertIsNone(module.prepared_source_commit(self.root))
 
+    def test_source_commit_and_snapshot_do_not_require_git_on_path(self):
+        commit = self.commit_snapshot_fixture()
+        with patch.dict(os.environ, {"PATH": str(self.base)}):
+            self.assertEqual(module.prepared_source_commit(self.root), commit)
+            module.snapshot_source(self.root, commit, self.out)
+        self.assertEqual((self.out / module.SNAPSHOT_PATHS[-1]).read_bytes(), b"fixture\0\n")
+
+    def test_snapshot_requires_full_commit_id(self):
+        self.commit_snapshot_fixture()
+        with self.assertRaisesRegex(ValueError, "invalid Alpha source commit"):
+            module.snapshot_source(self.root, "HEAD", self.out)
+        self.assertFalse(self.out.exists())
+
     def test_snapshot_rejects_tracked_escaping_symlink(self):
         path = self.ios / "AegisApp/escaping"
         path.symlink_to("../../../../outside")
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        git = ["git", "-C", str(self.root), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-               "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null"]
-        subprocess.run([*git, "add", "."], check=True)
-        subprocess.run([*git, "commit", "-qm", "symlink fixture"], check=True)
-        commit = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+        commit = self.commit_fixture("symlink fixture")
         with self.assertRaisesRegex(ValueError, "unsupported Git tree entry"):
             module.snapshot_source(self.root, commit, self.out)
         self.assertFalse(self.out.exists())

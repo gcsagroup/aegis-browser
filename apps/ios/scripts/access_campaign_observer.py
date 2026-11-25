@@ -9,7 +9,7 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from subprocess import TimeoutExpired
+from subprocess import TimeoutExpired  # nosec B404 - Only handles timeout errors from the injected transport.
 from tempfile import NamedTemporaryFile, mkdtemp
 from time import monotonic, sleep
 

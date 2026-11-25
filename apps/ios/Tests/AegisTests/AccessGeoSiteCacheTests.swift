@@ -901,9 +901,9 @@ final class AccessGeoSiteCacheTests: XCTestCase {
             release["published_at"] = publishedAt ?? "2026-11-20T23:53:0\(sequence)Z"
             release["url"] = "https://api.github.com/repos/XTLS/Xray-rules-dat/releases/\(id)"
             release["html_url"] = "https://github.com/XTLS/Xray-rules-dat/releases/tag/\(tag)"
-            var assets = release["assets"] as! [[String: Any]]
+            var assets = try XCTUnwrap(release["assets"] as? [[String: Any]], "Expected release asset dictionaries")
             for index in assets.indices {
-                let name = assets[index]["name"] as! String
+                let name = try XCTUnwrap(assets[index]["name"] as? String, "Expected a name for release asset \(index)")
                 assets[index]["browser_download_url"] = "https://github.com/XTLS/Xray-rules-dat/releases/download/\(tag)/\(name)"
             }
             release["assets"] = assets

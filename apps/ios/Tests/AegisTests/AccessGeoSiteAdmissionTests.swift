@@ -156,7 +156,7 @@ final class AccessGeoSiteAdmissionTests: XCTestCase {
         }
         for index in 0..<6 {
             let input = try Vector.release(data) { metadata in
-                var assets = metadata["assets"] as! [[String: Any]]
+                var assets = try XCTUnwrap(metadata["assets"] as? [[String: Any]], "Expected release asset dictionaries")
                 switch index {
                 case 0: assets.append(assets[0])
                 case 1: assets[0]["digest"] = nil
@@ -607,7 +607,7 @@ enum AccessGeoSiteTestVector {
     }
 
     static func release(_ database: Data, newer: Bool = false, checksum: Data? = nil,
-                        mutate: (inout [String: Any]) -> Void = { _ in }) throws -> (metadata: Data, checksum: Data) {
+                        mutate: (inout [String: Any]) throws -> Void = { _ in }) throws -> (metadata: Data, checksum: Data) {
         let tag = newer ? "20261120235104" : "20261120235103"
         let id = newer ? 453302650 : 453302649
         let pair = checksum ?? Data("\(sha(database))  geosite.dat\n".utf8)
@@ -623,7 +623,7 @@ enum AccessGeoSiteTestVector {
             "url": "\(api)/\(id)", "html_url": "\(web)/tag/\(tag)",
             "assets": [asset("geosite.dat", id: 773779405, body: database), asset("geosite.dat.sha256sum", id: 773779518, body: pair)]
         ]
-        mutate(&json)
+        try mutate(&json)
         return (try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]), pair)
     }
 

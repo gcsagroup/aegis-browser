@@ -42,11 +42,12 @@ function validateSyncMergeMethod(workflow) {
         'runs-on': 'ubuntu-24.04',
         'timeout-minutes': 5,
         steps: [
-          {
-            name: 'Check out trusted base',
+          ...['develop', 'main'].map((branch) => ({
+            name: `Check out trusted ${branch}`,
+            if: "${{ github.base_ref == '" + branch + "' }}",
             uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
-            with: {ref: '${{ github.event.pull_request.base.sha }}', 'persist-credentials': false, 'fetch-depth': 1},
-          },
+            with: {ref: `refs/heads/${branch}`, 'persist-credentials': false, 'fetch-depth': 1},
+          })),
           {
             name: 'Reject incorrect sync PR auto-merge',
             uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
@@ -160,8 +161,10 @@ try {
     if (JSON.stringify(Object.keys(report?.on ?? {}).sort()) !== JSON.stringify([...automaticEvents, ...callEvent, 'workflow_dispatch'])) {
       fail(`${label} must support PRs, integration pushes and manual dispatch`);
     }
-    for (const event of automaticEvents) {
-      const config = report.on[event] ?? {};
+    for (const [event, config] of [
+      ['pull_request', report.on.pull_request ?? {}],
+      ['push', report.on.push ?? {}],
+    ]) {
       const expectedKeys = event === 'pull_request' ? ['branches', 'types'] : ['branches'];
       if (
         JSON.stringify(Object.keys(config).sort()) !== JSON.stringify(expectedKeys) ||
@@ -300,10 +303,12 @@ try {
     !route.run.includes('git show "$pr_base:$router"') ||
     !route.run.includes('[[ "$decision" == \'run=true\' || "$decision" == \'run=false\' ]]')
   ) fail('Android coverage must wait for the Git identity and base-owned routing decision');
-  for (const [field, env] of [['pr_base', 'AEGIS_PR_BASE_SHA'], ['pr_head', 'AEGIS_PR_HEAD_SHA']]) {
+  const {pr_base: baseOutput, pr_head: headOutput} = androidImpact.outputs ?? {};
+  const {AEGIS_PR_BASE_SHA: baseEnv, AEGIS_PR_HEAD_SHA: headEnv} = androidCoverage.env ?? {};
+  for (const [field, output, env] of [['pr_base', baseOutput, baseEnv], ['pr_head', headOutput, headEnv]]) {
     if (
-      androidWorkflow.jobs.impact.outputs?.[field] !== '${{ steps.route.outputs.' + field + ' }}' ||
-      androidCoverage.env?.[env] !== '${{ needs.impact.outputs.' + field + ' }}'
+      output !== '${{ steps.route.outputs.' + field + ' }}' ||
+      env !== '${{ needs.impact.outputs.' + field + ' }}'
     ) fail(`Android coverage evidence must use the verified ${field}`);
   }
   if (quality.name !== 'quality') fail('Quality job check name must be quality');

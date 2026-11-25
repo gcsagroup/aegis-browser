@@ -11,7 +11,8 @@ import os
 from pathlib import Path
 import secrets
 import ssl
-import subprocess
+# Certificate generation and explicit local test argv use shell-free subprocesses.
+import subprocess  # nosec B404
 import tempfile
 import threading
 import time
@@ -61,15 +62,19 @@ def make_certificate(directory):
         "[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign\nsubjectKeyIdentifier=hash\n"
     )
     commands = [
-        ["req", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "2", "-config", str(root_config),
-         "-keyout", str(root_key), "-out", str(root_pem)],
+        ["req", "-x509", "-nodes", "-newkey", "rsa:2048", "-days", "2", "-config", root_config.name,
+         "-keyout", root_key.name, "-out", root_pem.name],
         ["req", "-new", "-nodes", "-newkey", "rsa:2048", "-subj", "/CN=localhost",
-         "-keyout", str(leaf_key), "-out", str(leaf_csr)],
-        ["x509", "-req", "-in", str(leaf_csr), "-CA", str(root_pem), "-CAkey", str(root_key), "-CAcreateserial",
-         "-days", "2", "-sha256", "-extfile", str(conf), "-out", str(leaf_pem)]
+         "-keyout", leaf_key.name, "-out", leaf_csr.name],
+        ["x509", "-req", "-in", leaf_csr.name, "-CA", root_pem.name, "-CAkey", root_key.name, "-CAcreateserial",
+         "-days", "2", "-sha256", "-extfile", conf.name, "-out", leaf_pem.name]
     ]
     for args in commands:
-        subprocess.run(["openssl", *args], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # The fixed system executable uses fixture-owned files and configuration in a private directory.
+        subprocess.run(  # nosec B603
+            ["/usr/bin/openssl", *args], cwd=directory, env={"OPENSSL_CONF": root_config.name},
+            check=True, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(leaf_pem, leaf_key)
     ca = ssl.PEM_cert_to_DER_cert(root_pem.read_text())
@@ -245,7 +250,9 @@ def main():
             environment["TEST_RUNNER_AEGIS_GEOSITE_FROZEN"] = "1" if frozen_source else "0"
             environment["TEST_RUNNER_AEGIS_GEOSITE_FIXTURE_EXTENDED"] = "1"
             environment["TEST_RUNNER_AEGIS_GEOSITE_LIVE"] = "0"
-            code=subprocess.run(command,env=environment,check=False).returncode
+            # Only the local test operator supplies argv. The HTTPS handlers and snapshot data cannot change it.
+            # nosemgrep: dangerous-subprocess-use-audit, dangerous-subprocess-use-tainted-env-args
+            code = subprocess.run(command, env=environment, check=False, shell=False).returncode  # nosec B603
             if options.receipt:
                 options.receipt.write_text(json.dumps({"events":state.events,"exit":code},indent=2)+"\n")
             return code

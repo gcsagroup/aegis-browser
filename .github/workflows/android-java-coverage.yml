@@ -39,27 +39,27 @@ jobs:
         shell: bash
         run: |
           router=scripts/ci/coverage-impact.sh
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || exit 1
           base=''
           pr_base=''
           pr_head=''
           case "$GITHUB_EVENT_NAME" in
             pull_request)
-              parents="$(git show -s --format=%P HEAD)"
-              read -r pr_base pr_head extra <<< "$parents"
-              [[ -n "$pr_base" && -n "$pr_head" && -z "$extra" && "$pr_head" == "$EVENT_PR_HEAD" ]]
-              [[ "$EVENT_PR_BASE" =~ ^[0-9a-f]{40}$ ]]
-              git merge-base --is-ancestor "$EVENT_PR_BASE" "$pr_base"
+              parents="$(git show -s --format=%P HEAD)" || exit 1
+              read -r pr_base pr_head extra <<< "$parents" || exit 1
+              [[ -n "$pr_base" && -n "$pr_head" && -z "$extra" && "$pr_head" == "$EVENT_PR_HEAD" ]] || exit 1
+              [[ "$EVENT_PR_BASE" =~ ^[0-9a-f]{40}$ ]] || exit 1
+              git merge-base --is-ancestor "$EVENT_PR_BASE" "$pr_base" || exit 1
               if git cat-file -e "$pr_base:$router"; then
-                git show "$pr_base:$router" > "$RUNNER_TEMP/coverage-impact.sh"
+                git show "$pr_base:$router" > "$RUNNER_TEMP/coverage-impact.sh" || exit 1
                 router="$RUNNER_TEMP/coverage-impact.sh"
                 base="$pr_base"
               fi
               ;;
             push)
-              [[ "$EVENT_PUSH_BEFORE" =~ ^[0-9a-f]{40}$ ]]
+              [[ "$EVENT_PUSH_BEFORE" =~ ^[0-9a-f]{40}$ ]] || exit 1
               if [[ "$EVENT_PUSH_BEFORE" != '0000000000000000000000000000000000000000' ]]; then
-                git merge-base --is-ancestor "$EVENT_PUSH_BEFORE" "$GITHUB_SHA"
+                git merge-base --is-ancestor "$EVENT_PUSH_BEFORE" "$GITHUB_SHA" || exit 1
                 base="$EVENT_PUSH_BEFORE"
               fi
               ;;
