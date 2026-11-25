@@ -5,21 +5,28 @@ import {runInContext} from 'node:vm';
 import {JSDOM} from 'jsdom';
 
 const root = new URL('../../overlay/chrome/browser/resources/aegis/', import.meta.url);
-const parentHTML = fs.readFileSync(new URL('markdown.html', root), 'utf8');
-const childHTML = fs.readFileSync(new URL('enhancements_shared/viewer.html', root), 'utf8');
-const parentScript = fs.readFileSync(new URL('markdown.js', root), 'utf8')
-  .replace(/^import .*;\n/gm, '');
+function readResource(name) {
+  const resource = new URL(name, root);
+  assert.ok(resource.href.startsWith(root.href), 'Test resource must be inside the Aegis overlay');
+  // The tests select checked-in resources relative to this module's overlay.
+  // nosemgrep: rule-non-literal-fs-filename
+  return fs.readFileSync(resource, 'utf8');
+}
+
+const parentHTML = readResource('markdown.html');
+const childHTML = readResource('enhancements_shared/viewer.html');
+const parentScript = readResource('markdown.js').replace(/^import .*;\n/gm, '');
 const sharedScripts = [
-  fs.readFileSync(new URL('enhancements_shared/i18n.js', root), 'utf8'),
-  fs.readFileSync(new URL('enhancements_shared/core.js', root), 'utf8'),
+  readResource('enhancements_shared/i18n.js'),
+  readResource('enhancements_shared/core.js'),
 ];
 const childScripts = [
-  fs.readFileSync(new URL('enhancements_shared/vendor/markdown-it.min.js', root), 'utf8'),
-  fs.readFileSync(new URL('enhancements_shared/vendor/task-lists.min.js', root), 'utf8'),
-  fs.readFileSync(new URL('enhancements_shared/vendor/highlight.min.js', root), 'utf8'),
-  fs.readFileSync(new URL('enhancements_shared/vendor/purify.min.js', root), 'utf8'),
+  readResource('enhancements_shared/vendor/markdown-it.min.js'),
+  readResource('enhancements_shared/vendor/task-lists.min.js'),
+  readResource('enhancements_shared/vendor/highlight.min.js'),
+  readResource('enhancements_shared/vendor/purify.min.js'),
   ...sharedScripts,
-  fs.readFileSync(new URL('enhancements_shared/viewer.js', root), 'utf8'),
+  readResource('enhancements_shared/viewer.js'),
 ];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
