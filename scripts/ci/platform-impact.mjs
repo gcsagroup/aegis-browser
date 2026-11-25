@@ -99,7 +99,7 @@ const deepTypes = new Set(['feat', 'fix', 'perf', 'refactor', 'build', 'revert']
 const blankPlatforms = () => ({ios: false, android: false, macos: false, windows: false, linux: false});
 const browserCommonScript = 'apps/browser/scripts/common.sh';
 // These iOS release inputs have names outside the ios- / ios_ families.
-// Keep ownership explicit so a new, unidentified release tool retains the macOS fallback.
+// Keep ownership explicit so a new, unidentified release tool retains the unknown-path fallback.
 const iosReleaseInputs = new Set([
   'scripts/release/artifact-transport.py',
   'scripts/release/build-ios-access-core.sh',
@@ -299,7 +299,10 @@ const classifyPath = path => {
   if (selectsWindows(path)) selected.windows = true;
   if (selectsLinux(path)) selected.linux = true;
   if (selectsShared(path)) selected.macos = true;
-  if (!Object.values(selected).some(Boolean)) selected.macos = true;
+  if (!Object.values(selected).some(Boolean)) {
+    selected.macos = true;
+    if (!path.startsWith('docs/') && !path.endsWith('.md')) selected.android = true;
+  }
   return selected;
 };
 const isUnsafe = change => change.status === 'D' || change.status === 'T'

@@ -259,7 +259,7 @@ Linux 上的 Access standalone 与 DMG fixture 归为合同证据。手动 macOS
 | 平台 | 选中路径 |
 | --- | --- |
 | iOS | `apps/ios/**`、`ios-*` workflow、`scripts/ci/{ios-,run-ios-,tests/ios-}*`，以及 `scripts/release/` 中以 `ios-`、`ios_`、`test_ios_` 命名的入口和已登记的 iOS 专用输入，例如 `verify-ipa.py` 和 `product_delivery.py` |
-| Android | `apps/browser/patches-android/**`、`apps/browser/scripts/**` 内含 android 的路径、`android-*` workflow、`scripts/ci/{android-,run-android-,tests/android-}*`、Android 发布脚本及回归测试 |
+| Android | `apps/browser/patches-android/**`、`apps/browser/scripts/**` 内含 android 的路径、`android-*` workflow、`scripts/ci/{android-,run-android-,tests/android-}*`、Android 发布脚本及回归测试，以及 `docs/**` 和 Markdown 之外的未知路径 |
 | macOS | `macos-*` workflow、`scripts/release/**` 内含 macos 的路径，以及共享产品和未知路径 |
 | Windows | `**/*.ps1`、`apps/browser/scripts/**` 内含 winrm 的路径、`scripts/ci/platform-tests/windows-*`、`apps/browser/scripts/ci/windows*` |
 | Linux | `scripts/ci/run-shell-coverage.sh`、`scripts/ci/platform-tests/kcov-*`、`scripts/ci/tests/shell-coverage.test.mjs` |

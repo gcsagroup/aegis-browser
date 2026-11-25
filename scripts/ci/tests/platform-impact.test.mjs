@@ -289,7 +289,8 @@ test('platform routing binds real merge parents and rejects hidden product chang
     }
     run(() => { for (const path of [doc, ...iosDocs, ...macDocs]) save(path, 'updated'); }, documented);
     for (const path of executableDocs) {
-      const plan = run(() => {save(iosDocs[0], 'updated'); save(path, 'changed input');}, {...closed, macos: true, integrate: true, deep: false});
+      const android = !path.startsWith('docs/') && !path.endsWith('.md');
+      const plan = run(() => {save(iosDocs[0], 'updated'); save(path, 'changed input');}, {...closed, macos: true, android, integrate: true, deep: false});
       assert.equal(plan.macos, true, `unregistered or consumed document keeps the macOS contract route: ${path}`);
       assert.equal(plan.ios, false, `unregistered document must not open iOS archive: ${path}`);
     }
@@ -300,7 +301,9 @@ test('platform routing binds real merge parents and rejects hidden product chang
     run(() => {save(doc, 'updated'); save('apps/ios/Feature.swift', 'invalid');}, {...closed, ios: true, integrate: true, deep: true});
     const iosOnly = run(() => save('apps/ios/Feature.swift', 'feature'), {...closed, ios: true, integrate: true, deep: true});
     assert.equal(iosOnly.macos, false);
-    run(() => save('unknown.file', 'unknown'), {...closed, macos: true, integrate: true, deep: false});
+    run(() => save('unknown.file', 'unknown'), {...closed, macos: true, android: true, integrate: true, deep: false});
+    run(() => save('apps/browser/unregistered/build-input.gni', 'unknown'), {...closed, macos: true, android: true, integrate: true, deep: false});
+    run(() => save('apps/browser/unregistered/notes.md', 'unknown'), {...closed, macos: true, integrate: true, deep: false});
     run(() => rmSync(join(root, doc)), strictClosed);
     run(() => git('mv', doc, 'docs/renamed.md'), {...closed, macos: true, integrate: true, deep: true});
     run(() => chmodSync(join(root, doc), 0o755), strictClosed);
@@ -421,9 +424,9 @@ test('paths select platforms and commit types select stage depth', () => {
         ['android', 'ios', 'linux', 'macos', 'windows']);
     }
     const unknownRelease = pr(() => save('scripts/release/prepare-ios-access-core-extra.sh', 'unknown'), 'fix: repair helper');
-    assert.deepEqual(route(unknownRelease), {...iosRoute, ios: false, macos: true});
+    assert.deepEqual(route(unknownRelease), {...iosRoute, ios: false, macos: true, android: true});
     const unknownFastlane = pr(() => save('fastlane/tests/support/helper_test.rb', 'unknown'), 'test: cover helper');
-    assert.deepEqual(route(unknownFastlane), {...iosRoute, ios: false, macos: true, deep: false});
+    assert.deepEqual(route(unknownFastlane), {...iosRoute, ios: false, macos: true, android: true, deep: false});
     const mixedRelease = pr(() => {
       save('scripts/release/verify-ios-archive.py', 'ios');
       save('scripts/release/android-delivery.py', 'android');
