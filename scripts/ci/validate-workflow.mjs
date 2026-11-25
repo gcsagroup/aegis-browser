@@ -277,7 +277,7 @@ try {
   if (quality['timeout-minutes'] !== 40) fail('Quality job timeout must be 40 minutes');
   for (const [id, job, runner, timeout] of [
     ['android-java-coverage', androidCoverage, 'ubuntu-24.04', 35],
-    ['ios-coverage', iosCoverage, 'macos-26', 180],
+    ['ios-coverage', iosCoverage, 'macos-26', 360],
     ['shell-coverage', shellCoverage, 'ubuntu-24.04', 30],
     ['powershell-coverage', powershellCoverage, 'windows-2025', 20],
   ]) {

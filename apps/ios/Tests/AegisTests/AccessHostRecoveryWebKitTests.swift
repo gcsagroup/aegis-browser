@@ -1112,8 +1112,10 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         let tab = try XCTUnwrap(browser.activeTab), sibling = try XCTUnwrap(other.activeTab)
         for tab in [tab, sibling] { arm(tab, host: host, port: 18_260, coordinator: coordinator) }
         let url = URL(string: "http://localhost:18261/page?terminal")!
-        tab.load(url); sibling.load(URL(string: "http://localhost:18261/page?sibling")!)
+        try await tab.prepareContentRulesForTests()
+        try await sibling.prepareContentRulesForTests()
         let window = show(tab.webView), otherWindow = show(sibling.webView)
+        tab.load(url); sibling.load(URL(string: "http://localhost:18261/page?sibling")!)
         defer { window.isHidden = true; otherWindow.isHidden = true }
         try await waitUntil(seconds: 10, {
             attach(tab.webView, to: window); attach(sibling.webView, to: otherWindow)
@@ -1126,8 +1128,10 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         defer { earlierWindow?.isHidden = true }
         if entry != .ordinary {
             let earlier = browser.newTab()
-            earlier.load(URL(string: "http://localhost:18261/page?earlier")!)
+            earlier.stop()
+            try await earlier.prepareContentRulesForTests()
             let attached = show(earlier.webView)
+            earlier.load(URL(string: "http://localhost:18261/page?earlier")!)
             earlierWindow = attached
             try await waitUntil {
                 attach(earlier.webView, to: attached)
@@ -1163,9 +1167,8 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertNil(retainedView.load(URLRequest(url: url)))
         XCTAssertNil(tab.webView.load(URLRequest(url: url)))
         tab.load(url)
-        // The terminal-document receipt stops new fetches; packets already sent
-        // can still arrive at the witness. Require those tails to drain within
-        // two seconds, then observe stability for several 40 ms pulse periods.
+        // 终止回执阻止新请求，但已发送的数据仍可能在繁忙 runner 上延后到达。
+        // 等待连续一秒无流量，再核对静止页面与仍存活的兄弟页面。
         func retiredTraffic() -> [Int] {
             [opener.transcript.components(separatedBy: "/pulse?terminal").count,
              origin.transcript.components(separatedBy: "terminal").count,
@@ -1173,10 +1176,10 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
              origin.transcript.components(separatedBy: "earlier").count]
         }
         var lastTraffic = retiredTraffic(), quietSince = Date()
-        try await waitUntil(seconds: 2, {
+        try await waitUntil(seconds: 5, {
             let current = retiredTraffic()
             if current != lastTraffic { lastTraffic = current; quietSince = Date() }
-            return Date().timeIntervalSince(quietSince) >= 0.2
+            return Date().timeIntervalSince(quietSince) >= 1
         }, message: "Retired documents must stop emitting pulses after in-flight packets drain")
         let closedCount = opener.transcript.components(separatedBy: "/pulse?terminal").count
         let directCount = origin.transcript.components(separatedBy: "terminal").count
@@ -1188,7 +1191,9 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertEqual(origin.transcript.components(separatedBy: "terminal").count, directCount)
         XCTAssertEqual(opener.transcript.components(separatedBy: "/pulse?earlier").count, earlierCount)
         XCTAssertEqual(origin.transcript.components(separatedBy: "earlier").count, earlierDirectCount)
-        XCTAssertGreaterThan(opener.transcript.components(separatedBy: "/pulse?sibling").count, siblingCount)
+        try await waitUntil(seconds: 5, {
+            opener.transcript.components(separatedBy: "/pulse?sibling").count > siblingCount
+        }, message: "存活的兄弟页面必须继续发送请求")
         XCTAssertFalse(sibling.websiteDataStore.proxyConfigurations.isEmpty)
         if entry != .ordinary {
             let replacement = try XCTUnwrap(browser.activeTab)

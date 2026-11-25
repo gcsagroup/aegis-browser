@@ -18,7 +18,7 @@ import zipfile
 
 GTEST = "4fe3307fb2d9f86d19777c7eb0e4809e9694dde7"
 GTEST_SHA256 = "7da5cbd7991e88e61a2e2142475041fe6685484ad13013401e8f1e3fb5f3001a"
-# The three common inputs are identical at both approved Chromium pins.
+# The three common inputs are identical at every approved Chromium pin.
 HEADERS = {
     "build/win/common_controls.manifest":
         "3a8ca9721b476635b2bb6567f61c74adc85fdc168d4fd762d9b08414bb3f35c6",
@@ -32,6 +32,8 @@ UTIL_CONSTANTS_SHA256 = {
     "43a195105613ac83c21d3f14de279f4a045c7da0":
         "f40b2e5872bb326970857f23949b411964a902fa76f9feabe07b40bfaec2c749",
     "b8c2be851f62f6a394ec57955d7f31335d7cb6d4":
+        "a0afe0f69ad9165af8d2f21680568df9eac95294ef8d493e1a6c4b07f121a859",
+    "1de57fa19722fa6d6841d4f596c394d015580656":
         "a0afe0f69ad9165af8d2f21680568df9eac95294ef8d493e1a6c4b07f121a859",
 }
 SOURCES = [

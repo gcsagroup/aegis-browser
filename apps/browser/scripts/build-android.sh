@@ -39,10 +39,14 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 host_arch="$(uname -m)"
-if [[ "$host_arch" != x86_64 ]] &&
-   [[ -z "$bundle_profile" || ! "$host_arch" =~ ^(aarch64|arm64)$ || "${AEGIS_ANDROID_EXPERIMENTAL_ARM64:-}" != true ]]; then
-  echo "Android 构建宿主必须为 x86-64 Linux；不自动改用旧版 QEMU 构建路径。" >&2
-  exit 2
+if [[ "$host_arch" != x86_64 ]]; then
+  if [[ "$host_arch" == aarch64 && "${AEGIS_ANDROID_ALLOW_ARM64_HOST:-}" == "1" ]]; then
+    echo "Experimental Linux ARM64 host; pinned x86-64 tools require working emulation." >&2
+  elif [[ -z "$bundle_profile" || ! "$host_arch" =~ ^(aarch64|arm64)$ || "${AEGIS_ANDROID_EXPERIMENTAL_ARM64:-}" != true ]]; then
+    echo "Android 构建宿主必须为 x86-64 Linux；不自动改用旧版 QEMU 构建路径。" >&2
+    echo "本地 ARM64（如 colima）需显式设置 AEGIS_ANDROID_ALLOW_ARM64_HOST=1。" >&2
+    exit 2
+  fi
 fi
 
 free_gb="$(df -Pk "$CHROMIUM_ROOT" 2>/dev/null | awk 'NR==2 {print int($4/1024/1024)}')"

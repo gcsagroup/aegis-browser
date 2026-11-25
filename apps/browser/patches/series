@@ -557,3 +557,4 @@
 0557-stabilize-permission-focus-regression-fixtures.patch
 0558-bind-voice-focus-test-to-renderer-speech-constructor.patch
 0559-fix-aim-speech-fixture-constructor-type.patch
+0560-align-windows-uninstall-ui.patch

@@ -36,9 +36,20 @@ final class WebsiteEnhancementUITests: XCTestCase {
         if !frame.isEmpty, !frame.isInfinite, !frame.isNull,
            app.frame.contains(CGPoint(x: frame.midX, y: frame.midY)), button.isHittable { break }
       }
-      if app.collectionViews.firstMatch.exists { app.collectionViews.firstMatch.swipeUp() }
-      else if app.scrollViews.firstMatch.exists { app.scrollViews.firstMatch.swipeUp() }
-      else { app.swipeUp() }
+      // 编辑器内的 TextEditor 会吞掉居中的滑动；沿当前最上层表单边缘滚动。
+      let scroll = app.collectionViews.allElementsBoundByIndex.last
+        ?? app.scrollViews.allElementsBoundByIndex.last ?? app
+      var bounds = scroll.frame.intersection(app.frame)
+      if app.keyboards.firstMatch.exists {
+        bounds.size.height = max(0, min(bounds.maxY, app.keyboards.firstMatch.frame.minY) - bounds.minY)
+      }
+      guard bounds.width > 16, bounds.height > 44 else { break }
+      let origin = app.coordinate(withNormalizedOffset: .zero)
+      let start = origin.withOffset(CGVector(dx: bounds.minX + 8 - app.frame.minX,
+        dy: bounds.minY + bounds.height * 0.75 - app.frame.minY))
+      let end = origin.withOffset(CGVector(dx: bounds.minX + 8 - app.frame.minX,
+        dy: bounds.minY + bounds.height * 0.25 - app.frame.minY))
+      start.press(forDuration: 0.05, thenDragTo: end)
     }
     XCTAssertTrue(button.waitForExistence(timeout: 5))
     XCTAssertTrue(button.isHittable)
