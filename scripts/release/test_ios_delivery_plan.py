@@ -87,6 +87,24 @@ class DeliveryPlanTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     planner.normalize('workflow_dispatch', 'refs/heads/main', dict(inputs, **invalid), mode)
 
+    def test_private_alpha_requires_explicit_manual_simple_upload_from_main(self):
+        inputs = dict(operation='Package and upload', product='Alpha', signing_mode='manual',
+                      version='1.0.3', build='13', private_alpha='yes')
+        plan = planner.normalize('workflow_dispatch', 'refs/heads/main', inputs)
+        self.assertEqual((plan['private_alpha'], plan['private_beta'], plan['destination']),
+                         ('true', 'false', 'testflight'))
+        self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main',
+                                           dict(inputs, private_alpha='no'))['private_alpha'], 'false')
+        self.assertEqual(planner.normalize('push', 'refs/tags/candidate/ios/1.0.3-alpha.13', {})['private_alpha'], 'false')
+        for invalid in (dict(product='Beta'), dict(product='Release'), dict(product='Auto'),
+                        dict(operation='Package'), dict(signing_mode='cloud'), dict(private_beta='yes'),
+                        dict(private_alpha=''), dict(private_alpha='maybe')):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                planner.normalize('workflow_dispatch', 'refs/heads/main', dict(inputs, **invalid))
+        for mode, ref in (('full', 'refs/heads/main'), ('simple', 'refs/heads/releases/ios/1.0')):
+            with self.subTest(mode=mode, ref=ref), self.assertRaises(ValueError):
+                planner.normalize('workflow_dispatch', ref, inputs, mode)
+
     def test_cloud_form_default_cannot_block_reads_or_reinterpret_existing_package_stages(self):
         for form in ['simple', 'full']:
             for operation in ['Status', 'Wait']:

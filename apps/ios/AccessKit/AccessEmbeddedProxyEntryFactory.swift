@@ -115,6 +115,7 @@ final class AccessEmbeddedProxyEntrySession {
     }
 
     private let loadOutbound: @MainActor () async throws -> Outbound
+    private let redactsStartupErrors: Bool
     private var listener: AccessEmbeddedInboundListener?
     private let transport: AccessInboundTransport
     private var identity: String?
@@ -132,6 +133,7 @@ final class AccessEmbeddedProxyEntrySession {
         self.core = core
         self.transport = transport
         self.retireDocuments = retireDocuments
+        self.redactsStartupErrors = false
         self.loadOutbound = { .realityVision(outbound) }
         self.reserveSocket = { try await Self.reserveLoopbackSocket() }
     }
@@ -145,6 +147,7 @@ final class AccessEmbeddedProxyEntrySession {
          }) {
         self.core = core
         self.transport = transport
+        self.redactsStartupErrors = false
         self.loadOutbound = { .realityVision(try AccessRealityVisionOutboundConfigBuilder.build(parameters: await parameters())) }
         self.retireDocuments = retireDocuments
         self.reserveSocket = reserveSocket
@@ -161,6 +164,7 @@ final class AccessEmbeddedProxyEntrySession {
         self.transport = transport
         self.retireDocuments = retireDocuments
         self.reserveSocket = reserveSocket
+        self.redactsStartupErrors = true
         self.loadOutbound = { .internalNode(try await internalNode()) }
     }
 
@@ -224,6 +228,7 @@ final class AccessEmbeddedProxyEntrySession {
                     logLease = try await Self.startCoreWithDiagnostics(
                         core: core, diagnostics: .shared, level: AccessDiagnosticLog.selectedLevel(),
                         secrets: AccessOutboundConfigRegistry.diagnosticSecrets(for: node)
+                            .union(.init(credentials: node.diagnosticSecrets))
                     ) { lease in
                         try AccessOutboundConfigRegistry.embeddedInstanceJSONData(
                             for: node, logLevel: lease?.level ?? .none, errorLogPath: lease?.path,
@@ -231,8 +236,12 @@ final class AccessEmbeddedProxyEntrySession {
                         )
                     }
                 }
+            } catch let cancellation as CancellationError where redactsStartupErrors {
+                throw cancellation
             } catch {
-                throw AccessSiteSessionError.prepareFailed("core.start: \(error)")
+                // Native errors can include the private outbound configuration.
+                let detail = redactsStartupErrors ? "core.start failed" : "core.start: \(error)"
+                throw AccessSiteSessionError.prepareFailed(detail)
             }
             startedCore = true
         }

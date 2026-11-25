@@ -12,6 +12,8 @@ enum AccessOutboundConfigRegistry {
 
     private static let realityTag = AccessRealityVisionOutboundConfig.outboundTag
     private static let webSocketTag = "internal_vless_ws_tls"
+    private static let tcpTLSTag = "internal_vless_tcp_tls_vision"
+    private static let grpcRealityTag = "internal_vless_grpc_reality"
     // Written out so the validator cannot follow a change to the generator constant.
     private static let visionFlow = "xtls-rprx-vision"
 
@@ -54,8 +56,7 @@ enum AccessOutboundConfigRegistry {
             ])),
             generate: { node in
                 guard case .vlessWebSocketTLS(let params) = node else { throw invalidProfile }
-                var tls: [String: Any] = ["serverName": params.serverName, "useSystemCA": true]
-                if !params.fingerprint.isEmpty { tls["fingerprint"] = params.fingerprint }
+                var tls = verifiedTLSSettings(serverName: params.serverName, fingerprint: params.fingerprint)
                 if !params.alpn.isEmpty { tls["alpn"] = [params.alpn] }
                 return try vlessOutbound(for: node, tag: webSocketTag, stream: [
                     "network": "ws", "security": "tls", "tlsSettings": tls,
@@ -65,6 +66,50 @@ enum AccessOutboundConfigRegistry {
             diagnosticSecrets: { node in
                 guard case .vlessWebSocketTLS(let params) = node else { throw invalidProfile }
                 return .init(credentials: [params.userID], queryValues: querySecrets(in: params.path))
+            }
+        ),
+        .vlessRawTls: Entry(
+            outbound: vlessRule(tag: tcpTLSTag, vision: true, stream: .object([
+                "network": .literal("tcp"),
+                "security": .literal("tls"),
+                "tlsSettings": .object(["serverName": .string, "useSystemCA": .trueBoolean],
+                                       optional: ["fingerprint": .string]),
+            ])),
+            generate: { node in
+                guard case .vlessTCPTLSVision(let params) = node else { throw invalidProfile }
+                return try vlessOutbound(for: node, tag: tcpTLSTag, stream: [
+                    "network": "tcp", "security": "tls",
+                    "tlsSettings": verifiedTLSSettings(serverName: params.serverName, fingerprint: params.fingerprint),
+                ])
+            },
+            diagnosticSecrets: { node in
+                guard case .vlessTCPTLSVision(let params) = node else { throw invalidProfile }
+                return .init(credentials: params.diagnosticSecrets)
+            }
+        ),
+        .vlessGrpcReality: Entry(
+            outbound: vlessRule(tag: grpcRealityTag, vision: false, stream: .object([
+                "network": .literal("grpc"),
+                "security": .literal("reality"),
+                "realitySettings": .object([
+                    "serverName": .string, "fingerprint": .string, "publicKey": .string, "shortId": .string,
+                ]),
+                "grpcSettings": .object(["serviceName": .string]),
+            ])),
+            generate: { node in
+                guard case .vlessGRPCReality(let params) = node else { throw invalidProfile }
+                return try vlessOutbound(for: node, tag: grpcRealityTag, stream: [
+                    "network": "grpc", "security": "reality",
+                    "realitySettings": [
+                        "serverName": params.serverName, "fingerprint": params.fingerprint,
+                        "publicKey": params.publicKey, "shortId": params.shortID,
+                    ],
+                    "grpcSettings": ["serviceName": params.serviceName],
+                ])
+            },
+            diagnosticSecrets: { node in
+                guard case .vlessGRPCReality(let params) = node else { throw invalidProfile }
+                return .init(credentials: params.diagnosticSecrets)
             }
         ),
     ]
@@ -96,6 +141,12 @@ enum AccessOutboundConfigRegistry {
             "settings": ["vnext": [["address": endpoint.address, "port": Int(endpoint.port), "users": [user]]]],
             "streamSettings": stream,
         ]
+    }
+
+    private static func verifiedTLSSettings(serverName: String, fingerprint: String) -> [String: Any] {
+        var tls: [String: Any] = ["serverName": serverName, "useSystemCA": true]
+        if !fingerprint.isEmpty { tls["fingerprint"] = fingerprint }
+        return tls
     }
 
     static func embeddedInstanceJSONData(

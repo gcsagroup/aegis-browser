@@ -1715,6 +1715,7 @@
 				7CFE6D1BEF3420D6A2B7DEAC /* Embed Frameworks */,
 				88E0E51356BCB02DEAE9823E /* Select private Access subscription */,
 				0395122202CBAF2CEEEAFD00 /* Select private Access test node */,
+				EE6E539B4A7B28415156DA02 /* Select private Alpha test nodes */,
 				410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */,
 			);
 			buildRules = (
@@ -2160,6 +2161,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/../../scripts/release/ios_embedded_core.py\" install --root \"${SRCROOT}/../..\" --source-lock \"${SRCROOT}/EmbeddedCore/embedded-core-lock.json\" --products \"${AEGIS_EMBEDDED_CORE_PRODUCTS}\" --bundle \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\n";
+		};
+		EE6E539B4A7B28415156DA02 /* Select private Alpha test nodes */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/private_alpha_nodes.py",
+				"$(AEGIS_PRIVATE_ALPHA_NODES_FILE)",
+			);
+			name = "Select private Alpha test nodes";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisAlphaTestNodes.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/scripts/private_alpha_nodes.py\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -2783,6 +2806,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_FIREBASE_CHANNEL = dev;
+				AEGIS_PRIVATE_ALPHA_NODES_FILE = /dev/null;
 				AEGIS_PRIVATE_TEST_NODE_FILE = /dev/null;
 				AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE = /dev/null;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -3041,6 +3065,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_FIREBASE_CHANNEL = disabled;
+				AEGIS_PRIVATE_ALPHA_NODES_FILE = /dev/null;
 				AEGIS_PRIVATE_TEST_NODE_FILE = /dev/null;
 				AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE = /dev/null;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;

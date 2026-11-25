@@ -12,18 +12,25 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
+	_ "unsafe"
 
 	xraylog "github.com/xtls/xray-core/app/log"
 	clog "github.com/xtls/xray-core/common/log"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/outbound"
 	xrayjson "github.com/xtls/xray-core/infra/conf/json"
 	_ "github.com/xtls/xray-core/main/distro/all"
+	"github.com/xtls/xray-core/transport/internet"
+	_ "github.com/xtls/xray-core/transport/internet/grpc"
+	"github.com/xtls/xray-core/transport/internet/stat"
 	"github.com/xtls/xray-core/transport/internet/tls"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -38,6 +45,7 @@ type Runtime struct {
 	nextID          atomic.Int64
 	instanceContext context.Context
 	instanceCancel  context.CancelFunc
+	grpcSettings    []*internet.MemoryStreamConfig
 }
 
 func NewRuntime() *Runtime {
@@ -56,6 +64,157 @@ var activeLogConfig *xraylog.Config
 var activeLogGeneration int64
 var logCaptureGeneration atomic.Int64
 var xrayLogType = serial.GetMessageType(&xraylog.Config{})
+
+// The pinned Xray gRPC transport caches one ClientConn per destination and
+// outbound stream-settings pointer in a process-wide map and never releases
+// it. Every outbound handler owns its own stream settings, so the pointer
+// identifies the core generation. grpcDialerKey mirrors the pinned
+// transport/internet/grpc.dialerConf layout.
+type grpcDialerKey struct {
+	net.Destination
+	*internet.MemoryStreamConfig
+}
+
+//go:linkname grpcClients github.com/xtls/xray-core/transport/internet/grpc.globalDialerMap
+var grpcClients map[grpcDialerKey]*grpc.ClientConn
+
+//go:linkname grpcClientsMu github.com/xtls/xray-core/transport/internet/grpc.globalDialerAccess
+var grpcClientsMu sync.Mutex
+
+// grpcDialFunc mirrors the pinned transport/internet.dialFunc signature.
+type grpcDialFunc func(ctx context.Context, dest net.Destination, streamSettings *internet.MemoryStreamConfig) (stat.Connection, error)
+
+//go:linkname transportDialers github.com/xtls/xray-core/transport/internet.transportDialerCache
+var transportDialers map[string]grpcDialFunc
+
+// grpcTransportDial is the pinned gRPC transport dialer that dialOwnedGRPC
+// wraps. Tests replace it only while no dial is running.
+var grpcTransportDial grpcDialFunc
+
+func init() {
+	grpcTransportDial = transportDialers["grpc"]
+	if grpcTransportDial == nil {
+		panic("pinned Xray gRPC transport dialer is not registered")
+	}
+	transportDialers["grpc"] = dialOwnedGRPC
+}
+
+// A gRPC generation is the stream settings of one gRPC outbound handler of
+// one runtime. The pinned VLESS retry loop ignores cancellation, so a stopped
+// generation may dial again after Stop. Retirement therefore rejects every
+// later dial and releases the generation's cached clients once its in-flight
+// dials have returned, however long they are delayed.
+type grpcGeneration struct {
+	inflight int
+	retired  bool
+}
+
+// Lock order: grpcGenerationsMu before grpcClientsMu.
+var grpcGenerationsMu sync.Mutex
+var grpcGenerations = map[*internet.MemoryStreamConfig]*grpcGeneration{}
+
+func dialOwnedGRPC(ctx context.Context, dest net.Destination, settings *internet.MemoryStreamConfig) (stat.Connection, error) {
+	grpcGenerationsMu.Lock()
+	generation := grpcGenerations[settings]
+	if generation == nil || generation.retired {
+		grpcGenerationsMu.Unlock()
+		return nil, errNotRunning
+	}
+	generation.inflight++
+	grpcGenerationsMu.Unlock()
+	defer finishGRPCDial(settings, generation)
+	return grpcTransportDial(ctx, dest, settings)
+}
+
+func finishGRPCDial(settings *internet.MemoryStreamConfig, generation *grpcGeneration) {
+	grpcGenerationsMu.Lock()
+	generation.inflight--
+	var released []*grpc.ClientConn
+	if generation.retired && generation.inflight == 0 {
+		released = releaseGRPCGeneration(settings)
+	}
+	grpcGenerationsMu.Unlock()
+	closeGRPCClients(released)
+}
+
+func registerGRPCGenerations(settings []*internet.MemoryStreamConfig) {
+	grpcGenerationsMu.Lock()
+	defer grpcGenerationsMu.Unlock()
+	for _, s := range settings {
+		grpcGenerations[s] = &grpcGeneration{}
+	}
+}
+
+// retireGRPCGenerations rejects later dials and returns the cached clients of
+// generations with no dial in flight. The last in-flight dial of any other
+// generation releases it.
+func retireGRPCGenerations(settings []*internet.MemoryStreamConfig) []*grpc.ClientConn {
+	grpcGenerationsMu.Lock()
+	defer grpcGenerationsMu.Unlock()
+	var released []*grpc.ClientConn
+	for _, s := range settings {
+		generation := grpcGenerations[s]
+		if generation == nil {
+			continue
+		}
+		generation.retired = true
+		if generation.inflight == 0 {
+			released = append(released, releaseGRPCGeneration(s)...)
+		}
+	}
+	return released
+}
+
+// releaseGRPCGeneration forgets a retired generation and removes its cached
+// clients. The caller holds grpcGenerationsMu and closes the result.
+func releaseGRPCGeneration(settings *internet.MemoryStreamConfig) []*grpc.ClientConn {
+	delete(grpcGenerations, settings)
+	grpcClientsMu.Lock()
+	defer grpcClientsMu.Unlock()
+	var released []*grpc.ClientConn
+	for key, client := range grpcClients {
+		if key.MemoryStreamConfig != settings {
+			continue
+		}
+		delete(grpcClients, key)
+		if client != nil {
+			released = append(released, client)
+		}
+	}
+	return released
+}
+
+var memoryStreamConfigType = reflect.TypeFor[*internet.MemoryStreamConfig]()
+
+// grpcStreamSettings returns the stream settings of the instance's gRPC
+// outbound handlers. Other transports never reach the gRPC client cache.
+func grpcStreamSettings(inst *core.Instance) []*internet.MemoryStreamConfig {
+	manager, ok := inst.GetFeature(outbound.ManagerType()).(outbound.Manager)
+	if !ok {
+		return nil
+	}
+	var settings []*internet.MemoryStreamConfig
+	for _, handler := range manager.ListHandlers(context.Background()) {
+		value := reflect.ValueOf(handler)
+		if value.Kind() != reflect.Pointer || value.IsNil() || value.Elem().Kind() != reflect.Struct {
+			continue
+		}
+		field := value.Elem().FieldByName("streamSettings")
+		if !field.IsValid() || field.Type() != memoryStreamConfigType || field.IsNil() {
+			continue
+		}
+		if s := (*internet.MemoryStreamConfig)(field.UnsafePointer()); s.ProtocolName == "grpc" {
+			settings = append(settings, s)
+		}
+	}
+	return settings
+}
+
+func closeGRPCClients(clients []*grpc.ClientConn) {
+	for _, client := range clients {
+		_ = client.Close()
+	}
+}
 
 type discardedLog struct{}
 
@@ -213,6 +372,8 @@ func (r *Runtime) Start(configJSON string) error {
 	}
 	r.instance = inst
 	liveInstances++
+	r.grpcSettings = grpcStreamSettings(inst)
+	registerGRPCGenerations(r.grpcSettings)
 	r.instanceContext, r.instanceCancel = context.WithCancel(context.Background())
 	return nil
 }
@@ -224,7 +385,9 @@ func (r *Runtime) Stop() error {
 	r.mu.Lock()
 	inst, cancel, closing := r.instance, r.instanceCancel, r.streams
 	pendingCloses := r.streamCloses
+	ownedSettings := r.grpcSettings
 	r.instance, r.instanceContext, r.instanceCancel = nil, nil, nil
+	r.grpcSettings = nil
 	r.streams = map[int64]*streamHandle{}
 	r.streamCloses = &sync.WaitGroup{}
 	r.mu.Unlock()
@@ -235,6 +398,7 @@ func (r *Runtime) Stop() error {
 		handle.cancel()
 		_ = handle.conn.Close()
 	}
+	closeGRPCClients(retireGRPCGenerations(ownedSettings))
 	var stopErr error
 	if inst != nil {
 		lifecycleMu.Lock()

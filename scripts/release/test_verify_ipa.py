@@ -14,7 +14,7 @@ spec.loader.exec_module(ipa)
 
 
 class VerifyIPATests(unittest.TestCase):
-    def fixture(self, path, *, identifier="com.gcsa.aegis", extension_build="70", profile=True, manifest=None, icon_data=None, dictionary_versions=None, channel="prod", release_profile="alpha", private_resources=()):
+    def fixture(self, path, *, identifier="com.gcsa.aegis", extension_build="70", profile=True, manifest=None, icon_data=None, dictionary_versions=None, channel="prod", release_profile="alpha", private_resources=(), internal_only=False):
         with zipfile.ZipFile(path, "w") as archive:
             for suffix, app_id, build in [("", identifier, "70"),
                                           ("PlugIns/SafariWebExtension.appex/", "com.gcsa.aegis.safari", extension_build),
@@ -24,6 +24,7 @@ class VerifyIPATests(unittest.TestCase):
                                  "CFBundleInfoDictionaryVersion": (dictionary_versions or {}).get(app_id, "6.0"),
                                  "CFBundleShortVersionString": "3.2", "CFBundleVersion": build,
                                  "AegisAccessReleaseChannel": channel,
+                                 "TFInternalTestingOnly": internal_only,
                                  "AegisReleaseProfile": release_profile}))
                 if profile:
                     archive.writestr(root + "embedded.mobileprovision", "fixture")
@@ -55,6 +56,15 @@ class VerifyIPATests(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(ValueError, 'Private test resources'):
                             ipa.verify(path, '3.2', '70', channel)
+
+    def test_standard_ipa_verifier_never_accepts_private_alpha_list(self):
+        for profile in ('dev', 'alpha', 'beta', 'release'):
+            for member in ('AegisAlphaTestNodes.json', 'PlugIns/Share.appex/aegisalphatestnodes.json'):
+                with self.subTest(profile=profile, member=member), tempfile.TemporaryDirectory() as temp:
+                    path = Path(temp) / 'test.ipa'
+                    self.fixture(path, channel=profile, release_profile=profile, private_resources=[member])
+                    with self.assertRaisesRegex(ValueError, 'Private Alpha'):
+                        ipa.verify(path, '3.2', '70', profile)
 
     def test_identity_and_extensions(self):
         with tempfile.TemporaryDirectory() as temp:

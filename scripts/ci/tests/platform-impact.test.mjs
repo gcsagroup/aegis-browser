@@ -469,6 +469,8 @@ test('paths select platforms and commit types select stage depth', () => {
       'scripts/release/fixtures/safari-icon-xcode.png', '.github/ios-public-release-tag-ruleset.json',
       'scripts/release/cloud-archive.py', 'scripts/release/test_cloud_archive.py',
       'scripts/release/artifact-transport.py', 'scripts/release/product_delivery.py',
+      'scripts/release/ios-private-alpha.rb', 'scripts/release/private_alpha_inputs.py',
+      'scripts/release/test_private_alpha_inputs.py',
       'scripts/release/test_native_signing_session.py']) {
       assert.deepEqual(route(pr(() => save(file, 'updated'), 'fix: repair iOS contract')), {...iosRoute, deep: false});
     }

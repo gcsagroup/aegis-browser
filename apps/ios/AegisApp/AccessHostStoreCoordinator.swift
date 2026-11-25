@@ -12,6 +12,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     let publisher: any AccessProxyEntryPublishing
     let clock: any AccessPreparationClock
     let releaseChannel: AccessReleaseChannel
+    private let supportsWebsiteAcceleration: Bool
     let prepareBudget: Duration = .seconds(15)
     @Published private(set) var revision: UInt64 = 0
     /// Explicit `suggestProbe` / `runProbe` calls. Recovery and page loads do not increment this.
@@ -94,6 +95,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         publisher: (any AccessProxyEntryPublishing)? = nil,
         clock: (any AccessPreparationClock)? = nil,
         channel: AccessReleaseChannel = .release,
+        alphaWebsiteAcceleration: Bool = false,
         probeRunner: AccessSiteProbeRunner = AccessSiteProbeRunner(),
         defaultLocationPrivacy: Bool = false,
         locationPreferences: UserDefaults? = nil,
@@ -107,14 +109,15 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         self.publisher = publisher ?? AccessFailClosedProxyEntryPublisher()
         self.clock = clock ?? AccessContinuousPreparationClock()
         self.releaseChannel = channel == .unknown ? .release : channel
+        self.supportsWebsiteAcceleration = channel == .dev || (channel == .alpha && alphaWebsiteAcceleration)
         self.probeRunner = probeRunner
         self.defaultLocationPrivacy = defaultLocationPrivacy
         self.locationPreferences = locationPreferences
         self.websiteRoutePolicy = websiteRoutePolicy
-        self.geoSiteCache = channel == .dev ? geoSiteCache : nil
+        self.geoSiteCache = self.supportsWebsiteAcceleration ? geoSiteCache : nil
         self.geoSiteTransport = self.geoSiteCache == nil ? nil : geoSiteTransport
         geoSiteView = self.geoSiteCache?.view
-        if self.releaseChannel == .dev, self.geoSiteCache == nil {
+        if self.supportsWebsiteAcceleration, self.geoSiteCache == nil {
             if let stored = locationPreferences?.data(forKey: Self.overseasListKey) {
                 self.overseasRules = AccessOverseasRuleList(data: stored)
             } else {
@@ -122,7 +125,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             }
             overseasAccelerationEnabled = locationPreferences?.bool(forKey: Self.overseasEnabledKey) ?? false
         }
-        if self.releaseChannel == .dev {
+        if self.supportsWebsiteAcceleration {
             if locationPreferences?.object(forKey: Self.accelerationCategoriesKey) == nil {
                 selectedWebsiteCategories = [.debian]
                 if self.geoSiteCache == nil {
@@ -133,7 +136,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                 selectedWebsiteCategories = Set(stored.compactMap(AccessGeoSiteCategory.init(rawValue:)))
             }
         }
-        if self.releaseChannel == .dev, let locationPreferences {
+        if self.supportsWebsiteAcceleration, let locationPreferences {
             websiteAccelerationMode = locationPreferences.string(forKey: Self.accelerationModeKey)
                 .flatMap(AccessWebsiteAccelerationMode.init(rawValue:)) ?? .manual
             for (name, value) in locationPreferences.dictionary(forKey: Self.accelerationChoicesKey) ?? [:] {
@@ -307,7 +310,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     }
 
     private func accelerationAllowed(scopeID: String, isPrivate: Bool) -> Bool {
-        releaseChannel == .dev && scopeID == "ordinary" && !isPrivate
+        supportsWebsiteAcceleration && scopeID == "ordinary" && !isPrivate
     }
 
     func offersWebsiteAcceleration(for tab: BrowserTab) -> Bool {

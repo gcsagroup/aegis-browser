@@ -106,11 +106,13 @@ struct AegisApp: App {
         }
         _windows = StateObject(wrappedValue: BrowserWindowStore(persistenceURL: windowsURL, legacyURLs: workspaceStore.sessionURLs))
         let registry = AccessSiteProxyStoreRegistry()
-        let subscription = AccessSubscriptionUsageSession.product()
+        let alphaNodes = AccessAlphaNodeCatalogue.shared
+        let subscription = AccessSubscriptionUsageSession.product(usesAlphaNodes: alphaNodes.isConfigured,
+                                                                  alphaRoutes: alphaNodes.routes)
         _subscriptionUsage = StateObject(wrappedValue: subscription)
         let hostRegistry = AccessHostDataStoreRegistry()
         weak var retirementOwner: AccessHostStoreCoordinator?
-        let publisher = AccessThreeXUIWebEntry.makePublisher(for: subscription) { identity, finish in
+        let publisher = AccessThreeXUIWebEntry.makePublisher(for: subscription, alphaNodes: alphaNodes) { identity, finish in
             if let retirementOwner {
                 retirementOwner.retireManagedDocuments(identity: identity, finish: finish)
             } else {
@@ -118,16 +120,18 @@ struct AegisApp: App {
             }
         }
         let channel = AccessProductChannel.resolve()
-        let geoSiteCache = Self.makeGeoSiteCache(channel: channel, isUITest: isTest)
+        let alphaAcceleration = alphaNodes.enablesWebsiteAcceleration
+        let geoSiteCache = Self.makeGeoSiteCache(channel: channel, alphaAcceleration: alphaAcceleration, isUITest: isTest)
 #if DEBUG && targetEnvironment(simulator)
         let isHostedTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 #else
         let isHostedTest = false
 #endif
-        let refreshGeoSite = channel == .dev && !isTest && !isHostedTest
+        let refreshGeoSite = (channel == .dev || (channel == .alpha && alphaAcceleration)) && !isTest && !isHostedTest
         let hostStores = AccessHostStoreCoordinator(
             publisher: publisher,
             channel: channel,
+            alphaWebsiteAcceleration: alphaAcceleration,
             defaultLocationPrivacy: !(publisher is AccessFailClosedProxyEntryPublisher),
             locationPreferences: defaults,
             geoSiteCache: geoSiteCache,
@@ -141,8 +145,8 @@ struct AegisApp: App {
         _hostStores = StateObject(wrappedValue: hostStores)
     }
 
-    private static func makeGeoSiteCache(channel: AccessReleaseChannel, isUITest: Bool) -> AccessGeoSiteCache? {
-        guard channel == .dev else { return nil }
+    private static func makeGeoSiteCache(channel: AccessReleaseChannel, alphaAcceleration: Bool, isUITest: Bool) -> AccessGeoSiteCache? {
+        guard channel == .dev || (channel == .alpha && alphaAcceleration) else { return nil }
 #if DEBUG
         if isUITest {
             let arguments = ProcessInfo.processInfo.arguments

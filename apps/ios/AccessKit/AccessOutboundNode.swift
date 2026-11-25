@@ -5,6 +5,8 @@ import Foundation
 public enum AccessOutboundProfileKey: String, Codable, Sendable {
     case vlessRawReality = "vless.raw.reality"
     case vlessWsTls = "vless.ws.tls"
+    case vlessRawTls = "vless.raw.tls"
+    case vlessGrpcReality = "vless.grpc.reality"
 
     private static let aliases: [String: Self] = [
         AccessOutboundProfile.realityVision.rawValue: .vlessRawReality,
@@ -23,6 +25,8 @@ public enum AccessOutboundProfileKey: String, Codable, Sendable {
 public enum AccessOutboundNode: Codable, Equatable, Sendable {
     case realityVision(AccessRealityVisionParameters)
     case vlessWebSocketTLS(AccessVLESSWebSocketTLSParameters)
+    case vlessTCPTLSVision(AccessVLESSTCPTLSVisionParameters)
+    case vlessGRPCReality(AccessVLESSGRPCRealityParameters)
 
     public enum Kind: String, Codable, Sendable {
         case vless
@@ -61,14 +65,19 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
     public enum Transport: Codable, Equatable, Sendable {
         case raw
         case ws(path: String, host: String)
+        case grpc(serviceName: String)
 
         private enum CodingKeys: String, CodingKey {
             case raw = "raw"
             case ws = "ws"
+            case grpc = "grpc"
         }
         private enum WsCodingKeys: String, CodingKey {
             case path = "path"
             case host = "host"
+        }
+        private enum GrpcCodingKeys: String, CodingKey {
+            case serviceName = "serviceName"
         }
     }
 
@@ -83,16 +92,14 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
         }
     }
 
-    public var kind: Kind {
-        switch self {
-        case .realityVision, .vlessWebSocketTLS: .vless
-        }
-    }
+    public var kind: Kind { .vless }
 
     public var profileKey: AccessOutboundProfileKey {
         switch self {
         case .realityVision: .vlessRawReality
         case .vlessWebSocketTLS: .vlessWsTls
+        case .vlessTCPTLSVision: .vlessRawTls
+        case .vlessGRPCReality: .vlessGrpcReality
         }
     }
 
@@ -100,6 +107,8 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
         switch self {
         case .realityVision(let parameters): Endpoint(address: parameters.address, port: parameters.port)
         case .vlessWebSocketTLS(let parameters): Endpoint(address: parameters.address, port: parameters.port)
+        case .vlessTCPTLSVision(let parameters): Endpoint(address: parameters.address, port: parameters.port)
+        case .vlessGRPCReality(let parameters): Endpoint(address: parameters.address, port: parameters.port)
         }
     }
 
@@ -110,13 +119,19 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
                      publicKey: parameters.publicKey, shortID: parameters.shortID, spiderX: parameters.spiderX)
         case .vlessWebSocketTLS(let parameters):
             .tls(serverName: parameters.serverName, fingerprint: parameters.fingerprint, alpn: parameters.alpn)
+        case .vlessTCPTLSVision(let parameters):
+            .tls(serverName: parameters.serverName, fingerprint: parameters.fingerprint, alpn: "")
+        case .vlessGRPCReality(let parameters):
+            .reality(serverName: parameters.serverName, fingerprint: parameters.fingerprint,
+                     publicKey: parameters.publicKey, shortID: parameters.shortID, spiderX: "")
         }
     }
 
     public var transport: Transport {
         switch self {
-        case .realityVision: .raw
+        case .realityVision, .vlessTCPTLSVision: .raw
         case .vlessWebSocketTLS(let parameters): .ws(path: parameters.path, host: parameters.requestHost)
+        case .vlessGRPCReality(let parameters): .grpc(serviceName: parameters.serviceName)
         }
     }
 
@@ -126,6 +141,11 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
             .vless(userID: parameters.userID, encryption: AccessRealityVisionParameters.admittedEncryption,
                    flow: AccessRealityVisionParameters.admittedFlow)
         case .vlessWebSocketTLS(let parameters):
+            .vless(userID: parameters.userID, encryption: "none", flow: nil)
+        case .vlessTCPTLSVision(let parameters):
+            .vless(userID: parameters.userID, encryption: AccessRealityVisionParameters.admittedEncryption,
+                   flow: AccessRealityVisionParameters.admittedFlow)
+        case .vlessGRPCReality(let parameters):
             .vless(userID: parameters.userID, encryption: "none", flow: nil)
         }
     }
@@ -157,6 +177,19 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
             self = .vlessWebSocketTLS(try AccessVLESSWebSocketTLSParameters(
                 address: endpoint.address, port: endpoint.port, userID: userID, serverName: serverName,
                 requestHost: host, path: path, fingerprint: fingerprint, alpn: alpn
+            ))
+        case (.vless, .tls(let serverName, let fingerprint, ""), .raw,
+              .vless(let userID, AccessRealityVisionParameters.admittedEncryption,
+                          AccessRealityVisionParameters.admittedFlow?)):
+            self = .vlessTCPTLSVision(try AccessVLESSTCPTLSVisionParameters(
+                address: endpoint.address, port: endpoint.port, userID: userID,
+                serverName: serverName, fingerprint: fingerprint
+            ))
+        case (.vless, .reality(let serverName, let fingerprint, let publicKey, let shortID, ""),
+              .grpc(let serviceName), .vless(let userID, "none", nil)):
+            self = .vlessGRPCReality(try AccessVLESSGRPCRealityParameters(
+                address: endpoint.address, port: endpoint.port, userID: userID, serverName: serverName,
+                publicKey: publicKey, shortID: shortID, fingerprint: fingerprint, serviceName: serviceName
             ))
         default:
             throw AccessLocalV2RayConfigError.invalidJSON

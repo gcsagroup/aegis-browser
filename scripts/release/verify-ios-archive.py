@@ -14,6 +14,8 @@ def verify(archive: Path, version: str, build: str) -> dict:
         raise ValueError("Invalid marketing version")
     if not re.fullmatch(r"[1-9]\d{0,9}", build):
         raise ValueError("Invalid build")
+    if any(path.name.casefold() == "aegisalphatestnodes.json" for path in archive.rglob("*")):
+        raise ValueError("Private Alpha resource is forbidden in a transferable archive")
     applications = archive / "Products/Applications"
     apps = list(applications.glob("*.app"))
     if len(apps) != 1 or apps[0].name != "Aegis.app":

@@ -1070,6 +1070,133 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
             )
         }
     }
+
+    func testAlphaRouteIdentityComparesWireBytesNotCanonicalEquivalence() throws {
+        let base = try makeParameters()
+        func reality(_ spiderX: String) throws -> AccessRealityVisionParameters {
+            try AccessRealityVisionParameters(address: base.address, port: base.port, userID: base.userID,
+                serverName: base.serverName, publicKey: base.publicKey, shortID: base.shortID, spiderX: spiderX)
+        }
+        let composed = try reality("/caf\u{E9}"), decomposed = try reality("/cafe\u{301}")
+        XCTAssertEqual(composed, decomposed, "Swift String equality is canonical equivalence")
+        let lhs = AccessInternalTestNode.realityVision(composed), rhs = AccessInternalTestNode.realityVision(decomposed)
+        XCTAssertEqual(lhs, rhs)
+        XCTAssertTrue(lhs.isWireIdentical(to: .realityVision(try reality("/caf\u{E9}"))))
+        XCTAssertFalse(lhs.isWireIdentical(to: rhs))
+        XCTAssertFalse(rhs.isWireIdentical(to: lhs))
+    }
+
+    func testAlphaDiagnosticsRedactRelayAddressForEveryTransport() throws {
+        // Synthetic canonical X25519 public key (bytes 0...31, base64url without padding).
+        let reality = try makeParameters(address: "relay-reality.example",
+                                         publicKey: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")
+        let expandedIPv6 = "[2001:0db8:0000:0000:0000:0000:0000:0001]"
+        let mappedIPv6 = "0000:0000:0000:0000:0000:ffff:c000:0201"
+        let userID = reality.userID
+        let nodes: [(String, AccessInternalTestNode)] = [
+            ("relay-reality.example", .realityVision(reality)),
+            ("relay-ws.example", .vlessWebSocketTLS(try AccessVLESSWebSocketTLSParameters(address: "relay-ws.example",
+                port: 443, userID: userID, serverName: "cert.example", requestHost: "cert.example", path: "/inside",
+                fingerprint: "", alpn: ""))),
+            ("relay-tcp.example", .vlessTCPTLSVision(try AccessVLESSTCPTLSVisionParameters(address: "relay-tcp.example",
+                port: 443, userID: userID, serverName: "cert.example"))),
+            ("relay-grpc.example", .vlessGRPCReality(try AccessVLESSGRPCRealityParameters(address: "relay-grpc.example",
+                port: 443, userID: userID, serverName: "cert.example", publicKey: reality.publicKey,
+                shortID: reality.shortID, serviceName: "FixtureService"))),
+            ("[2001:db8::1]", .realityVision(try makeParameters(address: expandedIPv6))),
+            ("[2001:db8::1]", .vlessWebSocketTLS(try AccessVLESSWebSocketTLSParameters(address: expandedIPv6,
+                port: 443, userID: userID, serverName: "cert.example", requestHost: "cert.example", path: "/inside",
+                fingerprint: "", alpn: ""))),
+            ("192.0.2.1", .vlessTCPTLSVision(try AccessVLESSTCPTLSVisionParameters(address: mappedIPv6,
+                port: 443, userID: userID, serverName: "cert.example"))),
+            ("[::ffff:192.0.2.1]", .vlessGRPCReality(try AccessVLESSGRPCRealityParameters(address: mappedIPv6,
+                port: 443, userID: userID, serverName: "cert.example", publicKey: reality.publicKey,
+                shortID: reality.shortID, serviceName: "FixtureService"))),
+        ]
+        for (relay, node) in nodes {
+            let line = "2026/11/11 00:00:00 [Info] proxy/vless/outbound: tunneling request to tcp:target.example:443 via \(relay):443\n"
+            // The unredacted control proves the fixture line reaches the shared history.
+            for redacts in [false, true] {
+                let log = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+                defer { log.stop() }
+                let lease = log.acquireShared(level: .info, secrets: redacts ? node.diagnosticSecrets : [])
+                let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(lease.path)))
+                defer { try? writer.close() }
+                try writer.write(contentsOf: Data(line.utf8))
+                let deadline = Date().addingTimeInterval(2)
+                while log.snapshot().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+                XCTAssertTrue(log.stop(lease: lease))
+                let history = log.snapshot().lowercased()
+                XCTAssertFalse(history.isEmpty, relay)
+                XCTAssertTrue(history.contains("via " + (redacts ? "[redacted]" : "\(relay):443")), relay)
+                XCTAssertEqual(history.contains(relay), !redacts, "\(relay) redacted=\(redacts)")
+                XCTAssertFalse(history.contains(userID.lowercased()), relay)
+            }
+        }
+    }
+
+    func testDiagnosticIPRedactionPreservesUnrelatedDestinationWithSamePrefix() throws {
+        let log = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { log.stop() }
+        let lease = log.acquireShared(level: .info, secrets: [AccessDiagnosticLog.relayFilter("192.0.2.1")])
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(lease.path)))
+        defer { try? writer.close() }
+        try writer.write(contentsOf: Data(
+            "2026/11/11 00:00:00 [Info] proxy/vless/outbound: tunneling request to tcp:192.0.2.10:443 via 192.0.2.1:443\n".utf8))
+        XCTAssertTrue(log.stop(lease: lease))
+        XCTAssertTrue(log.snapshot().contains("tunneling request to tcp:192.0.2.10:443 via [redacted]"))
+    }
+
+    func testIPShapedTextualCredentialStaysOnSubstringRedactionInLiveAndRestoredRecords() throws {
+        // Synthetic canonical X25519 public key (bytes 0...31, base64url without padding).
+        let syntheticKey = Data(0...31).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let reality = try makeParameters(publicKey: syntheticKey)
+        let grpc = try AccessVLESSGRPCRealityParameters(address: "198.51.100.7", port: 443,
+            userID: reality.userID, serverName: "cert.example", publicKey: reality.publicKey,
+            shortID: reality.shortID, serviceName: "192.0.2.1")
+        let line = "2026/11/11 00:00:00 [Info] proxy/vless/outbound: tunneling request to tcp:192.0.2.10:443 via 198.51.100.7:443\n"
+        let expected = "tunneling request to [redacted] via [redacted]"
+
+        // Live record: the service name is textual, so the IP-shaped destination
+        // containing it is withheld rather than compared by identity.
+        let live = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { live.stop() }
+        let lease = live.acquireShared(level: .info, secrets: grpc.diagnosticSecrets)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(lease.path)))
+        try writer.write(contentsOf: Data(line.utf8))
+        try writer.close()
+        XCTAssertTrue(live.stop(lease: lease))
+        XCTAssertTrue(live.snapshot().contains(expected), live.snapshot())
+        XCTAssertFalse(live.snapshot().contains("192.0.2.1"))
+        XCTAssertFalse(live.snapshot().contains("198.51.100.7"))
+
+        // Recorded before the gRPC owner registers, then redacted again when it does.
+        let restored = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { restored.stop() }
+        let first = restored.acquireShared(level: .info, secrets: [])
+        let earlier = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(first.path)))
+        try earlier.write(contentsOf: Data(line.utf8))
+        try earlier.close()
+        let deadline = Date().addingTimeInterval(2)
+        while restored.snapshot().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+        XCTAssertTrue(restored.snapshot().contains("192.0.2.10:443"), "unredacted control must reach history")
+        let second = restored.acquireShared(level: .info, secrets: grpc.diagnosticSecrets)
+        XCTAssertTrue(restored.stop(lease: second))
+        XCTAssertTrue(restored.stop(lease: first))
+        XCTAssertTrue(restored.snapshot().contains(expected), restored.snapshot())
+        XCTAssertFalse(restored.snapshot().contains("192.0.2.1"))
+        XCTAssertFalse(restored.snapshot().contains("198.51.100.7"))
+    }
+
+    func testAlphaRouteIdentityUsesCoreFingerprintCase() throws {
+        let userID = try makeParameters().userID
+        let link = "vless://\(userID)@relay.example:443?type=tcp&security=tls&flow=xtls-rprx-vision&sni=cert.example&fp="
+        let canonical = try AccessInternalTestNode.parseSingleShareURI(link + "chrome")
+        let differentCase = try AccessInternalTestNode.parseSingleShareURI(link + "Chrome")
+        XCTAssertTrue(canonical.isWireIdentical(to: differentCase))
+    }
 }
 
 private final class LogInitializationFailingCore: AccessEmbeddedCoreControlling, @unchecked Sendable {

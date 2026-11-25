@@ -78,10 +78,18 @@ enum AccessTestNodeError: Error {
 struct AccessTestNodeRecord: Codable {
     let revision: UUID
     let node: AccessInternalTestNode
+    private static let currentVersion = 3
 
     private enum CodingKeys: String, CodingKey {
         case version, revision, node, address, port, userID, serverName, publicKey, shortID, fingerprint, spiderX
-        case requestHost, path, alpn
+        case requestHost, path, alpn, serviceName
+    }
+
+    private enum LegacyVersion: Int {
+        case realityVision = 1
+        case vlessWebSocketTLS = 2
+        case vlessTCPTLSVision = 3
+        case vlessGRPCReality = 4
     }
 
     private struct StoredIdentity: Decodable {
@@ -92,7 +100,7 @@ struct AccessTestNodeRecord: Codable {
     /// Revise or remove a known record even if its outbound can no longer run.
     static func storedRevision(in data: Data) throws -> UUID {
         let identity = try JSONDecoder().decode(StoredIdentity.self, from: data)
-        guard (1...3).contains(identity.version) else { throw AccessTestNodeError.storageUnavailable }
+        guard LegacyVersion(rawValue: identity.version) != nil else { throw AccessTestNodeError.storageUnavailable }
         return identity.revision
     }
 
@@ -115,30 +123,46 @@ struct AccessTestNodeRecord: Codable {
     init(from decoder: any Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
         let version = try fields.decode(Int.self, forKey: .version)
-        guard (1...3).contains(version) else { throw AccessTestNodeError.storageUnavailable }
         revision = try fields.decode(UUID.self, forKey: .revision)
-        if version == 3 {
+        if version == Self.currentVersion && fields.contains(.node) {
+            // The field's presence distinguishes typed v3 from Alpha's flat
+            // TCP/TLS v3. A malformed typed record must fail decoding.
             node = try fields.decode(AccessOutboundNode.self, forKey: .node)
             return
+        }
+        guard !fields.contains(.node), let legacy = LegacyVersion(rawValue: version) else {
+            throw AccessTestNodeError.storageUnavailable
         }
         let address = try fields.decode(String.self, forKey: .address)
         let port = try fields.decode(UInt16.self, forKey: .port)
         let userID = try fields.decode(String.self, forKey: .userID)
         let serverName = try fields.decode(String.self, forKey: .serverName)
         let fingerprint = try fields.decode(String.self, forKey: .fingerprint)
-        if version == 1 {
+        switch legacy {
+        case .realityVision:
             node = .realityVision(try AccessRealityVisionParameters(
                 address: address, port: port, userID: userID, serverName: serverName,
                 publicKey: fields.decode(String.self, forKey: .publicKey),
                 shortID: fields.decode(String.self, forKey: .shortID), fingerprint: fingerprint,
                 spiderX: fields.decode(String.self, forKey: .spiderX)
             ))
-        } else {
+        case .vlessWebSocketTLS:
             node = .vlessWebSocketTLS(try AccessVLESSWebSocketTLSParameters(
                 address: address, port: port, userID: userID, serverName: serverName,
                 requestHost: fields.decode(String.self, forKey: .requestHost),
                 path: fields.decode(String.self, forKey: .path), fingerprint: fingerprint,
                 alpn: fields.decode(String.self, forKey: .alpn)
+            ))
+        case .vlessTCPTLSVision:
+            node = .vlessTCPTLSVision(try AccessVLESSTCPTLSVisionParameters(
+                address: address, port: port, userID: userID, serverName: serverName, fingerprint: fingerprint
+            ))
+        case .vlessGRPCReality:
+            node = .vlessGRPCReality(try AccessVLESSGRPCRealityParameters(
+                address: address, port: port, userID: userID, serverName: serverName,
+                publicKey: fields.decode(String.self, forKey: .publicKey),
+                shortID: fields.decode(String.self, forKey: .shortID), fingerprint: fingerprint,
+                serviceName: fields.decode(String.self, forKey: .serviceName)
             ))
         }
     }
@@ -146,7 +170,7 @@ struct AccessTestNodeRecord: Codable {
     func encode(to encoder: any Encoder) throws {
         var fields = encoder.container(keyedBy: CodingKeys.self)
         try fields.encode(revision, forKey: .revision)
-        try fields.encode(3, forKey: .version)
+        try fields.encode(Self.currentVersion, forKey: .version)
         try fields.encode(node, forKey: .node)
     }
 }
@@ -322,6 +346,8 @@ final class AccessTestNodeEditor {
         switch draft {
         case .realityVision: "VLESS / TCP / REALITY / Vision"
         case .vlessWebSocketTLS: "VLESS / WS / TLS"
+        case .vlessTCPTLSVision: "VLESS / TCP / TLS / Vision"
+        case .vlessGRPCReality: "VLESS / gRPC / REALITY"
         case nil: nil
         }
     }

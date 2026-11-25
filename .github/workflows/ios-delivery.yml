@@ -39,6 +39,11 @@ on:
         type: choice
         options: [development, ad-hoc, unsigned]
         default: development
+      private_alpha:
+        description: "Embed protected node list and quota (Alpha/manual/internal TestFlight only)"
+        type: choice
+        options: ['no', 'yes']
+        default: 'no'
       private_beta:
         description: "Embed protected test inputs and upload privately (Beta/manual only)"
         type: choice
@@ -49,6 +54,10 @@ on:
         type: string
   workflow_call:
     secrets:
+      # Required by workflow linting. The direct-only private Alpha job resolves
+      # its signing Environment secret, and Full does not forward this input.
+      AEGIS_IOS_ALPHA_NODES_BASE64:
+        required: false
       AEGIS_IOS_TEST_NODE_BASE64:
         required: false
       AEGIS_IOS_TEST_SUBSCRIPTION_BASE64:
@@ -116,7 +125,10 @@ jobs:
       signing_mode: ${{ steps.plan.outputs.signing_mode }}
       archive_signing: ${{ steps.plan.outputs.archive_signing }}
       package_entrypoint: ${{ steps.plan.outputs.package_entrypoint }}
+      private_alpha: ${{ steps.plan.outputs.private_alpha }}
       private_beta: ${{ steps.plan.outputs.private_beta }}
+      private_alpha_runner_group: ${{ steps.private-alpha-runner.outputs.group }}
+      private_alpha_runner_label: ${{ steps.private-alpha-runner.outputs.label }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -131,6 +143,56 @@ jobs:
       - id: plan
         name: Normalize exact package or existing-state route
         run: python3 scripts/release/ios-delivery-plan.py
+      - id: shared-runner
+        name: Require a shared iOS runner label that excludes the private Alpha runner
+        env:
+          PRIVATE_ALPHA_LABEL: ${{ vars.AEGIS_IOS_PRIVATE_ALPHA_RUNNER_LABEL }}
+          SHARED_IOS_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
+        run: |
+          # Every macOS delivery job selects [self-hosted, macOS, ARM64, shared].
+          # A built-in, empty or private label would let those jobs land on the
+          # dedicated private Alpha runner, whose group admits this workflow.
+          reject_shared() {
+            printf '%s\n' 'Configure a custom shared iOS runner label distinct from the private Alpha runner label.' >&2
+            exit 1
+          }
+          case "$SHARED_IOS_LABEL" in
+            ''|[[:space:]]*|*[[:space:]]|*[[:cntrl:]]*) reject_shared ;;
+          esac
+          shared_label=$(printf '%s' "$SHARED_IOS_LABEL" | tr '[:upper:]' '[:lower:]')
+          case "$shared_label" in
+            self-hosted|macos|linux|windows|x64|arm|arm64) reject_shared ;;
+          esac
+          private_label=$(printf '%s' "$PRIVATE_ALPHA_LABEL" | tr '[:upper:]' '[:lower:]')
+          [[ -z "$private_label" || "$private_label" != "$shared_label" ]] || reject_shared
+      - id: private-alpha-runner
+        name: Require a dedicated runner for private Alpha
+        if: ${{ steps.plan.outputs.private_alpha == 'true' }}
+        env:
+          PRIVATE_ALPHA_GROUP: ${{ vars.AEGIS_IOS_PRIVATE_ALPHA_RUNNER_GROUP }}
+          PRIVATE_ALPHA_LABEL: ${{ vars.AEGIS_IOS_PRIVATE_ALPHA_RUNNER_LABEL }}
+          SHARED_IOS_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
+        run: |
+          reject_runner() {
+            printf '%s\n' 'Configure a dedicated private Alpha runner group and unique runner label.' >&2
+            exit 1
+          }
+          for setting in "$PRIVATE_ALPHA_GROUP" "$PRIVATE_ALPHA_LABEL" "$SHARED_IOS_LABEL"; do
+            case "$setting" in
+              ''|[[:space:]]*|*[[:space:]]|*[[:cntrl:]]*) reject_runner ;;
+            esac
+          done
+          private_group=$(printf '%s' "$PRIVATE_ALPHA_GROUP" | tr '[:upper:]' '[:lower:]')
+          private_label=$(printf '%s' "$PRIVATE_ALPHA_LABEL" | tr '[:upper:]' '[:lower:]')
+          shared_label=$(printf '%s' "$SHARED_IOS_LABEL" | tr '[:upper:]' '[:lower:]')
+          [[ "$private_group" != default ]] || reject_runner
+          [[ "$private_label" != "$shared_label" ]] || reject_runner
+          for label in "$private_label" "$shared_label"; do
+            case "$label" in
+              self-hosted|macos|linux|windows|x64|arm|arm64) reject_runner ;;
+            esac
+          done
+          printf 'group=%s\nlabel=%s\n' "$PRIVATE_ALPHA_GROUP" "$PRIVATE_ALPHA_LABEL" >> "$GITHUB_OUTPUT"
       - name: Reject an earlier unresolved upload for this version and build
         if: ${{ steps.plan.outputs.operation == 'package-upload' }}
         env:
@@ -144,7 +206,7 @@ jobs:
           RELEASE_TAG: ${{ steps.plan.outputs.tag }}
   archive-settings:
     needs: admission
-    if: ${{ needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || needs.admission.outputs.operation == 'package-upload') }}
+    if: ${{ needs.admission.outputs.private_alpha == 'false' && needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || needs.admission.outputs.operation == 'package-upload') }}
     runs-on: ubuntu-24.04
     environment: aegis-ios-signing
     timeout-minutes: 5
@@ -177,8 +239,8 @@ jobs:
     outputs:
       manifest_sha256: ${{ steps.archive.outputs.manifest_sha256 }}
     needs: [admission, check-unused, archive-settings]
-    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
-    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.admission.outputs.private_alpha == 'false' && needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+    runs-on: [self-hosted, macOS, ARM64, '${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
     timeout-minutes: 50
     env:
       RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
@@ -236,7 +298,7 @@ jobs:
       - admission
       - check-unused
       - ios-archive
-    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    runs-on: [self-hosted, macOS, ARM64, '${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
     environment: aegis-ios-signing
     timeout-minutes: 50
     outputs:
@@ -342,14 +404,167 @@ jobs:
           path: .artifacts/ios-delivery/package.zip
           if-no-files-found: error
           retention-days: 30
-    if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.admission.outputs.signing_mode != 'cloud' || needs.ios-archive.result == 'success') && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.admission.outputs.private_alpha == 'false' && (needs.admission.outputs.signing_mode != 'cloud' || needs.ios-archive.result == 'success') && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+  private-alpha:
+    name: private-alpha-package
+    needs: [admission, check-unused]
+    if: >-
+      ${{ !cancelled() && needs.admission.result == 'success' && needs.check-unused.result == 'success'
+      && needs.admission.outputs.private_alpha == 'true' && needs.admission.outputs.private_beta == 'false'
+      && needs.admission.outputs.operation == 'package-upload' && needs.admission.outputs.profile == 'alpha' && needs.admission.outputs.signing_mode == 'manual'
+      && needs.admission.outputs.destination == 'testflight' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+      && github.workflow_ref == 'gcsagroup/aegis-browser/.github/workflows/ios-delivery.yml@refs/heads/main'
+      && github.run_attempt == 1 }}
+    permissions:
+      contents: write
+      actions: read
+    runs-on:
+      group: ${{ needs.admission.outputs.private_alpha_runner_group }}
+      labels: [self-hosted, macOS, ARM64, '${{ needs.admission.outputs.private_alpha_runner_label }}']
+    environment: aegis-ios-signing
+    timeout-minutes: 70
+    outputs:
+      manifest_sha256: ${{ steps.retain.outputs.manifest_sha256 }}
+    env:
+      RELEASE_OPERATION: ${{ needs.admission.outputs.operation }}
+      RELEASE_SIGNING_MODE: ${{ needs.admission.outputs.signing_mode }}
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: ${{ needs.admission.outputs.destination }}
+      AEGIS_IOS_ALPHA_NODES_ENABLED: ${{ needs.admission.outputs.private_alpha }}
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
+      - name: Install Go for the staged EmbeddedCore build
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Revalidate operator and exact source before loading private inputs
+        run: |
+          node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+          bundle check
+          xcodebuild -version
+      - id: inputs
+        name: Stage and verify the three protected Alpha inputs
+        env:
+          AEGIS_IOS_ALPHA_NODES_BASE64: ${{ secrets.AEGIS_IOS_ALPHA_NODES_BASE64 }}
+          AEGIS_IOS_TEST_NODE_BASE64: ${{ secrets.AEGIS_IOS_TEST_NODE_BASE64 }}
+          AEGIS_IOS_TEST_SUBSCRIPTION_BASE64: ${{ secrets.AEGIS_IOS_TEST_SUBSCRIPTION_BASE64 }}
+        run: python3 -B scripts/release/private_alpha_inputs.py stage
+      - id: signing
+        name: Install manual signing material
+        env:
+          AEGIS_APPLE_TEAM_ID: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+          AEGIS_IOS_CERT_SHA1: ${{ vars.AEGIS_IOS_CERT_SHA1 }}
+          AEGIS_IOS_PROFILES: ${{ vars.AEGIS_IOS_PROFILES }}
+          AEGIS_IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.AEGIS_IOS_DISTRIBUTION_P12_BASE64 }}
+          AEGIS_IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.AEGIS_IOS_DISTRIBUTION_P12_PASSWORD }}
+          AEGIS_IOS_APP_PROFILE_BASE64: ${{ secrets.AEGIS_IOS_APP_PROFILE_BASE64 }}
+          AEGIS_IOS_SAFARI_PROFILE_BASE64: ${{ secrets.AEGIS_IOS_SAFARI_PROFILE_BASE64 }}
+          AEGIS_IOS_SHARE_PROFILE_BASE64: ${{ secrets.AEGIS_IOS_SHARE_PROFILE_BASE64 }}
+        run: python3 scripts/release/hosted-signing.py setup
+      - id: package
+        name: Build and verify the exact signed internal-only Alpha IPA
+        env:
+          AEGIS_PRIVATE_ALPHA_DIRECTORY: ${{ steps.inputs.outputs.directory }}
+          AEGIS_APPLE_TEAM_ID: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+          AEGIS_IOS_CERT_SHA1: ${{ vars.AEGIS_IOS_CERT_SHA1 }}
+          AEGIS_IOS_PROFILES: ${{ vars.AEGIS_IOS_PROFILES }}
+          AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64: ${{ vars.AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64 }}
+          AEGIS_IOS_FIREBASE_PROD_PLIST_BASE64: ${{ vars.AEGIS_IOS_FIREBASE_PROD_PLIST_BASE64 }}
+        run: python3 -B scripts/release/private_alpha_inputs.py package
+      - name: Remove temporary signing material
+        if: ${{ always() && (steps.signing.outcome == 'success' || steps.signing.outcome == 'failure' || steps.signing.outcome == 'cancelled') }}
+        run: python3 scripts/release/hosted-signing.py cleanup
+      - id: retain
+        name: Retain the verified IPA on the trusted runner for the store job
+        env:
+          AEGIS_PRIVATE_ALPHA_DIRECTORY: ${{ steps.inputs.outputs.directory }}
+          RELEASE_MANIFEST_SHA256: ${{ steps.package.outputs.manifest_sha256 }}
+        run: python3 -B scripts/release/private_alpha_inputs.py retain
+      - name: Remove signing-job inputs, archive, IPA and logs
+        if: ${{ always() && steps.inputs.outputs.directory != '' }}
+        env:
+          AEGIS_PRIVATE_ALPHA_DIRECTORY: ${{ steps.inputs.outputs.directory }}
+        run: python3 -B scripts/release/private_alpha_inputs.py cleanup
+      - name: Remove the retained package if signing-job handoff failed
+        if: ${{ always() && (failure() || cancelled()) && steps.retain.outcome != 'skipped' && steps.package.outputs.manifest_sha256 != '' }}
+        env:
+          RELEASE_MANIFEST_SHA256: ${{ steps.package.outputs.manifest_sha256 }}
+        run: python3 -B scripts/release/private_alpha_inputs.py cleanup-handoff
+  private-alpha-store:
+    needs: [admission, private-alpha]
+    if: >-
+      ${{ !cancelled() && needs.admission.result == 'success' && needs.private-alpha.result == 'success'
+      && needs.admission.outputs.private_alpha == 'true' && needs.admission.outputs.operation == 'package-upload'
+      && needs.private-alpha.outputs.manifest_sha256 != '' && github.run_attempt == 1 }}
+    permissions:
+      contents: write
+      actions: read
+    runs-on:
+      group: ${{ needs.admission.outputs.private_alpha_runner_group }}
+      labels: [self-hosted, macOS, ARM64, '${{ needs.admission.outputs.private_alpha_runner_label }}']
+    environment: aegis-ios-store
+    timeout-minutes: 45
+    env:
+      RELEASE_OPERATION: ${{ needs.admission.outputs.operation }}
+      RELEASE_SIGNING_MODE: ${{ needs.admission.outputs.signing_mode }}
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: ${{ needs.admission.outputs.destination }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.private-alpha.outputs.manifest_sha256 }}
+      AEGIS_IOS_ALPHA_NODES_ENABLED: ${{ needs.admission.outputs.private_alpha }}
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
+      - name: Revalidate current source before accessing the private package
+        run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+      - id: quota
+        name: Verify same-run handoff, exact IPA and live quota without ASC credentials
+        run: python3 -B scripts/release/private_alpha_inputs.py preflight
+      - name: Require matching quota verification before loading ASC credentials
+        env:
+          AEGIS_PRIVATE_ALPHA_VERIFIED_MANIFEST_SHA256: ${{ steps.quota.outputs.manifest_sha256 }}
+        run: python3 -B scripts/release/private_alpha_inputs.py require-preflight
+      - name: Upload private Alpha directly to internal TestFlight
+        env:
+          AEGIS_PRIVATE_ALPHA_VERIFIED_MANIFEST_SHA256: ${{ steps.quota.outputs.manifest_sha256 }}
+          AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
+          AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
+          AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
+        run: python3 -B scripts/release/private_alpha_inputs.py upload
+      - name: Remove the verified same-run private handoff
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
+        run: python3 -B scripts/release/private_alpha_inputs.py cleanup-handoff
   private-beta-store:
     needs: [admission, ios-package]
     if: ${{ !cancelled() && needs.ios-package.result == 'success' && needs.ios-package.outputs.private_beta == 'true' }}
     permissions:
       contents: write
       actions: read
-    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    runs-on: [self-hosted, macOS, ARM64, '${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
     environment: aegis-ios-store
     timeout-minutes: 45
     env:
@@ -543,7 +758,7 @@ jobs:
     needs:
       - admission
       - import
-    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    runs-on: [self-hosted, macOS, ARM64, '${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
     environment: aegis-ios-store
     timeout-minutes: 45
     env:
@@ -606,7 +821,7 @@ jobs:
       - admission
       - ios-package
       - seal-package
-    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    runs-on: [self-hosted, macOS, ARM64, '${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
     environment: aegis-ios-store
     timeout-minutes: 45
     env:
@@ -725,7 +940,8 @@ jobs:
           AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
           AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
         run: bundle exec ruby scripts/release/ios-status.rb
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - if: ${{ needs.admission.outputs.private_alpha == 'false' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ios-unused-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/ios-status/status.json

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccessSubscriptionUsageView: View {
     @ObservedObject var session: AccessSubscriptionUsageSession
+    let usesAlphaNodeSelection: Bool
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
     @State private var visibilityID = UUID()
@@ -17,8 +18,10 @@ struct AccessSubscriptionUsageView: View {
                     else { Text(session.availableConnectionCount, format: .number) }
                 }
                 .accessibilityIdentifier("access-account-connections")
-                Text("连接由账号自动获取，无需手动配置。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if !usesAlphaNodeSelection {
+                    Text("连接由账号自动获取，无需手动配置。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
         }
         Section {

@@ -1909,6 +1909,33 @@ extension AccessHostRecoveryWebKitTests {
         XCTAssertTrue(coordinator.requiresProxyPreparation(tab: tab, url: nonmember), "手动开启后应准备代理")
     }
 
+    func testPrivateAlphaWebsiteAccelerationUsesOrdinaryScopeOnly() throws {
+        let suiteName = "test.alphaWebsiteAcceleration." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("smart", forKey: "browser.websiteAcceleration.mode")
+        let ordinary = makeWebsiteAccelerationTab(profile: .standard, defaults: defaults)
+        defer { ordinary.dispose {} }
+        let member = try XCTUnwrap(URL(string: "https://security.debian.org"))
+
+        let alpha = AccessHostStoreCoordinator(channel: .alpha, alphaWebsiteAcceleration: true, locationPreferences: defaults)
+        ordinary.hostCoordinator = alpha
+        XCTAssertTrue(alpha.offersWebsiteAcceleration(for: ordinary))
+        XCTAssertTrue(alpha.requiresProxy(tab: ordinary, url: member))
+
+        for channel in [AccessReleaseChannel.beta, .release, .unknown] {
+            let owner = AccessHostStoreCoordinator(channel: channel, alphaWebsiteAcceleration: true, locationPreferences: defaults)
+            ordinary.hostCoordinator = owner
+            XCTAssertFalse(owner.offersWebsiteAcceleration(for: ordinary))
+            XCTAssertFalse(owner.requiresProxy(tab: ordinary, url: member))
+        }
+        let privateTab = makeWebsiteAccelerationTab(profile: .privateMode, defaults: defaults)
+        defer { privateTab.dispose {} }
+        privateTab.hostCoordinator = alpha
+        XCTAssertFalse(alpha.offersWebsiteAcceleration(for: privateTab))
+        XCTAssertFalse(alpha.requiresProxy(tab: privateTab, url: member))
+    }
+
     func testWebsiteAccelerationRequiresDevOrdinaryScope() throws {
         let suiteName = "test.websiteAcceleration." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
