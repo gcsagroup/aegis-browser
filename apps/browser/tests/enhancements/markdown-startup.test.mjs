@@ -9,8 +9,7 @@ function readResource(name) {
   const resource = new URL(name, root);
   assert.ok(resource.href.startsWith(root.href), 'Test resource must be inside the Aegis overlay');
   // The tests select checked-in resources relative to this module's overlay.
-  // nosemgrep: rule-non-literal-fs-filename
-  return fs.readFileSync(resource, 'utf8');
+  return fs.readFileSync(resource, 'utf8'); // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 }
 
 const parentHTML = readResource('markdown.html');
