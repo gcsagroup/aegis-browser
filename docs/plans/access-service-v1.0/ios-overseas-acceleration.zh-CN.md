@@ -16,6 +16,12 @@
 
 关闭海外加速或撤回范围时，复用现有文档退役流程，停止失去授权的发送。关闭操作写入中断后也保持暂停。仍有独立授权的页面保留对应连接。
 
+## 真机测试夹具
+
+需要完整官方数据的真机测试从测试包的 `Fixtures/PhysicalGeoSite` 读取三个文件：`metadata.json`、`geosite.dat` 和 `geosite.dat.sha256sum`。在构建测试包前，将固定版本的发布元数据及同版文件放入 `apps/ios/Tests/Fixtures/PhysicalGeoSite/`。这些本地输入不提交；测试校验 DAT 长度、摘要、配对校验文件和发布身份。缺少元数据时相关用例跳过，其他文件缺失或校验失败时测试报错。模拟器继续使用原有的本地 HTTPS 夹具。
+
+海外设置页面的真机 UI 测试先运行 `AccessGeoSiteCacheTests/testPrepareOverseasSettingsFixture`，为测试进程设置 `TEST_RUNNER_AEGIS_OVERSEAS_UI_SEED=1`；再为 UI 测试进程设置 `TEST_RUNNER_AEGIS_OVERSEAS_UI_READY=1`，运行 `SettingsLayoutUITests/testOverseasSettingsRequiresExplicitConfirmationAndRestoresChoice`。两个阶段使用独立的测试存储。含模拟器专用 HTTP 导航开关的回归仅在模拟器中编译。
+
 ## 交付顺序
 
-[#404](https://github.com/quinn521/aegis-browser/pull/404) 合入 `develop` 后，以实际集成提交为基线单开海外加速 PR。记录固定 DAT、设置交互、模拟器双出口、托管 CI 和设备验收结果。新版验收通过后，单独移除「常用 AI 加速」。
+[#404](https://github.com/quinn521/aegis-browser/pull/404) 合入 `develop` 后，以实际集成提交为基线单开海外加速 PR。记录固定 DAT、设置交互、模拟器双出口、托管 CI 和设备验收结果。原「常用 AI 加速」已并入海外加速的「AI 工具」分类，不再单独保留入口。

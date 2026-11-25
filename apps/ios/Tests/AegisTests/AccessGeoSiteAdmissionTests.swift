@@ -638,6 +638,18 @@ enum AccessGeoSiteTestVector {
     static let now = Date(timeIntervalSince1970: 1_795_219_200)
 
     static func frozenOfficialAssets() async throws -> (metadata: Data, database: Data, checksum: Data) {
+#if !targetEnvironment(simulator)
+        if let metadataURL = Bundle(for: AccessGeoSiteAdmissionTests.self).url(
+            forResource: "metadata", withExtension: "json", subdirectory: "Fixtures/PhysicalGeoSite"
+        ) {
+            let directory = metadataURL.deletingLastPathComponent()
+            let database = try Data(contentsOf: directory.appendingPathComponent("geosite.dat"))
+            XCTAssertEqual(database.count, 7_750_066)
+            XCTAssertEqual(sha(database), AccessGeoSiteCatalogue.bundled.rawSHA256)
+            return (try Data(contentsOf: metadataURL), database,
+                    try Data(contentsOf: directory.appendingPathComponent("geosite.dat.sha256sum")))
+        }
+#endif
         guard let value = ProcessInfo.processInfo.environment["AEGIS_GEOSITE_VECTOR"] else {
             throw XCTSkip("Run this test with the geosite-official-data fixture")
         }

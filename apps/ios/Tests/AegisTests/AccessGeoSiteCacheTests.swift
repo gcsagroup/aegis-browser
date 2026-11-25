@@ -976,10 +976,10 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://example.net")!), .managed)
     }
 
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG
     func testPrepareOverseasSettingsFixture() async throws {
         guard ProcessInfo.processInfo.environment["AEGIS_OVERSEAS_UI_SEED"] == "1" else {
-            throw XCTSkip("Only the simulator Settings fixture setup runs this test")
+            throw XCTSkip("Run this test explicitly to prepare the Settings fixture")
         }
         let storage = try AccessGeoSiteStorage.overseasUITest(keep: false)
         let cache = AccessGeoSiteCache(storage: storage)

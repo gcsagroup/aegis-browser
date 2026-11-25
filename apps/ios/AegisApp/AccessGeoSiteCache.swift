@@ -43,12 +43,12 @@ struct AccessGeoSiteStorage: Sendable {
         try Self(directory: FileManager.default.temporaryDirectory.appendingPathComponent("GeoSite-Consent-UITest"),
                  service: "com.gcsa.aegis.ios.geosite.ui-testing.consent").preparedForUITest(keep: keep)
     }
+#endif
 
     static func overseasUITest(keep: Bool) throws -> Self {
         try Self(directory: FileManager.default.temporaryDirectory.appendingPathComponent("GeoSite-Overseas-UITest"),
                  service: "com.gcsa.aegis.ios.geosite.ui-testing.overseas").preparedForUITest(keep: keep)
     }
-#endif
 
     private func preparedForUITest(keep: Bool) throws -> Self {
         if !keep {
