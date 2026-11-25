@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {isDeepStrictEqual} from 'node:util';
 import YAML from 'yaml';
 import {qualityBranchNames} from './ios-release-lines.mjs';
 
@@ -25,8 +26,48 @@ function array(value) {
   return Array.isArray(value) ? value : value == null ? [] : [value];
 }
 
+function validateSyncMergeMethod(workflow) {
+  const expected = {
+    name: 'Sync PR Merge Method',
+    on: {pull_request_target: {branches: ['develop', 'main'], types: ['auto_merge_enabled']}},
+    permissions: {contents: 'read', 'pull-requests': 'write'},
+    concurrency: {
+      group: '${{ github.workflow }}-pr-${{ github.event.pull_request.number }}',
+      'cancel-in-progress': false,
+    },
+    jobs: {
+      'enforce-merge-method': {
+        name: 'enforce-sync-merge-method',
+        if: '${{ github.event.pull_request.head.repo.id == github.event.repository.id }}',
+        'runs-on': 'ubuntu-24.04',
+        'timeout-minutes': 5,
+        steps: [
+          {
+            name: 'Check out trusted base',
+            uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+            with: {ref: '${{ github.event.pull_request.base.sha }}', 'persist-credentials': false, 'fetch-depth': 1},
+          },
+          {
+            name: 'Reject incorrect sync PR auto-merge',
+            uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
+            with: {
+              'github-token': '${{ github.token }}',
+              script: "const {pathToFileURL} = require('node:url');\n" +
+                'const moduleUrl = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/ci/sync-merge-method-hook.mjs`).href;\n' +
+                'const hook = await import(moduleUrl);\n' +
+                'await hook.run({github, context, core});\n',
+            },
+          },
+        ],
+      },
+    },
+  };
+  if (!isDeepStrictEqual(workflow, expected)) fail('Sync merge method workflow must use the pinned trusted-base metadata contract');
+}
+
 try {
   if (process.argv.length > 8) fail('Unexpected workflow path argument');
+  validateSyncMergeMethod(YAML.parse(readFileSync('.github/workflows/sync-merge-method.yml', 'utf8')));
   const path = resolve(process.argv[2] ?? '.github/workflows/quality.yml');
   const cppPath = resolve(process.argv[7] ?? '.github/workflows/cpp-unit-tests.yml');
   const cppSource = readFileSync(cppPath, 'utf8');
