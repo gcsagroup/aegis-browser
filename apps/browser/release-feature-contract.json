@@ -493,11 +493,17 @@
     },
     {
       "id": "windows-uninstall-localization",
-      "name": "Windows卸载确认和占用提示的产品名称与语言",
+      "name": "Windows卸载确认的品牌、语言与资料保护",
       "platforms": [
         "win-x64"
       ],
-      "additionalChecks": "使用本次Windows真实构建执行python3 apps/browser/scripts/windows-uninstall-locales_test.py <src> <out>，读取英文、简体和繁体语言包；再实际确认卸载提示，不卸载日常App。"
+      "additionalChecks": "使用本次Windows真实构建运行aegis_uninstall_view_unittests --gtest_filter=UninstallViewTest.*，覆盖默认保留资料、显式删除选择、取消/关闭/销毁保守退出、安全键盘默认项、长译文布局及高对比度；执行python3 apps/browser/scripts/windows-uninstall-locales_test.py <src> <out>和python3 apps/browser/scripts/windows-uninstall-branding_test.py <src> <out>，核对英文、简体、繁体语言包及卸载图标与安装器ICO一致；再实际确认卸载提示，不卸载日常App。",
+      "testFilters": [
+        "UninstallViewTest.*"
+      ],
+      "nativeTargets": [
+        "aegis_uninstall_view_unittests"
+      ]
     },
     {
       "id": "webpage-capture-ocr",
