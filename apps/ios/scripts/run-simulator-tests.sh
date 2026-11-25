@@ -17,10 +17,15 @@ ONLY_TESTING=()
 RUNTIME_ID="${AEGIS_IOS_RUNTIME_ID:-}"
 OUTPUT_DIR="${AEGIS_IOS_OUTPUT_DIR:-/tmp/aegis-ios-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 
+DEFAULT_PHONE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
+DEFAULT_TABLET_TYPE="com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4"
 PHONE_NAME="Aegis CI com.gcsa.aegis iPhone 17"
-PHONE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
+PHONE_TYPE="$DEFAULT_PHONE_TYPE"
 TABLET_NAME="Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)"
-TABLET_TYPE="com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4"
+TABLET_TYPE="$DEFAULT_TABLET_TYPE"
+TABLET_ENABLED="yes"
+DEVICE_TYPE_PATTERN='^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9.-]+$'
+UDID_PATTERN='^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
 
 usage() {
   cat <<'EOF'
@@ -40,6 +45,8 @@ usage() {
   --geosite-live         仅运行 GeoSite 官方 HTTPS 验收，显式访问 GitHub
   --only-testing PATH    只运行指定测试，可重复（例如 AegisTests/ContentFilterTests）
   --runtime IDENTIFIER   Simulator runtime ID；默认选择最新可用 iOS runtime
+  --phone-device-type ID   iPhone 设备类型 identifier，默认 com.apple.CoreSimulator.SimDeviceType.iPhone-17
+  --tablet-device-type ID  iPad 设备类型 identifier；传 none 则只跑 iPhone（runtime 不支持 iPad 时使用）
   --output-dir PATH      必须是不存在的 /tmp/aegis-ios-* 绝对路径
   -h, --help             显示帮助
 
@@ -105,6 +112,22 @@ while [[ $# -gt 0 ]]; do
       RUNTIME_ID="$2"
       shift 2
       ;;
+    --phone-device-type)
+      [[ $# -ge 2 ]] || die "--phone-device-type 缺少 identifier"
+      [[ "$2" =~ $DEVICE_TYPE_PATTERN ]] || die "设备类型格式无效：$2"
+      PHONE_TYPE="$2"
+      shift 2
+      ;;
+    --tablet-device-type)
+      [[ $# -ge 2 ]] || die "--tablet-device-type 缺少 identifier 或 none"
+      if [[ "$2" == "none" ]]; then
+        TABLET_ENABLED="no"
+      else
+        [[ "$2" =~ $DEVICE_TYPE_PATTERN ]] || die "设备类型格式无效：$2"
+        TABLET_TYPE="$2"
+      fi
+      shift 2
+      ;;
     --output-dir)
       [[ $# -ge 2 ]] || die "--output-dir 缺少路径"
       OUTPUT_DIR="$2"
@@ -167,7 +190,11 @@ runtime_available="$({ xcrun simctl list runtimes -j; } | env AEGIS_RUNTIME_ID="
 [[ "$runtime_available" == "yes" ]] || die "runtime 不可用：$RUNTIME_ID"
 
 device_types_json="$(xcrun simctl list devicetypes -j)"
-for required_type in "$PHONE_TYPE" "$TABLET_TYPE"; do
+REQUIRED_TYPES=("$PHONE_TYPE")
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  REQUIRED_TYPES+=("$TABLET_TYPE")
+fi
+for required_type in "${REQUIRED_TYPES[@]}"; do
   type_available="$(printf '%s' "$device_types_json" | env AEGIS_DEVICE_TYPE="$required_type" node -e '
     const fs = require("node:fs");
     const payload = JSON.parse(fs.readFileSync(0, "utf8"));
@@ -175,7 +202,35 @@ for required_type in "$PHONE_TYPE" "$TABLET_TYPE"; do
     process.stdout.write(found ? "yes" : "no");
   ')"
   [[ "$type_available" == "yes" ]] || die "设备类型不可用：$required_type"
+  type_supported="$({ xcrun simctl list runtimes -j; } | env AEGIS_RUNTIME_ID="$RUNTIME_ID" AEGIS_DEVICE_TYPE="$required_type" node -e '
+    const fs = require("node:fs");
+    const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+    const runtime = (payload.runtimes ?? []).find((item) => item.identifier === process.env.AEGIS_RUNTIME_ID);
+    const supported = runtime?.supportedDeviceTypes;
+    const ok = !Array.isArray(supported) || supported.some((item) => item.identifier === process.env.AEGIS_DEVICE_TYPE);
+    process.stdout.write(ok ? "yes" : "no");
+  ')"
+  [[ "$type_supported" == "yes" ]] || die "runtime 不支持设备类型：${required_type}（runtime=${RUNTIME_ID}）；可用 --phone-device-type 或 --tablet-device-type none 调整"
 done
+
+device_type_label() {
+  printf '%s' "$device_types_json" | env AEGIS_DEVICE_TYPE="$1" node -e '
+    const fs = require("node:fs");
+    const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+    const item = (payload.devicetypes ?? []).find((entry) => entry.identifier === process.env.AEGIS_DEVICE_TYPE);
+    process.stdout.write(item?.name ?? "");
+  '
+}
+if [[ "$PHONE_TYPE" != "$DEFAULT_PHONE_TYPE" ]]; then
+  phone_label="$(device_type_label "$PHONE_TYPE")"
+  [[ -n "$phone_label" ]] || die "无法读取设备类型名称：$PHONE_TYPE"
+  PHONE_NAME="Aegis CI com.gcsa.aegis ${phone_label}"
+fi
+if [[ "$TABLET_ENABLED" == "yes" && "$TABLET_TYPE" != "$DEFAULT_TABLET_TYPE" ]]; then
+  tablet_label="$(device_type_label "$TABLET_TYPE")"
+  [[ -n "$tablet_label" ]] || die "无法读取设备类型名称：$TABLET_TYPE"
+  TABLET_NAME="Aegis CI com.gcsa.aegis ${tablet_label}"
+fi
 
 if [[ -z "$PROJECT_PATH" && -z "$WORKSPACE_PATH" ]]; then
   if [[ -d "${IOS_ROOT}/Aegis.xcworkspace" ]]; then
@@ -264,8 +319,9 @@ ensure_device() {
         print_command xcrun simctl create "$name" "$type" "$RUNTIME_ID" >&2
         printf 'name=%s' "$name"
       else
-        udid="$(xcrun simctl create "$name" "$type" "$RUNTIME_ID")"
-        [[ -n "$udid" ]] || die "创建 Simulator 未返回 UDID：$name"
+        udid="$(xcrun simctl create "$name" "$type" "$RUNTIME_ID")" \
+          || die "创建 Simulator 失败：${name}（runtime=${RUNTIME_ID}, type=${type}）"
+        [[ "$udid" =~ $UDID_PATTERN ]] || die "创建 Simulator 返回的不是 UDID：$name ($udid)"
         printf '已创建专用 Simulator：%s (%s)\n' "$name" "$udid" >&2
         printf '%s' "$udid"
       fi
@@ -283,7 +339,10 @@ ensure_device() {
 }
 
 PHONE_DESTINATION="$(ensure_device "$PHONE_NAME" "$PHONE_TYPE")"
-TABLET_DESTINATION="$(ensure_device "$TABLET_NAME" "$TABLET_TYPE")"
+TABLET_DESTINATION=""
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  TABLET_DESTINATION="$(ensure_device "$TABLET_NAME" "$TABLET_TYPE")"
+fi
 
 COMMON_ARGS=("${CONTAINER_ARGS[@]}" -scheme "$SCHEME" -configuration Debug -enableCodeCoverage YES)
 if [[ -n "$TEST_PLAN" ]]; then
@@ -300,7 +359,10 @@ destination_for() {
 }
 
 PHONE_XCODE_DESTINATION="$(destination_for "$PHONE_DESTINATION")"
-TABLET_XCODE_DESTINATION="$(destination_for "$TABLET_DESTINATION")"
+TABLET_XCODE_DESTINATION=""
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  TABLET_XCODE_DESTINATION="$(destination_for "$TABLET_DESTINATION")"
+fi
 
 printf '\nAegis iOS Simulator 测试计划\n'
 printf '  模式：%s\n' "$MODE"
@@ -338,7 +400,9 @@ if [[ "$MODE" == "dry-run" ]]; then
   print_command "${BUILD_COMMAND[@]}"
   printf '\n将执行：\n'
   print_command "${PHONE_COMMAND[@]}"
-  print_command "${TABLET_COMMAND[@]}"
+  if [[ "$TABLET_ENABLED" == "yes" ]]; then
+    print_command "${TABLET_COMMAND[@]}"
+  fi
   printf '\nDRY_RUN=PASS（未创建设备、未启动测试、未创建输出目录）\n'
   exit 0
 fi
@@ -397,7 +461,11 @@ xcrun simctl list runtimes -j \
   printf 'developer_dir=%s\n' "$(xcode-select -p)"
   printf 'node_version=%s\n' "$(node --version)"
   printf 'iphone=%s|%s\n' "$PHONE_NAME" "$PHONE_DESTINATION"
-  printf 'ipad=%s|%s\n' "$TABLET_NAME" "$TABLET_DESTINATION"
+  if [[ "$TABLET_ENABLED" == "yes" ]]; then
+    printf 'ipad=%s|%s\n' "$TABLET_NAME" "$TABLET_DESTINATION"
+  else
+    printf 'ipad=<skipped>\n'
+  fi
   xcodebuild -version
 } > "${OUTPUT_DIR}/run-metadata.txt"
 
@@ -547,8 +615,13 @@ tablet_status=0
 input_status=0
 run_test "iPhone" "${OUTPUT_DIR}/iPhone.xcresult" "${OUTPUT_DIR}/iPhone-xcodebuild.log" \
   "${PHONE_COMMAND[@]}" || phone_status=$?
-run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
-  "${TABLET_COMMAND[@]}" || tablet_status=$?
+if [[ "$TABLET_ENABLED" == "yes" ]]; then
+  run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
+    "${TABLET_COMMAND[@]}" || tablet_status=$?
+  tablet_exit_record="${tablet_status}"
+else
+  tablet_exit_record="skipped"
+fi
 
 write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-after.txt" "$DERIVED_DATA/EmbeddedCore"
 if ! cmp -s \
@@ -559,7 +632,7 @@ if ! cmp -s \
 fi
 
 printf 'iphone_exit=%s\nipad_exit=%s\ninput_stability_exit=%s\nfinished_at_utc=%s\n' \
-  "$phone_status" "$tablet_status" "$input_status" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  "$phone_status" "$tablet_exit_record" "$input_status" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >> "${OUTPUT_DIR}/run-metadata.txt"
 
 printf '\n测试产物：%s\n' "$OUTPUT_DIR"

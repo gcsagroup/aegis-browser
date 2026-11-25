@@ -147,12 +147,30 @@ if (tool === 'python3') {
     {name: 'Aegis CI com.gcsa.aegis iPhone 17', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', udid: 'phone'},
     {name: 'Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4', udid: 'tablet'},
   ];
+  const duoType = 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo';
+  const supported = process.env.EVIDENCE_SUPPORTED_TYPES;
+  const runtimeEntry = {identifier: runtime, version: '26.5', isAvailable: true};
+  if (supported !== undefined) {
+    runtimeEntry.supportedDeviceTypes = supported.split(',').filter(Boolean).map(identifier => ({identifier}));
+  }
   if (args[0] === 'simctl' && args[2] === 'runtimes') {
-    output({runtimes: [{identifier: runtime, version: '26.5', isAvailable: true}]});
+    output({runtimes: [runtimeEntry]});
   } else if (args[0] === 'simctl' && args[2] === 'devicetypes') {
-    output({devicetypes: devices.map(device => ({identifier: device.deviceTypeIdentifier}))});
+    output({devicetypes: [...devices.map(device => ({identifier: device.deviceTypeIdentifier})),
+      {identifier: duoType, name: 'iPhone Duo'}]});
   } else if (args[0] === 'simctl' && args[2] === 'devices') {
-    output({devices: {[runtime]: devices}});
+    output({devices: {[runtime]: process.env.EVIDENCE_NO_DEVICES === '1' ? [] : devices}});
+  } else if (args[0] === 'simctl' && args[1] === 'create') {
+    if (process.env.EVIDENCE_CREATE_FAIL === 'fail') {
+      console.error('An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=403)');
+      console.log('Unable to create a device for device type');
+      process.exit(1);
+    }
+    if (process.env.EVIDENCE_CREATE_FAIL === 'text') {
+      console.log('Unable to create a device for device type');
+    } else {
+      console.log('11111111-2222-3333-4444-555555555555');
+    }
   } else if (args[0] === 'xcresulttool') {
     output({result: 'Passed', totalTestCount: 1});
   } else if (args[0] === 'xccov') {
@@ -166,7 +184,7 @@ if (tool === 'python3') {
 }
 `;
 
-function runFixture(fixture, overrides = {}, mode = '--execute') {
+function runFixture(fixture, overrides = {}, mode = '--execute', extraArgs = []) {
   const bin = path.join(fixture.sandbox, 'bin');
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
   fs.mkdirSync(bin);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
@@ -177,7 +195,7 @@ function runFixture(fixture, overrides = {}, mode = '--execute') {
   }
   const report = path.join(fixture.sandbox, 'report');
   const result = spawnSync('bash', [path.join(fixture.root, 'apps/ios/scripts/run-simulator-tests.sh'),
-    mode, '--output-dir', report], {
+    mode, '--output-dir', report, ...extraArgs], {
     cwd: fixture.root,
     encoding: 'utf8',
     timeout: 90_000,
@@ -297,4 +315,53 @@ test('dry run keeps the source and report directory untouched', t => {
   assert.equal(git(fixture.root, ['status', '--porcelain']), '');
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
   assert.ok(!fs.existsSync(result.report));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+});
+
+function exists(file) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  return fs.existsSync(file);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+}
+
+function readText(file) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  return fs.readFileSync(file, 'utf8');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+}
+
+const duoType = 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo';
+const createdUdid = '11111111-2222-3333-4444-555555555555';
+
+test('runner refuses a runtime that lacks the requested device type before creating devices', t => {
+  const result = runFixture(createFixture(t), {EVIDENCE_SUPPORTED_TYPES: duoType, EVIDENCE_NO_DEVICES: '1'});
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stderr, /runtime 不支持设备类型/);
+  assert.ok(!exists(result.report));
+});
+
+test('runner stops when simulator creation fails or returns something that is not a UDID', t => {
+  for (const [mode, message] of [['fail', /创建 Simulator 失败/], ['text', /返回的不是 UDID/]]) {
+    const result = runFixture(createFixture(t), {EVIDENCE_NO_DEVICES: '1', EVIDENCE_CREATE_FAIL: mode});
+    assert.equal(result.status, 1, result.stderr + result.stdout);
+    assert.match(result.stderr, message);
+    assert.doesNotMatch(result.stdout, /已创建专用 Simulator/);
+    assert.ok(!exists(result.report));
+  }
+});
+
+test('runner can run iPhone only with another phone type when the runtime has no iPad', t => {
+  const result = runFixture(createFixture(t), {EVIDENCE_SUPPORTED_TYPES: duoType, EVIDENCE_NO_DEVICES: '1'},
+    '--execute', ['--phone-device-type', duoType, '--tablet-device-type', 'none']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const lines = readText(path.join(result.report, 'run-metadata.txt')).split('\n');
+  assert.ok(lines.includes('iphone=Aegis CI com.gcsa.aegis iPhone Duo|' + createdUdid));
+  assert.ok(lines.includes('ipad=<skipped>'));
+  assert.ok(lines.includes('ipad_exit=skipped'));
+  assert.ok(!lines.includes('ipad_exit=0'));
+  assert.ok(exists(path.join(result.report, 'iPhone.xcresult')));
+  assert.ok(!exists(path.join(result.report, 'iPad.xcresult')));
+});
+
+test('runner rejects a malformed device type identifier', t => {
+  const result = runFixture(createFixture(t), {}, '--dry-run', ['--phone-device-type', 'iPhone-17']);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stderr, /设备类型格式无效/);
 });
