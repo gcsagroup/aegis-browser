@@ -592,14 +592,16 @@ final class AccessGeoSiteCache {
     }
 
     func updateContext() -> Context? {
-        guard !selectionUnsaved, let record = current?.ledger, status == .ready, record.selection.mode == .smart,
-              !readClock().rollback, !record.selection.categories.isEmpty || wantsOverseasRules else { return nil }
+        // Overseas rules refresh independently of the domestic website mode.
+        guard !selectionUnsaved, let record = current?.ledger, status == .ready, !readClock().rollback,
+              (record.selection.mode == .smart && !record.selection.categories.isEmpty) || wantsOverseasRules
+        else { return nil }
         return Context(owner: record.owner, revision: revision, session: session)
     }
 
     func requestOverseasPreview() throws {
-        guard let snapshot = current, status == .ready, !selectionUnsaved, snapshot.ledger.selection.mode == .smart,
-              !readClock().rollback else { throw Failure.ineligible }
+        guard let snapshot = current, status == .ready, !selectionUnsaved, !readClock().rollback
+        else { throw Failure.ineligible }
         guard !requestedOverseasPreview, offeredOverseas(snapshot, at: readClock().date) == nil else { return }
         if snapshot.ledger.refresh.failureCount == 0, snapshot.ledger.refresh.nextAttempt != nil {
             // A prior successful refresh may have only legacy rules or an
@@ -683,7 +685,7 @@ final class AccessGeoSiteCache {
         let clock = readClock()
         guard choice.enabled, choice.isCanonical, !selectionUnsaved, overseasFlight == nil,
               status == .ready, !clock.rollback,
-              let snapshot = current, snapshot.ledger.selection.mode == .smart,
+              let snapshot = current,
               let offer = offeredOverseas(snapshot, at: clock.date) else { throw Failure.ineligible }
         let prior = snapshot.ledger.overseasSelection
         let missingApproval = snapshot.ledger.overseasActive != nil && snapshot.overseasActive == nil
@@ -929,7 +931,8 @@ final class AccessGeoSiteCache {
     }
 
     func proposal(for category: AccessGeoSiteCategory) -> Proposal? {
-        guard let current, let context = updateContext(), current.ledger.selection.categories.contains(category) else { return nil }
+        guard let current, current.ledger.selection.mode == .smart, let context = updateContext(),
+              current.ledger.selection.categories.contains(category) else { return nil }
         let now = readClock().date
         let old = Self.scope(category, in: current, at: now)
         guard let staged = Self.stagedScope(category, in: current, over: old, at: now),
@@ -1033,7 +1036,9 @@ final class AccessGeoSiteCache {
     private func hasValidActive(_ snapshot: Snapshot, receipt: AccessGeoSiteAdmission.Receipt) -> Bool {
         let now = readClock().date
         guard (try? receipt.expiry(at: now)) != nil else { return false }
-        let selected = snapshot.ledger.selection.categories.map { Self.scope($0, in: snapshot, at: now) }
+        // Manual mode keeps domestic categories but neither routes nor refreshes them.
+        let domestic = snapshot.ledger.selection.mode == .smart ? snapshot.ledger.selection.categories : []
+        let selected = domestic.map { Self.scope($0, in: snapshot, at: now) }
         // An enabled, unexpired overseas snapshot proves the stored release too,
         // including when every domestic category is bundled or awaiting approval.
         let overseasCurrent = snapshot.ledger.overseasSelection?.enabled == true && snapshot.overseasWithdrawal == nil
@@ -1173,7 +1178,6 @@ final class AccessGeoSiteCache {
             verifiedScopeWhileHeld: verifiedWhileHeld,
             ready: status == .ready && !overseasSelectionUnsaved && !current.overseasRecoveryHeld
                 && (current.overseasWithdrawal == nil || pending != nil || ceiling != nil)
-                && current.ledger.selection.mode == .smart
                 && approved.map { $0.expiresAt > date } == true,
             activeTag: approved?.receipt.tag,
             projectedHosts: approved?.catalogue.hosts ?? [:],

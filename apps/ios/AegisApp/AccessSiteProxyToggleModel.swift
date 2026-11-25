@@ -208,11 +208,11 @@ enum AccessSiteProxyToggleModel {
         case .automaticUnavailable:
             return "自动重试连接不可用"
         case .overseasProtected:
-            return "此网站使用国外加速"
+            return "此网站使用海外加速"
         case .overseasOnNextOpen:
-            return "重新打开此网站时使用国外加速"
+            return "重新打开此网站时使用海外加速"
         case .overseasUnavailable:
-            return "国外加速连接不可用"
+            return "海外加速连接不可用"
         case .allowNotConnected:
             return "已开启，等待连接"
         case .allowConnected:

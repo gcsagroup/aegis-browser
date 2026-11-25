@@ -394,6 +394,32 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertEqual(reopened.runtimeView().overseas.match(url("netflix.com")), .managed)
     }
 
+    func testOverseasAccelerationIsIndependentOfTheDomesticMode() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .manual, categories: []))
+        XCTAssertNil(cache.updateContext())
+        try cache.requestOverseasPreview()
+        let source = try Self.overseas(1, positive: ["google.com", "fast.com"], excluding: ["dl.google.com"])
+        try await cache.apply(source, using: XCTUnwrap(cache.updateContext()))
+        let gemini = URL(string: "https://gemini.google.com")!
+        let choice = AccessOverseasSelection(enabled: true, categories: [.ai])
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: choice)) { true }
+        XCTAssertEqual(cache.runtimeView().overseas.match(gemini), .managed)
+        XCTAssertNotNil(cache.updateContext())
+        try cache.setSelection(.init(mode: .smart, categories: []))
+        XCTAssertEqual(cache.runtimeView().overseas.match(gemini), .managed)
+        try cache.setSelection(.init(mode: .manual, categories: []))
+        XCTAssertEqual(cache.runtimeView().overseas.match(gemini), .managed)
+        XCTAssertEqual(cache.runtimeView().match(gemini), .original)
+
+        let reopened = fixture.cache()
+        await reopened.restore()
+        XCTAssertEqual(reopened.runtimeView().overseas.match(gemini), .managed)
+        XCTAssertNotNil(reopened.updateContext())
+    }
+
     func testOverseasExactScopeRetainsSharedHostsWhenExclusionUnionExceedsSourceLimit() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
@@ -855,7 +881,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         }
         let storage = try AccessGeoSiteStorage.overseasUITest(keep: false)
         let cache = AccessGeoSiteCache(storage: storage)
-        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        await cache.restore(migrating: .init(mode: .manual, categories: [.debian]))
         try cache.requestOverseasPreview()
         let preview = try Self.overseas(1, positive: ["google.com", "fast.com"], excluding: ["dl.google.com"], now: Date())
         try await cache.apply(preview, using: XCTUnwrap(cache.updateContext()))

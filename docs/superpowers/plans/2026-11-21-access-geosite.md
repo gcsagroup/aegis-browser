@@ -1,6 +1,6 @@
 # 网站加速的 TDD 实施计划
 
-先交付可安装的 iOS DEV「国内加速」入口，在同页「网站加速」下提供「手动」和「智能」。未来「位置加速」与「网站加速」并列。随后完善 macOS DEV，最后接入 Android。Hysteria 2 有独立的实验、回执和退出条件。基线为 `develop@e18106b84c56589a69faa1b0965e696caea2cb8c`。每个后续任务先提交能暴露对应行为差异的测试，记录 RED，再做最小实现、重跑同一用例并回归；以下命令区分已存在的入口与拟增测试。[设计规格](../specs/2026-11-21-access-geosite-design.md) · [Superpowers 计划方法](https://github.com/obra/superpowers/blob/22f0b463e7a5e579904dd6211a520321035526f7/skills/writing-plans/SKILL.md) · [TDD 方法](https://github.com/obra/superpowers/blob/22f0b463e7a5e579904dd6211a520321035526f7/skills/test-driven-development/SKILL.md)
+先交付可安装的 iOS DEV「网站加速」入口，在同页「访问中国大陆网站」下提供「手动」和「智能」。未来「位置加速」与「网站加速」并列。随后完善 macOS DEV，最后接入 Android。Hysteria 2 有独立的实验、回执和退出条件。基线为 `develop@e18106b84c56589a69faa1b0965e696caea2cb8c`。每个后续任务先提交能暴露对应行为差异的测试，记录 RED，再做最小实现、重跑同一用例并回归；以下命令区分已存在的入口与拟增测试。[设计规格](../specs/2026-11-21-access-geosite-design.md) · [Superpowers 计划方法](https://github.com/obra/superpowers/blob/22f0b463e7a5e579904dd6211a520321035526f7/skills/writing-plans/SKILL.md) · [TDD 方法](https://github.com/obra/superpowers/blob/22f0b463e7a5e579904dd6211a520321035526f7/skills/test-driven-development/SKILL.md)
 
 ## 1. 已执行的 iOS 顶层导航试验
 
@@ -62,7 +62,7 @@ xcrun xcresulttool export attachments --path "$RESULT_ROOT/GeoSite.xcresult" \
 
 | 步骤 | 失败测试与通过条件 |
 |---|---|
-| 设置入口 | 用真实「设置」打开「国内加速」。核对「网站加速」下的「手动」「智能」、默认选择、切换和重新进入；DEV 以外或私密会话沿用原设置 |
+| 设置入口 | 用真实「设置」打开「网站加速」。核对「访问中国大陆网站」下的「手动」「智能」、默认选择、切换和重新进入；DEV 以外或私密会话沿用原设置 |
 | 普通窗口策略 | 直接调用产品协调器。已有默认位置保护的普通窗口启用智能后，匹配域必须准备服务，未匹配域走原连接。测试显式服务、显式原连接、清除继承、重建偏好与禁用 |
 | WebKit 实际出口 | 移除先行试件的决策适配器。沿真实 BrowserTab 入口，在同一标签页跨根域、子域、相似域和未命中域往返。两个互斥监听器记录 CONNECT；故障后用独立正对照验证原路径可观测 |
 | 切换与生命周期 | 在受管准备未完成时切换模式或手动覆盖，注入迟到结果，观察零错误出口，保留其他标签独立授权。POST、同页资源、既有恢复和私密会话分别回归 |
@@ -76,7 +76,7 @@ xcrun xcresulttool export attachments --path "$RESULT_ROOT/GeoSite.xcresult" \
 
 第二轮 4 个 XCTest 覆盖了本站选择跨窗口与重建、操作中切换设置或离开、受管超时、可完成的 HTTP 重定向与跨域资源，以及切换存储时保护 POST。另有一项行为测试先复现无服务时无法为失败网站选择原连接，再验证用户可更改或清除该选择，原请求保持停止。独立审查还发现三个边界：失去服务代次后重开规范重定向页面、修改站点 A 时保留另一窗口站点 B 的进行中请求、切换智能后保留已提交页面从上级域继承的保护。三项用例在原候选逐项失败。修复后，关闭旧回环入口再重新加载，目标由新入口收到，另两项也通过。完整 iOS 回归、签名包摘要及最终提交的 CI 记录在[产品 PR](https://github.com/quinn521/aegis-browser/pull/402)。
 
-在仓库根目录准备固定核心和新的绝对输出目录，使用专用模拟器。打开「设置 → 国内加速」，在「网站加速」下切换「手动／智能」，重启后核对选择。真机 Debug 构建需要匹配主 App 和两个扩展的开发描述文件。分享扩展与 App 共用现有 App Group。账户服务按原有 DEV 构建配置提供；无配置时，选中服务的顶层导航会报告不可用。[DEV 订阅与核心构建说明](../../development/ios-alpha-quota.zh-CN.md)
+在仓库根目录准备固定核心和新的绝对输出目录，使用专用模拟器。打开「设置 → 网站加速」，在「访问中国大陆网站」下切换「手动／智能」，重启后核对选择。真机 Debug 构建需要匹配主 App 和两个扩展的开发描述文件。分享扩展与 App 共用现有 App Group。账户服务按原有 DEV 构建配置提供；无配置时，选中服务的顶层导航会报告不可用。[DEV 订阅与核心构建说明](../../development/ios-alpha-quota.zh-CN.md)
 
 ```bash
 : "${RESULT_ROOT:?use a fresh absolute result directory}"

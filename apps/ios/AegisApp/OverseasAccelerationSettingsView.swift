@@ -17,7 +17,6 @@ struct OverseasAccelerationSettingsView: View {
 
     private var canEdit: Bool {
         browser.activeTab === tab && hostStores.offersWebsiteAcceleration(for: tab)
-            && hostStores.websiteAccelerationMode == .smart
     }
 
     var body: some View {

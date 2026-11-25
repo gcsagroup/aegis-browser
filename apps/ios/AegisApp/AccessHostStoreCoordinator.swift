@@ -808,7 +808,6 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
 
     private func overseasRoute(_ url: URL) -> (match: AccessGeoSiteCache.Match, grant: AccessGeoSiteCache.OverseasView.Grant?) {
         if let geoSiteCache {
-            guard websiteAccelerationMode == .smart else { return (.original, nil) }
             let view = comparingWebsitePolicy ? geoSiteView : geoSiteCache.runtimeView()
             return view?.overseas.route(for: url) ?? (.indeterminate, nil)
         }
