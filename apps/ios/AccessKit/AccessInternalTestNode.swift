@@ -1,11 +1,10 @@
 import Foundation
 import Network
 
-/// Outbound choices for the isolated native DEV/internal Alpha test Profile.
-public enum AccessInternalTestNode: Equatable, Sendable {
-    case realityVision(AccessRealityVisionParameters)
-    case vlessWebSocketTLS(AccessVLESSWebSocketTLSParameters)
+/// Compatibility name for the native DEV/internal Alpha single-node path.
+public typealias AccessInternalTestNode = AccessOutboundNode
 
+extension AccessOutboundNode {
     public static func parseSingleShareURI(_ input: String) throws -> Self {
         let link = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
@@ -186,41 +185,5 @@ public struct AccessVLESSWebSocketTLSParameters: Equatable, Sendable {
         guard suffix.first == ":", digits.utf8.allSatisfy({ (48...57).contains($0) }),
               let port = UInt16(digits), port > 0 else { return false }
         return true
-    }
-
-    // The diagnostic event filter admits only approved text and host/port
-    // fields. WS paths and queries never become diagnostic fields.
-    var diagnosticSecrets: [String] { [userID] }
-
-    /// Emits one typed outbound and requires normal TLS certificate verification.
-    func embeddedInstanceJSONData(
-        logLevel: AccessLogLevel = .none, errorLogPath: String? = nil, logCaptureGeneration: Int64? = nil
-    ) throws -> Data {
-        var tls: [String: Any] = ["serverName": serverName, "useSystemCA": true]
-        if !fingerprint.isEmpty { tls["fingerprint"] = fingerprint }
-        if !alpn.isEmpty { tls["alpn"] = [alpn] }
-        let outbound: [String: Any] = [
-            "tag": "internal_vless_ws_tls",
-            "protocol": "vless",
-            "settings": [
-                "vnext": [["address": address, "port": Int(port),
-                           "users": [["id": userID, "encryption": "none"]]]],
-            ],
-            "streamSettings": [
-                "network": "ws",
-                "security": "tls",
-                "tlsSettings": tls,
-                "wsSettings": ["host": requestHost, "path": path],
-            ],
-        ]
-        let log = try AccessRealityVisionOutboundConfig.embeddedLog(
-            logLevel: logLevel, errorLogPath: errorLogPath, includeAccessLog: true)
-        var config: [String: Any] = [
-            "log": log,
-            "inbounds": [],
-            "outbounds": [outbound],
-        ]
-        if let logCaptureGeneration { config["aegisLogCaptureGeneration"] = logCaptureGeneration }
-        return try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])
     }
 }

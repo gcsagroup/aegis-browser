@@ -89,7 +89,11 @@ final class AccessTestNodeEditorTests: XCTestCase {
         let original = AccessTestNodeRecord(node)
         let data = try JSONEncoder().encode(original)
         var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        fields["address"] = "fe80::1%lo0"
+        var storedNode = try XCTUnwrap(fields["node"] as? [String: Any])
+        var endpoint = try XCTUnwrap(storedNode["endpoint"] as? [String: Any])
+        endpoint["address"] = "fe80::1%lo0"
+        storedNode["endpoint"] = endpoint
+        fields["node"] = storedNode
         let invalid = try JSONSerialization.data(withJSONObject: fields)
         let storage = Storage()
         storage.encodedValue = invalid
@@ -143,6 +147,32 @@ final class AccessTestNodeEditorTests: XCTestCase {
         XCTAssertEqual(node.serverName, "cert.example.com")
         XCTAssertEqual(node.requestHost, "ws.example.com")
         XCTAssertEqual(node.path, "/inside")
+
+        let previousWS = Data("""
+        {"version":2,"revision":"E1EA5ABF-608B-40E3-886A-9D92520F79A2","address":"198.51.100.20",
+         "port":8443,"userID":"550e8400-e29b-41d4-a716-446655440000","serverName":"cert.example.com",
+         "requestHost":"ws.example.com","path":"/inside","fingerprint":"chrome","alpn":""}
+        """.utf8)
+        let restoredWS = try JSONDecoder().decode(AccessTestNodeRecord.self, from: previousWS)
+        XCTAssertEqual(restoredWS.node, record.node)
+        XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: previousWS), restoredWS.revision)
+        XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: previous), restoredLegacy.revision)
+
+        for record in [restoredLegacy, restoredWS] {
+            let v3 = try JSONEncoder().encode(record)
+            let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: v3) as? [String: Any])
+            XCTAssertEqual(fields["version"] as? Int, 3)
+            var node = try XCTUnwrap(fields["node"] as? [String: Any])
+            XCTAssertEqual(node["kind"] as? String, "vless")
+            XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: v3), record.revision)
+            XCTAssertEqual(try JSONDecoder().decode(AccessTestNodeRecord.self, from: v3).node, record.node)
+            node["kind"] = "unsupported"
+            var wrongKind = fields
+            wrongKind["node"] = node
+            let malformed = try JSONSerialization.data(withJSONObject: wrongKind)
+            XCTAssertThrowsError(try JSONDecoder().decode(AccessTestNodeRecord.self, from: malformed))
+            XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: malformed), record.revision)
+        }
         XCTAssertThrowsError(try AccessLocalV2RayConfigLoader.parseSingleShareURI(webSocketLink))
         let explicitPort = webSocketLink.replacingOccurrences(of: "host=ws.example.com", with: "host=ws.example.com%3A8443")
         guard case .vlessWebSocketTLS(let authority) = try AccessInternalTestNode.parseSingleShareURI(explicitPort)

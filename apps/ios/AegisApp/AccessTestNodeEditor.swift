@@ -80,7 +80,7 @@ struct AccessTestNodeRecord: Codable {
     let node: AccessInternalTestNode
 
     private enum CodingKeys: String, CodingKey {
-        case version, revision, address, port, userID, serverName, publicKey, shortID, fingerprint, spiderX
+        case version, revision, node, address, port, userID, serverName, publicKey, shortID, fingerprint, spiderX
         case requestHost, path, alpn
     }
 
@@ -92,7 +92,7 @@ struct AccessTestNodeRecord: Codable {
     /// Revise or remove a known record even if its outbound can no longer run.
     static func storedRevision(in data: Data) throws -> UUID {
         let identity = try JSONDecoder().decode(StoredIdentity.self, from: data)
-        guard identity.version == 1 || identity.version == 2 else { throw AccessTestNodeError.storageUnavailable }
+        guard (1...3).contains(identity.version) else { throw AccessTestNodeError.storageUnavailable }
         return identity.revision
     }
 
@@ -115,8 +115,12 @@ struct AccessTestNodeRecord: Codable {
     init(from decoder: any Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
         let version = try fields.decode(Int.self, forKey: .version)
-        guard version == 1 || version == 2 else { throw AccessTestNodeError.storageUnavailable }
+        guard (1...3).contains(version) else { throw AccessTestNodeError.storageUnavailable }
         revision = try fields.decode(UUID.self, forKey: .revision)
+        if version == 3 {
+            node = try fields.decode(AccessOutboundNode.self, forKey: .node)
+            return
+        }
         let address = try fields.decode(String.self, forKey: .address)
         let port = try fields.decode(UInt16.self, forKey: .port)
         let userID = try fields.decode(String.self, forKey: .userID)
@@ -142,28 +146,8 @@ struct AccessTestNodeRecord: Codable {
     func encode(to encoder: any Encoder) throws {
         var fields = encoder.container(keyedBy: CodingKeys.self)
         try fields.encode(revision, forKey: .revision)
-        switch node {
-        case .realityVision(let parameters):
-            try fields.encode(1, forKey: .version)
-            try fields.encode(parameters.address, forKey: .address)
-            try fields.encode(parameters.port, forKey: .port)
-            try fields.encode(parameters.userID, forKey: .userID)
-            try fields.encode(parameters.serverName, forKey: .serverName)
-            try fields.encode(parameters.fingerprint, forKey: .fingerprint)
-            try fields.encode(parameters.publicKey, forKey: .publicKey)
-            try fields.encode(parameters.shortID, forKey: .shortID)
-            try fields.encode(parameters.spiderX, forKey: .spiderX)
-        case .vlessWebSocketTLS(let parameters):
-            try fields.encode(2, forKey: .version)
-            try fields.encode(parameters.address, forKey: .address)
-            try fields.encode(parameters.port, forKey: .port)
-            try fields.encode(parameters.userID, forKey: .userID)
-            try fields.encode(parameters.serverName, forKey: .serverName)
-            try fields.encode(parameters.fingerprint, forKey: .fingerprint)
-            try fields.encode(parameters.requestHost, forKey: .requestHost)
-            try fields.encode(parameters.path, forKey: .path)
-            try fields.encode(parameters.alpn, forKey: .alpn)
-        }
+        try fields.encode(3, forKey: .version)
+        try fields.encode(node, forKey: .node)
     }
 }
 
@@ -213,8 +197,10 @@ struct AccessTestNodeKeychain: AccessTestNodeStoring {
 
     func write(_ record: AccessTestNodeRecord, channel: AccessInternalOptions) throws {
         let request = query(for: channel)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
         let attributes: [String: Any] = [
-            kSecValueData as String: try JSONEncoder().encode(record),
+            kSecValueData as String: try encoder.encode(record),
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
         var status = SecItemUpdate(request as CFDictionary, attributes as CFDictionary)

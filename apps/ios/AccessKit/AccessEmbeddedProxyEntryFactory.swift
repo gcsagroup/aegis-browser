@@ -111,7 +111,7 @@ final class AccessEmbeddedProxyEntrySession {
     private let core: any AccessEmbeddedCoreControlling
     private enum Outbound {
         case realityVision(AccessRealityVisionOutboundConfig)
-        case vlessWebSocketTLS(AccessVLESSWebSocketTLSParameters)
+        case internalNode(AccessOutboundNode)
     }
 
     private let loadOutbound: @MainActor () async throws -> Outbound
@@ -161,14 +161,7 @@ final class AccessEmbeddedProxyEntrySession {
         self.transport = transport
         self.retireDocuments = retireDocuments
         self.reserveSocket = reserveSocket
-        self.loadOutbound = {
-            switch try await internalNode() {
-            case .realityVision(let parameters):
-                return .realityVision(try AccessRealityVisionOutboundConfigBuilder.build(parameters: parameters))
-            case .vlessWebSocketTLS(let parameters):
-                return .vlessWebSocketTLS(parameters)
-            }
-        }
+        self.loadOutbound = { .internalNode(try await internalNode()) }
     }
 
     func provision(generation: UInt64, deadline: Duration) async throws -> AccessProxyEntryPublisher.Provision {
@@ -227,15 +220,14 @@ final class AccessEmbeddedProxyEntrySession {
                         core: core, outbound: config, diagnostics: .shared,
                         level: AccessDiagnosticLog.selectedLevel()
                     )
-                case .vlessWebSocketTLS(let parameters):
+                case .internalNode(let node):
                     logLease = try await Self.startCoreWithDiagnostics(
                         core: core, diagnostics: .shared, level: AccessDiagnosticLog.selectedLevel(),
-                        secrets: parameters.diagnosticSecrets
+                        secrets: AccessOutboundConfigRegistry.diagnosticSecrets(for: node)
                     ) { lease in
-                        guard let lease else { return try parameters.embeddedInstanceJSONData() }
-                        return try parameters.embeddedInstanceJSONData(
-                            logLevel: lease.level, errorLogPath: lease.path,
-                            logCaptureGeneration: lease.generation
+                        try AccessOutboundConfigRegistry.embeddedInstanceJSONData(
+                            for: node, logLevel: lease?.level ?? .none, errorLogPath: lease?.path,
+                            logCaptureGeneration: lease?.generation
                         )
                     }
                 }
@@ -328,10 +320,9 @@ final class AccessEmbeddedProxyEntrySession {
         level: AccessLogLevel,
         disableCaptureWhenQuiet: Bool = true
     ) async throws -> AccessDiagnosticLog.Lease {
-        let parameters = outbound.parameters
-        return try await startCoreWithDiagnostics(
+        try await startCoreWithDiagnostics(
             core: core, diagnostics: diagnostics, level: level,
-            secrets: [parameters.userID, parameters.publicKey, parameters.shortID],
+            secrets: AccessOutboundConfigRegistry.diagnosticSecrets(for: .realityVision(outbound.parameters)),
             disableCaptureWhenQuiet: disableCaptureWhenQuiet
         ) { lease in
             guard let lease else { return try outbound.embeddedInstanceJSONData() }
@@ -346,7 +337,7 @@ final class AccessEmbeddedProxyEntrySession {
         core: any AccessEmbeddedCoreControlling,
         diagnostics: AccessDiagnosticLog,
         level: AccessLogLevel,
-        secrets: [String],
+        secrets: AccessDiagnosticLog.RedactionSecrets,
         disableCaptureWhenQuiet: Bool = true,
         render: (AccessDiagnosticLog.Lease?) throws -> Data
     ) async throws -> AccessDiagnosticLog.Lease {

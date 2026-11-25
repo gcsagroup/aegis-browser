@@ -305,6 +305,9 @@ targets:
       - path: Tests/AgentKitTests
       - path: Tests/AegisPolicyKitTests
       - path: Tests/AccessKitTests
+      - path: ../../fixtures/access/share-links
+        type: folder
+        buildPhase: resources
       - path: Tests/Fixtures
         type: folder
         buildPhase: resources

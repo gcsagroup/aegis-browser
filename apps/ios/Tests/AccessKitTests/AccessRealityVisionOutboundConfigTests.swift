@@ -235,12 +235,13 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
 
         let node = try AccessVLESSWebSocketTLSParameters(address: "route.example", port: 443,
             userID: "550e8400-e29b-41d4-a716-446655440000", serverName: "ws.example",
-            requestHost: "ws.example", path: "/local-upgrade-path?v=2", fingerprint: "", alpn: "")
-        let webSocket = log.acquireShared(level: .info, secrets: node.diagnosticSecrets)
+            requestHost: "ws.example", path: "/local-upgrade-path?v=fixture-query-value", fingerprint: "", alpn: "")
+        let secrets = try AccessOutboundConfigRegistry.diagnosticSecrets(for: .vlessWebSocketTLS(node))
+        let webSocket = log.acquireShared(level: .info, secrets: secrets)
         XCTAssertTrue(log.snapshot().contains("2026/11/11 00:00:00 [Access] accepted existing.example:443"))
         try writer.write(contentsOf: Data((
-            "2026/11/11 00:00:01 [Error] transport/internet/websocket: upgrade error /local-upgrade-path?v=2\n" +
-            "2026/11/11 00:00:02 from local accepted https://ws.example/local-upgrade-path?v=2\n").utf8))
+            "2026/11/11 00:00:01 [Error] transport/internet/websocket: upgrade error /local-upgrade-path?v=fixture-query-value\n" +
+            "2026/11/11 00:00:02 from local accepted https://ws.example/local-upgrade-path?v=fixture-query-value\n").utf8))
         XCTAssertTrue(log.stop(lease: webSocket))
         XCTAssertTrue(log.stop(lease: subscription))
         let history = log.snapshot()
@@ -268,7 +269,7 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         }
     }
 
-    func testRetiredSecretLimitDisablesSharedCaptureUntilAllOwnersEnd() throws {
+    func testActiveAndRetiredSecretLimitDisablesSharedCaptureUntilAllOwnersEnd() throws {
         let log = AccessDiagnosticLog(pollInterval: .seconds(60))
         let subscription = log.acquireShared(level: .info, secrets: ["subscription.invalid"])
         defer { log.stop(lease: subscription) }
@@ -276,7 +277,7 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: originalPath))
         defer { try? writer.close() }
 
-        for index in 0..<256 {
+        for index in 0..<255 {
             let page = log.acquireShared(level: .info, secrets: ["retired-\(index).invalid"])
             XCTAssertEqual(page.path, originalPath)
             XCTAssertTrue(log.stop(lease: page))
@@ -286,10 +287,9 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         XCTAssertTrue(log.snapshot().contains("accepted [redacted]"))
         XCTAssertFalse(log.snapshot().contains("retired-0.invalid"))
         let overflow = log.acquireShared(level: .info, secrets: ["retired-overflow.invalid"])
-        XCTAssertEqual(overflow.path, originalPath)
-        XCTAssertFalse(log.unavailable)
-        XCTAssertTrue(log.stop(lease: overflow))
+        XCTAssertNil(overflow.path)
         XCTAssertTrue(log.unavailable)
+        XCTAssertTrue(log.stop(lease: overflow))
 
         log.disableAndClear()
         let blocked = log.acquireShared(level: .info, secrets: [])
@@ -1066,7 +1066,7 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? AccessRealityVisionOutboundConfigError,
-                .unsupportedNetwork("ws")
+                .fieldNotCanonical("root")
             )
         }
     }

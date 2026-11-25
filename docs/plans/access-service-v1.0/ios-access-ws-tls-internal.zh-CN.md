@@ -6,4 +6,4 @@ WebSocket/TLS 连接由已锁定的内嵌 Xray 执行。客户端使用链接指
 
 上游域名使用 DNS 的 ASCII 表示。TLS 服务名称使用无需尾点的 ASCII DNS 名，独立的 HTTP Host 可保留 DNS 尾点和端口。路径保留输入中的请求字节，允许 HTTP/HTTPS 回调地址，并拒绝混入另一条代理分享。
 
-旧 REALITY 记录继续用原 Keychain 编码。WebSocket/TLS 使用第二版编码，旧 App 会拒绝读取。需要降级时，可从新版 Options 显式删除该测试节点后再安装旧构建。
+Keychain 继续读取 REALITY v1 与 WebSocket/TLS v2 记录。Options 应用节点时写入带协议种类的 v3 记录，读取旧记录时保留原版本。降级到只认识 v1 或 v2 的构建前，先在新版 Options 显式删除已保存的 v3 测试节点。
