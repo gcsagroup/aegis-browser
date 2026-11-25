@@ -145,6 +145,8 @@ jobs:
         run: python3 scripts/release/ios-delivery-plan.py
       - id: shared-runner
         name: Require a shared iOS runner label that excludes the private Alpha runner
+        # Status, receipt-free Wait and Release Wait run only on ubuntu-24.04.
+        if: ${{ !startsWith(steps.plan.outputs.operation, 'status-') }}
         env:
           PRIVATE_ALPHA_LABEL: ${{ vars.AEGIS_IOS_PRIVATE_ALPHA_RUNNER_LABEL }}
           SHARED_IOS_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
@@ -156,8 +158,14 @@ jobs:
             printf '%s\n' 'Configure a custom shared iOS runner label distinct from the private Alpha runner label.' >&2
             exit 1
           }
+          # GitHub matches labels case-insensitively but tr folds only ASCII, so
+          # admit only an ASCII identifier alphabet before comparing.
+          export LC_ALL=C
           case "$SHARED_IOS_LABEL" in
-            ''|[[:space:]]*|*[[:space:]]|*[[:cntrl:]]*) reject_shared ;;
+            ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) reject_shared ;;
+          esac
+          case "$PRIVATE_ALPHA_LABEL" in
+            *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) reject_shared ;;
           esac
           shared_label=$(printf '%s' "$SHARED_IOS_LABEL" | tr '[:upper:]' '[:lower:]')
           case "$shared_label" in
@@ -180,6 +188,13 @@ jobs:
           for setting in "$PRIVATE_ALPHA_GROUP" "$PRIVATE_ALPHA_LABEL" "$SHARED_IOS_LABEL"; do
             case "$setting" in
               ''|[[:space:]]*|*[[:space:]]|*[[:cntrl:]]*) reject_runner ;;
+            esac
+          done
+          # Labels compare case-insensitively on GitHub; only ASCII folds reliably here.
+          export LC_ALL=C
+          for label in "$PRIVATE_ALPHA_LABEL" "$SHARED_IOS_LABEL"; do
+            case "$label" in
+              *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) reject_runner ;;
             esac
           done
           private_group=$(printf '%s' "$PRIVATE_ALPHA_GROUP" | tr '[:upper:]' '[:lower:]')

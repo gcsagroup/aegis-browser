@@ -95,22 +95,26 @@ def control(character):
     return unicodedata.category(character) in ('Cc', 'Cf')
 
 
+# Assigned letters, numbers, punctuation and symbols, minus the modifier
+# categories (Lm, Sk) and the two spacing vowels Swift treats as extenders.
+LABEL_START_CATEGORIES = frozenset(('Lu', 'Ll', 'Lt', 'Lo', 'Nd', 'Nl', 'No', 'Pc', 'Pd', 'Ps',
+                                    'Pe', 'Pi', 'Pf', 'Po', 'Sm', 'Sc', 'So'))
+LABEL_START_EXCLUDED = frozenset(('\u0e33', '\u0eb3'))
+
+
+def label_start(character):
+    return character.isascii() or (unicodedata.category(character) in LABEL_START_CATEGORIES
+                                   and character not in LABEL_START_EXCLUDED)
+
+
 def relay_host(address):
-    # Matches AccessInternalNodeFields.dialAddress: a percent-decoded ASCII
-    # host is used as written; a non-ASCII host dials its IDNA A-label form.
-    # Python's codec is IDNA 2003, so only names whose A-label decodes back to
-    # the same lowercase NFC name are admitted; mapped names (such as sharp s)
-    # could differ from the app and fail closed.
-    if address.isascii():
-        return address
-    try:
-        encoded = address.encode('idna').decode('ascii')
-        restored = encoded.encode('ascii').decode('idna')
-    except UnicodeError as error:
-        raise ValueError('Invalid VLESS URI') from error
-    if restored != unicodedata.normalize('NFC', address).lower():
+    # Foundation's IDNA handling of percent-encoded hosts differs from
+    # Python's codec, and one unloadable entry discards the whole bundled list.
+    # Admit only a percent-decoded ASCII host; international relays must be
+    # written as A-labels (xn--...).
+    if not address.isascii():
         raise ValueError('Invalid VLESS URI')
-    return encoded
+    return address
 
 
 def share(uri):
@@ -120,7 +124,7 @@ def share(uri):
     # The app parses everything before the label with
     # URLComponents(string:encodingInvalidCharacters: false), which rejects a
     # literal non-ASCII character; one such entry would discard the whole
-    # bundled list. International relays must be percent-encoded or A-labels.
+    # bundled list. International relays must be written as A-labels.
     if not uri.partition('#')[0].isascii():
         raise ValueError('Invalid VLESS URI')
     parts = urlsplit(uri)
@@ -197,6 +201,10 @@ def validate_transport(uri, *, anchor=False):
 
 def validated_route(uri, *, anchor=False):
     parts, identity, address = share(uri)
+    # The bundled list parser splits at the first Character equal to '#'.
+    # An extending scalar would hide the delimiter from that parser.
+    if not anchor and parts.fragment and not label_start(parts.fragment[0]):
+        raise ValueError('Invalid VLESS URI')
     query = share_query(parts.query)
     if anchor:
         # The shared quota session reads the legacy TCP/REALITY node. Its

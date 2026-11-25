@@ -111,7 +111,10 @@ class PrivateAlphaInputsTests(unittest.TestCase):
         self.assertEqual(self.hook('alpha', source, target).returncode, 0)
         self.assertEqual(json.loads(target.read_bytes()), edge)
         for nodes in ([], edge + [LIST[0]], [edge[0] + 'é'], [4], ['vless://no-host'],
-                      [prefix + chr(92) + 'suffix'], [' https://invalid.example'], [prefix + chr(0)]):
+                      [prefix + chr(92) + 'suffix'], [' https://invalid.example'], [prefix + chr(0)],
+                      # Label starts Swift merges with '#' into one Character.
+                      [prefix + '\u0301test'], [prefix + '\u0e33test'], [prefix + '\u0eb3test'],
+                      [prefix + '\u0897test'], [prefix + '\uff9etest'], [prefix + '\U0001f3fbtest']):
             with self.subTest(case=type(nodes).__name__, count=len(nodes)):
                 source.write_text(json.dumps(nodes))
                 result = self.hook('alpha', source, target)
@@ -135,8 +138,6 @@ class PrivateAlphaInputsTests(unittest.TestCase):
             'equivalent TCP defaults and hint': [tcp, tcp.replace('&fp=chrome&headerType=none&host=hint.invalid', '')],
             'equivalent TCP fingerprint case': [tcp, tcp.replace('fp=chrome', 'fp=Chrome')],
             'equivalent WS relay encoding': [ws, ws.replace('@ws.invalid', '@w%73.invalid')],
-            'equivalent WS relay IDNA spelling': [ws.replace('@ws.invalid', '@b%C3%BCcher.invalid'),
-                                                  ws.replace('@ws.invalid', '@xn--bcher-kva.invalid')],
             'equivalent REALITY aliases': [reality, reality.replace('serverName=', 'sni=')
                                            .replace('publicKey=', 'pbk=').replace('shortId=abcd1234', 'sid=ABCD1234')],
             'equivalent gRPC service alias': [grpc, grpc.replace('&path=/service/Tun', '')],
@@ -188,8 +189,8 @@ class PrivateAlphaInputsTests(unittest.TestCase):
         self.assertEqual(self.hook('alpha', source, target).returncode, 0)
         self.assertEqual(json.loads(target.read_bytes()), [encoded])
 
-    def test_hook_accepts_single_international_relay_and_rejects_mapped_names(self):
-        for index, relay in enumerate(('@b%C3%BCcher.invalid', '@xn--bcher-kva.invalid')):
+    def test_hook_accepts_a_label_relay_and_rejects_non_ascii_hosts(self):
+        for index, relay in enumerate(('@xn--bcher-kva.invalid',)):
             source = self.root / f'input-{index}'
             target = self.root / f'idna-{index}' / NODES
             target.parent.mkdir()
@@ -198,8 +199,10 @@ class PrivateAlphaInputsTests(unittest.TestCase):
             source.chmod(0o600)
             self.assertEqual(self.hook('alpha', source, target).returncode, 0, relay)
             self.assertEqual(json.loads(target.read_bytes()), [share])
-        # A literal Unicode authority is rejected: the app's strict URL parser cannot load it.
-        for index, relay in enumerate(('@stra%C3%9Fe.invalid', '@%E2%80%8Bws.invalid', '@b\u00fccher.invalid')):
+        # Literal or percent-encoded non-ASCII hosts are rejected: the app's
+        # strict parser and Foundation IDNA may not load them.
+        for index, relay in enumerate(('@stra%C3%9Fe.invalid', '@%E2%80%8Bws.invalid', '@b\u00fccher.invalid',
+                                       '@b%C3%BCcher.invalid', '@ab--%C3%A9.invalid')):
             source = self.root / f'rejected-input-{index}'
             target = self.root / f'rejected-{index}' / NODES
             target.parent.mkdir()
@@ -247,6 +250,14 @@ class PrivateAlphaInputsTests(unittest.TestCase):
         cleanup = self.cli([HELPER, 'cleanup'], dict(self.env, AEGIS_PRIVATE_ALPHA_DIRECTORY=str(root)))
         self.assertEqual(cleanup.returncode, 0, cleanup.stderr)
         self.assertFalse(root.exists())
+
+    def test_stage_preserves_quota_anchor_with_combining_mark_fragment(self):
+        anchor = ANCHOR + '#\u0301quota'
+        digest = hashlib.sha256(anchor.encode()).hexdigest()
+        root = self.stage(**secrets(anchor=anchor, descriptor=dict(DESCRIPTOR, nodeSHA256=digest)))
+        inputs = root / 'inputs'
+        self.assertEqual((inputs / NODE).read_text(), anchor)
+        self.assertEqual(json.loads((inputs / QUOTA).read_bytes())['nodeSHA256'], digest)
 
     def test_stage_fails_closed_without_leaving_private_bytes(self):
         cases = [{key: ''} for key in secrets()]
