@@ -181,6 +181,24 @@ with TemporaryDirectory() as root, patch.dict(fixture["UTIL_CONSTANTS_SHA256"], 
             with case.assertRaisesRegex(RuntimeError, "Pinned download mismatch"):
                 download(url, rejected, expected, gitiles_text=True)
         assert not rejected.exists()
+    import urllib.error
+    pin = next(iter(contents))
+    expected = pinned_headers(pin)[header]
+    url = f"https://fixture.invalid/{pin}/{header}?format=TEXT"
+    unavailable = urllib.error.HTTPError(url, 503, "Service Unavailable", {}, None)
+    with patch("time.sleep") as sleep, patch("urllib.request.urlopen", side_effect=[unavailable, io.BytesIO(base64.b64encode(contents[pin]))]):
+        assert download(url, Path(root) / "retried.h", expected, gitiles_text=True) == expected
+    assert sleep.call_count == 1
+    missing = urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+    with patch("time.sleep") as sleep, patch("urllib.request.urlopen", side_effect=missing):
+        with case.assertRaises(urllib.error.HTTPError):
+            download(url, Path(root) / "missing.h", expected, gitiles_text=True)
+    assert sleep.call_count == 0
+    with patch("time.sleep") as sleep, patch("urllib.request.urlopen", side_effect=unavailable):
+        with case.assertRaises(urllib.error.HTTPError):
+            download(url, Path(root) / "exhausted.h", expected, gitiles_text=True)
+    assert sleep.call_count == len(fixture["RETRY_DELAYS"])
+    assert not (Path(root) / "exhausted.h").exists()
 `], {encoding: 'utf8'});
   assert.equal(result.status, 0, result.error?.message ?? result.stderr);
 });

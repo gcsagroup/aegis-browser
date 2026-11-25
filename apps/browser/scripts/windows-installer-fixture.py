@@ -13,11 +13,15 @@ import re
 import shutil
 from pathlib import Path
 import subprocess
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
 GTEST = "4fe3307fb2d9f86d19777c7eb0e4809e9694dde7"
 GTEST_SHA256 = "7da5cbd7991e88e61a2e2142475041fe6685484ad13013401e8f1e3fb5f3001a"
+# Hosted runners intermittently receive 5xx/429 from Gitiles; retry before failing.
+RETRY_DELAYS = (5, 15, 30, 60)
 # The three common inputs are identical at every approved Chromium pin.
 HEADERS = {
     "build/win/common_controls.manifest":
@@ -59,9 +63,26 @@ def pinned_headers(chromium_pin):
         raise RuntimeError(f"Update pinned fixture inputs for Chromium {chromium_pin}") from error
 
 
+def transient(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code == 429 or error.code >= 500
+    return True
+
+
+def fetch(url):
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return response.read()
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if delay is None or not transient(error):
+                raise
+            print(f"Retrying {url} in {delay}s after {error}", flush=True)
+            time.sleep(delay)
+
+
 def download(url, destination, expected_sha256, *, gitiles_text=False):
-    with urllib.request.urlopen(url, timeout=60) as response:
-        data = response.read()
+    data = fetch(url)
     if gitiles_text:
         data = base64.b64decode(b"".join(data.split()), validate=True)
     actual = digest(data)
