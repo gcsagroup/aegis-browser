@@ -785,7 +785,11 @@ final class SettingsLayoutUITests: XCTestCase {
             XCTAssertTrue(reveal(entry, app))
         }
         // The next independent notice remains reachable after the web libraries.
-        let otherNotice = app.buttons["third-party-notices-component-6"]
+        // Match by title: bundled rule notices can be inserted before it.
+        let otherNotice = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+            "third-party-notices-component-", "EasyList and EasyPrivacy"
+        )).firstMatch
         XCTAssertTrue(reveal(otherNotice, app))
         XCTAssertTrue(otherNotice.label.contains("EasyList and EasyPrivacy"))
         otherNotice.tap()
