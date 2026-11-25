@@ -9,7 +9,7 @@ output=${SCRIPT_OUTPUT_FILE_0:?}
 
 /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
   -subj '/CN=Aegis loopback XCTest' \
-  -addext 'subjectAltName=DNS:www.douban.com,DNS:beta-hold-control.invalid' \
+  -addext 'subjectAltName=DNS:www.douban.com,DNS:beta-hold-control.invalid,DNS:overseas-landing.invalid,DNS:www.overseas-landing.invalid,DNS:ampproject.org,DNS:www.ampproject.org,DNS:www.youtube.com,DNS:gemini.google.com,DNS:google.com,DNS:www.google.com,DNS:x.com,DNS:www.bbc.com,DNS:github.com,DNS:archive.org,DNS:www.dropbox.com,DNS:www.debian.org' \
   -addext 'basicConstraints=critical,CA:FALSE' \
   -addext 'keyUsage=critical,digitalSignature,keyEncipherment' \
   -addext 'extendedKeyUsage=serverAuth' \

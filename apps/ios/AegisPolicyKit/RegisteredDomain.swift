@@ -53,26 +53,39 @@ public enum RegisteredDomain {
     /// Checks an already-canonical release rule. Broad rules cannot enclose
     /// another ICANN or PRIVATE boundary, including a wildcard suffix.
     public static func allowsGeoSiteHost(_ host: String, includingDescendants: Bool) -> Bool {
-        guard let list = strictGeoSiteList, (1...253).contains(host.utf8.count),
+        guard let list = strictGeoSiteList, isCanonicalDNSName(host, allowsSingleLabel: false),
               !host.hasSuffix(".local"), !host.hasSuffix(".localhost"),
               host != "home.arpa", !host.hasSuffix(".home.arpa") else { return false }
         let labels = host.split(separator: ".", omittingEmptySubsequences: false)
-        guard labels.count >= 2, let root = labels.last, list.knownRoots.contains(String(root)),
+        guard let root = labels.last, list.knownRoots.contains(String(root)),
+              labels.count > suffixLength(labels.map(String.init)),
+              !includingDescendants || !list.nestedBoundaries.contains(host) else { return false }
+        return true
+    }
+
+    /// Syntax and IDNA only. A negative suffix rule can cover a PSL boundary.
+    public static func isCanonicalDNSName(_ host: String, allowsSingleLabel: Bool) -> Bool {
+        guard (1...253).contains(host.utf8.count) else { return false }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard (allowsSingleLabel || labels.count >= 2),
               labels.allSatisfy({ label in
                   (1...63).contains(label.utf8.count) && label.first != "-" && label.last != "-"
                       && label.utf8.allSatisfy { (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
-              }),
-              labels.count > suffixLength(labels.map(String.init)),
-              !includingDescendants || !list.nestedBoundaries.contains(host)
+              })
         else { return false }
-        if labels.contains(where: { $0.hasPrefix("xn--") }) {
-            guard let unicode = URLComponents(string: "https://\(host)/")?.host,
-                  unicode.utf8.contains(where: { $0 >= 128 }),
-                  var components = URLComponents(string: "https://example.com/") else { return false }
-            components.host = unicode
-            return components.url?.host == host
-        }
-        return true
+        let idnaLabels = labels.filter { $0.hasPrefix("xn--") }
+        guard !idnaLabels.isEmpty else { return true }
+        // Validate Bidi constraints across the whole name and require each
+        // A-label to decode, even when other labels decode successfully.
+        return idnaRoundTrip(host) && idnaLabels.allSatisfy { idnaRoundTrip("\($0).invalid") }
+    }
+
+    private static func idnaRoundTrip(_ host: String) -> Bool {
+        guard let unicode = URLComponents(string: "https://\(host)/")?.host,
+              unicode.utf8.contains(where: { $0 >= 128 }),
+              var components = URLComponents(string: "https://example.com/") else { return false }
+        components.host = unicode
+        return components.url?.host == host
     }
 
     public static func normalizedHost(_ raw: String) -> String? {

@@ -50,20 +50,33 @@ struct AccessGeoSiteUpdateTransport: Sendable {
     }
 #endif
 
-    func load(etag: String?, highWater: AccessGeoSiteAdmission.Receipt?, now: Date) async throws -> Result {
+    func load(etag: String?, highWater: AccessGeoSiteAdmission.Receipt?, now: Date,
+              includeOverseas: Bool = false,
+              onLateAdmission: @Sendable (AccessGeoSiteAdmission.Candidate) async -> Void = { _ in }) async throws -> Result {
         try await withThrowingTaskGroup(of: Result.self) { work in
-            work.addTask { try await loadRelease(etag: etag, highWater: highWater, now: now) }
+            work.addTask { try await loadRelease(etag: etag, highWater: highWater, now: now, includeOverseas: includeOverseas) }
             work.addTask {
                 try await Task.sleep(for: budget)
                 throw Failure.deadline
             }
             defer { work.cancelAll() }
-            guard let result = try await work.next() else { throw CancellationError() }
-            return result
+            do {
+                guard let result = try await work.next() else { throw CancellationError() }
+                return result
+            } catch {
+                work.cancelAll()
+                // A worker already in admission can finish after the timer.
+                // Its verified result may narrow authorization without publishing.
+                while let remaining = await work.nextResult() {
+                    if case .success(.candidate(let candidate, _)) = remaining { await onLateAdmission(candidate) }
+                }
+                throw error
+            }
         }
     }
 
-    private func loadRelease(etag: String?, highWater: AccessGeoSiteAdmission.Receipt?, now: Date) async throws -> Result {
+    private func loadRelease(etag: String?, highWater: AccessGeoSiteAdmission.Receipt?, now: Date,
+                             includeOverseas: Bool) async throws -> Result {
         let metadata = try await get(source.metadataURL, etag: etag, limit: AccessGeoSiteAdmission.maximumMetadataBytes)
         if metadata.status == 304 { return .notModified(etag: metadata.etag) }
         let receipt = try AccessGeoSiteAdmission.metadata(source.canonicalMetadata(metadata.bytes), now: now, highWater: highWater)
@@ -72,7 +85,8 @@ struct AccessGeoSiteUpdateTransport: Sendable {
         let database = try await get(source.requestAssetURL(receipt.databaseURL), asset: receipt.database,
                                      limit: AccessGeoSiteAdmission.maximumDatabaseBytes)
         let candidate = try AccessGeoSiteAdmission.admit(receipt: receipt, database: database.bytes,
-                                                         checksum: pair.bytes, now: now, highWater: highWater)
+                                                         checksum: pair.bytes, now: now, highWater: highWater,
+                                                         includeOverseas: includeOverseas)
         return .candidate(candidate, etag: Self.validETag(metadata.etag))
     }
 

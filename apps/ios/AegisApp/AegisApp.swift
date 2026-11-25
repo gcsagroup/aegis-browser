@@ -147,6 +147,9 @@ struct AegisApp: App {
         if isUITest {
             let arguments = ProcessInfo.processInfo.arguments
 #if targetEnvironment(simulator)
+            if arguments.contains("--ui-testing-overseas-fixture") {
+                return (try? AccessGeoSiteStorage.overseasUITest(keep: true)).map { AccessGeoSiteCache(storage: $0) }
+            }
             if arguments.contains("--ui-testing-geosite-consent-fixture") {
                 guard let storage = try? AccessGeoSiteStorage.consentUITest(keep: true) else { return nil }
                 return AccessGeoSiteCache(storage: storage)

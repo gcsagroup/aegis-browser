@@ -105,6 +105,8 @@ public protocol BrowserHostStoreCoordinating: AnyObject {
     func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool
     func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore?
     func willRestoreOriginalStore(tab: BrowserTab)
+    func mainFrameRouteApproved(tab: BrowserTab, url: URL, sequence: UInt64)
+    func mainFrameRouteCommitted(tab: BrowserTab, url: URL, sequence: UInt64)
     func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError)
     func pendingRecoveryInvalidated(tab: BrowserTab)
     func tabClosed(_ tab: BrowserTab)
@@ -121,6 +123,8 @@ public extension BrowserHostStoreCoordinating {
     func canSendMainFrame(tab: BrowserTab, url: URL) -> Bool { true }
     func prepareProxyNavigation(tab: BrowserTab, request: URLRequest) -> Bool { false }
     func willRestoreOriginalStore(tab: BrowserTab) {}
+    func mainFrameRouteApproved(tab: BrowserTab, url: URL, sequence: UInt64) {}
+    func mainFrameRouteCommitted(tab: BrowserTab, url: URL, sequence: UInt64) {}
 }
 
 public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
@@ -195,6 +199,15 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     @Published public private(set) var pendingAddressNavigation: BrowserPendingAddressNavigation?
     /// App-issued document loads already handed to WebKit, newest last.
     private var deliveredDocumentLoads: [(navigationID: String, url: URL)] = []
+    /// A sent or policy-approved main-frame load. A staged address hold is
+    /// not active merely because the pending address is visible.
+    public var activeMainFrameNavigationURL: URL? {
+        guard isLoading, pendingProxyRequest == nil else { return nil }
+        if pendingNavigation != nil { return requestedURL }
+        guard approvedMainFrameNavigationID == attempt.navigationID else { return nil }
+        return attempt.url
+    }
+    private var approvedMainFrameNavigationID: String?
     /// The address the user is navigating or recovering, even when WebKit still
     /// displays an older document or its internal HTTPS warning page.
     public var addressBarURL: URL? {
@@ -411,9 +424,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public private(set) var committedMainFrameURL: URL?
     /// The actual committed document in the resident view, including built-in
     /// pages. A provisional navigation does not replace this document.
-    public var liveCommittedDocumentURL: URL? {
+    public var liveCommittedDocumentURL: URL? { liveCommittedRequest?.url }
+    /// Stable across same-document history and URL changes.
+    public var liveCommittedDocumentSequence: UInt64? { liveCommittedRequest?.allowSequence }
+    private var liveCommittedRequest: MainFrameAttempt? {
         guard let view = loadedWebView, view === committedDocumentView else { return nil }
-        return committedRequest?.url
+        return committedRequest
     }
     @Published public private(set) var protectionIncident: PageProtectionIncident?
     @Published private var protectionNoticePresentation: AegisLocalizedMessage?
@@ -523,6 +539,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private func bindNavigation(_ navigation: WKNavigation, to recorded: MainFrameAttempt) { navigationState.bind(navigation, to: recorded) }
     private func retireNavigationIdentity(_ navigation: WKNavigation?) { navigationState.retire(navigation) }
     private func retireAllNavigationIdentities() {
+        approvedMainFrameNavigationID = nil
         provisionalNavigation = nil
         provisionalDeadline?.cancel()
         navigationState.retireAll()
@@ -567,6 +584,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             continuesExistingNavigation: continuesExistingNavigation,
             hasReplayableBody: hasReplayableBody
         )
+        approvedMainFrameNavigationID = attempt.navigationID
     }
 
     /// Cancels a deferred `WKWebView.load` that has not been issued yet (Stop, revoke, tab close).
@@ -1634,11 +1652,6 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             finish(.cancel)
             return
         }
-        if rejectIndeterminateRoute(requestURL) {
-            isLoading = false
-            finish(.cancel)
-            return
-        }
         let previousLanding = (proxyLandingParent, proxyLandingTarget)
         if decision.kind != .blocked, navigationAction.navigationType == .other,
            boundHostName != nil, let parent = proxyLandingParent ?? boundHostName, let target = Self.routingHost(of: requestURL),
@@ -1650,6 +1663,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
            RegisteredDomain.isCanonicalLandingHost(target, for: parent) {
             proxyLandingParent = parent
             proxyLandingTarget = target
+        }
+        if rejectIndeterminateRoute(requestURL) {
+            (proxyLandingParent, proxyLandingTarget) = previousLanding
+            isLoading = false
+            finish(.cancel)
+            return
         }
         let method = navigationAction.request.httpMethod ?? "GET"
         let hostMismatch = requestedURL.map { Self.routingHost(of: $0) != Self.routingHost(of: requestURL) } ?? false
@@ -1758,6 +1777,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 ),
                 policyType: navigationAction.navigationType
             )
+            approvedMainFrameNavigationID = attempt.navigationID
+            hostCoordinator?.mainFrameRouteApproved(tab: self, url: requestURL, sequence: attempt.allowSequence)
             finish(.allow)
         case .blocked:
             blockNavigation(decision)
@@ -1875,6 +1896,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                     proxyRecoveryCommitted = true
                 }
             }
+            hostCoordinator?.mainFrameRouteCommitted(tab: self, url: recorded.url, sequence: recorded.allowSequence)
         }
         // 新文档不继承前页的结构或接口提示；当前页面的检查会重新生成提示。
         protectionNoticePresentation = nil

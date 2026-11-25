@@ -420,7 +420,7 @@ private struct BrowserPane: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("隐藏地理位置")
-            .accessibilityValue(Text(LocalizedStringKey(AccessSiteProxyToggleModel.connectionLine(for: snapshot.connectionStatus))))
+            .accessibilityValue(Text(LocalizedStringKey(AccessSiteProxyToggleModel.siteStatusLine(snapshot))))
             .accessibilityAddTraits(snapshot.toggleOn ? .isSelected : [])
             .accessibilityIdentifier("address-location-privacy")
         }

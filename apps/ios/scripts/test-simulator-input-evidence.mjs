@@ -172,7 +172,10 @@ if (tool === 'python3') {
       console.log('11111111-2222-3333-4444-555555555555');
     }
   } else if (args[0] === 'xcresulttool') {
-    output({result: 'Passed', totalTestCount: 1});
+    const seed = (option('--path') ?? '').endsWith('-overseas-seed.xcresult');
+    const passed = seed && process.env.EVIDENCE_FAIL_OVERSEAS_SEED === '1' ? 0 : 1;
+    output({result: passed ? 'Passed' : 'Failed', totalTestCount: 1, passedTests: passed,
+      failedTests: 1 - passed, skippedTests: 0});
   } else if (args[0] === 'xccov') {
     output({targets: [{name: 'Aegis', files: [{path: path.join(ios, 'AegisApp/Main.swift'),
       coveredLines: 1, executableLines: 1, lineCoverage: 1}]}]});
@@ -261,6 +264,22 @@ test('runner distinguishes clean source from generated inputs and binds coverage
   assert.equal(coverage.metadata.gitTreeState, 'dirty');
   assert.equal(coverage.metadata.buildNumber, '35');
   assert.equal(coverage.metadata.inputManifestSha256, digest(before));
+  for (const device of ['iPhone', 'iPad']) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- The report path belongs to this temporary test fixture.
+    const seed = JSON.parse(fs.readFileSync(path.join(result.report, `${device}-overseas-seed-summary.json`), 'utf8'));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+    assert.equal(seed.passedTests, 1);
+  }
+});
+
+test('runner refuses the full suite when the overseas settings seed does not pass', t => {
+  const fixture = createFixture(t);
+  const result = runFixture(fixture, {EVIDENCE_FAIL_OVERSEAS_SEED: '1'});
+  assert.notEqual(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout + result.stderr, /SIMULATOR_TESTS=FAIL/);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The report path belongs to this temporary test fixture.
+  assert.ok(!fs.existsSync(path.join(result.report, 'iPhone.xcresult')));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The report path belongs to this temporary test fixture.
+  assert.ok(!fs.existsSync(path.join(result.report, 'iPad.xcresult')));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 });
 
 test('runner rejects shared-vector drift during testing and retains both manifests', t => {

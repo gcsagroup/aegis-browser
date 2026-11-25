@@ -161,6 +161,10 @@ private struct DomesticAccelerationSettingsView: View {
                     if let categories = hostStores.websiteCategories(for: tab) {
                         WebsiteCategoriesLink(tab: tab, selected: categories.selected)
                     }
+                    if hostStores.geoSiteCache != nil, hostStores.websiteAccelerationMode == .smart {
+                        NavigationLink("海外加速（针对大陆地区）") { OverseasAccelerationSettingsView(tab: tab) }
+                            .accessibilityIdentifier("overseas-acceleration-link")
+                    }
                 } header: {
                     Text("网站加速")
                         .accessibilityIdentifier("website-acceleration-section")

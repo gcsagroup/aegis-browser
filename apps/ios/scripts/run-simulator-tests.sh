@@ -391,6 +391,26 @@ else
   TABLET_COMMAND=(python3 "${SCRIPT_DIR}/geosite-https-fixture.py" --receipt "${OUTPUT_DIR}/iPad-geosite-https.json" -- "${TABLET_COMMAND[@]}")
 fi
 
+OVERSEAS_UI_TEST="AegisUITests/SettingsLayoutUITests/testOverseasSettingsRequiresExplicitConfirmationAndRestoresChoice"
+RUN_OVERSEAS_UI=0
+if [[ -z "${ONLY_TESTING[0]:-}" ]]; then RUN_OVERSEAS_UI=1; fi
+for filter in "${ONLY_TESTING[@]+${ONLY_TESTING[@]}}"; do
+  case "$filter" in
+    -only-testing:AegisUITests|-only-testing:AegisUITests/SettingsLayoutUITests|-only-testing:"$OVERSEAS_UI_TEST")
+      RUN_OVERSEAS_UI=1 ;;
+  esac
+done
+overseas_seed_command() {
+  OVERSEAS_SEED_COMMAND=(env TEST_RUNNER_AEGIS_OVERSEAS_UI_SEED=1 xcodebuild "${COMMON_ARGS[@]}" test-without-building
+    -destination "$2" -derivedDataPath "$DERIVED_DATA" -parallel-testing-enabled NO -collect-test-diagnostics never
+    -resultBundlePath "${OUTPUT_DIR}/$1-overseas-seed.xcresult"
+    -only-testing:AegisTests/AccessGeoSiteCacheTests/testPrepareOverseasSettingsFixture)
+}
+if [[ "$RUN_OVERSEAS_UI" == 1 ]]; then
+  PHONE_COMMAND=(env TEST_RUNNER_AEGIS_OVERSEAS_UI_READY=1 "${PHONE_COMMAND[@]}")
+  TABLET_COMMAND=(env TEST_RUNNER_AEGIS_OVERSEAS_UI_READY=1 "${TABLET_COMMAND[@]}")
+fi
+
 BUILD_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" build-for-testing
   -destination "$PHONE_XCODE_DESTINATION" -derivedDataPath "$DERIVED_DATA"
   "AEGIS_EMBEDDED_CORE_PRODUCTS=$DERIVED_DATA/EmbeddedCore")
@@ -399,8 +419,16 @@ if [[ "$MODE" == "dry-run" ]]; then
   printf '构建时递增 project.yml 构建号，并在固定路径 %s 生成一次测试包。\n' "$DERIVED_DATA"
   print_command "${BUILD_COMMAND[@]}"
   printf '\n将执行：\n'
+  if [[ "$RUN_OVERSEAS_UI" == 1 ]]; then
+    overseas_seed_command iPhone "$PHONE_XCODE_DESTINATION"
+    print_command "${OVERSEAS_SEED_COMMAND[@]}"
+  fi
   print_command "${PHONE_COMMAND[@]}"
   if [[ "$TABLET_ENABLED" == "yes" ]]; then
+    if [[ "$RUN_OVERSEAS_UI" == 1 ]]; then
+      overseas_seed_command iPad "$TABLET_XCODE_DESTINATION"
+      print_command "${OVERSEAS_SEED_COMMAND[@]}"
+    fi
     print_command "${TABLET_COMMAND[@]}"
   fi
   printf '\nDRY_RUN=PASS（未创建设备、未启动测试、未创建输出目录）\n'
@@ -613,11 +641,28 @@ PYTHON
 phone_status=0
 tablet_status=0
 input_status=0
-run_test "iPhone" "${OUTPUT_DIR}/iPhone.xcresult" "${OUTPUT_DIR}/iPhone-xcodebuild.log" \
-  "${PHONE_COMMAND[@]}" || phone_status=$?
+seed_overseas_settings() {
+  if [[ "$RUN_OVERSEAS_UI" == 0 ]]; then return; fi
+  overseas_seed_command "$1" "$2"
+  "${OVERSEAS_SEED_COMMAND[@]}" > "${OUTPUT_DIR}/$1-overseas-seed.log" 2>&1 || return "$?"
+  xcrun xcresulttool get test-results summary --path "${OUTPUT_DIR}/$1-overseas-seed.xcresult" \
+    --format json > "${OUTPUT_DIR}/$1-overseas-seed-summary.json" || return "$?"
+  node -e 'const s = require(process.argv[1]); if (s.passedTests !== 1 || s.totalTestCount !== 1) process.exit(1);' \
+    "${OUTPUT_DIR}/$1-overseas-seed-summary.json"
+}
+if seed_overseas_settings iPhone "$PHONE_XCODE_DESTINATION"; then
+  run_test "iPhone" "${OUTPUT_DIR}/iPhone.xcresult" "${OUTPUT_DIR}/iPhone-xcodebuild.log" \
+    "${PHONE_COMMAND[@]}" || phone_status=$?
+else
+  phone_status=$?
+fi
 if [[ "$TABLET_ENABLED" == "yes" ]]; then
-  run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
-    "${TABLET_COMMAND[@]}" || tablet_status=$?
+  if seed_overseas_settings iPad "$TABLET_XCODE_DESTINATION"; then
+    run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
+      "${TABLET_COMMAND[@]}" || tablet_status=$?
+  else
+    tablet_status=$?
+  fi
   tablet_exit_record="${tablet_status}"
 else
   tablet_exit_record="skipped"

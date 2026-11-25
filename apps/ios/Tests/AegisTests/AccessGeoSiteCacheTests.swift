@@ -41,10 +41,10 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let first = fixture.cache()
         await first.restore(migrating: smartAll)
-        let v1 = try candidate(1, database: Vector.selectedProjection)
+        let v1 = try Self.candidate(1, database: Vector.selectedProjection)
         try await first.apply(v1, using: XCTUnwrap(first.updateContext()))
         XCTAssertEqual(first.match(URL(string: "https://dotdeb.org/")!), .managed)
-        let v2 = try candidate(2, database: combined(
+        let v2 = try Self.candidate(2, database: combined(
             debian: [Vector.rule(3, "debian.org")],
             douban: bundled(.douban) + [Vector.rule(2, "new-coverage.example.com")],
             meituan: []))
@@ -74,7 +74,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertNil(restored.stagedFileSHA256)
         await expectFailure { try await restored.apply(v1, using: XCTUnwrap(restored.updateContext())) }
 
-        let v3 = try candidate(3, database: Vector.selectedProjection)
+        let v3 = try Self.candidate(3, database: Vector.selectedProjection)
         try await restored.apply(v3, using: XCTUnwrap(restored.updateContext()))
         XCTAssertNotNil(restored.proposal(for: .meituan), "A withdrawn group needs new approval")
         XCTAssertEqual(restored.match(URL(string: "https://www.meituan.com/")!), .original)
@@ -86,7 +86,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let cache = fixture.cache()
         await cache.restore(migrating: smartAll)
-        let more = try candidate(1, database: combined(debian: bundled(.debian),
+        let more = try Self.candidate(1, database: combined(debian: bundled(.debian),
             douban: bundled(.douban) + [Vector.rule(2, "new-coverage.example.com")], meituan: bundled(.meituan)))
         try await cache.apply(more, using: XCTUnwrap(cache.updateContext()))
         let oldContext = try XCTUnwrap(cache.updateContext())
@@ -96,7 +96,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertNil(cache.updateContext())
         await expectFailure { try await cache.confirm(proposal) }
         try cache.setSelection(smartAll)
-        let next = try candidate(2, database: Vector.selectedProjection)
+        let next = try Self.candidate(2, database: Vector.selectedProjection)
         await expectFailure { try await cache.apply(next, using: oldContext) }
         try await cache.apply(next, using: XCTUnwrap(cache.updateContext()))
         await expectFailure { try await cache.confirm(proposal) }
@@ -108,10 +108,10 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let cache = fixture.cache()
         await cache.restore(migrating: smartAll)
-        try await cache.apply(candidate(1, database: Vector.selectedProjection), using: XCTUnwrap(cache.updateContext()))
+        try await cache.apply(Self.candidate(1, database: Vector.selectedProjection), using: XCTUnwrap(cache.updateContext()))
         let oldHash = try XCTUnwrap(cache.activeFileSHA256)
         let old = try Data(contentsOf: fixture.storage.blobURL(.active, oldHash))
-        let approved = try candidate(2, database: combined(debian: [Vector.rule(3, "debian.org")],
+        let approved = try Self.candidate(2, database: combined(debian: [Vector.rule(3, "debian.org")],
             douban: bundled(.douban), meituan: bundled(.meituan)))
         try await cache.apply(approved, using: XCTUnwrap(cache.updateContext()))
         let authoritative = fixture.storage.blobURL(.active, try XCTUnwrap(cache.activeFileSHA256))
@@ -159,9 +159,9 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let first = fixture.cache()
         await first.restore(migrating: smartAll)
-        let v1 = try candidate(1, database: Vector.selectedProjection)
+        let v1 = try Self.candidate(1, database: Vector.selectedProjection)
         try await first.apply(v1, using: XCTUnwrap(first.updateContext()))
-        let v2 = try candidate(2, database: combined(debian: [], douban: bundled(.douban), meituan: bundled(.meituan)))
+        let v2 = try Self.candidate(2, database: combined(debian: [], douban: bundled(.douban), meituan: bundled(.meituan)))
         for failure in [AccessGeoSiteStorage.Step.afterFileSync, .afterRename, .afterDirectorySync, .writeLedger] {
             let context = try XCTUnwrap(first.updateContext())
             fixture.fault.withLock { $0 = failure }
@@ -184,7 +184,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let first = fixture.cache()
         await first.restore(migrating: smartAll)
-        let official = try candidate(1, database: Vector.selectedProjection)
+        let official = try Self.candidate(1, database: Vector.selectedProjection)
         try await first.apply(official, using: XCTUnwrap(first.updateContext()))
         let state = Cache.RefreshState(failureCount: 2, nextAttempt: Vector.now.addingTimeInterval(300))
         try first.setRefreshState(state, using: XCTUnwrap(first.updateContext()))
@@ -213,7 +213,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let cache = fixture.cache()
         await cache.restore(migrating: smartAll)
-        let receipt = try candidate(1, database: Vector.selectedProjection)
+        let receipt = try Self.candidate(1, database: Vector.selectedProjection)
         try await cache.apply(receipt, using: XCTUnwrap(cache.updateContext()))
         fixture.clock.advance(by: 60)
         fixture.fault.withLock { $0 = .writeLedger }
@@ -234,7 +234,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         let cache = fixture.cache()
         await cache.restore(migrating: smartAll)
         let extensionRules = (1...33).map { Vector.rule(2, "site\($0).example.net") }
-        let newer = try candidate(1, database: combined(debian: bundled(.debian),
+        let newer = try Self.candidate(1, database: combined(debian: bundled(.debian),
             douban: bundled(.douban) + extensionRules, meituan: bundled(.meituan)))
         try await cache.apply(newer, using: XCTUnwrap(cache.updateContext()))
         XCTAssertEqual(cache.highWater, newer.receipt)
@@ -250,9 +250,9 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let cache = fixture.cache()
         await cache.restore(migrating: smartAll)
-        let initial = try candidate(1, database: Vector.selectedProjection)
+        let initial = try Self.candidate(1, database: Vector.selectedProjection)
         try await cache.apply(initial, using: XCTUnwrap(cache.updateContext()))
-        let next = try candidate(2, database: combined(debian: [], douban: bundled(.douban), meituan: bundled(.meituan)))
+        let next = try Self.candidate(2, database: combined(debian: [], douban: bundled(.douban), meituan: bundled(.meituan)))
         let context = try XCTUnwrap(cache.updateContext())
         gate.arm()
         let publication = Task { try await cache.apply(next, using: context) }
@@ -275,7 +275,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         defer { fixture.clean() }
         let first = fixture.cache()
         await first.restore(migrating: smartAll)
-        try await first.apply(candidate(1, database: Vector.selectedProjection), using: XCTUnwrap(first.updateContext()))
+        try await first.apply(Self.candidate(1, database: Vector.selectedProjection), using: XCTUnwrap(first.updateContext()))
         let active = fixture.storage.blobURL(.active, try XCTUnwrap(first.activeFileSHA256))
         try FileManager.default.removeItem(at: active)
         let suite = "aegis.geosite.route-test." + UUID().uuidString
@@ -306,6 +306,575 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertTrue(coordinator.requiresProxy(tab: tab, url: outside))
     }
 
+    func testOverseasOnlyRefreshRequiresConsentAndSurvivesColdStart() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        XCTAssertNil(cache.updateContext())
+        try cache.requestOverseasPreview()
+        let source = try Self.overseas(1, positive: ["google.com", "fast.com"], excluding: ["dl.google.com"])
+        try await cache.apply(source, using: XCTUnwrap(cache.updateContext()), refreshed: .init(etag: "\"overseas\""))
+        let gemini = URL(string: "https://gemini.google.com")!
+        let speed = URL(string: "https://fast.com")!
+        XCTAssertEqual(cache.runtimeView().overseas.match(gemini), .original)
+        XCTAssertNil(cache.updateContext())
+        let choice = AccessOverseasSelection(enabled: true, categories: [.ai])
+        let consent = try await cache.overseasConfirmation(for: choice)
+
+        try cache.setSelection(.init(mode: .manual, categories: []))
+        try cache.setSelection(.init(mode: .smart, categories: []))
+        await expectFailure { try await cache.confirmOverseas(consent) { true } }
+        let current = try await cache.overseasConfirmation(for: choice)
+        await expectFailure { try await cache.confirmOverseas(current) { false } }
+        try await cache.confirmOverseas(current) { true }
+        XCTAssertEqual(cache.runtimeView().overseas.match(gemini), .managed)
+        XCTAssertEqual(cache.runtimeView().overseas.route(for: gemini).grant, .categories([.ai], release: source.receipt.tag))
+        XCTAssertEqual(cache.runtimeView().overseas.match(speed), .original)
+        let conditional = try await cache.conditionalReceipt(using: XCTUnwrap(cache.updateContext()))
+        XCTAssertEqual(conditional?.etag, "\"overseas\"")
+        // A domestic choice without an accepted release must not discard the
+        // overseas proof of the stored release (no full redownload).
+        try cache.setSelection(.init(mode: .smart, categories: [.debian]))
+        let withDomestic = try await cache.conditionalReceipt(using: XCTUnwrap(cache.updateContext()))
+        XCTAssertEqual(withDomestic?.etag, "\"overseas\"")
+        try cache.setSelection(.init(mode: .smart, categories: []))
+
+        let reopened = fixture.cache()
+        await reopened.restore()
+        XCTAssertEqual(reopened.view.overseas.selection, choice)
+        XCTAssertEqual(reopened.runtimeView().overseas.match(gemini), .managed)
+        XCTAssertEqual(reopened.runtimeView().overseas.match(speed), .original)
+        try reopened.disableOverseas()
+        let disabled = fixture.cache()
+        await disabled.restore()
+        XCTAssertFalse(disabled.view.overseas.selection.enabled)
+        XCTAssertEqual(disabled.view.overseas.selection.categories, [.ai])
+        XCTAssertEqual(disabled.runtimeView().overseas.match(gemini), .original)
+        let emptyChoice = AccessOverseasSelection(enabled: true, mode: .categories)
+        try await disabled.confirmOverseas(disabled.overseasConfirmation(for: emptyChoice)) { true }
+        let coldEmpty = fixture.cache()
+        await coldEmpty.restore()
+        XCTAssertEqual(coldEmpty.view.overseas.selection, emptyChoice)
+        XCTAssertFalse(coldEmpty.wantsOverseasRules)
+        XCTAssertNil(coldEmpty.updateContext())
+    }
+
+    func testMixedOverseasUpdateAppliesWithdrawalsAndNewExceptionsBeforeConsent() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com", "fast.com"], excluding: ["dl.google.com"])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all, categories: [.ai])
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        let v2 = try Self.overseas(2, positive: ["google.com", "netflix.com"], excluding: ["fonts.google.com"])
+        try await cache.apply(v2, using: XCTUnwrap(cache.updateContext()))
+        let view = cache.runtimeView().overseas
+        func url(_ host: String) -> URL { URL(string: "https://\(host)")! }
+        XCTAssertEqual(view.match(url("fast.com")), .original)
+        XCTAssertEqual(view.match(url("dl.google.com")), .original)
+        XCTAssertEqual(view.match(url("fonts.google.com")), .original)
+        XCTAssertEqual(view.match(url("netflix.com")), .original)
+        XCTAssertEqual(view.match(url("www.google.com")), .managed)
+        XCTAssertTrue(cache.view.overseas.awaitingExpansion)
+
+        let reopened = fixture.cache()
+        await reopened.restore()
+        XCTAssertEqual(reopened.runtimeView().overseas, view)
+        let proposal = try await reopened.overseasConfirmation(for: all)
+        XCTAssertEqual(proposal.newRules.map(\.value), ["netflix.com"])
+        XCTAssertEqual(proposal.removedExclusions.map(\.value), ["dl.google.com"])
+        try await reopened.confirmOverseas(proposal) { true }
+        XCTAssertFalse(reopened.view.overseas.awaitingExpansion)
+        XCTAssertEqual(reopened.runtimeView().overseas.match(url("dl.google.com")), .managed)
+        XCTAssertEqual(reopened.runtimeView().overseas.match(url("fonts.google.com")), .original)
+        XCTAssertEqual(reopened.runtimeView().overseas.match(url("netflix.com")), .managed)
+    }
+
+    func testOverseasExactScopeRetainsSharedHostsWhenExclusionUnionExceedsSourceLimit() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let positive = Vector.group("GFWLIST-CN", rules: [Vector.rule(3, "chatgpt.com"), Vector.rule(3, "claude.ai")])
+        let openAI = Vector.group("OPENAI", rules: [Vector.rule(3, "chatgpt.com")])
+        let anthropic = Vector.group("ANTHROPIC", rules: [Vector.rule(3, "claude.ai")])
+        let shared = (1...511).map { Vector.rule(2, "x-\($0).example.net") }
+        let oldExceptions = Vector.group("GFWLIST-CN-EXCLUDE", rules: shared + [Vector.rule(2, "old.example.net")])
+        let newExceptions = Vector.group("GFWLIST-CN-EXCLUDE", rules: shared + [Vector.rule(2, "new.example.net")])
+        let v1 = try Self.candidate(1, database: positive + oldExceptions + openAI, includeOverseas: true)
+        let v2 = try Self.candidate(2, database: positive + newExceptions + openAI + anthropic, includeOverseas: true)
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let ai = AccessOverseasSelection(enabled: true, categories: [.ai])
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: ai)) { true }
+        try await cache.apply(v2, using: XCTUnwrap(cache.updateContext()))
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://chatgpt.com")!), .managed)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://claude.ai")!), .original)
+        let candidate = try await cold.overseasConfirmation(for: ai)
+        XCTAssertEqual(candidate.newRules.map(\.value), ["claude.ai"])
+    }
+
+    func testOverseasAllScopeHoldsWhenSafeDomainIntersectionExceedsCapacity() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let oldExceptions = (1...512).map { "old-\($0).example.com" }
+        let newExceptions = (1...512).map { "new-\($0).example.com" }
+        let old = try Self.overseas(1, positive: ["example.com"], excluding: oldExceptions)
+        let newer = try Self.overseas(2, positive: ["example.com", "example.net"], excluding: newExceptions)
+        try await cache.apply(old, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        try await cache.apply(newer, using: XCTUnwrap(cache.updateContext()))
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertTrue(cold.view.overseas.awaitingExpansion)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://unchanged.example.com")!), .indeterminate)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
+        await expectExpansionTooLarge { try await cold.overseasConfirmation(for: all) }
+        let flight = try cold.beginOverseasRefresh(using: XCTUnwrap(cold.updateContext()))
+        defer { cold.endOverseasRefresh(flight) }
+        let interrupted = fixture.cache()
+        await interrupted.restore()
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.net")!), .indeterminate)
+        fixture.clock.advance(by: 8 * 86_400)
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.net")!), .indeterminate)
+        fixture.clock.setWall(fixture.clock.wall.addingTimeInterval(-600))
+        XCTAssertEqual(interrupted.runtimeView().status, .clockRollback)
+        XCTAssertEqual(interrupted.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
+    }
+
+    func testOverseasExpansionLimitSurvivesExpiryOfThePreviouslyNarrowedSnapshot() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let exceptions = (1...33).map { "blocked-\($0).example.com" }
+        let v1 = try Self.overseas(1, positive: ["example.com"], excluding: exceptions)
+        let v2 = try Self.overseas(2, positive: ["example.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        try await cache.apply(v2, using: XCTUnwrap(cache.updateContext()))
+        await expectFailure { _ = try await cache.overseasConfirmation(for: all) }
+        fixture.clock.advance(by: 8 * 86_400)
+        let v3 = try Self.overseas(3, positive: ["example.com"], excluding: [], now: fixture.clock.wall)
+        try await cache.apply(v3, using: XCTUnwrap(cache.updateContext()))
+        XCTAssertEqual(cache.runtimeView().overseas.match(URL(string: "https://kept.example.com")!), .managed)
+        XCTAssertEqual(cache.runtimeView().overseas.match(URL(string: "https://blocked-1.example.com")!), .original)
+        await expectExpansionTooLarge { try await cache.overseasConfirmation(for: all) }
+    }
+
+    func testOverseasSnapshotCrashesAndCorruptionCannotPromoteUncommittedRules() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        let target = URL(string: "https://gemini.google.com")!
+        let consent = try await cache.overseasConfirmation(for: all)
+        for fault in [AccessGeoSiteStorage.Step.afterFileSync, .afterRename, .afterDirectorySync, .writeLedger] {
+            fixture.fault.withLock { $0 = fault }
+            await expectFailure { try await cache.confirmOverseas(consent) { true } }
+            fixture.fault.withLock { $0 = nil }
+            let reopened = fixture.cache()
+            await reopened.restore()
+            XCTAssertEqual(reopened.runtimeView().overseas.match(target), .original)
+        }
+        try await cache.confirmOverseas(consent) { true }
+        func blob(approved: Bool) throws -> URL {
+            let files = try FileManager.default.contentsOfDirectory(at: fixture.storage.directory, includingPropertiesForKeys: nil)
+            return try XCTUnwrap(files.first { file in
+                guard file.lastPathComponent.hasPrefix("overseas-"), file.pathExtension == "json",
+                      let data = try? Data(contentsOf: file),
+                      let content = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+                return (content["approved"] != nil) == approved
+            })
+        }
+        try Data("damaged stage".utf8).write(to: blob(approved: false))
+        let intact = fixture.cache()
+        await intact.restore()
+        XCTAssertEqual(intact.runtimeView().overseas.match(target), .managed)
+        XCTAssertNil(intact.overseasPreview)
+        await expectFailure { _ = try await intact.overseasConfirmation(for: all) }
+        try Data("damaged active".utf8).write(to: blob(approved: true))
+        let broken = fixture.cache()
+        await broken.restore()
+        XCTAssertTrue(broken.view.overseas.selection.enabled)
+        XCTAssertEqual(broken.runtimeView().overseas.match(target), .indeterminate)
+        XCTAssertTrue(broken.view.overseas.awaitingExpansion)
+    }
+
+    func testVerifiedOverseasWithdrawalSurvivesFailedPublicationRestartAndRelisting() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        let approved = try await cache.overseasConfirmation(for: all)
+        try await cache.confirmOverseas(approved) { true }
+
+        let target = URL(string: "https://gemini.google.com")!
+        let v2 = try Self.overseas(2, positive: ["google.com"], excluding: ["gemini.google.com"])
+        let relisted = try Self.overseas(3, positive: ["google.com"], excluding: [])
+        fixture.fault.withLock { $0 = .writeLedger }
+        await expectFailure { try await cache.apply(v2, using: XCTUnwrap(cache.updateContext())) }
+        await expectFailure { try await cache.apply(relisted, using: XCTUnwrap(cache.updateContext())) }
+        fixture.fault.withLock { $0 = nil }
+        XCTAssertEqual(cache.runtimeView().overseas.match(target), .indeterminate)
+        XCTAssertNil(cache.overseasPreview)
+        await expectFailure { _ = try await cache.overseasConfirmation(for: all) }
+
+        let reopened = fixture.cache()
+        await reopened.restore()
+        XCTAssertEqual(reopened.runtimeView().overseas.match(target), .indeterminate)
+        XCTAssertNil(reopened.overseasPreview)
+        await expectFailure { try await reopened.apply(v2, using: XCTUnwrap(reopened.updateContext())) }
+        try await reopened.apply(relisted, using: XCTUnwrap(reopened.updateContext()))
+        XCTAssertEqual(reopened.runtimeView().overseas.match(target), .indeterminate)
+        await expectExpansionTooLarge { try await reopened.overseasConfirmation(for: all) }
+        try reopened.disableOverseas()
+        let newApproval = try await reopened.overseasConfirmation(for: all)
+        try await reopened.confirmOverseas(newApproval) { true }
+        XCTAssertEqual(reopened.runtimeView().overseas.match(target), .managed)
+    }
+
+    func testVerifiedOverseasWithdrawalSurvivesCancellationDuringDiskPublish() async throws {
+        let gate = WriteGate()
+        let fixture = Fixture(onStep: gate.wait)
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        let target = URL(string: "https://gemini.google.com")!
+        let v2 = try Self.overseas(2, positive: ["google.com"], excluding: ["gemini.google.com"])
+        let context = try XCTUnwrap(cache.updateContext())
+        gate.arm()
+        let update = Task { try await cache.apply(v2, using: context) }
+        for _ in 0..<200 where !gate.entered { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(gate.entered)
+        XCTAssertEqual(cache.runtimeView().overseas.match(target), .indeterminate)
+        update.cancel()
+        gate.release.signal()
+        await expectFailure { try await update.value }
+        let reopened = fixture.cache()
+        await reopened.restore()
+        XCTAssertEqual(reopened.runtimeView().overseas.match(target), .indeterminate)
+    }
+
+    func testOverseasWithdrawalSurvivesMarkerFailureAndForegroundLoss() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        let target = URL(string: "https://gemini.google.com")!
+        let context = try XCTUnwrap(cache.updateContext())
+        let flight = try cache.beginOverseasRefresh(using: context)
+        let v2 = try Self.overseas(2, positive: ["google.com"], excluding: ["gemini.google.com"])
+        fixture.fault.withLock { $0 = .writeOverseasWithdrawal }
+        await expectFailure { try await cache.apply(v2, using: context) { false } }
+        cache.endOverseasRefresh(flight)
+        fixture.fault.withLock { $0 = nil }
+        let offlineRetry = try cache.beginOverseasRefresh(using: context)
+        cache.endOverseasRefresh(offlineRetry)
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.runtimeView().overseas.match(target), .indeterminate)
+        XCTAssertNil(cold.overseasPreview)
+        await expectFailure { try await cold.apply(v1, using: XCTUnwrap(cold.updateContext())) }
+    }
+
+    func testNewlyVerifiedOverseasReleaseInvalidatesConsentSealingAnOlderOffer() async throws {
+        let gate = WriteGate()
+        let fixture = Fixture(onStep: gate.wait)
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        let pending = try await cache.overseasConfirmation(for: all)
+        let context = try XCTUnwrap(cache.updateContext())
+        gate.arm()
+        let consent = Task { try await cache.confirmOverseas(pending) { true } }
+        for _ in 0..<200 where !gate.entered { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(gate.entered)
+        let v2 = try Self.candidate(2, database: Vector.selectedProjection)
+        XCTAssertFalse(cache.wantsOverseasRules)
+        await expectFailure { try await cache.apply(v2, using: context) }
+        gate.release.signal()
+        await expectFailure { try await consent.value }
+        XCTAssertFalse(cache.view.overseas.selection.enabled)
+        XCTAssertNil(cache.overseasPreview)
+    }
+
+    func testCorruptWithdrawalRecordPreservesLegacyRulesWhileHoldingOverseas() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        try cache.requestOverseasPreview()
+        let data = Vector.selectedProjection
+            + Vector.group("GFWLIST-CN", rules: [Vector.rule(2, "google.com")])
+            + Vector.group("GFWLIST-CN-EXCLUDE", rules: [])
+        let v1 = try Self.candidate(1, database: data, includeOverseas: true)
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        try fixture.storage.writeOverseasWithdrawal(Data("malformed".utf8))
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.match(debian), .managed)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://www.google.com")!), .indeterminate)
+        XCTAssertNil(cold.overseasPreview)
+    }
+
+    func testFirstFailedOverseasPublicationPreservesReceiptWithoutSnapshotPointers() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        try cache.requestOverseasPreview()
+        let newer = try Self.overseas(2, positive: [], excluding: [])
+        fixture.fault.withLock { $0 = .writeLedger }
+        await expectFailure { try await cache.apply(newer, using: XCTUnwrap(cache.updateContext())) }
+        fixture.fault.withLock { $0 = nil }
+        let cold = fixture.cache()
+        await cold.restore()
+        let newerLegacy = try Self.candidate(3, database: Vector.selectedProjection)
+        fixture.fault.withLock { $0 = .writeLedger }
+        await expectFailure { try await cold.apply(newerLegacy, using: XCTUnwrap(cold.updateContext())) }
+        fixture.fault.withLock { $0 = nil }
+        let retried = fixture.cache()
+        await retried.restore()
+        try retried.requestOverseasPreview()
+        await expectFailure { try await retried.apply(newer, using: XCTUnwrap(retried.updateContext())) }
+        XCTAssertNil(retried.overseasPreview)
+    }
+
+    func testFailedOverseasDisableHoldsAfterRestart() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let source = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(source, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        let target = URL(string: "https://gemini.google.com")!
+        fixture.fault.withLock { $0 = .writeLedger }
+        XCTAssertThrowsError(try cache.disableOverseas())
+        fixture.fault.withLock { $0 = nil }
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.runtimeView().overseas.match(target), .indeterminate)
+        try await cold.apply(source, using: XCTUnwrap(cold.updateContext()))
+        XCTAssertEqual(cold.runtimeView().overseas.match(target), .indeterminate)
+        try cold.disableOverseas()
+        XCTAssertEqual(cold.runtimeView().overseas.match(target), .original)
+    }
+
+    func testUnknownOverseasRecoveryHoldSurvivesFailedRetryAndCorruptJournal() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+
+        let v2 = try Self.overseas(2, positive: ["google.com"], excluding: [])
+        fixture.fault.withLock { $0 = .writeLedger }
+        await expectFailure { try await cache.apply(v2, using: XCTUnwrap(cache.updateContext())) }
+        fixture.fault.withLock { $0 = nil }
+        _ = try cache.beginOverseasRefresh(using: XCTUnwrap(cache.updateContext()))
+        let cold = fixture.cache()
+        await cold.restore()
+        let target = URL(string: "https://gemini.google.com")!
+        XCTAssertEqual(cold.runtimeView().overseas.match(target), .indeterminate)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://example.org")!), .original)
+        let newer = try Self.overseas(3, positive: ["google.com"], excluding: [])
+        fixture.fault.withLock { $0 = .writeLedger }
+        await expectFailure { try await cold.apply(newer, using: XCTUnwrap(cold.updateContext())) }
+        fixture.fault.withLock { $0 = nil }
+        let afterFailure = fixture.cache()
+        await afterFailure.restore()
+        let journal = fixture.storage.directory.appendingPathComponent("overseas-refresh.json")
+        try Data("damaged".utf8).write(to: journal)
+        let afterCorruption = fixture.cache()
+        await afterCorruption.restore()
+        await expectFailure { try await afterCorruption.apply(v1, using: XCTUnwrap(afterCorruption.updateContext())) }
+        try await afterFailure.apply(newer, using: XCTUnwrap(afterFailure.updateContext()))
+        XCTAssertEqual(afterFailure.runtimeView().overseas.match(target), .indeterminate)
+    }
+
+    func testOverseasDisableWithUnavailableJournalKeepsTheVerifiedReceiptFloor() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        let v2 = try Self.overseas(2, positive: ["google.com"], excluding: ["gemini.google.com"])
+        fixture.fault.withLock { $0 = .writeLedger }
+        await expectFailure { try await cache.apply(v2, using: XCTUnwrap(cache.updateContext())) }
+        fixture.fault.withLock { $0 = .writeOverseasJournal }
+        try cache.disableOverseas()
+        fixture.fault.withLock { $0 = nil }
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertFalse(cold.view.overseas.selection.enabled)
+        XCTAssertNil(cold.overseasPreview)
+        try cold.requestOverseasPreview()
+        await expectFailure { try await cold.apply(v1, using: XCTUnwrap(cold.updateContext())) }
+    }
+
+    func testLegacyRefreshAdvancesOverseasFloorAfterSuccessfulRemovalOfStagedPointer() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let v2 = try Self.candidate(2, database: Vector.selectedProjection)
+        try await cache.apply(v2, using: XCTUnwrap(cache.updateContext()))
+        XCTAssertNil(cache.overseasPreview)
+        let v3 = try Self.candidate(3, database: Vector.selectedProjection)
+        fixture.fault.withLock { $0 = .writeLedger }
+        await expectFailure { try await cache.apply(v3, using: XCTUnwrap(cache.updateContext())) }
+        fixture.fault.withLock { $0 = nil }
+        let cold = fixture.cache()
+        await cold.restore()
+        try cold.requestOverseasPreview()
+        await expectFailure { try await cold.apply(v2, using: XCTUnwrap(cold.updateContext())) }
+    }
+
+    func testMissingOverseasApprovalCannotReviveOrBypassTheExpansionLimit() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let v1 = try Self.overseas(1, positive: ["fast.com"], excluding: [])
+        try await cache.apply(v1, using: XCTUnwrap(cache.updateContext()))
+        let all = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: all)) { true }
+        let files = try FileManager.default.contentsOfDirectory(at: fixture.storage.directory, includingPropertiesForKeys: nil)
+        let active = try XCTUnwrap(files.first { file in
+            guard file.lastPathComponent.hasPrefix("overseas-"), file.pathExtension == "json",
+                  let data = try? Data(contentsOf: file),
+                  let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+            return object["approved"] != nil
+        })
+        let original = try Data(contentsOf: active)
+        try FileManager.default.removeItem(at: active)
+        let reopened = fixture.cache()
+        await reopened.restore()
+        let v2 = try Self.overseas(2, positive: ["host-1.example.com"], excluding: [])
+        try await reopened.apply(v2, using: XCTUnwrap(reopened.updateContext()))
+        try original.write(to: active)
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.highWater, v2.receipt)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://fast.com")!), .original)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://host-1.example.com")!), .indeterminate)
+        await expectExpansionTooLarge { try await cold.overseasConfirmation(for: all) }
+    }
+
+    func testOverseasBlobIndependentSizeLimit() throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let exact = Data(repeating: 0x41, count: AccessGeoSiteStorage.overseasBlobLimit)
+        let digest = AccessGeoSiteAdmission.sha256(exact)
+        try fixture.storage.storeOverseas(exact, digest: digest, raw: false)
+        XCTAssertEqual(try fixture.storage.readOverseas(digest: digest, length: exact.count, raw: false), exact)
+        fixture.fault.withLock { $0 = .afterDirectorySync }
+        XCTAssertThrowsError(try fixture.storage.storeOverseas(exact, digest: digest, raw: false))
+        fixture.fault.withLock { $0 = nil }
+        let tooLarge = exact + Data([0x42])
+        XCTAssertThrowsError(try fixture.storage.storeOverseas(tooLarge, digest: AccessGeoSiteAdmission.sha256(tooLarge), raw: false))
+        XCTAssertThrowsError(try fixture.storage.readOverseas(digest: digest, length: tooLarge.count, raw: false))
+        XCTAssertThrowsError(try fixture.storage.writeFile(exact, to: fixture.storage.marker))
+    }
+
+    func testOverseasColdRestoreWithExcludedApexAndDescendants() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let data = Vector.group("GFWLIST-CN", rules: [Vector.rule(2, "example.com"), Vector.rule(3, "example.net")])
+            + Vector.group("GFWLIST-CN-EXCLUDE", rules: [Vector.rule(0, ".example.com"), Vector.rule(3, "example.com")])
+        let candidate = try Self.candidate(1, database: data, includeOverseas: true)
+        try await cache.apply(candidate, using: XCTUnwrap(cache.updateContext()))
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: .init(enabled: true, mode: .all))) { true }
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://example.com")!), .original)
+        XCTAssertEqual(cold.runtimeView().overseas.match(URL(string: "https://example.net")!), .managed)
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    func testPrepareOverseasSettingsFixture() async throws {
+        guard ProcessInfo.processInfo.environment["AEGIS_OVERSEAS_UI_SEED"] == "1" else {
+            throw XCTSkip("Only the simulator Settings fixture setup runs this test")
+        }
+        let storage = try AccessGeoSiteStorage.overseasUITest(keep: false)
+        let cache = AccessGeoSiteCache(storage: storage)
+        await cache.restore(migrating: .init(mode: .smart, categories: []))
+        try cache.requestOverseasPreview()
+        let preview = try Self.overseas(1, positive: ["google.com", "fast.com"], excluding: ["dl.google.com"], now: Date())
+        try await cache.apply(preview, using: XCTUnwrap(cache.updateContext()))
+        XCTAssertNotNil(cache.overseasPreview)
+        XCTAssertFalse(cache.view.overseas.selection.enabled)
+    }
+#endif
+
+    private func expectExpansionTooLarge(_ operation: () async throws -> Cache.OverseasConfirmation,
+                                         file: StaticString = #filePath, line: UInt = #line) async {
+        do {
+            _ = try await operation()
+            XCTFail("Expected an over-limit expansion", file: file, line: line)
+        } catch Cache.Failure.expansionTooLarge {
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
     private func expectFailure(_ operation: () async throws -> Void, file: StaticString = #filePath, line: UInt = #line) async {
         do {
             try await operation()
@@ -313,13 +882,23 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         } catch {}
     }
 
-    private func candidate(_ sequence: Int, database: Data) throws -> AccessGeoSiteAdmission.Candidate {
+    static func overseas(_ sequence: Int, positive: [String], excluding: [String],
+                          now: Date? = nil) throws -> AccessGeoSiteAdmission.Candidate {
+        let data = Vector.group("GFWLIST-CN", rules: positive.map { Vector.rule(2, $0) })
+            + Vector.group("GFWLIST-CN-EXCLUDE", rules: excluding.map { Vector.rule(2, $0) })
+            + Vector.group("GOOGLE-GEMINI", rules: [Vector.rule(3, "gemini.google.com")])
+        return try Self.candidate(sequence, database: data, includeOverseas: true, now: now)
+    }
+
+    private static func candidate(_ sequence: Int, database: Data, includeOverseas: Bool = false,
+                           now: Date? = nil) throws -> AccessGeoSiteAdmission.Candidate {
+        let publishedAt = now.map { ISO8601DateFormatter().string(from: $0.addingTimeInterval(-60)) }
         let input = try Vector.release(database) { release in
-            let tag = "2026112023522\(sequence)"
+            let tag = publishedAt.map { $0.filter(\.isNumber) } ?? "2026112023522\(sequence)"
             let id = 453302649 + sequence
             release["id"] = id
             release["tag_name"] = tag
-            release["published_at"] = "2026-11-20T23:53:0\(sequence)Z"
+            release["published_at"] = publishedAt ?? "2026-11-20T23:53:0\(sequence)Z"
             release["url"] = "https://api.github.com/repos/XTLS/Xray-rules-dat/releases/\(id)"
             release["html_url"] = "https://github.com/XTLS/Xray-rules-dat/releases/tag/\(tag)"
             var assets = release["assets"] as! [[String: Any]]
@@ -329,7 +908,8 @@ final class AccessGeoSiteCacheTests: XCTestCase {
             }
             release["assets"] = assets
         }
-        return try AccessGeoSiteAdmission.admit(metadata: input.metadata, database: database, checksum: input.checksum, now: Vector.now)
+        return try AccessGeoSiteAdmission.admit(metadata: input.metadata, database: database, checksum: input.checksum,
+                                                now: now ?? Vector.now, includeOverseas: includeOverseas)
     }
 
     private func bundled(_ category: AccessGeoSiteCategory) -> [Data] {
@@ -342,7 +922,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         Vector.group("DEBIAN", rules: debian) + Vector.group("DOUBAN", rules: douban) + Vector.group("MEITUAN", rules: meituan)
     }
 
-    private final class Fixture: Sendable {
+    final class Fixture: Sendable {
         let storage: AccessGeoSiteStorage
         let fault: OSAllocatedUnfairLock<AccessGeoSiteStorage.Step?>
         let clock = Clock()
@@ -369,12 +949,14 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         }
 
         func clean() {
-            SecItemDelete(keychainQuery as CFDictionary)
+            var query = keychainQuery
+            query[kSecAttrAccount as String] = nil
+            SecItemDelete(query as CFDictionary)
             try? FileManager.default.removeItem(at: storage.directory)
         }
     }
 
-    private final class Clock: Sendable {
+    final class Clock: Sendable {
         private let values = OSAllocatedUnfairLock(initialState: (Vector.now, TimeInterval(1_000_000)))
         var wall: Date { values.withLock { $0.0 } }
         var uptime: TimeInterval { values.withLock { $0.1 } }
@@ -384,7 +966,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         }
     }
 
-    private final class WriteGate: Sendable {
+    final class WriteGate: Sendable {
         private let state = OSAllocatedUnfairLock(initialState: (armed: false, entered: false))
         let release = DispatchSemaphore(value: 0)
         var entered: Bool { state.withLock { $0.entered } }

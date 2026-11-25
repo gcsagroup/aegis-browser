@@ -75,6 +75,13 @@ public enum AccessGeoSiteAdmission {
         public let categoryCount: Int
         public let expiresAt: Date
         public let suffixListSHA256: String
+        public let overseas: AccessOverseasCatalogue?
+        public let overseasSource: OverseasSource?
+    }
+
+    public struct OverseasSource: Sendable {
+        public let database: Data
+        public let checksum: Data
     }
 
     private struct ReleaseJSON: Decodable {
@@ -131,13 +138,13 @@ public enum AccessGeoSiteAdmission {
     }
 
     public static func admit(metadata: Data, database: Data, checksum: Data, now: Date,
-                             highWater: Receipt? = nil) throws -> Candidate {
+                             highWater: Receipt? = nil, includeOverseas: Bool = false) throws -> Candidate {
         try admit(receipt: self.metadata(metadata, now: now, highWater: highWater), database: database,
-                  checksum: checksum, now: now, highWater: highWater)
+                  checksum: checksum, now: now, highWater: highWater, includeOverseas: includeOverseas)
     }
 
     public static func admit(receipt: Receipt, database: Data, checksum: Data, now: Date,
-                             highWater: Receipt? = nil) throws -> Candidate {
+                             highWater: Receipt? = nil, includeOverseas: Bool = false) throws -> Candidate {
         try Task.checkCancellation()
         let expiry = try receipt.expiry(at: now)
         try receipt.validateSuccessor(of: highWater)
@@ -149,12 +156,13 @@ public enum AccessGeoSiteAdmission {
         guard line == digest + "  geosite.dat" || line == digest + " *geosite.dat" else { throw Failure.invalidAsset }
         guard let suffixSHA = RegisteredDomain.verifiedGeoSiteSuffixListSHA256 else { throw Failure.suffixListUnavailable }
 
-        let (groups, groupCount) = try database.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
-            try decodeDatabase(bytes)
+        let (groups, groupCount, overseas) = try database.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            try decodeDatabase(bytes, includeOverseas: includeOverseas)
         }
         return Candidate(receipt: receipt, catalogue: AccessGeoSiteCatalogue(tag: receipt.tag,
             publishedAt: receipt.publishedAt, rawSHA256: digest, groups: groups), categoryCount: groupCount,
-            expiresAt: expiry, suffixListSHA256: suffixSHA)
+            expiresAt: expiry, suffixListSHA256: suffixSHA, overseas: overseas,
+            overseasSource: overseas.map { _ in OverseasSource(database: database, checksum: checksum) })
     }
 
     /// Rebuilds one complete group with the same typed contract used by wire
@@ -221,11 +229,16 @@ public enum AccessGeoSiteAdmission {
 }
 
 private extension AccessGeoSiteAdmission {
-    static func decodeDatabase(_ bytes: UnsafeRawBufferPointer) throws -> ([AccessGeoSiteCategory: AccessGeoSiteCatalogue.Group], Int) {
+    static func decodeDatabase(_ bytes: UnsafeRawBufferPointer, includeOverseas: Bool) throws
+        -> ([AccessGeoSiteCategory: AccessGeoSiteCatalogue.Group], Int, AccessOverseasCatalogue?) {
         var reader = WireReader(bytes, range: 0..<bytes.count)
         var available = 4_000_000
         var categories: Set<String> = []
         var selected: [AccessGeoSiteCategory: AccessGeoSiteCatalogue.Group] = [:]
+        let sources = includeOverseas ? Dictionary(grouping: AccessOverseasCatalogue.projection, by: \.source) : [:]
+        var positive: [AccessOverseasCatalogue.Record]?
+        var exclusions: [AccessOverseasCatalogue.Record]?
+        var proven: Set<AccessOverseasCatalogue.Projection> = []
         while let field = try reader.next(&available) {
             guard field.number == 1 else {
                 try reader.skip(field)
@@ -235,6 +248,31 @@ private extension AccessGeoSiteAdmission {
             let name = try groupName(bytes, range: range, available: available)
             let folded = name.uppercased()
             guard categories.count < 4096, categories.insert(folded).inserted else { throw Failure.malformedDatabase }
+            if includeOverseas {
+                let isPositive = folded == AccessOverseasCatalogue.positiveTag
+                let isExclusion = folded == AccessOverseasCatalogue.exclusionTag
+                if isPositive || isExclusion {
+                    guard name == folded else { throw Failure.malformedDatabase }
+                    let limit = isPositive ? AccessOverseasCatalogue.positiveLimit : AccessOverseasCatalogue.exclusionLimit
+                    var records: [AccessOverseasCatalogue.Record] = []
+                    try scanOverseasGroup(bytes, range: range, available: &available, limit: limit, strict: true) {
+                        records.append($0)
+                    }
+                    if isPositive { positive = records } else { exclusions = records }
+                    continue
+                }
+                if let entries = sources[folded] {
+                    guard name == folded else { throw Failure.malformedDatabase }
+                    // Topic groups only prove fixed hosts. Charge the shared
+                    // wire budget without materializing the topic's rules.
+                    try scanOverseasGroup(bytes, range: range, available: &available, limit: nil, strict: false) { rule in
+                        for entry in entries where rule.contains(entry.host) {
+                            proven.insert(entry)
+                        }
+                    }
+                    continue
+                }
+            }
             let category = AccessGeoSiteCategory(rawValue: folded)
             guard category == nil || name == folded else { throw Failure.malformedDatabase }
             let rules = try decodeGroup(bytes, range: range, selected: category != nil, available: &available)
@@ -243,7 +281,67 @@ private extension AccessGeoSiteAdmission {
             }
         }
         guard !categories.isEmpty else { throw Failure.malformedDatabase }
-        return (selected, categories.count)
+        guard includeOverseas else { return (selected, categories.count, nil) }
+        guard let positive, let exclusions else { throw Failure.malformedDatabase }
+        let overseas = try AccessOverseasCatalogue(positive: positive, exclusions: exclusions, provenProjections: proven)
+        return (selected, categories.count, overseas)
+    }
+
+    static func scanOverseasGroup(_ bytes: UnsafeRawBufferPointer, range: Range<Int>,
+                                  available: inout Int, limit: Int?, strict: Bool,
+                                  consume: (AccessOverseasCatalogue.Record) -> Void) throws {
+        var reader = WireReader(bytes, range: range)
+        var hasName = false
+        var count = 0
+        while let field = try reader.next(&available) {
+            switch field.number {
+            case 1:
+                guard !hasName else { throw Failure.malformedDatabase }
+                hasName = true
+                _ = try reader.message(field)
+            case 2:
+                count += 1
+                if let limit, count > limit { throw Failure.malformedDatabase }
+                if let record = try decodeOverseasRecord(bytes, range: reader.message(field),
+                                                         available: &available, strict: strict) {
+                    consume(record)
+                }
+            default:
+                throw Failure.malformedDatabase
+            }
+        }
+    }
+
+    static func decodeOverseasRecord(_ bytes: UnsafeRawBufferPointer, range: Range<Int>,
+                                     available: inout Int, strict: Bool) throws -> AccessOverseasCatalogue.Record? {
+        var reader = WireReader(bytes, range: range)
+        var type: UInt64?
+        var value: Range<Int>?
+        var opaque = false
+        while let field = try reader.next(&available) {
+            switch field.number {
+            case 1:
+                guard type == nil else { throw Failure.malformedDatabase }
+                type = try reader.scalar(field)
+            case 2:
+                guard value == nil else { throw Failure.malformedDatabase }
+                value = try reader.message(field)
+            case 3:
+                guard !strict else { throw Failure.malformedDatabase }
+                opaque = true
+                try skipAttribute(bytes, range: reader.message(field), available: &available)
+            default:
+                guard !strict else { throw Failure.malformedDatabase }
+                opaque = true
+                try reader.skip(field)
+            }
+        }
+        let kind = AccessOverseasCatalogue.RuleKind(rawValue: type ?? 0)
+        if !strict, opaque || (kind != .domain && kind != .full) { return nil }
+        guard let kind, let value, !value.isEmpty,
+              let text = String(bytes: bytes[value], encoding: .utf8),
+              !text.utf8.contains(0) else { throw Failure.malformedDatabase }
+        return .init(kind: kind, value: text)
     }
 
     static func groupName(_ bytes: UnsafeRawBufferPointer, range: Range<Int>, available: Int) throws -> String {

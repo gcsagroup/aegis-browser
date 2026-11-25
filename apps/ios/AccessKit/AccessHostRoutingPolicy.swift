@@ -134,3 +134,35 @@ public struct AccessWebsiteRoutePolicy: Sendable {
         return try? AccessSiteHost(host)
     }
 }
+
+/// The existing Xray Standard test export is a list of exact names. The
+/// original GeoSite suffix and pattern semantics are not granted by this file.
+public struct AccessOverseasRuleList: Sendable {
+    public static let maximumInputBytes = 128 * 1024
+    private static let pinnedDigest = "84a004adf2537fde3befb724fe77512cf3a4acb1df8ec350cd898a6cf8428374"
+    private let hosts: Set<String>
+    public let canonicalData: Data
+
+    public var count: Int { hosts.count }
+
+    public init?(data: Data) {
+        self.init(data: data, expectedCount: 4_372, expectedDigest: Self.pinnedDigest)
+    }
+
+    init?(data: Data, expectedCount: Int, expectedDigest: String) {
+        guard (1...Self.maximumInputBytes).contains(data.count),
+              let text = String(data: data, encoding: .ascii) else { return nil }
+        let names = text.split(whereSeparator: \.isNewline).map(String.init)
+        let unique = Set(names)
+        guard names.count == expectedCount, unique.count == expectedCount else { return nil }
+        let canonical = Data((names.sorted().joined(separator: "\n") + "\n").utf8)
+        guard AccessGeoSiteAdmission.sha256(canonical) == expectedDigest else { return nil }
+
+        canonicalData = canonical
+        hosts = unique
+    }
+
+    public func contains(_ host: AccessSiteHost) -> Bool {
+        hosts.contains(host.rawValue)
+    }
+}
