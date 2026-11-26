@@ -1,4 +1,5 @@
 @testable import AccessKit
+import CryptoKit
 import Network
 import SwiftUI
 import os
@@ -2474,7 +2475,13 @@ extension AccessHostRecoveryWebKitTests {
         try await checkOverseasCategoryExits(.domesticManual)
     }
 
-    private enum OverseasExitScenario { case categories, officialCategories, legacyReuse, canonicalLanding, domesticOverlap, domesticManual }
+    func testSignedPauseWithdrawsOnlyOverseasAuthorization() async throws {
+        try await checkOverseasCategoryExits(.signedPause)
+    }
+
+    private enum OverseasExitScenario {
+        case categories, officialCategories, legacyReuse, canonicalLanding, domesticOverlap, domesticManual, signedPause
+    }
 
     private func checkOverseasCategoryExits(_ scenario: OverseasExitScenario) async throws {
         typealias Vector = AccessGeoSiteTestVector
@@ -2535,6 +2542,7 @@ extension AccessHostRecoveryWebKitTests {
         case .domesticOverlap: 18_706
         case .officialCategories: 18_708
         case .domesticManual: 18_710
+        case .signedPause: 18_712
         }
         let originalPort = managedPort + 1
         let proxy = try await makeListener(port: managedPort, tunnels: FixtureOriginTunnels(port: managed.port, hosts: hosts, connectDelay: .milliseconds(350)))
@@ -2608,6 +2616,35 @@ extension AccessHostRecoveryWebKitTests {
             XCTAssertEqual(coordinator.snapshot(for: tab).overseasGrant, .categories([.video], release: candidate.receipt.tag))
             try await witness("github.com", path: "manual-unselected", managed: false)
             XCTAssertNil(coordinator.snapshot(for: tab).overseasGrant)
+            return
+        }
+        if scenario == .signedPause {
+            try await choose(.video)
+            let videoHost = try AccessSiteHost("www.youtube.com")
+            let independent = try AccessSiteHost("github.com")
+            coordinator.setProxyEnabled(true, host: independent, scopeID: tab.browsingScopeID, isPrivate: false)
+            try await witness(independent.rawValue, path: "privacy-before-pause", managed: true)
+            try await witness(videoHost.rawValue, path: "overseas-before-pause", managed: true)
+            XCTAssertNotNil(coordinator.snapshot(for: tab).overseasGrant)
+            let overseasView = tab.webView
+            let key = Curve25519.Signing.PrivateKey()
+            let timestamp = fixture.clock.wall.timeIntervalSince1970
+            let payload = try JSONSerialization.data(withJSONObject: [
+                "schema": 1, "version": 1, "issuedAt": timestamp, "expiresAt": timestamp + 3600,
+                "overseasPaused": true, "blockedTags": []
+            ])
+            let envelope = try JSONSerialization.data(withJSONObject: [
+                "payload": payload.base64EncodedString(),
+                "signature": key.signature(for: payload).base64EncodedString()
+            ])
+            try cache.acceptRemotePolicy(.verify(envelope, key: key.publicKey, now: fixture.clock.wall))
+            try await waitUntil(seconds: 10, {
+                tab.boundHostName == nil && overseasView.url?.absoluteString == "about:blank"
+            }, message: "The document granted only by overseas rules should retire")
+            try await witness(videoHost.rawValue, path: "overseas-paused", managed: false)
+            try await witness(independent.rawValue, path: "privacy-after-pause", managed: true)
+            coordinator.setWebsiteRouteChoice(.original, for: tab, displayedHost: independent)
+            try await witness(independent.rawValue, path: "explicit-original-after-pause", managed: false)
             return
         }
         if reusingLegacyStore {

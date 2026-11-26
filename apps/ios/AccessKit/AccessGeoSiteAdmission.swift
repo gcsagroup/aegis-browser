@@ -144,6 +144,20 @@ public enum AccessGeoSiteAdmission {
                   checksum: checksum, now: now, highWater: highWater, includeOverseas: includeOverseas)
     }
 
+    /// The bundled release has no calendar expiry. Check its original receipt
+    /// at publication and require the domestic and overseas projections.
+    public static func admitBundled(resources: URL) throws -> Candidate {
+        let baseline = AccessGeoSiteCatalogue.bundled
+        guard let publishedAt = publicationTime(baseline.publishedAt)
+        else { throw Failure.invalidTime }
+        let candidate = try admit(metadata: Data(contentsOf: resources.appendingPathComponent("geosite-release.json")),
+                                  database: Data(contentsOf: resources.appendingPathComponent("geosite.dat"), options: .mappedIfSafe),
+                                  checksum: Data(contentsOf: resources.appendingPathComponent("geosite-checksum.txt")),
+                                  now: publishedAt, includeOverseas: true)
+        guard candidate.catalogue == baseline, candidate.overseas != nil else { throw Failure.invalidMetadata }
+        return candidate
+    }
+
     public static func admit(receipt: Receipt, database: Data, checksum: Data, now: Date,
                              highWater: Receipt? = nil, includeOverseas: Bool = false,
                              allowDomesticFallback: Bool = false) throws -> Candidate {
@@ -196,6 +210,8 @@ public enum AccessGeoSiteAdmission {
     public static func isSHA256(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
+
+    public static func isValidReleaseTag(_ tag: String) -> Bool { tagTime(tag) != nil }
 
     private static func tagTime(_ tag: String) -> Date? {
         let digits = Array(tag.utf8)

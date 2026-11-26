@@ -14,7 +14,7 @@ final class AccessGeoSiteAdmissionTests: XCTestCase {
         XCTAssertEqual(Vector.sha(database), "6704ff3c753be85d7b438e3d70b72e3097dc44bd99c764a4af3cddf6f59704e1")
         let result = try Vector.admit(database)
         XCTAssertEqual(result.categoryCount, 3)
-        XCTAssertEqual(result.catalogue.groups, AccessGeoSiteCatalogue.bundled.groups)
+        XCTAssertEqual(result.catalogue.groups, AccessGeoSiteCatalogue.originalConsentGroups)
         XCTAssertEqual(result.receipt.database.sha256, Vector.sha(database))
         XCTAssertEqual(result.suffixListSHA256, "ba7d836c0ea57a8bcf9f1fcb868066a7554bed029b441ecc6204ad8494a32612")
     }
@@ -183,10 +183,10 @@ final class AccessGeoSiteFullFrozenAdmissionTests: XCTestCase {
                                                          now: AccessGeoSiteTestVector.now)
         XCTAssertEqual(candidate.categoryCount, 1572)
         XCTAssertEqual(candidate.receipt.releaseID, 453302649)
-        XCTAssertEqual(candidate.receipt.tag, AccessGeoSiteCatalogue.bundled.tag)
-        XCTAssertEqual(candidate.receipt.database.sha256, AccessGeoSiteCatalogue.bundled.rawSHA256)
+        XCTAssertEqual(candidate.receipt.tag, AccessGeoSiteTestVector.frozenTag)
+        XCTAssertEqual(candidate.receipt.database.sha256, AccessGeoSiteTestVector.frozenSHA256)
         XCTAssertEqual(candidate.receipt.checksum.sha256, "9d153aa5f78ff022a85726e42522ea00776e87b30e4c2519c8e04dbd795893e6")
-        XCTAssertEqual(candidate.catalogue.groups, AccessGeoSiteCatalogue.bundled.groups)
+        XCTAssertEqual(candidate.catalogue.groups, AccessGeoSiteCatalogue.originalConsentGroups)
         let combined = try AccessGeoSiteAdmission.admit(metadata: metadata, database: database, checksum: checksum,
             now: AccessGeoSiteTestVector.now, includeOverseas: true)
         XCTAssertEqual(combined.catalogue, candidate.catalogue)
@@ -636,6 +636,8 @@ final class AccessOverseasAdmissionTests: XCTestCase {
 
 enum AccessGeoSiteTestVector {
     static let now = Date(timeIntervalSince1970: 1_795_219_200)
+    static let frozenTag = "20261120235103"
+    static let frozenSHA256 = "6fb761384d0141a9bd7dc3c18caf74b70516018ca91e3c36af11afefb543dcf9"
 
     static func frozenOfficialAssets() async throws -> (metadata: Data, database: Data, checksum: Data) {
 #if !targetEnvironment(simulator)
@@ -645,7 +647,7 @@ enum AccessGeoSiteTestVector {
             let directory = metadataURL.deletingLastPathComponent()
             let database = try Data(contentsOf: directory.appendingPathComponent("geosite.dat"))
             XCTAssertEqual(database.count, 7_750_066)
-            XCTAssertEqual(sha(database), AccessGeoSiteCatalogue.bundled.rawSHA256)
+            XCTAssertEqual(sha(database), frozenSHA256)
             return (try Data(contentsOf: metadataURL), database,
                     try Data(contentsOf: directory.appendingPathComponent("geosite.dat.sha256sum")))
         }
@@ -665,7 +667,7 @@ enum AccessGeoSiteTestVector {
         let database = try await fetch("geosite.dat")
         let checksum = try await fetch("geosite.dat.sha256sum")
         XCTAssertEqual(database.count, 7_750_066)
-        XCTAssertEqual(sha(database), AccessGeoSiteCatalogue.bundled.rawSHA256)
+        XCTAssertEqual(sha(database), frozenSHA256)
         return (metadata, database, checksum)
     }
 

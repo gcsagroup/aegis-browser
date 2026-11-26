@@ -254,7 +254,7 @@ test('source flags are exclusive and synthetic data cannot use the official CLI'
     [run('DOUBAN'), /exactly one.*--dat.*--dlc/i],
     [run('DOUBAN', '--dat', dat, '--dlc', dat), /exactly one.*--dat.*--dlc/i],
     [run('DOUBAN', '--dat=', '--dlc', dat), /exactly one.*--dat.*--dlc/i],
-    [run('DOUBAN', '--dat', dat), /DAT.*regular file of 7750066 bytes/i],
+    [run('DOUBAN', '--dat', dat), /DAT.*regular file of 7734731 bytes/i],
     [run('WIKIMEDIA', '--dat', dat), /group.*approved/i],
     [run('constructor', '--dat', dat), /group.*approved/i],
     [run('DOUBAN', '--dlc', dat), /group.*approved/i],
@@ -383,7 +383,7 @@ test(authenticXrayTest,
       assert.deepEqual(Object.keys(catalogue.inputs), ['dat', 'psl']);
       assert.equal(catalogue.inputs.dat.project, 'XTLS/Xray-rules-dat');
       assert.equal(catalogue.inputs.dat.file, 'geosite.dat');
-      assert.equal(catalogue.inputs.dat.version, '20261120235103');
+      assert.equal(catalogue.inputs.dat.version, '20261126014317');
       assert.equal(catalogue.inputs.dat.commit, 'd74acca73490cb57a937674ce8a8709d2a3021ba');
       assert.equal(catalogue.inputs.dat.tagCommit, '0f8082e3b11bbe8ee65f26de86cbd2e0d510c983');
       assert.match(catalogue.inputs.dat.licenseUrl, /^https:\/\/github\.com\/XTLS\/Xray-rules-dat\/blob\/d74acca[0-9a-f]+\/LICENSE-inherited$/);

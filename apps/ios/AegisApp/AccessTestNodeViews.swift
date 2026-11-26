@@ -256,7 +256,8 @@ private struct AccessTestNodeDetailView: View {
     private func message(for error: AccessTestNodeError) -> LocalizedStringResource {
         switch error {
         case .unavailable: LocalizedStringResource("此版本无法编辑测试节点。", table: "AccessTestNode")
-        case .invalidLink: LocalizedStringResource("请输入一条 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享链接。", table: "AccessTestNode")
+        case .unsupportedVMessCipher: LocalizedStringResource("此 VMess 节点的加密方式不受支持。", table: "AccessTestNode")
+        case .invalidLink: LocalizedStringResource("请输入一条支持的 VLESS、VMess、Trojan 或 Hysteria2 分享链接。", table: "AccessTestNode")
         case .cameraDenied: LocalizedStringResource("相机权限未开启，可继续输入节点链接。", table: "AccessTestNode")
         case .cameraUnavailable: LocalizedStringResource("相机扫码暂不可用，可继续输入节点链接。", table: "AccessTestNode")
         case .conflict: LocalizedStringResource("另一窗口已保存。放弃更改后重新预览即可应用。", table: "AccessTestNode")

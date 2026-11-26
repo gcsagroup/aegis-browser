@@ -14,6 +14,10 @@
 	<string>$(AEGIS_ACCESS_INTERNAL_OPTIONS)</string>
 	<key>AegisAccessReleaseChannel</key>
 	<string>$(AEGIS_ACCESS_RELEASE_CHANNEL)</string>
+	<key>AegisGeoSitePolicyURL</key>
+	<string>$(AEGIS_GEOSITE_POLICY_URL)</string>
+	<key>AegisGeoSitePolicyPublicKey</key>
+	<string>$(AEGIS_GEOSITE_POLICY_PUBLIC_KEY)</string>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
 	<key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key>

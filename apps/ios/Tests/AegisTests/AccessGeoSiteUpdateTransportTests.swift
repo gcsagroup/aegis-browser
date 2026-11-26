@@ -181,7 +181,7 @@ final class AccessGeoSiteUpdateTransportTests: XCTestCase {
         try await fixture.select("chunked", reset: true)
         let chunked = try await fixture.transport().load(etag: nil, highWater: nil, now: Date())
         guard case .candidate(let admitted, _) = chunked else { return XCTFail("Valid complete chunked response was not admitted") }
-        XCTAssertEqual(admitted.catalogue.groups, AccessGeoSiteCatalogue.bundled.groups)
+        XCTAssertEqual(admitted.catalogue.groups, AccessGeoSiteCatalogue.originalConsentGroups)
         try await fixture.select("slow", reset: true)
         do {
             _ = try await fixture.transport(budget: .seconds(1)).load(etag: nil, highWater: nil, now: Date())
@@ -244,11 +244,12 @@ final class AccessGeoSiteEligibilityTests: XCTestCase {
         let activeFile = cache.activeFileSHA256
         let firstAttempt = try XCTUnwrap(cache.refreshState.lastRequest)
 
-        install.advance(86_401)
-        coordinator.checkpointGeoSiteClock()
-        try await install.wait {
+        XCTAssertEqual(cache.view.refreshDays, 3)
+        coordinator.startForegroundSweep()
+        install.advance(3 * 86_400 + 1)
+        try await install.wait(attempts: 550) {
             cache.refreshState.lastRequest != firstAttempt && cache.refreshState.failureCount == 0
-                && (cache.refreshState.nextAttempt?.timeIntervalSince(install.now) ?? 0) > 86_300
+                && (cache.refreshState.nextAttempt?.timeIntervalSince(install.now) ?? 0) > 2 * 86_400
         }
         let contacts = try await fixture.contacts()
         XCTAssertEqual(contacts.map(\.role), ["metadata", "asset", "cdn", "asset", "cdn", "metadata"])
@@ -279,6 +280,7 @@ final class AccessGeoSiteEligibilityTests: XCTestCase {
         let install = GeoSiteTestInstall()
         defer { install.clean() }
         let cache = await install.restore()
+        try cache.setRefreshInterval(days: 1)
         let coordinator = AccessHostStoreCoordinator(channel: .dev, geoSiteCache: cache,
                                                      geoSiteTransport: fixture.transport())
         let browser = GeoSiteTestInstall.window(coordinator)
@@ -329,6 +331,7 @@ final class AccessGeoSiteEligibilityTests: XCTestCase {
         let install = GeoSiteTestInstall()
         defer { install.clean() }
         let cache = await install.restore()
+        try cache.setRefreshInterval(days: 1)
         let coordinator = AccessHostStoreCoordinator(channel: .dev, geoSiteCache: cache,
                                                      geoSiteTransport: fixture.transport())
         let browser = GeoSiteTestInstall.window(coordinator)
@@ -375,7 +378,7 @@ final class AccessGeoSiteEligibilityTests: XCTestCase {
         XCTAssertEqual(contacts.last?.role, "metadata")
         XCTAssertNil(contacts.last?.ifNoneMatch)
         XCTAssertEqual(cache.highWater, initial)
-        XCTAssertEqual(cache.match(URL(string: "https://debian.org/")!), .indeterminate)
+        XCTAssertEqual(cache.match(URL(string: "https://debian.org/")!), .managed)
         attachWitness(contacts, name: "304 conflict, missing file, repair and expiry")
     }
 
@@ -452,10 +455,10 @@ final class AccessGeoSiteFrozenTransportTests: XCTestCase {
         try await fixture.select("frozen-official", reset: true)
         let result = try await fixture.transport().load(etag: nil, highWater: nil, now: AccessGeoSiteTestVector.now)
         guard case .candidate(let candidate, _) = result else { return XCTFail("Expected complete official 200 assets") }
-        XCTAssertEqual(candidate.receipt.tag, "20261120235103")
+        XCTAssertEqual(candidate.receipt.tag, AccessGeoSiteTestVector.frozenTag)
         XCTAssertEqual(candidate.receipt.database.byteCount, 7_750_066)
-        XCTAssertEqual(candidate.receipt.database.sha256, AccessGeoSiteCatalogue.bundled.rawSHA256)
-        XCTAssertEqual(candidate.catalogue.groups, AccessGeoSiteCatalogue.bundled.groups)
+        XCTAssertEqual(candidate.receipt.database.sha256, AccessGeoSiteTestVector.frozenSHA256)
+        XCTAssertEqual(candidate.catalogue.groups, AccessGeoSiteCatalogue.originalConsentGroups)
         XCTAssertEqual(candidate.categoryCount, 1_572)
         let contacts = try await fixture.contacts()
         XCTAssertEqual(contacts.map(\.role), ["metadata", "asset", "cdn", "asset", "cdn"])
@@ -534,8 +537,9 @@ private struct GeoSiteTestInstall {
         BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), hostCoordinator: coordinator)
     }
 
-    func wait(file: StaticString = #filePath, line: UInt = #line, _ condition: @MainActor () -> Bool) async throws {
-        for _ in 0..<150 {
+    func wait(attempts: Int = 150, file: StaticString = #filePath, line: UInt = #line,
+              _ condition: @MainActor () -> Bool) async throws {
+        for _ in 0..<attempts {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(40))
         }

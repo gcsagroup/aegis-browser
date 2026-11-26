@@ -52,14 +52,14 @@ final class AccessAlphaNodeCatalogue: ObservableObject {
         var displayed: [Entry] = []
         for (index, link) in links.enumerated() {
             guard link.utf8.count <= 8_192,
-                  let components = URLComponents(string: link),
-                  let user = components.user.flatMap(UUID.init(uuidString:)),
                   let node = try? AccessInternalTestNode.parseSingleShareURI(link),
-                  !loaded.contains(where: { $0.isWireIdentical(to: node) }),
-                  let protocolName = Self.protocolName(components.queryItems ?? []) else { return }
+                  let user = node.testSubscriptionIdentity,
+                  !loaded.contains(where: { $0.isWireIdentical(to: node) }) else { return }
+            if node.kind == .vless,
+               Self.protocolName(URLComponents(string: link)?.queryItems ?? []) == nil { return }
             loaded.append(node)
             identities.insert(user)
-            displayed.append(Entry(id: index, protocolName: protocolName))
+            displayed.append(Entry(id: index, protocolName: node.protocolDisplayName))
         }
         // One quota descriptor cannot authorize unrelated test identities.
         guard identities.count == 1 else { return }

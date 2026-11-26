@@ -25,6 +25,7 @@ struct ThirdPartyNoticesDocument {
                             "apps/ios/BrowserKit/Resources/",
                             "apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/",
                             "scripts/licenses/sdk-licenses/",
+                            "scripts/licenses/geosite/",
                             "scripts/licenses/access-core/"]
             guard prefixes.contains(where: { source.hasPrefix($0) }),
                   lines.count == 1 || (lines.count == 2

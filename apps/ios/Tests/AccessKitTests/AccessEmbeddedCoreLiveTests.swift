@@ -11,6 +11,41 @@ import XCTest
 /// Never logs secrets.
 @MainActor
 final class AccessEmbeddedCoreLiveTests: XCTestCase {
+    func testAdditionalTLSOutboundsTransferThroughControlledRelays() async throws {
+        guard let input = ProcessInfo.processInfo.environment["AEGIS_EGRESS_LOOPBACK_FIXTURES"] else {
+            throw XCTSkip("Requires local TLS/QUIC relay fixtures and an isolated simulator with their CA")
+        }
+        let links = try JSONDecoder().decode([String].self, from: Data(input.utf8))
+        let nodes = try links.map(AccessOutboundNode.parseSingleShareURI)
+        XCTAssertEqual(nodes.map(\.profileKey), [.trojanRawTLS, .vmessWsTls, .vmessHTTPUpgradeTLS, .hysteria2])
+        let core = try AccessGoEmbeddedCore()
+        for node in nodes {
+            XCTAssertEqual(node.endpoint.address, "127.0.0.1")
+            let config = try AccessOutboundConfigRegistry.embeddedInstanceJSONData(for: node)
+            try await core.start(configData: config)
+            let watchdog = Task {
+                try await Task.sleep(for: .seconds(10))
+                await core.stop()
+            }
+            do {
+                let stream = try await core.dial(host: "fixture-origin.invalid", port: 80)
+                defer { stream.close() }
+                try await stream.write(Data("GET / HTTP/1.1\r\nHost: fixture-origin.invalid\r\nConnection: close\r\n\r\n".utf8))
+                var received = Data()
+                while received.count < 4_096, let part = try await stream.read(maxBytes: 1_024), !part.isEmpty {
+                    received.append(part)
+                    if received.range(of: Data("aegis-egress-ok".utf8)) != nil { break }
+                }
+                XCTAssertNotNil(received.range(of: Data("aegis-egress-ok".utf8)), node.profileKey.rawValue)
+            } catch {
+                XCTFail("Fixture CONNECT and transfer failed for \(node.profileKey.rawValue)")
+            }
+            watchdog.cancel()
+            let stopped = await core.stopAndConfirm()
+            XCTAssertTrue(stopped)
+        }
+    }
+
     /// Bounded real-core ownership/footprint probe, separate from website acceptance.
     func testResidentCoreReleasesConcurrentStreamsAndStops() async throws {
         guard ProcessInfo.processInfo.environment["AEGIS_ACCESS_LIVE_MEMORY"] == "1" else {
