@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 import Network
 
@@ -6,10 +7,14 @@ public typealias AccessInternalTestNode = AccessOutboundNode
 
 extension AccessOutboundNode {
     public static func parseSingleShareURI(_ input: String) throws -> Self {
+        guard input.utf8.count <= 8_192 else { throw AccessLocalV2RayConfigError.invalidJSON }
         let link = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let scheme = link.range(of: "://").map({ link[..<$0.lowerBound].lowercased() }),
+           ["vmess", "trojan", "hysteria2", "hy2"].contains(scheme) {
+            return .additionalTLS(try AccessAdditionalTLSParameters.parse(link, scheme: scheme))
+        }
         let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
-        guard input.utf8.count <= 8_192,
-              link.lowercased().hasPrefix("vless://"),
+        guard link.lowercased().hasPrefix("vless://"),
               link.unicodeScalars.allSatisfy({ !forbidden.contains($0) }) else {
             throw AccessLocalV2RayConfigError.invalidJSON
         }
@@ -97,6 +102,7 @@ extension AccessOutboundNode {
         case .vlessWebSocketTLS(let parameters): parameters.diagnosticSecrets
         case .vlessTCPTLSVision(let parameters): parameters.diagnosticSecrets
         case .vlessGRPCReality(let parameters): parameters.diagnosticSecrets
+        case .additionalTLS(let parameters): parameters.diagnosticSecrets
         }
     }
 
@@ -118,6 +124,7 @@ extension AccessOutboundNode {
         case .vlessGRPCReality(let p):
             ["grpc-reality", p.address, String(p.port), p.userID, p.serverName, p.publicKey, p.shortID,
              p.fingerprint.lowercased(), p.serviceName]
+        case .additionalTLS(let parameters): parameters.wireFields
         }
     }
 }
@@ -134,7 +141,12 @@ private enum AccessInternalNodeFields {
     }
 
     static func endpoint(address: String, port: UInt16, userID: String) throws -> (address: String, userID: String) {
-        guard !address.contains("%") else {
+        guard let uuid = UUID(uuidString: userID) else { throw AccessLocalV2RayConfigError.invalidJSON }
+        return (try addressForDial(address, port: port), uuid.uuidString.lowercased())
+    }
+
+    static func addressForDial(_ address: String, port: UInt16) throws -> String {
+        guard port != 0, !address.contains("%") else {
             throw AccessLocalV2RayConfigError.fieldNotCanonical("address")
         }
         let normalizedAddress: String
@@ -149,8 +161,7 @@ private enum AccessInternalNodeFields {
             }
             normalizedAddress = address
         }
-        guard port != 0, let uuid = UUID(uuidString: userID) else { throw AccessLocalV2RayConfigError.invalidJSON }
-        return (normalizedAddress, uuid.uuidString.lowercased())
+        return normalizedAddress
     }
 
     static func isDNSName(_ name: String, allowsRootLabel: Bool = false) -> Bool {
@@ -223,7 +234,7 @@ public struct AccessVLESSWebSocketTLSParameters: Equatable, Sendable {
         self.alpn = alpn
     }
 
-    private static func isWebSocketRequestTarget(_ path: String) -> Bool {
+    fileprivate static func isWebSocketRequestTarget(_ path: String) -> Bool {
         guard path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("#"), !path.contains("\\"),
               path.utf8.count <= 2_048, path.utf8.allSatisfy({ (33...126).contains($0) }),
               let decoded = decodedRequestTargetForValidation(path),
@@ -347,5 +358,213 @@ public struct AccessVLESSGRPCRealityParameters: Equatable, Sendable {
 extension AccessVLESSGRPCRealityParameters {
     var diagnosticSecrets: [String] {
         [userID, AccessDiagnosticLog.relayFilter(address), serverName, publicKey, shortID, serviceName]
+    }
+}
+
+extension AccessOutboundNode {
+    /// The built-in test catalogue is tied to the signed single-account anchor.
+    /// Password protocols still compare the credential's exact bytes for route membership.
+    public var testSubscriptionIdentity: UUID? {
+        switch credentials {
+        case .vless(let id, _, _), .vmess(let id, _): UUID(uuidString: id)
+        case .trojan(let password), .hysteria2(let password): UUID(uuidString: password)
+        }
+    }
+
+    public var protocolDisplayName: String {
+        switch profileKey {
+        case .vlessRawReality: "VLESS / TCP / REALITY / Vision"
+        case .vlessRawTls: "VLESS / TCP / TLS / Vision"
+        case .vlessWsTls: "VLESS / WS / TLS"
+        case .vlessGrpcReality: "VLESS / gRPC / REALITY"
+        case .vmessWsTls: "VMess / WS / TLS"
+        case .vmessHTTPUpgradeTLS: "VMess / HTTPUpgrade / TLS"
+        case .trojanRawTLS: "Trojan / TCP / TLS"
+        case .hysteria2: "Hysteria2 / QUIC / TLS"
+        }
+    }
+}
+
+public struct AccessAdditionalTLSParameters: Equatable, Sendable {
+    typealias Node = AccessOutboundNode
+
+    let kind: Node.Kind
+    let profileKey: AccessOutboundProfileKey
+    let endpoint: Node.Endpoint
+    let serverName: String
+    let fingerprint: String
+    let alpn: String
+    let transport: Node.Transport
+    let credentials: Node.Credentials
+
+    var security: Node.Security { .tls(serverName: serverName, fingerprint: fingerprint, alpn: alpn) }
+
+    var secret: String {
+        switch credentials {
+        case .vless(let id, _, _), .vmess(let id, _): id
+        case .trojan(let password), .hysteria2(let password): password
+        }
+    }
+
+    var diagnosticSecrets: [String] {
+        [secret, AccessDiagnosticLog.relayFilter(endpoint.address), serverName]
+    }
+
+    var wireFields: [String] {
+        let route = [profileKey.rawValue, endpoint.address, String(endpoint.port), serverName, fingerprint, alpn, secret]
+        switch (transport, credentials) {
+        case (.ws(let path, let host), .vmess(_, let cipher)),
+             (.httpupgrade(let path, let host), .vmess(_, let cipher)):
+            return route + [path, host, cipher]
+        case (.hysteria(let up, let down), .hysteria2):
+            return route + [String(up), String(down)]
+        default:
+            return route
+        }
+    }
+
+    private static let invalid = AccessLocalV2RayConfigError.invalidJSON
+    private static let fingerprints = ["", "chrome", "firefox", "safari", "ios", "android", "edge"]
+    private static let ciphers = ["auto", "aes-128-gcm", "chacha20-poly1305"]
+
+    init(endpoint: Node.Endpoint, security: Node.Security, transport: Node.Transport, credentials: Node.Credentials) throws {
+        guard case .tls(let serverName, let fingerprint, let alpn) = security,
+              AccessInternalNodeFields.isDNSName(serverName), Self.fingerprints.contains(fingerprint) else {
+            throw Self.invalid
+        }
+
+        switch (transport, credentials) {
+        case (.ws(let path, let host), .vmess(let id, let cipher)),
+             (.httpupgrade(let path, let host), .vmess(let id, let cipher)):
+            guard let userID = UUID(uuidString: id)?.uuidString.lowercased(),
+                  Self.ciphers.contains(cipher), alpn == "http/1.1",
+                  AccessInternalNodeFields.isHTTPAuthority(host),
+                  AccessVLESSWebSocketTLSParameters.isWebSocketRequestTarget(path) else { throw Self.invalid }
+            kind = .vmess
+            if case .ws = transport { profileKey = .vmessWsTls } else { profileKey = .vmessHTTPUpgradeTLS }
+            self.credentials = .vmess(userID: userID, security: cipher)
+        case (.raw, .trojan(let password)):
+            guard Self.validPassword(password), alpn == "http/1.1" else { throw Self.invalid }
+            kind = .trojan
+            profileKey = .trojanRawTLS
+            self.credentials = credentials
+        case (.hysteria(let up, let down), .hysteria2(let password)):
+            guard Self.validPassword(password), alpn == "h3", fingerprint.isEmpty,
+                  (0...100_000).contains(up), (0...100_000).contains(down) else { throw Self.invalid }
+            kind = .hysteria2
+            profileKey = .hysteria2
+            self.credentials = credentials
+        default:
+            throw Self.invalid
+        }
+
+        let address = try AccessInternalNodeFields.addressForDial(endpoint.address, port: endpoint.port)
+        self.endpoint = .init(address: address, port: endpoint.port)
+        self.serverName = serverName
+        self.fingerprint = fingerprint
+        self.alpn = alpn
+        self.transport = transport
+    }
+
+    private static func validPassword(_ password: String) -> Bool {
+        (1...256).contains(password.utf8.count) && password.utf8.allSatisfy { (33...126).contains($0) }
+    }
+
+    fileprivate static func parse(_ link: String, scheme: String) throws -> Self {
+        let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+        let share = link.prefix(while: { $0 != "#" })
+        guard link.utf8.count <= 8_192, link.unicodeScalars.allSatisfy({ !forbidden.contains($0) }),
+              !link[share.endIndex...].contains("://"), !link.contains("\\"),
+              share.utf8.allSatisfy({ $0 < 128 }) else { throw invalid }
+        if scheme == "vmess" { return try parseVMess(share.dropFirst(scheme.count + 3)) }
+
+        guard let uri = URLComponents(string: String(share), encodingInvalidCharacters: false),
+              uri.percentEncodedPassword == nil, ["", "/"].contains(uri.percentEncodedPath),
+              let host = uri.encodedHost, let address = AccessInternalNodeFields.dialAddress(from: host),
+              let port = uri.port.flatMap(UInt16.init(exactly:)), let password = uri.user else { throw invalid }
+        let items = uri.queryItems ?? []
+        let names = Set(items.map(\.name))
+        let trojan = scheme == "trojan"
+        let allowed: Set<String> = trojan
+            ? ["sni", "peer", "alpn", "fp", "type", "security"]
+            : ["sni", "peer", "alpn", "insecure", "upmbps", "downmbps"]
+        guard names.count == items.count, names.isSubset(of: allowed), items.allSatisfy({ $0.value != nil }) else {
+            throw invalid
+        }
+        let query = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+        let name = try tlsName(sni: query["sni"], peer: query["peer"], fallback: address)
+        let endpoint = Node.Endpoint(address: address, port: port)
+        if trojan {
+            guard [nil, "tcp", "raw"].contains(query["type"]), [nil, "tls"].contains(query["security"]) else {
+                throw invalid
+            }
+            return try Self(endpoint: endpoint, security: .tls(serverName: name, fingerprint: query["fp"] ?? "",
+                                                               alpn: query["alpn"] ?? "http/1.1"),
+                            transport: .raw, credentials: .trojan(password: password))
+        }
+        guard [nil, "0"].contains(query["insecure"]) else { throw invalid }
+        return try Self(endpoint: endpoint, security: .tls(serverName: name, fingerprint: "", alpn: query["alpn"] ?? "h3"),
+                        transport: .hysteria(upMbps: try digits(query["upmbps"] ?? "0"),
+                                             downMbps: try digits(query["downmbps"] ?? "0")),
+                        credentials: .hysteria2(password: password))
+    }
+
+    private static func parseVMess(_ payload: Substring) throws -> Self {
+        let base = payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        let padding = String(repeating: "=", count: (4 - base.utf8.count % 4) % 4)
+        guard let data = Data(base64Encoded: base + padding), let json = String(data: data, encoding: .utf8),
+              let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw invalid }
+        // Tokenize strings whole, so a colon inside a string is never mistaken for a key.
+        let strings = try NSRegularExpression(pattern: #""(?:[^"\\]|\\.)*"\s*(:)?"#)
+        let keys = strings.matches(in: json, range: NSRange(json.startIndex..., in: json))
+            .filter { $0.range(at: 1).location != NSNotFound }
+        let allowed: Set<String> = ["v", "ps", "add", "port", "id", "aid", "net", "type", "host", "path",
+                                    "tls", "sni", "peer", "fp", "alpn", "scy", "method"]
+        guard keys.count == fields.count, Set(fields.keys).isSubset(of: allowed),
+              fields.allSatisfy({ ["port", "v", "aid"].contains($0.key) || $0.value is String }),
+              ["2", nil].contains(try scalar(fields["v"])),
+              ["0", nil].contains(try scalar(fields["aid"])),
+              let address = fields["add"] as? String, let port = UInt16(exactly: try digits(try scalar(fields["port"]) ?? "", maxDigits: 5)),
+              let id = fields["id"] as? String, let network = fields["net"] as? String,
+              ["ws", "httpupgrade"].contains(network), fields["tls"] as? String == "tls",
+              [nil, "", "none"].contains(fields["type"] as? String) else { throw invalid }
+        let name = try tlsName(sni: fields["sni"] as? String, peer: fields["peer"] as? String, fallback: address)
+        let host = nonempty(fields["host"] as? String) ?? name
+        let path = nonempty(fields["path"] as? String) ?? "/"
+        let transport: Node.Transport = network == "ws" ? .ws(path: path, host: host) : .httpupgrade(path: path, host: host)
+        let primary = nonempty(fields["scy"] as? String)
+        let alternate = nonempty(fields["method"] as? String)
+        guard primary == nil || alternate == nil || primary == alternate else { throw invalid }
+        let cipher = primary ?? alternate ?? "auto"
+        guard ciphers.contains(cipher) else { throw AccessLocalV2RayConfigError.unsupportedVMessCipher }
+        return try Self(endpoint: .init(address: address, port: port),
+                        security: .tls(serverName: name, fingerprint: fields["fp"] as? String ?? "",
+                                       alpn: nonempty(fields["alpn"] as? String) ?? "http/1.1"),
+                        transport: transport, credentials: .vmess(userID: id, security: cipher))
+    }
+
+    private static func nonempty(_ value: String?) -> String? {
+        value.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func tlsName(sni: String?, peer: String?, fallback: String) throws -> String {
+        let sni = nonempty(sni)
+        let peer = nonempty(peer)
+        guard sni == nil || peer == nil || sni == peer else { throw invalid }
+        return sni ?? peer ?? fallback
+    }
+
+    private static func digits(_ value: String, maxDigits: Int = 6) throws -> Int {
+        guard (1...maxDigits).contains(value.utf8.count), value.utf8.allSatisfy({ (48...57).contains($0) }),
+              let number = Int(value) else { throw invalid }
+        return number
+    }
+
+    private static func scalar(_ value: Any?) throws -> String? {
+        guard let value else { return nil }
+        if let string = value as? String { return string }
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+           !CFNumberIsFloatType(number as CFNumber) { return number.stringValue }
+        throw invalid
     }
 }

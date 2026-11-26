@@ -461,6 +461,7 @@ final class AccessGeoSiteCache {
         var remoteCheckedAt: Date?
         var overseasSelection: AccessOverseasSelection?
         var overseasActive: AccessOverseasCacheSnapshot.Reference?
+        var overseasApprovedFromBundle: Bool?
         var overseasStaged: AccessOverseasCacheSnapshot.Reference?
         var overseasExpansionPending: Bool?
         var overseasAdmissionFailed: Bool?
@@ -502,6 +503,7 @@ final class AccessGeoSiteCache {
         var overseasStaged: AccessOverseasCacheSnapshot?
         var overseasWithdrawal: OverseasWithdrawal?
         var overseasRecoveryHeld = false
+        var bundledOverseasSealPending = false
         var overseasInterruptedBeforeAdmission = false
     }
 
@@ -573,7 +575,7 @@ final class AccessGeoSiteCache {
             let rules = current.ledger.remotePolicy?.rules
             var expiries = versions.filter { rules?.blocks($0.release.tag) != true }.map(\.expiry)
             if current.ledger.overseasSelection?.enabled == true, let active = current.overseasActive,
-               active.receipt != bundledOverseas?.receipt, rules?.blocks(active.receipt.tag) != true,
+               current.ledger.overseasApprovedFromBundle != true, rules?.blocks(active.receipt.tag) != true,
                rules?.overseasPaused != true {
                 expiries.append(active.expiresAt)
             }
@@ -612,9 +614,19 @@ final class AccessGeoSiteCache {
         let loadBundle = useProductBaseline
         do {
             let (recovered, bundled) = try await Task.detached(priority: .utility) {
-                let recovered = try Self.recover(store, migrating: migrating, now: wall,
+                var recovered = try Self.recover(store, migrating: migrating, now: wall,
                                                  usesLegacyBundledConsent: usesLegacyBundledConsent)
-                return (recovered, loadBundle ? try? AccessOverseasCacheSnapshot.bundled() : nil)
+                let bundled = loadBundle ? try? AccessOverseasCacheSnapshot.bundled() : nil
+                if let bundled {
+                    do {
+                        recovered = try Self.adoptBundledScope(bundled, in: recovered, storage: store)
+                    } catch {
+                        // A seal failure holds the overseas scope while leaving the recovered ledger usable.
+                        recovered.overseasRecoveryHeld = true
+                        recovered.bundledOverseasSealPending = true
+                    }
+                }
+                return (recovered, bundled)
             }.value
             try Task.checkCancellation()
             bundledOverseas = bundled
@@ -709,10 +721,14 @@ final class AccessGeoSiteCache {
     }
 
     func beginOverseasRefresh(using context: Context, required: Bool = false, allowUnavailableJournal: Bool = false) throws -> UUID? {
-        guard let snapshot = current, required || wantsOverseasRules || snapshot.ledger.overseasStaged != nil
+        guard var snapshot = current, required || wantsOverseasRules || snapshot.ledger.overseasStaged != nil
             || snapshot.ledger.overseasReceiptFloor != nil
             || snapshot.overseasWithdrawal != nil || snapshot.overseasRecoveryHeld else { return nil }
         guard context.owner == snapshot.ledger.owner, context.session == session, overseasFlight == nil else { throw Failure.stale }
+        if snapshot.bundledOverseasSealPending, !allowUnavailableJournal {
+            guard !writing, context == updateContext() else { throw Failure.stale }
+            snapshot = try retryBundledOverseasSeal(snapshot)
+        }
         let id = UUID()
         let flight = OverseasFlight(owner: context.owner, publication: snapshot.ledger.overseasPublication,
                                     id: id, inherited: snapshot.overseasWithdrawal, admitted: nil,
@@ -722,6 +738,19 @@ final class AccessGeoSiteCache {
         catch { if !allowUnavailableJournal { throw error } }
         overseasFlight = (flight, snapshot.overseasRecoveryHeld || snapshot.overseasWithdrawal != nil)
         return id
+    }
+
+    private func retryBundledOverseasSeal(_ snapshot: Snapshot) throws -> Snapshot {
+        guard let bundledOverseas else { throw Failure.unavailable }
+        var retry = snapshot
+        retry.overseasRecoveryHeld = false
+        retry.bundledOverseasSealPending = false
+        // Re-seal the narrowed approval before journaling another refresh.
+        // A retry failure leaves the published snapshot and hold intact.
+        let adopted = try Self.adoptBundledScope(bundledOverseas, in: retry, storage: storage)
+        current = adopted
+        display(status)
+        return adopted
     }
 
     func endOverseasRefresh(_ id: UUID?) {
@@ -838,6 +867,7 @@ final class AccessGeoSiteCache {
         }
         next.overseasActive = approved
         next.ledger.overseasActive = reference
+        next.ledger.overseasApprovedFromBundle = confirmation.bundled ? true : nil
         next.ledger.overseasSelection = confirmation.selection
         next.ledger.overseasExpansionPending = false
         next.ledger.overseasIntersectionUnavailable = false
@@ -878,6 +908,7 @@ final class AccessGeoSiteCache {
             next.ledger.overseasPublication = UUID()
             next.overseasWithdrawal = nil
             next.overseasRecoveryHeld = false
+            next.bundledOverseasSealPending = false
             try commit(next, status: selectionUnsaved ? .unsaved : (clock.rollback ? .clockRollback : .ready),
                        clearsOverseasUnsaved: true)
             overseasFlight?.keepJournal = false
@@ -901,7 +932,7 @@ final class AccessGeoSiteCache {
            (try? staged.receipt.validateSuccessor(of: observedReceipt)) != nil { return (staged, reference) }
         guard let bundledOverseas, rules?.blocks(bundledOverseas.receipt.tag) != true,
               snapshot.ledger.overseasAdmissionFailed != true,
-              snapshot.ledger.overseasReceiptFloor == nil || snapshot.ledger.overseasReceiptFloor == bundledOverseas.receipt,
+              (try? bundledOverseas.receipt.validateSuccessor(of: snapshot.ledger.overseasReceiptFloor)) != nil,
               snapshot.ledger.overseasActive == nil || snapshot.overseasActive?.receipt == bundledOverseas.receipt
         else { return nil }
         return (bundledOverseas, nil)
@@ -911,6 +942,10 @@ final class AccessGeoSiteCache {
                refreshed: RefreshState? = nil, whileValid: @MainActor () -> Bool = { true }) async throws {
         guard var next = current, context.owner == next.ledger.owner, context.session == session else { throw Failure.ineligible }
         let ownsWrite = !writing
+        if next.bundledOverseasSealPending {
+            guard ownsWrite, overseasFlight == nil, context == updateContext(), whileValid() else { throw Failure.ineligible }
+            next = try retryBundledOverseasSeal(next)
+        }
         if ownsWrite { writing = true }
         defer { if ownsWrite { writing = false } }
         var ownedFlight: UUID?
@@ -966,11 +1001,15 @@ final class AccessGeoSiteCache {
             next.overseasStaged = prepared.staged
             next.ledger.overseasAdmissionFailed = false
             next.overseasActive = prepared.active
+            if prepared.active == nil || prepared.active?.receipt != prior.overseasActive?.receipt {
+                next.ledger.overseasApprovedFromBundle = nil
+            }
             next.ledger.overseasExpansionPending = prepared.awaitingApproval
             next.ledger.overseasIntersectionUnavailable = prepared.intersectionUnavailable
         } else if candidate.overseasRejected {
             next.overseasActive = nil
             next.ledger.overseasActive = nil
+            next.ledger.overseasApprovedFromBundle = nil
             next.overseasStaged = nil
             next.ledger.overseasStaged = nil
             next.ledger.overseasAdmissionFailed = true
@@ -1314,11 +1353,14 @@ final class AccessGeoSiteCache {
         let paused = restrictions?.overseasPaused == true
         let rejected = approved.map { restrictions?.blocks($0.receipt.tag) == true } ?? false
         let held = current.overseasRecoveryHeld || current.overseasWithdrawal != nil
-        let approvedFromBundle = approved != nil && approved?.receipt == bundledOverseas?.receipt
+        let approvedFromBundle = current.ledger.overseasApprovedFromBundle == true
+        let currentBundleApproved = approvedFromBundle && approved != nil && approved?.receipt == bundledOverseas?.receipt
         let expired = approved.map { $0.expiresAt <= date } ?? false
+        let needsFallback = rejected || (!currentBundleApproved && (approvedFromBundle || expired))
         let fallback: AccessOverseasCatalogue.Policy?
         if !held, !paused, let approved, let bundledOverseas, let reference = current.ledger.overseasActive,
-           !approvedFromBundle, expired || rejected,
+           needsFallback,
+           !approvedFromBundle || (try? bundledOverseas.receipt.validateSuccessor(of: approved.receipt)) != nil,
            restrictions?.blocks(bundledOverseas.receipt.tag) != true,
            overseas.enabled {
             if cachedOverseasFallback?.reference != reference {
@@ -1344,16 +1386,16 @@ final class AccessGeoSiteCache {
             verifiedScopeWhileHeld: verifiedWhileHeld,
             ready: status == .ready && !overseasSelectionUnsaved && !current.overseasRecoveryHeld
                 && (current.overseasWithdrawal == nil || pending != nil || ceiling != nil)
-                && !paused && (fallback != nil || (!rejected && approved != nil && (approvedFromBundle || !expired))),
+                && !paused && (fallback != nil || (!needsFallback && approved != nil)),
             activeTag: approved?.receipt.tag,
             projectedHosts: approved?.catalogue.hosts ?? [:],
             pendingTag: pending == nil ? nil : current.overseasWithdrawal?.receipt.tag,
             previewTag: offer?.snapshot.receipt.tag,
             awaitingExpansion: includeStaged && overseas.enabled
-                && (current.overseasWithdrawal != nil || approved == nil || (expired && !approvedFromBundle && fallback == nil)
+                && (current.overseasWithdrawal != nil || approved == nil || (needsFallback && fallback == nil)
                     || current.ledger.overseasExpansionPending == true),
-            remotelyPaused: paused, usingBundledRules: !paused && (fallback != nil || (approvedFromBundle && !rejected)),
-            bundledTag: fallback != nil || (approvedFromBundle && !rejected) ? bundledOverseas?.receipt.tag : nil,
+            remotelyPaused: paused, usingBundledRules: !paused && (fallback != nil || (currentBundleApproved && !rejected)),
+            bundledTag: fallback != nil || (currentBundleApproved && !rejected) ? bundledOverseas?.receipt.tag : nil,
             unsaved: overseasSelectionUnsaved, refreshFailed: current.ledger.refresh.failureCount > 0 || current.ledger.overseasAdmissionFailed == true,
             previewRequested: requestedOverseasPreview)
         if includeStaged, status == .ready {
@@ -1514,6 +1556,30 @@ final class AccessGeoSiteCache {
                         overseasInterruptedBeforeAdmission: interruptedBeforeAdmission)
     }
 
+    private nonisolated static func adoptBundledScope(_ bundled: AccessOverseasCacheSnapshot, in snapshot: Snapshot,
+                                                      storage: AccessGeoSiteStorage) throws -> Snapshot {
+        guard snapshot.ledger.overseasApprovedFromBundle == true, let previous = snapshot.overseasActive,
+              let selection = previous.approved, bundled.receipt.tag > previous.receipt.tag,
+              snapshot.overseasWithdrawal == nil, !snapshot.overseasRecoveryHeld,
+              snapshot.ledger.highWater?.tag != bundled.receipt.tag || snapshot.ledger.highWater == bundled.receipt,
+              let retained = try bundled.narrowed(to: selection, retaining: previous)
+        else { return snapshot }
+
+        var next = snapshot
+        next.overseasActive = retained
+        next.ledger.overseasActive = try retained.seal(owner: next.ledger.owner, storage: storage)
+        if next.ledger.highWater.map({ $0.tag < bundled.receipt.tag }) != false {
+            next.ledger.highWater = bundled.receipt
+            next.ledger.refresh.etag = nil
+        }
+        let expanded = try bundled.approving(selection).policy.expansion(over: retained.policy)
+        next.ledger.overseasExpansionPending = next.ledger.overseasExpansionPending == true
+            || !expanded.rules.isEmpty || !expanded.removedExclusions.isEmpty
+        try storage.writeLedger(encode(next.ledger))
+        storage.prune(keep: next.ledger.files)
+        return next
+    }
+
     private nonisolated static func mergeWithdrawal(_ existing: OverseasWithdrawal?, with next: OverseasWithdrawal) throws
         -> OverseasWithdrawal {
         _ = try next.receipt.validityDeadline()
@@ -1550,6 +1616,7 @@ final class AccessGeoSiteCache {
               record.overseasSelection?.isCanonical != false,
               record.overseasSelection?.enabled != true || record.overseasActive != nil || record.overseasExpansionPending == true,
               record.overseasActive == nil || record.overseasSelection != nil,
+              record.overseasApprovedFromBundle != true || record.overseasActive != nil,
               record.overseasActive?.isValid(highWater: record.highWater) != false,
               record.overseasStaged?.isValid(highWater: record.highWater) != false,
               record.activeFile.map(AccessGeoSiteAdmission.isSHA256) != false,

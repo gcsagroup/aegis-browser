@@ -12,6 +12,8 @@
 
 账本恢复验证历史发布回执、owner、批准范围和撤回记录。当前内置 tag 限制未来网络候选，升级不因历史记录早于内置 tag 而丢弃账本。已撤回范围保持有效。规则到期或被远程封禁时，使用内置规则与仍获授权范围的交集。国内按规则类型与主机取交集。海外复用精确入口、后缀和排除规则交集。回退候选本身也须通过版本封禁检查。已知有收窄但无法证明交集时，保留现有的保守连接处理。内置授权保留原始批准范围和来源版本，升级后用同样的交集裁剪。
 
+海外账本记录批准来自内置版本还是下载版本。升级到新内置版本时，旧内置授权立即裁剪并保存交集。下载批准按下载规则的原始到期时间检查，即使发布回执与内置版本相同。无需恢复旧预览时，可离线确认符合海外规则水位的新版内置规则。
+
 ## 检查周期
 
 复用现有前台检查。周期选择、最近成功检查和失败退避状态一起持久化。兼容没有周期字段的账本，未知周期按未选择读取。下次正常检查取最近成功时间加周期与有效下载规则最早到期时间减提前量的较早值。默认提前 24 小时。同一版本靠近到期时，重查间隔取剩余有效期的一半，上限默认 6 小时。304 保留原 DAT 到期时间，到期路径直接重算有效规则。失败按原有 1 分钟、5 分钟、30 分钟、6 小时退避。修改周期重算正常调度，失败退避仍有效。海外条件请求需要已经下载并验证过同版海外快照。海外开启后即使国内为手动模式仍可更新。
@@ -20,7 +22,7 @@
 
 使用应用构建时提供的固定 HTTPS URL 和独立 Ed25519 公钥。部署可使用单个静态 JSON 文件。外层包含 Base64 原始 payload 和 64 字节签名，验签覆盖原始 payload。发送固定 User-Agent，请求独立于浏览器存储和账户，使用无 Cookie 的临时会话。远程配置允许在规则有更新资格或仍有远程限制时检查，成功后隔 24 小时，失败后隔 5 分钟。海外暂停时仍可接收解禁。生产地址和公钥由持有服务与签名密钥的发布方提供。
 
-发布方可将签名后的静态文件放在公开 GitHub 仓库的固定分支路径，通过 `raw.githubusercontent.com` 获取，或从 GitHub Pages 提供。iOS Delivery 读取同名仓库变量 `AEGIS_GEOSITE_POLICY_URL` 和 `AEGIS_GEOSITE_POLICY_PUBLIC_KEY`，后者为 32 字节 Ed25519 原始公钥的 Base64。签名私钥由发布方保管。使用 `node scripts/dev/sign-geosite-policy.mjs private-key.pem payload.json > policy.json` 生成单文件，再发布到已配置的 URL。
+发布方可将签名后的静态文件放在公开 GitHub 仓库的固定分支路径，通过 `raw.githubusercontent.com` 获取，或从 GitHub Pages 提供。iOS Delivery 读取同名仓库变量 `AEGIS_GEOSITE_POLICY_URL` 和 `AEGIS_GEOSITE_POLICY_PUBLIC_KEY`，后者为 32 字节 Ed25519 原始公钥的 Base64。签名私钥由发布方保管。使用 `node scripts/dev/sign-geosite-policy.mjs 3<private-key.pem <payload.json >policy.json` 从文件描述符 3 读取私钥，从标准输入读取 JSON，再将生成的文件发布到已配置的 URL。
 
 签名 payload 使用 `schema: 1`、正整数 `version`、Unix 秒 `issuedAt` 和 `expiresAt`。可选调度字段为 `defaultRefreshDays`（1、3、7）、`expiryLeadHours`（6 至 72）、`lateRetryHours`（1 至 24）。限制状态要求 `overseasPaused` 和 `blockedTags`，可选 `minimumTag`。调度字段过期时按本机默认计算。已认证的限制持续到更高版本有效快照明确解除。坏签名、超时和重启保留已验证限制。以同一原子存储更新已接受版本、摘要及限制，同版本不同内容视为冲突。远程配置的权限限于调度默认值和规则限制。
 

@@ -25,6 +25,7 @@ apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/vendor/ort-wa
 
 # Imported SDK licenses and generated compilations preserve upstream legal text.
 scripts/licenses/sdk-licenses/*.txt whitespace=-blank-at-eol,-blank-at-eof
+scripts/licenses/geosite/*.txt whitespace=-blank-at-eol,-blank-at-eof
 apps/ios/AegisApp/ThirdPartyNotices.txt whitespace=-blank-at-eol,-blank-at-eof
 apps/browser/MACOS_THIRD_PARTY_NOTICES.txt whitespace=-blank-at-eol,-blank-at-eof
 apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/vendor/onnxruntime-web-NOTICES whitespace=-blank-at-eol,-blank-at-eof

@@ -134,6 +134,9 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         let confirmation = try await cache.overseasConfirmation(for: selection)
         XCTAssertTrue(confirmation.bundled)
         try await cache.confirmOverseas(confirmation) { true }
+        let record = try XCTUnwrap(fixture.storage.readLedger())
+        let ledger = try XCTUnwrap(JSONSerialization.jsonObject(with: record) as? [String: Any])
+        XCTAssertEqual(ledger["overseasApprovedFromBundle"] as? Bool, true)
         XCTAssertEqual(cache.runtimeView().overseas.match(target), .managed)
         XCTAssertNotNil(cache.updateContext(), "Overseas refresh applies in domestic manual mode")
         XCTAssertEqual(cache.view.refreshDays, 3)
@@ -165,6 +168,121 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertThrowsError(try reopened.acceptRemotePolicy(signedPolicy(version: 1, paused: false)))
         try reopened.acceptRemotePolicy(signedPolicy(version: 3, paused: false))
         XCTAssertEqual(reopened.runtimeView().overseas.match(target), .managed)
+    }
+
+    func testUpgradeImmediatelyNarrowsApprovalFromAnOlderBundle() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: AccessGeoSiteCatalogue.bundled.publishedAt))
+        let previousInstall = published.addingTimeInterval(-2 * 86_400)
+        fixture.clock.setWall(previousInstall)
+        let old = fixture.cache()
+        await old.restore(migrating: smartAll)
+        try old.requestOverseasPreview()
+        let retired = URL(string: "https://www.aegis-retired-test-domain.com")!
+        let retained = URL(string: "https://www.google.com")!
+        let previous = try Self.overseas(1, positive: ["google.com", "aegis-retired-test-domain.com"],
+                                         excluding: [], now: previousInstall, domestic: Vector.selectedProjection)
+        try await old.apply(previous, using: XCTUnwrap(old.updateContext()))
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        try await old.confirmOverseas(old.overseasConfirmation(for: selection)) { true }
+        XCTAssertEqual(old.runtimeView().overseas.match(retired), .managed)
+        let record = try XCTUnwrap(fixture.storage.readLedger())
+        var ledger = try XCTUnwrap(JSONSerialization.jsonObject(with: record) as? [String: Any])
+        ledger["overseasApprovedFromBundle"] = true
+        try fixture.storage.writeLedger(JSONSerialization.data(withJSONObject: ledger))
+
+        fixture.clock.setWall(published)
+        XCTAssertLessThan(fixture.clock.wall, previous.expiresAt)
+        fixture.fault.withLock { $0 = .afterFileSync }
+        let duringFailure = fixture.cache(useProductBaseline: true)
+        await duringFailure.restore()
+        XCTAssertEqual(duringFailure.status, .ready)
+        XCTAssertEqual(duringFailure.match(debian), .managed)
+        XCTAssertNotEqual(duringFailure.runtimeView().overseas.match(retired), .managed)
+        fixture.fault.withLock { $0 = nil }
+
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let downloaded = try AccessGeoSiteAdmission.admitBundled(resources: resources)
+        let context = try XCTUnwrap(duringFailure.updateContext())
+        let flight = try duringFailure.beginOverseasRefresh(using: context)
+        do {
+            defer { duringFailure.endOverseasRefresh(flight) }
+            try await duringFailure.apply(downloaded, using: context)
+        }
+        XCTAssertEqual(duringFailure.runtimeView().overseas.match(retained), .managed)
+        XCTAssertEqual(duringFailure.runtimeView().overseas.match(retired), .original)
+
+        for _ in 0..<2 {
+            let reopened = fixture.cache(useProductBaseline: true)
+            await reopened.restore()
+            XCTAssertEqual(reopened.runtimeView().overseas.match(retired), .original)
+            XCTAssertEqual(reopened.runtimeView().overseas.match(retained), .managed)
+            XCTAssertTrue(reopened.runtimeView().overseas.usingBundledRules)
+            XCTAssertEqual(reopened.highWater?.tag, AccessGeoSiteCatalogue.bundled.tag)
+        }
+    }
+
+    func testNewerBundleCanBeApprovedOfflineAfterOlderUnapprovedPreviewExpires() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let old = fixture.cache()
+        await old.restore()
+        try old.requestOverseasPreview()
+        let previous = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await old.apply(previous, using: XCTUnwrap(old.updateContext()))
+        XCTAssertEqual(old.overseasPreview?.release, previous.receipt.tag)
+        fixture.clock.advance(by: 8 * 86_400)
+
+        let upgraded = fixture.cache(useProductBaseline: true)
+        await upgraded.restore()
+        XCTAssertEqual(upgraded.overseasPreview?.release, AccessGeoSiteCatalogue.bundled.tag)
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        let confirmation = try await upgraded.overseasConfirmation(for: selection)
+        XCTAssertTrue(confirmation.bundled)
+        try await upgraded.confirmOverseas(confirmation) { true }
+        XCTAssertEqual(upgraded.runtimeView().overseas.match(URL(string: "https://www.google.com")!), .managed)
+    }
+
+    func testDownloadedRulesMatchingBundleKeepTheirOnlineDeadline() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let resourceURL = try XCTUnwrap(Bundle.main.resourceURL)
+        let downloaded = try AccessGeoSiteAdmission.admitBundled(resources: resourceURL)
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: downloaded.receipt.publishedAt))
+        let checked = published.addingTimeInterval(2 * 86_400)
+        fixture.clock.setWall(checked)
+        let cache = fixture.cache(useProductBaseline: true)
+        await cache.restore()
+        try cache.setRefreshInterval(days: 7)
+        try cache.requestOverseasPreview()
+        try await cache.apply(downloaded, using: XCTUnwrap(cache.updateContext()),
+                              refreshed: .init(checkedAt: checked))
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        let confirmation = try await cache.overseasConfirmation(for: selection)
+        XCTAssertFalse(confirmation.bundled)
+        try await cache.confirmOverseas(confirmation) { true }
+        XCTAssertFalse(cache.runtimeView().overseas.usingBundledRules)
+        XCTAssertEqual(cache.refreshState.nextAttempt, downloaded.expiresAt.addingTimeInterval(-86_400))
+    }
+
+    func testExactBundleDownloadDoesNotReplaceItsApprovalSource() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let downloaded = try AccessGeoSiteAdmission.admitBundled(resources: resources)
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: downloaded.receipt.publishedAt))
+        fixture.clock.setWall(published.addingTimeInterval(86_400))
+        let cache = fixture.cache(useProductBaseline: true)
+        await cache.restore()
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: selection)) { true }
+        XCTAssertTrue(cache.runtimeView().overseas.usingBundledRules)
+        try await cache.apply(downloaded, using: XCTUnwrap(cache.updateContext()))
+        XCTAssertTrue(cache.runtimeView().overseas.usingBundledRules)
+        let cold = fixture.cache(useProductBaseline: true)
+        await cold.restore()
+        XCTAssertTrue(cold.runtimeView().overseas.usingBundledRules)
     }
 
     func testExpiryRetainsOnlyApprovedIntersectionWithOfflineRules() async throws {
@@ -1179,8 +1297,8 @@ final class AccessGeoSiteCacheTests: XCTestCase {
     }
 
     static func overseas(_ sequence: Int, positive: [String], excluding: [String],
-                          now: Date? = nil) throws -> AccessGeoSiteAdmission.Candidate {
-        let data = Vector.group("GFWLIST-CN", rules: positive.map { Vector.rule(2, $0) })
+                          now: Date? = nil, domestic: Data = Data()) throws -> AccessGeoSiteAdmission.Candidate {
+        let data = domestic + Vector.group("GFWLIST-CN", rules: positive.map { Vector.rule(2, $0) })
             + Vector.group("GFWLIST-CN-EXCLUDE", rules: excluding.map { Vector.rule(2, $0) })
             + Vector.group("GOOGLE-GEMINI", rules: [Vector.rule(3, "gemini.google.com")])
         return try Self.candidate(sequence, database: data, includeOverseas: true, now: now)

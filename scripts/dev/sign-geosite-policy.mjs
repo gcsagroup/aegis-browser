@@ -1,17 +1,16 @@
 import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-const [keyPath, payloadPath] = process.argv.slice(2);
-if (!keyPath || !payloadPath || process.argv.length !== 4) {
-  console.error('Usage: node scripts/dev/sign-geosite-policy.mjs private-key.pem payload.json');
+if (process.argv.length !== 2) {
+  console.error('Usage: node scripts/dev/sign-geosite-policy.mjs 3<private-key.pem <payload.json');
   process.exit(2);
 }
 
-const privateKey = createPrivateKey(readFileSync(keyPath));
+const privateKey = createPrivateKey(readFileSync(3));
 if (privateKey.asymmetricKeyType !== 'ed25519') {
   throw new Error('The GeoSite policy signing key must use Ed25519');
 }
-const payload = readFileSync(payloadPath);
+const payload = readFileSync(0);
 const envelope = JSON.stringify({
   payload: payload.toString('base64'),
   signature: sign(null, payload, privateKey).toString('base64'),
