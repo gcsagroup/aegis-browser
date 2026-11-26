@@ -132,7 +132,7 @@ jobs:
             scripts/release/test_development_key_access.py scripts/release/test_verify_ipa.py \
             scripts/release/test_hosted_signing.py scripts/release/test_cloud_archive.py \
             scripts/release/test_native_signing_session.py scripts/release/test_artifact_transport.py \
-            scripts/release/test_product_delivery.py
+            scripts/release/test_product_delivery.py scripts/release/test_private_alpha_inputs.py
           node apps/ios/scripts/generate-tracker-rules.mjs --check
           node --test apps/ios/Tests/SharedWebExtension/SafariNavigationIdentityTests.mjs
           node --test scripts/ci/tests/ios-*.test.mjs

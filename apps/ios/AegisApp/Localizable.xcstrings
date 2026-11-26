@@ -2849,43 +2849,43 @@
         }
       }
     },
-    "国外加速": {
+    "海外加速": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Internationale Beschleunigung"
+            "value": "Auslandsbeschleunigung"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "International acceleration"
+            "value": "Overseas acceleration"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aceleración internacional"
+            "value": "Aceleración de sitios extranjeros"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accélération internationale"
+            "value": "Accélération des sites étrangers"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Akselerasi internasional"
+            "value": "Akselerasi situs luar negeri"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accelerazione internazionale"
+            "value": "Accelerazione dei siti esteri"
           }
         },
         "ja": {
@@ -2903,13 +2903,13 @@
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pecutan antarabangsa"
+            "value": "Pecutan laman luar negara"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aceleração internacional"
+            "value": "Aceleração de sites estrangeiros"
           }
         },
         "th": {
@@ -2921,19 +2921,19 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tăng tốc quốc tế"
+            "value": "Tăng tốc trang web nước ngoài"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "国外加速"
+            "value": "海外加速"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "國外加速"
+            "value": "海外加速"
           }
         }
       }
@@ -3205,42 +3205,42 @@
         }
       }
     },
-    "国外加速连接不可用": {
+    "海外加速连接不可用": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Internationale Beschleunigung nicht verfügbar"
+            "value": "Auslandsbeschleunigung nicht verfügbar"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "International acceleration unavailable"
+            "value": "Overseas acceleration unavailable"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La aceleración internacional no está disponible"
+            "value": "La aceleración de sitios extranjeros no está disponible"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accélération internationale indisponible"
+            "value": "Accélération des sites étrangers indisponible"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Akselerasi internasional tidak tersedia"
+            "value": "Akselerasi situs luar negeri tidak tersedia"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accelerazione internazionale non disponibile"
+            "value": "Accelerazione dei siti esteri non disponibile"
           }
         },
         "ja": {
@@ -3258,13 +3258,13 @@
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pecutan antarabangsa tidak tersedia"
+            "value": "Pecutan laman luar negara tidak tersedia"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "A aceleração internacional está indisponível"
+            "value": "A aceleração de sites estrangeiros está indisponível"
           }
         },
         "th": {
@@ -3276,59 +3276,59 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Không thể sử dụng tính năng tăng tốc quốc tế"
+            "value": "Không thể sử dụng tính năng tăng tốc trang web nước ngoài"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "国外加速连接不可用"
+            "value": "海外加速连接不可用"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "國外加速連線無法使用"
+            "value": "海外加速連線無法使用"
           }
         }
       }
     },
-    "此网站使用国外加速": {
+    "此网站使用海外加速": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Diese Website nutzt die internationale Beschleunigung"
+            "value": "Diese Website nutzt die Auslandsbeschleunigung"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This site uses international acceleration"
+            "value": "This site uses overseas acceleration"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Este sitio usa la aceleración internacional"
+            "value": "Este sitio usa la aceleración de sitios extranjeros"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce site utilise l’accélération internationale"
+            "value": "Ce site utilise l’accélération des sites étrangers"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Situs ini menggunakan akselerasi internasional"
+            "value": "Situs ini menggunakan akselerasi situs luar negeri"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Questo sito usa l’accelerazione internazionale"
+            "value": "Questo sito usa l’accelerazione dei siti esteri"
           }
         },
         "ja": {
@@ -3346,13 +3346,13 @@
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "Laman ini menggunakan pecutan antarabangsa"
+            "value": "Laman ini menggunakan pecutan laman luar negara"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Este site utiliza a aceleração internacional"
+            "value": "Este site utiliza a aceleração de sites estrangeiros"
           }
         },
         "th": {
@@ -3364,59 +3364,59 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trang web này đang dùng tính năng tăng tốc quốc tế"
+            "value": "Trang web này đang dùng tính năng tăng tốc trang web nước ngoài"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此网站使用国外加速"
+            "value": "此网站使用海外加速"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此網站使用國外加速"
+            "value": "此網站使用海外加速"
           }
         }
       }
     },
-    "重新打开此网站时使用国外加速": {
+    "重新打开此网站时使用海外加速": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Die internationale Beschleunigung wird beim nächsten Öffnen dieser Website verwendet"
+            "value": "Die Auslandsbeschleunigung wird beim nächsten Öffnen dieser Website verwendet"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "International acceleration will apply when you reopen this site"
+            "value": "Overseas acceleration will apply when you reopen this site"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La aceleración internacional se aplicará al volver a abrir este sitio"
+            "value": "La aceleración de sitios extranjeros se aplicará al volver a abrir este sitio"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L’accélération internationale s’appliquera à la prochaine ouverture de ce site"
+            "value": "L’accélération des sites étrangers s’appliquera à la prochaine ouverture de ce site"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Akselerasi internasional akan digunakan saat situs ini dibuka lagi"
+            "value": "Akselerasi situs luar negeri akan digunakan saat situs ini dibuka lagi"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "L’accelerazione internazionale verrà applicata alla prossima apertura del sito"
+            "value": "L’accelerazione dei siti esteri verrà applicata alla prossima apertura del sito"
           }
         },
         "ja": {
@@ -3434,13 +3434,13 @@
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pecutan antarabangsa akan digunakan apabila laman ini dibuka semula"
+            "value": "Pecutan laman luar negara akan digunakan apabila laman ini dibuka semula"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "A aceleração internacional será aplicada ao reabrir este site"
+            "value": "A aceleração de sites estrangeiros será aplicada ao reabrir este site"
           }
         },
         "th": {
@@ -3452,19 +3452,19 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tính năng tăng tốc quốc tế sẽ áp dụng khi bạn mở lại trang web này"
+            "value": "Tính năng tăng tốc trang web nước ngoài sẽ áp dụng khi bạn mở lại trang web này"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新打开此网站时使用国外加速"
+            "value": "重新打开此网站时使用海外加速"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新開啟此網站時使用國外加速"
+            "value": "重新開啟此網站時使用海外加速"
           }
         }
       }
@@ -3558,43 +3558,43 @@
         }
       }
     },
-    "请导入现有的国外加速域名清单。": {
+    "请导入现有的海外加速域名清单。": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Importiere die vorhandene Domainliste für die internationale Beschleunigung."
+            "value": "Importiere die vorhandene Domainliste für die Auslandsbeschleunigung."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import the existing domain list for international acceleration."
+            "value": "Import the existing domain list for overseas acceleration."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Importa la lista de dominios existente para la aceleración internacional."
+            "value": "Importa la lista de dominios existente para la aceleración de sitios extranjeros."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Importez la liste de domaines existante pour l’accélération internationale."
+            "value": "Importez la liste de domaines existante pour l’accélération des sites étrangers."
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impor daftar domain yang sudah ada untuk akselerasi internasional."
+            "value": "Impor daftar domain yang sudah ada untuk akselerasi situs luar negeri."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Importa l’elenco dei domini esistente per l’accelerazione internazionale."
+            "value": "Importa l’elenco dei domini esistente per l’accelerazione dei siti esteri."
           }
         },
         "ja": {
@@ -3612,13 +3612,13 @@
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import senarai domain sedia ada untuk pecutan antarabangsa."
+            "value": "Import senarai domain sedia ada untuk pecutan laman luar negara."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Importe a lista de domínios existente para a aceleração internacional."
+            "value": "Importe a lista de domínios existente para a aceleração de sites estrangeiros."
           }
         },
         "th": {
@@ -3630,19 +3630,19 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nhập danh sách tên miền hiện có để dùng tính năng tăng tốc quốc tế."
+            "value": "Nhập danh sách tên miền hiện có để dùng tính năng tăng tốc trang web nước ngoài."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请导入现有的国外加速域名清单。"
+            "value": "请导入现有的海外加速域名清单。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請匯入現有的國外加速網域清單。"
+            "value": "請匯入現有的海外加速網域清單。"
           }
         }
       }
@@ -3825,91 +3825,180 @@
         }
       }
     },
-    "国内加速": {
+    "访问中国大陆网站": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Beschleunigung im Inland"
+            "value": "Websites in Festlandchina aufrufen"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Domestic acceleration"
+            "value": "Access mainland China websites"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aceleración nacional"
+            "value": "Acceder a sitios web de China continental"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accélération nationale"
+            "value": "Accéder aux sites web de Chine continentale"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "Akselerasi dalam negeri"
+            "value": "Akses situs web Tiongkok daratan"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accelerazione nazionale"
+            "value": "Accedi ai siti web della Cina continentale"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "国内向け高速化"
+            "value": "中国本土のサイトにアクセス"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "국내 가속"
+            "value": "중국 본토 웹사이트 접속"
           }
         },
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pecutan dalam negara"
+            "value": "Akses laman web tanah besar China"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aceleração nacional"
+            "value": "Visitar sites da China continental"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "การเร่งความเร็วภายในประเทศ"
+            "value": "เข้าถึงเว็บไซต์ในจีนแผ่นดินใหญ่"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tăng tốc trong nước"
+            "value": "Truy cập trang web Trung Quốc đại lục"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "国内加速"
+            "value": "访问中国大陆网站"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "國內加速"
+            "value": "造訪中國大陸網站"
+          }
+        }
+      }
+    },
+    "访问海外网站": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Websites im Ausland aufrufen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access overseas websites"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceder a sitios web extranjeros"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accéder aux sites web étrangers"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Akses situs web luar negeri"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accedi ai siti web esteri"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "海外のサイトにアクセス"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "해외 웹사이트 접속"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Akses laman web luar negara"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visitar sites estrangeiros"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เข้าถึงเว็บไซต์ต่างประเทศ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Truy cập trang web nước ngoài"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "访问海外网站"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "造訪海外網站"
           }
         }
       }

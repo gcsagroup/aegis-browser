@@ -111,6 +111,15 @@ targets:
         outputFiles:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisPrivateTestNode.vless
         basedOnDependencyAnalysis: false
+      - name: Select private Alpha test nodes
+        script: |
+          /usr/bin/python3 -B "${SRCROOT}/scripts/private_alpha_nodes.py"
+        inputFiles:
+          - $(SRCROOT)/scripts/private_alpha_nodes.py
+          - $(AEGIS_PRIVATE_ALPHA_NODES_FILE)
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisAlphaTestNodes.json
+        basedOnDependencyAnalysis: false
       - name: Select Aegis Firebase registration
         script: |
           /usr/bin/python3 -B "${SRCROOT}/scripts/firebase_config.py" install \
@@ -132,6 +141,7 @@ targets:
         Release:
           AEGIS_FIREBASE_CHANNEL: disabled
       base:
+        AEGIS_PRIVATE_ALPHA_NODES_FILE: /dev/null
         AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE: /dev/null
         AEGIS_PRIVATE_TEST_NODE_FILE: /dev/null
         OTHER_LDFLAGS: "$(inherited) -ObjC -lresolv"
@@ -305,6 +315,9 @@ targets:
       - path: Tests/AgentKitTests
       - path: Tests/AegisPolicyKitTests
       - path: Tests/AccessKitTests
+      - path: ../../fixtures/access/share-links
+        type: folder
+        buildPhase: resources
       - path: Tests/Fixtures
         type: folder
         buildPhase: resources

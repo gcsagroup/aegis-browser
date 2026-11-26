@@ -96,28 +96,37 @@ def verify_package(directory, sha, tree, expected_digest):
 
 
 def reject_private_resources(directory, manifest):
-    if any(manifest.get('details', {}).get(key) for key in ('privateBetaTestNode', 'privateBetaQuota')):
+    if any(manifest.get('details', {}).get(key) for key in ('privateBetaTestNode', 'privateBetaQuota', 'privateAlphaNodes')):
         raise ValueError('Private iOS test package cannot be published')
     ipa = next(asset['name'] for asset in manifest['assets'] if asset['name'].endswith('.ipa'))
     with zipfile.ZipFile(directory / ipa) as binary:
-        if any(Path(name.rstrip('/')).name in {'AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json'}
+        private = {'aegisprivatetestnode.vless', 'aegisprivatetestsubscription.json', 'aegisalphatestnodes.json'}
+        if any(name.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1].casefold() in private
                for name in binary.namelist()):
             raise ValueError('Private iOS test resources cannot be published')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['import', 'export'])
+    parser.add_argument('operation', choices=['import', 'export', 'assert-public'])
     parser.add_argument('--directory', type=Path, required=True)
-    parser.add_argument('--zip', type=Path, required=True)
-    parser.add_argument('--sha', required=True)
-    parser.add_argument('--tree', required=True)
+    parser.add_argument('--zip', type=Path)
+    parser.add_argument('--sha')
+    parser.add_argument('--tree')
     parser.add_argument('--manifest-sha256', required=True)
     parser.add_argument('--run-json', type=Path)
     parser.add_argument('--repository')
     parser.add_argument('--run-id', type=int)
     parser.add_argument('--attempt', type=int)
     args = parser.parse_args()
+    if args.operation == 'assert-public':
+        manifest_path = args.directory / 'ios-manifest.json'
+        if digest(manifest_path) != args.manifest_sha256:
+            raise ValueError('Manifest digest mismatch')
+        reject_private_resources(args.directory, json.loads(manifest_path.read_text()))
+        return
+    if not (args.zip and args.sha and args.tree):
+        parser.error('Import and export require --zip, --sha, and --tree')
     if args.operation == 'import':
         verify_run(json.loads(args.run_json.read_text()), args.repository, args.sha, args.run_id, args.attempt)
         if args.directory.exists():
@@ -126,7 +135,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix='.ios-import-', dir=args.directory.parent) as tmp:
             staged = Path(tmp)/'package'
             extract_flat(args.zip, staged)
-            verify_package(staged, args.sha, args.tree, args.manifest_sha256)
+            manifest = verify_package(staged, args.sha, args.tree, args.manifest_sha256)
+            reject_private_resources(staged, manifest)
             os.rename(staged, args.directory)
     else:
         # A package directory may contain rebuildable work; export only explicit delivery files.

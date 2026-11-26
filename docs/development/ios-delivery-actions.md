@@ -55,6 +55,89 @@ If **Wait** times out, the run fails and retains the last observed Apple state i
 
 **Wait** 超时仍会失败，并在 Summary 和状态 artifact 中保留最后一次 Apple 状态。使用 **Status** 或 **Wait** 再次查询同一构建，不要重新上传。
 
+### Private TestFlight Alpha / Alpha 私有测试包
+
+Use **Simple → Package and upload → Alpha → manual → private_alpha: yes** on
+the current upstream `main`, with a fresh version/build allocation. The
+`private-alpha-package` job requires the usual unused-build check and exact-source
+admission. The tag, Full, Bot, cloud-archive, ordinary package, and GitHub Draft
+routes do not support private Alpha. A standard Alpha build still omits the list.
+
+Packaging uses `aegis-ios-signing` and `private-alpha-store` uses `aegis-ios-store`
+for upload. Keep both environments' approval and branch protections. Configure
+`AEGIS_IOS_PRIVATE_ALPHA_RUNNER_GROUP` and `AEGIS_IOS_PRIVATE_ALPHA_RUNNER_LABEL`
+as upstream repository variables. The group must restrict access to
+`gcsagroup/aegis-browser/.github/workflows/ios-delivery.yml@refs/heads/main`.
+Admission requires a named group other than `Default` and distinct custom labels
+for the private runner and the shared `AEGIS_IOS_RUNNER_LABEL`.
+Assign the label to exactly one ARM64 macOS runner in that group, using an OS
+account dedicated to this workflow and separate from PR validation. Keep its
+temporary storage on SSD with room for DerivedData and export. The read-only
+unused-build check uses `aegis-ios-store` and skips its Actions artifact for
+private Alpha.
+
+These inputs belong only in `aegis-ios-signing` as Environment secrets,
+with no repository or organization fallback. Do
+not put their values in a dispatch field, variable, repo file, or receipt:
+
+- `AEGIS_IOS_ALPHA_NODES_BASE64`: one-line base64 for an ordered UTF-8 JSON
+  array of VLESS URI strings. Supply the four intended nodes for the first
+  package. The format admits 1–16 distinct entries, each at most 8,192 UTF-8
+  bytes, with a canonical JSON size of at most 131,500 bytes. It accepts
+  TCP/TLS/Vision, WS/TLS, TCP/REALITY/Vision and gRPC/REALITY. Duplicate query
+  keys, ambiguous aliases and unsupported options fail the build. Each URI
+  must have the same client UUID as the anchored node. Use compact
+  JSON: [GitHub limits each secret to 48 KB](https://docs.github.com/en/actions/reference/security/secrets#limits-for-secrets).
+- `AEGIS_IOS_TEST_NODE_BASE64`: base64 for the existing anchored TCP/REALITY
+  VLESS URI used by the shared quota session.
+- `AEGIS_IOS_TEST_SUBSCRIPTION_BASE64`: base64 for the existing quota
+  descriptor for that same client. The product validator binds it to the
+  anchored node's SHA-256 and the live quota check must confirm the configured
+  identity, active allowance and remaining traffic.
+
+For the four-node Alpha delivery, the authenticated subscription response must
+advertise all four nodes with matching parsed node parameters. Serve the list
+as plain text or base64 from the same HTTPS origin and path as the signed
+quota descriptor, with the `format=info` query removed. A matching UUID alone
+is insufficient. The app checks the subscription on refresh. Verifying real
+traffic counters through all four nodes requires a device test.
+
+The signing job verifies the exported IPA has one main-app copy of each of
+`AegisAlphaTestNodes.json`, `AegisPrivateTestNode.vless` and
+`AegisPrivateTestSubscription.json`, byte for byte, and has the internal-only
+TestFlight marker. After removing the signing material, the job retains the
+IPA, its manifest and checksum, and the three verification inputs in the
+runner account's owner-only `~/.local/share/aegis-private-alpha` directory.
+The handoff binds the repository, run, first attempt, runner name, source
+commit and tree, and manifest digest. The store job rechecks those bindings,
+the exact IPA and live quota before its upload step receives ASC credentials.
+Private Alpha publishes zero Actions artifacts.
+
+The signing job removes the build workspace under `RUNNER_TEMP`. The store
+job uses the exact-source checkout to clean up its own handoff, including
+after a failed preflight or upload. If the store job never reaches checkout
+or its runner is lost, the runner operator must reconcile the run and remove
+its retained copy and any remaining temporary files. Permanent upload
+records contain only package identity.
+
+Do not rerun a private Alpha upload. If upload started but did not return a
+confirmed result, reconcile the exact version/build in App Store Connect
+before attempting another delivery. An accepted upload does not confirm Apple
+processing or device acceptance; use the existing Status or Wait route for
+processing.
+
+首次交付请在上游 `main` 使用 **Simple / Package and upload / Alpha / manual /
+private_alpha: yes**，并在 `aegis-ios-signing` 受保护环境配置三项密钥。
+四个节点须与锚定节点使用同一客户端 UUID。订阅响应须从已签名额度描述中的相同
+HTTPS 源和路径提供明文或 Base64 的四个节点，移除 `format=info` 查询参数。
+应用刷新时校验四个节点解析后的参数，单独匹配 UUID 不足。四个节点的实际流量
+计数仍须真机验证。
+
+签名作业在同一受信任 runner 上保留仅当前用户可访问的交接目录。
+`private-alpha-store` 通过 `aegis-ios-store` 审批，重新核对同一次运行的交接、
+IPA 和实时额度后加载 ASC 凭据，直传内部 TestFlight。失败或中断后先核对同一版本
+和构建号的 Apple 状态，不要直接重跑。
+
 ### Private TestFlight Beta / 私有测试包
 
 For a Beta that embeds the shared test node and reads its 3X-UI quota, choose

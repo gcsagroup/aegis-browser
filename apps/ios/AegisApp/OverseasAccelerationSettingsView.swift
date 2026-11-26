@@ -17,7 +17,6 @@ struct OverseasAccelerationSettingsView: View {
 
     private var canEdit: Bool {
         browser.activeTab === tab && hostStores.offersWebsiteAcceleration(for: tab)
-            && hostStores.websiteAccelerationMode == .smart
     }
 
     var body: some View {
@@ -54,6 +53,12 @@ struct OverseasAccelerationSettingsView: View {
                             .accessibilityIdentifier("overseas-fetch-rules")
                         if isWaitingForRules {
                             Text(state.refreshFailed ? "下载失败" : "正在更新规则…")
+                        }
+                        if state.previewRequested && !state.selection.enabled {
+                            Button("取消") {
+                                hostStores.cancelOverseasPreview(for: tab)
+                                isWaitingForRules = false
+                            }
                         }
                     }
                 }

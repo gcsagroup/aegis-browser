@@ -12,8 +12,9 @@ FILE = pathlib.Path(__file__).with_name('artifact-transport.py')
 
 
 class ArtifactTransportTests(unittest.TestCase):
-    def test_public_export_rejects_either_private_resource_even_without_manifest_flags(self):
-        for resource in (None, 'AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json'):
+    def test_public_export_rejects_private_resources_even_without_manifest_flags(self):
+        for resource in (None, 'AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json',
+                         'AegisAlphaTestNodes.json', 'PlugIns/Share.appex/aegisalphatestnodes.json'):
             with self.subTest(resource=resource), tempfile.TemporaryDirectory() as tmp:
                 root = pathlib.Path(tmp)
                 package = root/'package'
@@ -35,6 +36,38 @@ class ArtifactTransportTests(unittest.TestCase):
                 self.assertEqual(result.returncode == 0, resource is None)
                 self.assertEqual(target.exists(), resource is None)
                 self.assertNotIn(b'private fixture', result.stderr)
+
+    def test_import_rejects_private_alpha_even_from_an_admitted_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            ipa = root / 'app.ipa'
+            with zipfile.ZipFile(ipa, 'w') as binary:
+                binary.writestr('Payload/Aegis.app/AegisAlphaTestNodes.json', 'private fixture')
+            repository = 'gcsagroup/aegis-browser'
+            sha, tree = 'a' * 40, 'b' * 40
+            manifest = json.dumps(dict(source=dict(sha=sha, tree=tree, dirty=False), repository=repository,
+                platform='ios', assets=[dict(name=ipa.name, size=ipa.stat().st_size,
+                    sha256=hashlib.sha256(ipa.read_bytes()).hexdigest())])).encode()
+            digest = hashlib.sha256(manifest).hexdigest()
+            transport = root / 'package.zip'
+            with zipfile.ZipFile(transport, 'w') as archive:
+                archive.write(ipa, ipa.name)
+                archive.writestr('ios-manifest.json', manifest)
+                archive.writestr('ios-manifest.json.sha256', f'{digest}  ios-manifest.json\n')
+            run = root / 'run.json'
+            run.write_text(json.dumps(dict(id=12, run_attempt=1, head_sha=sha,
+                head_repository=dict(full_name=repository), repository=dict(full_name=repository),
+                status='completed', conclusion='success', path='.github/workflows/ios-delivery.yml',
+                event='workflow_dispatch')))
+            target = root / 'imported'
+            result = subprocess.run([sys.executable, '-B', str(FILE), 'import', '--directory', str(target),
+                '--zip', str(transport), '--sha', sha, '--tree', tree, '--manifest-sha256', digest,
+                '--run-json', str(run), '--repository', repository, '--run-id', '12', '--attempt', '1'],
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Private iOS test resources', result.stderr)
+            self.assertNotIn('private fixture', result.stderr)
+            self.assertFalse(target.exists())
 
     def test_cloud_evidence_is_complete_and_cannot_enter_a_manual_manifest(self):
         m = self.module()

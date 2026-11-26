@@ -107,6 +107,10 @@ public struct AccessOverseasCatalogue: Sendable {
         func contains(_ host: String) -> Bool {
             host == value || (kind == .domain && host.hasSuffix("." + value))
         }
+
+        // Valid policy values need no JSON escaping. Charge 21 bytes for
+        // the object and one for its array separator.
+        fileprivate var snapshotRowBytes: Int { value.utf8.count + 22 }
     }
 
     private struct HostIndex: Sendable {
@@ -146,6 +150,13 @@ public struct AccessOverseasCatalogue: Sendable {
     /// Comparable route coverage. Scoped snapshots store these sorted rows,
     /// and validate the admitted data again before rebuilding their index.
     public struct Policy: Equatable, Sendable {
+        // Wire admission applies the source limits separately. A snapshot
+        // may include rows from both sides of an intersection.
+        private static let maximumRuleCount = 2 * (positiveLimit + projection.count)
+        private static let maximumExclusionCount = 2 * exclusionLimit
+        // Leave room in the 4 MiB blob for the receipt, checksum and selection.
+        private static let maximumSnapshotRowBytes = 4 * 1024 * 1024 - 16 * 1024
+
         public let rules: [Record]
         public let exclusions: [Record]
         private let positive: HostIndex
@@ -153,8 +164,9 @@ public struct AccessOverseasCatalogue: Sendable {
         private let keywords: Set<String>
 
         public init(rules: [Record], exclusions: [Record]) throws {
-            guard rules.count <= AccessOverseasCatalogue.positiveLimit + AccessOverseasCatalogue.projection.count,
-                  exclusions.count <= AccessOverseasCatalogue.exclusionLimit,
+            guard rules.count <= Self.maximumRuleCount, exclusions.count <= Self.maximumExclusionCount,
+                  rules.reduce(0, { $0 + $1.snapshotRowBytes }) + exclusions.reduce(0, { $0 + $1.snapshotRowBytes })
+                    <= Self.maximumSnapshotRowBytes,
                   Set(rules).count == rules.count, Set(exclusions).count == exclusions.count else {
                 throw AccessGeoSiteAdmission.Failure.malformedDatabase
             }
@@ -280,7 +292,7 @@ public struct AccessOverseasCatalogue: Sendable {
                 }
             let narrower = Self.minimalPositiveRules(Array(Set(common)))
             if narrower.allSatisfy({ $0.kind == .full }) {
-                return try? Policy(rules: narrower, exclusions: exclusions)
+                return Self.boundedIntersection(rules: narrower, exclusions: [])
             }
             // Retain both sets of exclusions so a mixed update cannot re-admit
             // a previously excluded host before confirmation.
@@ -303,7 +315,49 @@ public struct AccessOverseasCatalogue: Sendable {
                 if row.kind == .domain { return !excludedDomains.containsStrictDomainAncestor(of: row.value) }
                 return row.kind == .keyword || !excludedDomains.contains(row.value, includingDescendants: true)
             }
-            return try? Policy(rules: narrower, exclusions: Array(minimalExclusions))
+            let orderedExclusions = minimalExclusions.sorted()
+            let keptExclusions = Array(orderedExclusions.prefix(Self.maximumExclusionCount))
+            let omitted = orderedExclusions.dropFirst(keptExclusions.count)
+            guard !omitted.isEmpty else {
+                return Self.boundedIntersection(rules: narrower, exclusions: keptExclusions)
+            }
+
+            // A suffix can survive only if every omitted exception is
+            // irrelevant to it. Revisit the uncompressed intersection so
+            // exact hosts and unaffected subdomains can survive on their own.
+            var omittedHosts = HostIndex()
+            for row in omitted { omittedHosts.insert(row, recordingAncestors: true) }
+            let omittedKeyword = omitted.contains { $0.kind == .keyword }
+            let safe = common.compactMap { row -> Record? in
+                guard row.kind == .domain else { return row }
+                if !omittedKeyword, !omittedHosts.contains(row.value), !omittedHosts.ancestors.contains(row.value) {
+                    return row
+                }
+                guard !isExcluded(row.value), !other.isExcluded(row.value) else { return nil }
+                return Record(kind: .full, value: row.value)
+            }
+            let safeRules = Self.minimalPositiveRules(Array(Set(safe)))
+            return Self.boundedIntersection(rules: safeRules, exclusions: keptExclusions)
+        }
+
+        private static func boundedIntersection(rules: [Record], exclusions: [Record]) -> Policy? {
+            // Exact matches were already checked against both policies.
+            let exclusions = rules.contains(where: { $0.kind == .domain }) ? exclusions : []
+            var remaining = maximumSnapshotRowBytes - exclusions.reduce(0) { $0 + $1.snapshotRowBytes }
+            if rules.count <= maximumRuleCount, rules.reduce(0, { $0 + $1.snapshotRowBytes }) <= remaining {
+                return try? Policy(rules: rules, exclusions: exclusions)
+            }
+
+            // Prefer smaller rows on overflow. A suffix takes fewer bytes
+            // than any of the descendant rules it already subsumes.
+            let ordered = rules.sorted { ($0.snapshotRowBytes, $0) < ($1.snapshotRowBytes, $1) }
+            var retained: [Record] = []
+            for rule in ordered.prefix(maximumRuleCount) {
+                guard rule.snapshotRowBytes <= remaining else { break }
+                retained.append(rule)
+                remaining -= rule.snapshotRowBytes
+            }
+            return try? Policy(rules: retained, exclusions: exclusions)
         }
 
         private static func minimalPositiveRules(_ rows: [Record]) -> [Record] {

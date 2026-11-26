@@ -1,4 +1,5 @@
 """Read IPA metadata without extracting arbitrary archive paths or changing a package."""
+import argparse
 import plistlib
 from pathlib import Path
 import sys
@@ -11,7 +12,7 @@ import third_party_notices as notices
 APP_ID = "com.gcsa.aegis"
 
 
-def verify(path, version, build, release_profile=None):
+def verify(path, version, build, release_profile=None, *, private_alpha_directory=None):
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         roots = [n for n in names if n.startswith("Payload/") and n.endswith(".app/Info.plist") and n.count("/") == 2]
@@ -21,6 +22,15 @@ def verify(path, version, build, release_profile=None):
         if archive.getinfo(root + "Info.plist").file_size > 1024 * 1024:
             raise ValueError("Unexpectedly large Info.plist")
         main_info = plistlib.loads(archive.read(root + "Info.plist"))
+        if private_alpha_directory is not None:
+            from private_alpha_inputs import verify_resources
+
+            if release_profile != "alpha":
+                raise ValueError("Private Alpha verification requires the Alpha profile")
+            verify_resources(archive, root, main_info, private_alpha_directory)
+        elif any(name.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1].casefold()
+                 == "aegisalphatestnodes.json" for name in names):
+            raise ValueError("Private Alpha resource is forbidden in the standard IPA verifier")
         if (main_info.get("AegisAccessReleaseChannel") not in ("dev", "alpha", "beta")
                 or main_info.get("AegisReleaseProfile") not in ("dev", "alpha", "beta")):
             if any(name.rsplit('/', 1)[-1] in ("AegisPrivateTestNode.vless", "AegisPrivateTestSubscription.json") for name in names):
@@ -55,8 +65,18 @@ def verify(path, version, build, release_profile=None):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("path", type=Path)
+    parser.add_argument("version")
+    parser.add_argument("build")
+    parser.add_argument("release_profile", nargs="?")
+    parser.add_argument("--private-alpha-directory", type=Path)
+    args = parser.parse_args()
     try:
-        verify(*sys.argv[1:])
+        verify(args.path, args.version, args.build, args.release_profile,
+               private_alpha_directory=args.private_alpha_directory)
         print("IPA application and extension identities verified")
     except (ValueError, KeyError, OSError, zipfile.BadZipFile) as error:
+        if args.private_alpha_directory is not None:
+            sys.exit("Private Alpha IPA verification failed; no private values are logged.")
         sys.exit(str(error))

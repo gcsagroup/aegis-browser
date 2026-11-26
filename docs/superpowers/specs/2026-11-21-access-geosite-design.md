@@ -1,6 +1,6 @@
-# 国内加速中的网站加速设计
+# 网站加速：访问中国大陆网站设计
 
-设置中的统一入口暂名「国内加速」。点开后直接看到「网站加速」的「手动」和「智能」两种模式。未来的「位置加速」与「网站加速」在同一页并列。本期界面只显示已能使用的功能。首个可安装交付为 iOS DEV，随后完善 macOS DEV，最后接入 Android。Hysteria 2（HY2）另行验证传输故障恢复。[TDD 实施计划](../plans/2026-11-21-access-geosite.md)
+设置中的统一入口现名「网站加速」（原暂名「国内加速」）。点开后在「访问中国大陆网站」下直接看到「手动」和「智能」两种模式。未来的「位置加速」与「网站加速」在同一页并列。本期界面只显示已能使用的功能。首个可安装交付为 iOS DEV，随后完善 macOS DEV，最后接入 Android。Hysteria 2（HY2）另行验证传输故障恢复。[TDD 实施计划](../plans/2026-11-21-access-geosite.md)
 
 设计基线为 `quinn521/aegis-browser:develop@e18106b84c56589a69faa1b0965e696caea2cb8c`。产品决策建立在 iOS WebKit 顶层导航试件之上。
 
@@ -28,7 +28,7 @@ V2Fly 输入 SHA-256 为 `b1e803c6b8d02def0865b1b4953ee391c562478d8ff7ee3e8b621a
 
 ## iOS DEV 产品合同
 
-设置页标题为「国内加速」，在「网站加速」下直接显示两个模式；「隐藏地理位置服务」继续展示既有服务用量。选择「智能」即开启类别选路，选择「手动」即关闭它。普通窗口共享偏好。新装、旧版本升级、无法识别的模式均使用「手动」和原有隐私策略，保留独立的用户选择。入口展示和路由执行均核对受信任 DEV 渠道及普通窗口身份。私密会话继续使用自身的路由与存储。
+设置页标题为「网站加速」，在「访问中国大陆网站」下直接显示两个模式；「隐藏地理位置服务」继续展示既有服务用量。选择「智能」即开启类别选路，选择「手动」即关闭它。普通窗口共享偏好。新装、旧版本升级、无法识别的模式均使用「手动」和原有隐私策略，保留独立的用户选择。入口展示和路由执行均核对受信任 DEV 渠道及普通窗口身份。私密会话继续使用自身的路由与存储。
 
 页脚仅提示所选模式（「自行选择要加速的网站。」或「当前仅自动加速 Debian 相关网站。」），服务未配置时另显示「加速服务未配置。」。
 
@@ -40,7 +40,7 @@ V2Fly 输入 SHA-256 为 `b1e803c6b8d02def0865b1b4953ee391c562478d8ff7ee3e8b621a
 | 智能，未命中，且无独立授权 | 使用原连接，跳过原先可选的全站首次准备。明确选择「智能」会改变旧的默认首次尝试；界面需在选择时说明 |
 | 底层导航仍在准备时改变选择 | 重新验证当前标签、导航、站点和授权代际；先前已失效的结果不能绑定、重发或开启手动选项。只在既有安全规则允许时处理无正文的 GET/HEAD，其他请求需用户重新提交 |
 
-分类器只读已审核的两个根域。真实 App、准备入口、store 选择和测试使用同一套判断。类别命中不写入手动授权。一个已加载文档内的子资源共用该文档的 WebKit 出口。不同顶层站点可使用不同出口。「国内加速」是统一入口的暂定名称；首组覆盖 Debian 项目及相关软件源，可验证连接选择，公开网站访问成功率和速度需独立测量。[WebKit API](https://developer.apple.com/documentation/webkit/wkwebsitedatastore/proxyconfigurations-cdc1) · [固定分组原文](https://github.com/v2fly/domain-list-community/blob/ffb513217b9cb22835eb74a39a907d77742ce68f/data/debian)
+分类器只读已审核的两个根域。真实 App、准备入口、store 选择和测试使用同一套判断。类别命中不写入手动授权。一个已加载文档内的子资源共用该文档的 WebKit 出口。不同顶层站点可使用不同出口。统一入口现名「网站加速」；首组覆盖 Debian 项目及相关软件源，可验证连接选择，公开网站访问成功率和速度需独立测量。[WebKit API](https://developer.apple.com/documentation/webkit/wkwebsitedatastore/proxyconfigurations-cdc1) · [固定分组原文](https://github.com/v2fly/domain-list-community/blob/ffb513217b9cb22835eb74a39a907d77742ce68f/data/debian)
 
 ## macOS DEV 的手动与智能模式
 
@@ -55,7 +55,7 @@ GeoSite 决定是否使用 Access。若结果为 `preserve_native`，原生 Opti
 
 ## Android 接续
 
-macOS 完成后，在 Android Chromium 的原生设置接入同一「国内加速 → 网站加速」界面。可信 Profile、Incognito 隔离、站点覆盖、请求优先级及固定目录与 macOS 对齐。用 Android 自己的浏览器和设备验证实际出口、重定向、撤销与非 DEV 拒绝。独立的原生 Options 工作有既定 owner 和 ARM 构建前提。[Android 原生工作单](https://github.com/gcsagroup/aegis-browser/issues/210)
+macOS 完成后，在 Android Chromium 的原生设置接入同一「网站加速 → 访问中国大陆网站」界面。可信 Profile、Incognito 隔离、站点覆盖、请求优先级及固定目录与 macOS 对齐。用 Android 自己的浏览器和设备验证实际出口、重定向、撤销与非 DEV 拒绝。独立的原生 Options 工作有既定 owner 和 ARM 构建前提。[Android 原生工作单](https://github.com/gcsagroup/aegis-browser/issues/210)
 
 ## Hysteria 2 的独立受控实验
 

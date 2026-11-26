@@ -134,9 +134,11 @@ def validate_central_entitlements(signed, requested, identifier, team, profile_e
 
 
 def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root, *,
-           cloud_poc=False, private_beta=False, strict_entitlements=False):
+           cloud_poc=False, private_beta=False, strict_entitlements=False, private_alpha_directory=None):
     if private_beta and (profile != 'beta' or cloud_poc):
         raise ValueError('Private Beta verification requires the manual Beta profile')
+    if private_alpha_directory is not None and (profile != 'alpha' or cloud_poc or private_beta):
+        raise ValueError('Private Alpha verification requires manual Alpha signing')
     internal_testing_only = profile == 'alpha' or private_beta
     if not re.fullmatch(r"[A-Z0-9]{10}", team) or (not cloud_poc and not re.fullmatch(r"[A-Fa-f0-9]{40}", certificate_sha1)):
         raise ValueError("Provide the expected Apple team and certificate SHA-1")
@@ -158,7 +160,8 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
         spec = importlib.util.spec_from_file_location("aegis_ipa_structure", Path(__file__).with_name("verify-ipa.py"))
         structure = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(structure)
-        structure.verify(ipa, version, build, profile)
+        alpha = {} if private_alpha_directory is None else {'private_alpha_directory': private_alpha_directory}
+        structure.verify(ipa, version, build, profile, **alpha)
         with tempfile.TemporaryDirectory(prefix="aegis-ios-verification-") as temporary:
             root = Path(temporary)
             archive.extractall(root)
@@ -237,6 +240,7 @@ def main():
     parser.add_argument("--expected-verification", type=Path)
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--private-beta", action="store_true")
+    parser.add_argument("--private-alpha-directory", type=Path)
     options = parser.parse_args()
     try:
         if options.signing_mode == 'manual' and (not options.certificate_sha1 or not options.profiles_json):
@@ -245,7 +249,8 @@ def main():
             raise ValueError('Cloud re-verification requires the source-bound expected verification receipt')
         result = verify(options.ipa, options.version, options.build, options.profile, options.team,
                         options.certificate_sha1, json.loads(options.profiles_json) if options.profiles_json else None,
-                        options.source_root, cloud_poc=options.signing_mode == 'cloud', private_beta=options.private_beta)
+                        options.source_root, cloud_poc=options.signing_mode == 'cloud', private_beta=options.private_beta,
+                        private_alpha_directory=options.private_alpha_directory)
         if options.signing_mode == 'cloud':
             expected = json.loads(options.expected_verification.read_text())
             if any(result[key] != expected[key] for key in ['ipaSha256', 'version', 'build', 'profile', 'bundles']):
@@ -254,7 +259,8 @@ def main():
     except (ValueError, KeyError, OSError, zipfile.BadZipFile, plistlib.InvalidFileException):
         # Explicit diagnostic text is useful but never echo subprocess output or credentials.
         error = sys.exc_info()[1]
-        print(str(error), file=sys.stderr)
+        print(str(error) if options.private_alpha_directory is None else
+              "Private Alpha signature verification failed; no private values are logged.", file=sys.stderr)
         return 1
     return 0
 

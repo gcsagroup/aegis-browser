@@ -91,7 +91,10 @@ public struct AccessRealityVisionOutboundConfig: @unchecked Sendable {
             options.insert(.prettyPrinted)
         }
         var config = try embeddedInstanceJSONObject(logLevel: logLevel, errorLogPath: errorLogPath, includeAccessLog: includeAccessLog)
-        config["aegisLogCaptureGeneration"] = logCaptureGeneration
+        if let logCaptureGeneration {
+            config["aegisLogCaptureGeneration"] = logCaptureGeneration
+            try AccessRealityVisionOutboundConfigBuilder.assertFailClosed(config)
+        }
         return try JSONSerialization.data(withJSONObject: config, options: options)
     }
 }

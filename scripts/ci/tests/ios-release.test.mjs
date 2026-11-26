@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {copyFileSync, readFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {copyFileSync, existsSync, readFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -30,9 +30,146 @@ test('private Beta inputs stay in the protected manual package step', () => {
     assert(expression.endsWith("|| '' }}"));
     assert(!JSON.stringify({...job, steps: job.steps.filter(item => item !== step)}).includes(name));
     for (const [id, other] of Object.entries(workflow.jobs)) {
-      if (id !== 'ios-package') assert(!JSON.stringify(other).includes(name));
+      if (id === 'private-alpha') {
+        assert(!JSON.stringify({...other, steps: other.steps.filter(item => item.id !== 'inputs')}).includes(name));
+      } else if (id !== 'ios-package') {
+        assert(!JSON.stringify(other).includes(name));
+      }
     }
   }
+});
+
+test('private Alpha hands off to the protected store without publishing artifacts', context => {
+  const simple = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const full = parse(readFileSync('.github/workflows/ios-delivery-full.yml', 'utf8'));
+  assert.equal(simple.on.workflow_dispatch.inputs.private_alpha.default, 'no');
+  assert.equal(full.on.workflow_dispatch.inputs.private_alpha, undefined);
+  const {jobs} = simple;
+  const job = jobs['private-alpha'];
+  const store = jobs['private-alpha-store'];
+  assert.equal(job.environment, 'aegis-ios-signing');
+  assert.deepEqual(job['runs-on'], {
+    group: '${{ needs.admission.outputs.private_alpha_runner_group }}',
+    labels: ['self-hosted', 'macOS', 'ARM64', '${{ needs.admission.outputs.private_alpha_runner_label }}'],
+  });
+  const runnerAdmission = jobs.admission.steps.find(step => step.name === 'Require a dedicated runner for private Alpha');
+  assert(runnerAdmission.if.includes("steps.plan.outputs.private_alpha == 'true'"));
+  const sharedAdmission = jobs.admission.steps.find(step => step.id === 'shared-runner');
+  assert.equal(sharedAdmission.if, "${{ !startsWith(steps.plan.outputs.operation, 'status-') }}",
+    'every route that can schedule macOS work validates the shared selector; hosted status queries do not');
+  assert.equal(jobs['status-query']['runs-on'], 'ubuntu-24.04');
+  const admissionIds = jobs.admission.steps.map(step => step.id);
+  assert(admissionIds.indexOf('plan') < admissionIds.indexOf('shared-runner'));
+  assert(admissionIds.indexOf('shared-runner') < admissionIds.indexOf('private-alpha-runner'));
+  assert.equal(sharedAdmission.env.SHARED_IOS_LABEL, '${{ vars.AEGIS_IOS_RUNNER_LABEL }}');
+  assert.equal(sharedAdmission.env.PRIVATE_ALPHA_LABEL, '${{ vars.AEGIS_IOS_PRIVATE_ALPHA_RUNNER_LABEL }}');
+  // Scheduling must use the literal label admission checked; a JSON round trip could decode escapes.
+  const sharedJobs = Object.entries(jobs).filter(([, value]) => JSON.stringify(value['runs-on'] ?? '').includes('AEGIS_IOS_RUNNER_LABEL'));
+  assert(sharedJobs.length >= 5, 'expected the shared macOS delivery jobs');
+  for (const [name, value] of sharedJobs) {
+    assert.deepEqual(value['runs-on'], ['self-hosted', 'macOS', 'ARM64', '${{ vars.AEGIS_IOS_RUNNER_LABEL }}'], name);
+  }
+  assert(!readFileSync('.github/workflows/ios-delivery.yml', 'utf8').includes('fromJSON(format('),
+    'delivery runner selectors must not be built through fromJSON');
+  assert.equal(jobs.admission.outputs.private_alpha_runner_group, '${{ steps.private-alpha-runner.outputs.group }}');
+  assert.equal(jobs.admission.outputs.private_alpha_runner_label, '${{ steps.private-alpha-runner.outputs.label }}');
+  const directory = mkdtempSync(join(tmpdir(), 'private-alpha-runner-'));
+  context.after(() => rmSync(directory, {recursive: true, force: true}));
+  const output = join(directory, 'output');
+  const dedicated = {PRIVATE_ALPHA_GROUP: 'Private Group', PRIVATE_ALPHA_LABEL: 'Private-Runner', SHARED_IOS_LABEL: 'shared'};
+  const utf8Locale = process.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8';
+  // Hosted Ubuntu runs a modern Bash; stock macOS /bin/bash is 3.2.
+  for (const shell of ['bash', ...(existsSync('/bin/bash') ? ['/bin/bash'] : [])]) {
+    // Ordinary delivery: no private_alpha condition, with and without a configured private label.
+    const admitShared = env => spawnSync(shell, ['-c', sharedAdmission.run],
+      {env: {...process.env, PRIVATE_ALPHA_LABEL: '', SHARED_IOS_LABEL: 'shared', ...env}});
+    for (const valid of [{}, {PRIVATE_ALPHA_LABEL: 'Private-Runner'}, {SHARED_IOS_LABEL: 'aegis-ios-upstream'},
+      {SHARED_IOS_LABEL: 'aegis.ios_upstream-1'}]) {
+      assert.equal(admitShared(valid).status, 0, `${shell}: ${JSON.stringify(valid)}`);
+    }
+    for (const invalid of [
+      {SHARED_IOS_LABEL: ''}, {SHARED_IOS_LABEL: '   '}, {SHARED_IOS_LABEL: ' shared'}, {SHARED_IOS_LABEL: 'shared\nx'},
+      ...['ARM64', 'arm64', 'macOS', 'SELF-hosted', 'x64', 'Linux'].map(label => ({SHARED_IOS_LABEL: label})),
+      ...['ARM64', 'MacOS'].map(label => ({SHARED_IOS_LABEL: label, PRIVATE_ALPHA_LABEL: 'Private-Runner'})),
+      {SHARED_IOS_LABEL: 'Private-Runner', PRIVATE_ALPHA_LABEL: 'private-runner'},
+      // Non-ASCII case pairs collide on GitHub but not under tr.
+      {SHARED_IOS_LABEL: 'build-\u00e9', PRIVATE_ALPHA_LABEL: 'build-\u00c9'},
+      {SHARED_IOS_LABEL: 'build-\u00e9'}, {SHARED_IOS_LABEL: 'shared', PRIVATE_ALPHA_LABEL: 'build-\u00c9'},
+      {SHARED_IOS_LABEL: 'shared/x'},
+    ]) {
+      assert.equal(admitShared(invalid).status, 1, `${shell}: ${JSON.stringify(invalid)}`);
+    }
+    const admitRunner = env => {
+      writeFileSync(output, '');
+      return spawnSync(shell, ['-c', runnerAdmission.run],
+        {env: {...process.env, LC_ALL: utf8Locale, ...dedicated, ...env, GITHUB_OUTPUT: output}});
+    };
+    assert.equal(admitRunner({}).status, 0, shell);
+    assert.equal(readFileSync(output, 'utf8'), 'group=Private Group\nlabel=Private-Runner\n');
+    for (const invalid of [
+      {PRIVATE_ALPHA_GROUP: ''}, {PRIVATE_ALPHA_GROUP: 'DeFaUlT'}, {PRIVATE_ALPHA_GROUP: 'private\nlabel=shared'},
+      {PRIVATE_ALPHA_GROUP: '\u2003'}, {PRIVATE_ALPHA_GROUP: '\u2003Private'}, {PRIVATE_ALPHA_GROUP: 'Private\u2003'},
+      {PRIVATE_ALPHA_LABEL: ''}, {SHARED_IOS_LABEL: ''}, {SHARED_IOS_LABEL: '   '},
+      ...['SHARED', 'self-HOSTED', 'macOS', 'ARM64', ' shared '].map(label => ({PRIVATE_ALPHA_LABEL: label})),
+      ...['SELF-hosted', 'MacOS', 'arm64'].map(label => ({SHARED_IOS_LABEL: label})),
+      {PRIVATE_ALPHA_LABEL: 'build-\u00c9', SHARED_IOS_LABEL: 'build-\u00e9'},
+      {PRIVATE_ALPHA_LABEL: 'Private-Runner', SHARED_IOS_LABEL: 'build-\u00e9'},
+    ]) {
+      assert.equal(admitRunner(invalid).status, 1, `${shell}: ${JSON.stringify(invalid)}`);
+      assert.equal(readFileSync(output, 'utf8'), '');
+    }
+  }
+  assert.deepEqual(job.needs, ['admission', 'check-unused']);
+  for (const condition of ["private_alpha == 'true'", "private_beta == 'false'", "profile == 'alpha'",
+    "signing_mode == 'manual'", "operation == 'package-upload'", "destination == 'testflight'",
+    "github.ref == 'refs/heads/main'", "github.event_name == 'workflow_dispatch'", 'github.run_attempt == 1']) {
+    assert(job.if.includes(condition), condition);
+  }
+  for (const id of ['archive-settings', 'ios-archive', 'ios-package']) {
+    assert(jobs[id].if.includes("needs.admission.outputs.private_alpha == 'false'"));
+  }
+  for (const id of ['ios-draft', 'seal-package', 'upload-new']) {
+    assert(jobs[id].if.includes("needs.ios-package.result == 'success'"));
+  }
+  const steps = job.steps;
+  const inputs = steps.find(step => step.id === 'inputs');
+  const names = ['AEGIS_IOS_ALPHA_NODES_BASE64', 'AEGIS_IOS_TEST_NODE_BASE64', 'AEGIS_IOS_TEST_SUBSCRIPTION_BASE64'];
+  assert.deepEqual(Object.keys(inputs.env), names);
+  for (const name of names) assert.equal(inputs.env[name], '${{ secrets.' + name + ' }}');
+  assert(!JSON.stringify({...job, steps: steps.filter(step => step !== inputs)}).includes('AEGIS_IOS_ALPHA_NODES_BASE64'));
+  assert(!JSON.stringify(full).includes('AEGIS_IOS_ALPHA_NODES_BASE64'));
+  assert(!JSON.stringify(job).includes('AEGIS_ASC_'));
+  const removeSigning = steps.findIndex(step => step.run?.endsWith('hosted-signing.py cleanup'));
+  const retain = steps.findIndex(step => step.run?.endsWith('private_alpha_inputs.py retain'));
+  assert(removeSigning >= 0 && removeSigning < retain);
+  assert.equal(job.outputs.manifest_sha256, '${{ steps.retain.outputs.manifest_sha256 }}');
+  assert.equal(store.environment, 'aegis-ios-store');
+  assert.equal(job.name, 'private-alpha-package');
+  assert.deepEqual(store['runs-on'], job['runs-on']);
+  assert.deepEqual(store.needs, ['admission', 'private-alpha']);
+  assert(store.if.includes("needs.private-alpha.result == 'success'"));
+  assert(store.if.includes('github.run_attempt == 1'));
+  assert.equal(store.env.RELEASE_MANIFEST_SHA256, '${{ needs.private-alpha.outputs.manifest_sha256 }}');
+  assert(!names.some(name => JSON.stringify(store).includes(name)));
+  assert(!JSON.stringify(store).includes('DISTRIBUTION'));
+  const quota = store.steps.find(step => step.id === 'quota');
+  const authorize = store.steps.find(step => step.run?.endsWith('private_alpha_inputs.py require-preflight'));
+  const upload = store.steps.find(step => step.run?.endsWith('private_alpha_inputs.py upload'));
+  assert(store.steps.indexOf(quota) < store.steps.indexOf(authorize));
+  assert(store.steps.indexOf(authorize) < store.steps.indexOf(upload));
+  assert.equal(authorize.env.AEGIS_PRIVATE_ALPHA_VERIFIED_MANIFEST_SHA256, '${{ steps.quota.outputs.manifest_sha256 }}');
+  assert.equal(upload.env.AEGIS_PRIVATE_ALPHA_VERIFIED_MANIFEST_SHA256, '${{ steps.quota.outputs.manifest_sha256 }}');
+  assert.equal(upload.env.AEGIS_ASC_KEY_BASE64, '${{ secrets.AEGIS_ASC_KEY_BASE64 }}');
+  assert(!JSON.stringify({...store, steps: store.steps.filter(step => step !== upload)}).includes('AEGIS_ASC_'));
+  assert(![...steps, ...store.steps].some(step => /(?:upload|download)-artifact/u.test(step.uses || '')));
+  assert(jobs['check-unused'].steps.find(step => step.uses?.startsWith('actions/upload-artifact@'))
+    .if.includes("needs.admission.outputs.private_alpha == 'false'"));
+  const cleanup = steps.find(step => step.run?.endsWith('private_alpha_inputs.py cleanup'));
+  assert(cleanup.if.includes('always()'));
+  assert.equal(cleanup.env.AEGIS_PRIVATE_ALPHA_DIRECTORY, '${{ steps.inputs.outputs.directory }}');
+  assert.equal(store.steps.find(step => step.id === 'checkout').with.ref, '${{ github.sha }}');
+  const cleanupHandoff = store.steps.find(step => step.run?.endsWith('private_alpha_inputs.py cleanup-handoff'));
+  assert.equal(cleanupHandoff.if, "${{ always() && steps.checkout.outcome == 'success' }}");
 });
 
 test('archive gets only non-secret settings from the existing environment', () => {
@@ -282,7 +419,8 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   const simple = workflow('ios-delivery');
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'archive_signing', 'private_beta', 'approved_source_sha']);
+  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'archive_signing',
+    'private_alpha', 'private_beta', 'approved_source_sha']);
   assert.equal(inputs.signing_mode.default, 'cloud');
   assert.deepEqual(inputs.signing_mode.options, ['cloud', 'manual']);
   assert.equal(inputs.archive_signing.default, 'development');
@@ -484,7 +622,9 @@ test('Full explicitly forwards named secrets while protected jobs resolve enviro
   const signing = ['AEGIS_IOS_DISTRIBUTION_P12_BASE64', 'AEGIS_IOS_DISTRIBUTION_P12_PASSWORD',
     'AEGIS_IOS_APP_PROFILE_BASE64', 'AEGIS_IOS_SAFARI_PROFILE_BASE64', 'AEGIS_IOS_SHARE_PROFILE_BASE64'];
   const privateBeta = ['AEGIS_IOS_TEST_NODE_BASE64', 'AEGIS_IOS_TEST_SUBSCRIPTION_BASE64'];
-  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), [...privateBeta, ...expected, ...signing]);
+  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets),
+    ['AEGIS_IOS_ALPHA_NODES_BASE64', ...privateBeta, ...expected, ...signing]);
+  assert.equal(simple.on.workflow_call.secrets.AEGIS_IOS_ALPHA_NODES_BASE64.required, false);
   for (const name of privateBeta) assert.equal(simple.on.workflow_call.secrets[name].required, false);
   assert.deepEqual(Object.keys(full.jobs.delivery.secrets), [...expected, ...signing]);
   for (const name of expected) {
@@ -504,7 +644,7 @@ test('Full explicitly forwards named secrets while protected jobs resolve enviro
 test('hosted signing loads only environment secrets after source admission and cleans up before artifact upload', () => {
   const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const job = doc.jobs['ios-package'];
-  assert.equal(job['runs-on'], "${{ fromJSON(format('[\"self-hosted\",\"macOS\",\"ARM64\",\"{0}\"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}");
+  assert.deepEqual(job['runs-on'], ['self-hosted', 'macOS', 'ARM64', '${{ vars.AEGIS_IOS_RUNNER_LABEL }}']);
   assert.equal(job.environment, 'aegis-ios-signing');
   assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode.app/Contents/Developer');
   const ruby = job.steps.findIndex(s => s.uses === './.github/actions/ensure-ios-ruby');

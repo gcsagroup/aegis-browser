@@ -493,7 +493,8 @@ with ExitStack() as stack:
         def api(path):
             return dict(total_count=1, jobs=[job]) if path.endswith('/jobs?per_page=100') else row
         with patch.object(action, 'api', api):
-            for name in ('delivery / store', 'delivery / private-beta-store'):
+            for name in ('delivery / store', 'delivery / private-beta-store', 'private-alpha',
+                         'private-alpha-package', 'private-alpha-store'):
                 job['name'] = name
                 with self.subTest(name=name):
                     self.assertFalse(action.unstarted_store_run(row))

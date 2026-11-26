@@ -6,7 +6,7 @@
 
 ## U1a：先交付真正可选的 Beta 分类
 
-**RED**：在现有 [SettingsLayoutUITests](../../../apps/ios/Tests/AegisUITests/SettingsLayoutUITests.swift) 与 [AccessHostRecoveryWebKitTests](../../../apps/ios/Tests/AegisTests/AccessHostRecoveryWebKitTests.swift) 新增行为用例。实际打开「设置 → 国内加速 → 网站加速」，智能下能进入「加速分类 Beta」，看到 Debian／豆瓣／美团并增删选择；核对导航、Beta 只读一次、名称／值／selected trait、大字体换行、非空／未选择提示。记录旧 App 缺入口及新增分类不影响路由的失败。
+**RED**：在现有 [SettingsLayoutUITests](../../../apps/ios/Tests/AegisUITests/SettingsLayoutUITests.swift) 与 [AccessHostRecoveryWebKitTests](../../../apps/ios/Tests/AegisTests/AccessHostRecoveryWebKitTests.swift) 新增行为用例。实际打开「设置 → 网站加速 → 访问中国大陆网站」，智能下能进入「加速分类 Beta」，看到 Debian／豆瓣／美团并增删选择；核对导航、Beta 只读一次、名称／值／selected trait、大字体换行、非空／未选择提示。记录旧 App 缺入口及新增分类不影响路由的失败。
 
 **RED**：拟增 AccessGeoSiteSelectionTests，覆盖首次手动+DEBIAN、已有手动／智能迁移、exact 保留、显式空集合与缺字段不同、最后一项可取消、重启仍为空、手动保留选择、双普通窗口同步、重叠 OR。private／Guest／非 DEV／unknown／其他 owner 从 UI 与原生直接调用均不能读写／触发；候选在列表打开后变化，旧勾选不能授权。
 

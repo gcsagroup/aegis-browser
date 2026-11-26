@@ -16,13 +16,38 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         let level: AccessLogLevel
         let generation: Int64?
     }
+    struct RedactionSecrets: Sendable {
+        private(set) var credentials: Set<String>
+        // Diagnostic URLs are reduced to their authority before storage.
+        // Query values still share the capture limit with credentials.
+        private(set) var queryValues: Set<String>
+
+        init(credentials: [String] = [], queryValues: [String] = []) {
+            self.credentials = Set(credentials.filter { !$0.isEmpty })
+            self.queryValues = Set(queryValues.filter { !$0.isEmpty })
+        }
+
+        var count: Int { credentials.union(queryValues).count }
+
+        mutating func formUnion(_ other: Self) {
+            credentials.formUnion(other.credentials)
+            queryValues.formUnion(other.queryValues)
+        }
+
+        func union(_ other: Self) -> Self {
+            var result = self
+            result.formUnion(other)
+            return result
+        }
+    }
+
     public static let shared: AccessDiagnosticLog = {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("AccessDiagnostics", isDirectory: true)
         return AccessDiagnosticLog(storageDirectory: directory, initialLevel: selectedLevel())
     }()
     public static let preferenceKey = "access.diagnostics.logLevel"
-    private static let retiredSecretLimit = 256
+    private static let secretLimit = 256
     private let queue = DispatchQueue(label: "aegis.access.diagnostics")
     private let limit: Int
     private let pollInterval: DispatchTimeInterval
@@ -35,15 +60,15 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     private var discardPrefix: Int? = 0
     private var enabled = false
     private var failed = false
-    private var standaloneSecrets: [String] = []
-    private var liveSecrets: [UUID: [String]] = [:]
+    private var standaloneSecrets = RedactionSecrets()
+    private var liveSecrets: [UUID: RedactionSecrets] = [:]
     // Xray has one process logger. A stopped runtime may still have late
     // records, including across an Off/On FIFO rotation with a surviving core.
-    private var retiredCaptureSecrets: Set<String> = []
+    private var retiredCaptureSecrets = RedactionSecrets()
     private var redactionExhausted = false
-    private var secrets: [String] = []
+    private var credentialSecrets: Set<String> = []
     // A pending history read may outlast a core. Its redactors apply only to that read.
-    private var historySecrets: Set<String> = []
+    private var historySecrets = RedactionSecrets()
     private var discardRestoredHistory = false
     private var reader: DispatchSourceTimer?
     private var readerFD: Int32?
@@ -94,7 +119,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
                         if self.storageGeneration == 0 {
                             switch result {
                             case .success(let restored):
-                                self.secrets = Array(Set(self.secrets).union(self.historySecrets))
+                                self.credentialSecrets.formUnion(self.historySecrets.credentials)
                                 let safe = self.discardRestoredHistory ? [] : restored.compactMap(self.restoredLine)
                                 self.rebuildSecretSetLocked()
                                 if !self.discardRestoredHistory && safe.count != restored.count { self.storageFailed = true }
@@ -105,7 +130,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
                                 self.storageFailed = true
                             }
                         }
-                        self.historySecrets.removeAll()
+                        self.historySecrets = RedactionSecrets()
                         if self.dirty { self.scheduleSaveLocked() }
                         let waiters = self.flushWaiters
                         self.flushWaiters.removeAll()
@@ -142,7 +167,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     func start(level: AccessLogLevel, secrets: [String]) throws -> Capture? {
         let stopped = stop()
         queue.sync {
-            standaloneSecrets = secrets.filter { !$0.isEmpty }
+            standaloneSecrets = RedactionSecrets(credentials: secrets)
             updateRedactorLocked()
         }
         guard stopped else { throw POSIXError(.EIO) }
@@ -236,23 +261,14 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         } else {
             stopped = true
         }
-        let exhausted = queue.sync {
-            let retiring = liveSecrets.removeValue(forKey: lease.id) ?? []
+        queue.sync {
+            let retiring = liveSecrets.removeValue(forKey: lease.id) ?? RedactionSecrets()
             if lastOwner {
-                retiredCaptureSecrets.removeAll()
+                retiredCaptureSecrets = RedactionSecrets()
                 redactionExhausted = false
             } else if !redactionExhausted {
-                let filters = retiredCaptureSecrets.union(retiring)
-                if filters.count <= Self.retiredSecretLimit {
-                    retiredCaptureSecrets = filters
-                } else {
-                    // No filter may be evicted while any sink can ingest a late
-                    // record. Keep draining, with capture off until all owners end.
-                    enabled = false
-                    pending.removeAll()
-                    redactionExhausted = true
-                    retiredCaptureSecrets.removeAll()
-                }
+                // Keep retired values while an existing sink can ingest a late record.
+                retiredCaptureSecrets.formUnion(retiring)
             }
             rebuildSecretSetLocked()
             if let readerFD, enabled {
@@ -260,10 +276,6 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
                 discardingLine = discardingLine || !pending.isEmpty
                 pending.removeAll()
             }
-            return redactionExhausted
-        }
-        if exhausted, let generation = sharedCapture?.generation {
-            AccessGoEmbeddedCore.retireLogCaptureGeneration(generation)
         }
         leaseCaptures.removeValue(forKey: lease.id)
         for id in Array(disabledPipes.keys) where !leaseCaptures.values.contains(id) {
@@ -275,19 +287,33 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     /// Live embedded cores share Xray's process logger. Each owns a lease on
     /// the filtered FIFO, and all active credentials remain in its redactor.
     func acquireShared(level: AccessLogLevel, secrets: [String], disableCaptureWhenQuiet: Bool = true) -> Lease {
+        acquireShared(level: level, secrets: RedactionSecrets(credentials: secrets),
+                      disableCaptureWhenQuiet: disableCaptureWhenQuiet)
+    }
+
+    func acquireShared(level: AccessLogLevel, secrets: RedactionSecrets, disableCaptureWhenQuiet: Bool = true) -> Lease {
         sharedLock.lock()
         defer { sharedLock.unlock() }
         let owner = UUID()
         let exhausted = queue.sync {
-            liveSecrets[owner] = secrets.filter { !$0.isEmpty }
-            updateRedactorLocked()
+            let filters = registeredSecretsLocked().union(secrets)
+            if !redactionExhausted && filters.count > Self.secretLimit {
+                redactionExhausted = true
+                clearLocked(disable: true, completion: nil)
+            }
+            // Capture stays disabled until every current owner retires.
+            liveSecrets[owner] = redactionExhausted ? RedactionSecrets() : secrets
+            if !redactionExhausted { updateRedactorLocked() }
             return redactionExhausted
+        }
+        if exhausted {
+            if let generation = sharedCapture?.generation { AccessGoEmbeddedCore.retireLogCaptureGeneration(generation) }
+            return Lease(id: owner, path: nil, level: .none, generation: nil)
         }
         if level == .none {
             if disableCaptureWhenQuiet { disableSharedCaptureLocked() }
             return Lease(id: owner, path: nil, level: .none, generation: nil)
         }
-        if exhausted { return Lease(id: owner, path: nil, level: .none, generation: nil) }
         if let capture = sharedCapture {
             let state = queue.sync { () -> (usable: Bool, failed: Bool) in
                 guard captureID == capture.id else { return (false, false) }
@@ -334,14 +360,15 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     }
 
     private func updateRedactorLocked() {
-        rebuildSecretSetLocked()
+        let registered = registeredSecretsLocked()
+        credentialSecrets = registered.credentials
         if !storageReady, storageGeneration == 0, !discardRestoredHistory {
-            let filters = historySecrets.union(secrets)
-            if filters.count <= Self.retiredSecretLimit {
+            let filters = historySecrets.union(registered)
+            if filters.count <= Self.secretLimit {
                 historySecrets = filters
             } else {
                 discardRestoredHistory = true
-                historySecrets.removeAll()
+                historySecrets = RedactionSecrets()
             }
         }
         // History may have finished restoring before this owner registered.
@@ -356,7 +383,13 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     }
 
     private func rebuildSecretSetLocked() {
-        secrets = Array(retiredCaptureSecrets.union(standaloneSecrets).union(liveSecrets.values.flatMap { $0 }))
+        credentialSecrets = registeredSecretsLocked().credentials
+    }
+
+    private func registeredSecretsLocked() -> RedactionSecrets {
+        liveSecrets.values.reduce(into: retiredCaptureSecrets.union(standaloneSecrets)) { combined, secrets in
+            combined.formUnion(secrets)
+        }
     }
 
     private func stop(ifID: UUID?, clearStandaloneSecrets: Bool = false) -> Bool {
@@ -388,7 +421,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             directory = nil
             captureID = nil
             if clearStandaloneSecrets {
-                standaloneSecrets.removeAll()
+                standaloneSecrets = RedactionSecrets()
                 rebuildSecretSetLocked()
             }
             return (true, retired)
@@ -549,8 +582,14 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
 
     private func redactedLine(_ safe: String) -> String {
         var text = safe
-        for secret in secrets {
-            text = text.replacingOccurrences(of: secret, with: "[redacted]", options: .caseInsensitive)
+        for secret in credentialSecrets {
+            let filter = Self.filterValue(secret)
+            // Only the relay address field is matched by IP identity, on parsed
+            // hosts in safeTarget. Every other credential is textual, even when
+            // it happens to look like an IP address.
+            if filter.relay && Self.ipIdentity(filter.value) != nil { continue }
+            guard !filter.value.isEmpty else { continue }
+            text = text.replacingOccurrences(of: filter.value, with: "[redacted]", options: .caseInsensitive)
         }
         // Short secrets can also match timestamps or fixed event grammar.
         // Both live and restored records must retain a readable safe form.
@@ -615,7 +654,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         discardingLine = discardingLine || !pending.isEmpty
         pending.removeAll()
         storageGeneration &+= 1
-        historySecrets.removeAll()
+        historySecrets = RedactionSecrets()
         let generation = storageGeneration
         dirty = false
         saveWork?.cancel(); saveWork = nil; saveWorkID = nil
@@ -670,6 +709,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         if target.hasPrefix("http://") || target.hasPrefix("https://") || target.hasPrefix("//") {
             let https = target.hasPrefix("https://")
             target = String(target.dropFirst(target.hasPrefix("//") ? 2 : (https ? 8 : 7)))
+            // Remove request paths and queries before matching credentials.
             target = String(target.prefix(while: { !"/?#".contains($0) }))
             if !target.contains(":") || target.hasSuffix("]") { target += https ? ":443" : ":80" }
         }
@@ -686,8 +726,45 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             guard !host.hasPrefix("."), !host.hasSuffix("."), !host.contains(".."),
                   host.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 46 }) else { return "[redacted]" }
         }
-        guard !secrets.contains(where: { target.range(of: $0, options: .caseInsensitive) != nil }) else { return "[redacted]" }
+        let address = Self.ipIdentity(host)
+        for secret in credentialSecrets {
+            let filter = Self.filterValue(secret)
+            if filter.relay, let address, let secretAddress = Self.ipIdentity(filter.value) {
+                if secretAddress == address { return "[redacted]" }
+            } else if !filter.value.isEmpty, target.range(of: filter.value, options: .caseInsensitive) != nil {
+                return "[redacted]"
+            }
+        }
         return target
+    }
+
+    // Redaction filters are plain strings so that retired, live and history
+    // filter sets keep their existing representation. A relay address carries
+    // this marker, which no canonical record can contain.
+    private static let relayFilterMarker = "\u{0}relay:"
+
+    /// Marks a relay address so that only it is matched by IP identity.
+    static func relayFilter(_ address: String) -> String {
+        address.isEmpty ? "" : relayFilterMarker + address
+    }
+
+    private static func filterValue(_ raw: String) -> (value: String, relay: Bool) {
+        guard raw.hasPrefix(relayFilterMarker) else { return (raw, false) }
+        return (String(raw.dropFirst(relayFilterMarker.count)), true)
+    }
+
+    private static let mappedIPv4Prefix: [UInt8] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff]
+
+    private static func ipIdentity(_ host: String) -> Data? {
+        let address = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
+        var ipv4 = in_addr()
+        if inet_pton(AF_INET, address, &ipv4) == 1 {
+            return withUnsafeBytes(of: ipv4) { Data($0) }
+        }
+        var ipv6 = in6_addr()
+        guard inet_pton(AF_INET6, address, &ipv6) == 1 else { return nil }
+        let bytes = withUnsafeBytes(of: ipv6) { Data($0) }
+        return bytes.starts(with: mappedIPv4Prefix) ? Data(bytes.suffix(4)) : bytes
     }
 
     private static func firstMatch(_ pattern: String, in text: String, group: Int) -> String? {

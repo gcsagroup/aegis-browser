@@ -23,6 +23,246 @@ final class AccessTestNodeEditorTests: XCTestCase {
     private let webSocketLink = "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.20:8443"
         + "?security=tls&type=ws&host=ws.example.com&fp=chrome&sni=cert.example.com&path=%2Finside&encryption=none&alpn=#synthetic-ws"
 
+    private let tcpTLSVisionLink = "vless://550e8400-e29b-41d4-a716-446655440000@192.0.2.30:443"
+        + "?encryption=none&flow=xtls-rprx-vision&fp=chrome&headerType=none&host=metadata.example"
+        + "&security=tls&sni=tls.example&type=tcp#synthetic-tcp"
+
+    private let grpcFixtureKey = String(Data(repeating: 0x42, count: 32).base64EncodedString().dropLast())
+
+    private var grpcRealityLink: String {
+        "vless://6ba7b810-9dad-41d1-80b4-00c04fd430c8@[2001:db8::30]:8443"
+            + "?encryption=none&fp=chrome&path=%2Fsample%2FTun&pbk=\(grpcFixtureKey)&security=reality"
+            + "&serviceName=%2Fsample%2FTun&sid=a1b2c3d4&sni=grpc.example&type=grpc#synthetic-grpc"
+    }
+
+    func testAdditionalTransportsPreviewApplyAndRestoreTheirRecords() throws {
+        let storage = Storage()
+        let repository = AccessTestNodeRepository(channel: .alpha, storage: storage)
+        let editor = AccessTestNodeEditor(isPrivate: false, repository: repository)
+        editor.openProfile()
+        for (index, fixture) in [(tcpTLSVisionLink, "VLESS / TCP / TLS / Vision"),
+                                 (grpcRealityLink, "VLESS / gRPC / REALITY")].enumerated() {
+            let (share, name) = fixture
+            let expected = try AccessInternalTestNode.parseSingleShareURI(share)
+            editor.preview(share)
+            XCTAssertEqual(editor.draftProtocolName, name)
+            XCTAssertEqual(storage.writes, index)
+            editor.apply()
+            XCTAssertEqual(storage.writes, index + 1)
+            let saved = try repository.savedNode(isPrivate: false)
+            let bytes = try JSONEncoder().encode(saved)
+            let decoded = try JSONDecoder().decode(AccessTestNodeRecord.self, from: bytes)
+            XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: bytes), saved.revision)
+            XCTAssertTrue(decoded.node == expected)
+            XCTAssertEqual(decoded.revision, saved.revision)
+            let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+            XCTAssertEqual(fields["version"] as? Int, 3)
+            let storedNode = try XCTUnwrap(fields["node"] as? [String: Any])
+            XCTAssertEqual(storedNode["kind"] as? String, "vless")
+            XCTAssertNil(fields["address"])
+        }
+    }
+
+    func testFlatAlphaRecordsReadWithoutChangingTheirRevisionAndWriteTypedV3() throws {
+        let revision = try XCTUnwrap(UUID(uuidString: "e1ea5abf-608b-40e3-886a-9d92520f79a2"))
+        let account = "6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+        let legacyRecords: [([String: Any], AccessInternalTestNode)] = [
+            (["version": 3, "address": "192.0.2.30", "port": 443, "serverName": "tls.example",
+              "userID": "550e8400-e29b-41d4-a716-446655440000"], try .parseSingleShareURI(tcpTLSVisionLink)),
+            (["version": 4, "address": "2001:db8::30", "port": 8443, "serverName": "grpc.example",
+              "userID": account, "serviceName": "/sample/Tun", "publicKey": grpcFixtureKey,
+              "shortID": "a1b2c3d4"], try .parseSingleShareURI(grpcRealityLink)),
+        ]
+        for (legacy, expected) in legacyRecords {
+            var fields = legacy
+            fields["revision"] = revision.uuidString
+            fields["fingerprint"] = "chrome"
+            let bytes = try JSONSerialization.data(withJSONObject: fields)
+            let record = try JSONDecoder().decode(AccessTestNodeRecord.self, from: bytes)
+            XCTAssertEqual(record.node, expected)
+            XCTAssertEqual(record.revision, revision)
+            XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: bytes), revision)
+
+            let migrated = try JSONEncoder().encode(record)
+            let migratedFields = try XCTUnwrap(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
+            XCTAssertEqual(migratedFields["version"] as? Int, 3)
+            XCTAssertNotNil(migratedFields["node"])
+            XCTAssertNil(migratedFields["address"])
+            let restored = try JSONDecoder().decode(AccessTestNodeRecord.self, from: migrated)
+            XCTAssertEqual(restored.node, expected)
+            XCTAssertEqual(restored.revision, revision)
+        }
+    }
+
+    func testMalformedTypedV3DoesNotUseFlatTCPFields() throws {
+        let revision = try XCTUnwrap(UUID(uuidString: "e1ea5abf-608b-40e3-886a-9d92520f79a2"))
+        let fields: [String: Any] = [
+            "version": 3, "revision": revision.uuidString, "node": NSNull(),
+            "address": "192.0.2.30", "port": 443, "serverName": "tls.example",
+            "userID": "550e8400-e29b-41d4-a716-446655440000", "fingerprint": "chrome",
+        ]
+        let bytes = try JSONSerialization.data(withJSONObject: fields)
+        XCTAssertThrowsError(try JSONDecoder().decode(AccessTestNodeRecord.self, from: bytes))
+        XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: bytes), revision)
+    }
+
+    #if DEBUG
+    func testAdditionalOutboundRegistryRejectsUnregisteredSecurityAndTransportFields() throws {
+        let fixtures = [
+            (tcpTLSVisionLink, "tlsSettings", "allowInsecure"),
+            (grpcRealityLink, "grpcSettings", "multiMode"),
+        ]
+        for (share, section, field) in fixtures {
+            let node = try AccessInternalTestNode.parseSingleShareURI(share)
+            var payload = try AccessOutboundConfigRegistry.outboundJSONObject(for: node)
+            var outbound = try XCTUnwrap((payload["outbounds"] as? [[String: Any]])?.first)
+            var stream = try XCTUnwrap(outbound["streamSettings"] as? [String: Any])
+            var settings = try XCTUnwrap(stream[section] as? [String: Any])
+            settings[field] = true
+            stream[section] = settings
+            outbound["streamSettings"] = stream
+            payload["outbounds"] = [outbound]
+            XCTAssertThrowsError(try AccessOutboundConfigRegistry.assertFailClosed(payload, profile: node.profileKey))
+        }
+    }
+    #endif
+
+    func testAdditionalSharesRejectAmbiguousOrUnsafeFields() throws {
+        let tcp = String(tcpTLSVisionLink.prefix(while: { $0 != "#" }))
+        let grpc = String(grpcRealityLink.prefix(while: { $0 != "#" }))
+        let invalidShares = [
+            tcp + "&allowInsecure=1", tcp + "&alpn=h2", tcp + "&%66low=xtls-rprx-vision",
+            tcp.replacingOccurrences(of: "headerType=none", with: "headerType=http"),
+            tcp.replacingOccurrences(of: "flow=xtls-rprx-vision", with: "flow="),
+            tcp.replacingOccurrences(of: "host=metadata.example", with: "host=%0D%0A"),
+            tcp.replacingOccurrences(of: "fp=chrome", with: "fp=unsafe"),
+            tcp.replacingOccurrences(of: "security=tls", with: "security=synthetic-untrusted-value"),
+            grpc + "&flow=xtls-rprx-vision", grpc + "&%73erviceName=%2Fsample%2FTun",
+            grpc + "&allowInsecure=1", grpc + "&mode=multi",
+            grpc.replacingOccurrences(of: "path=%2Fsample%2FTun", with: "path=%2Fother%2FTun"),
+            grpc.replacingOccurrences(of: "path=%2Fsample%2FTun", with: "path=%E2%84%AA")
+                .replacingOccurrences(of: "serviceName=%2Fsample%2FTun", with: "serviceName=K"),
+            grpc.replacingOccurrences(of: "%2Fsample%2FTun", with: "https%3A%2F%2Fother.example"),
+            grpc.replacingOccurrences(of: "sid=a1b2c3d4", with: "sid=abc"),
+            grpc.replacingOccurrences(of: "pbk=", with: "pbk=x"),
+            grpc.replacingOccurrences(of: "sni=grpc.example", with: "sni=%00"),
+            grpc + "#first" + tcp,
+        ]
+        for (index, share) in invalidShares.enumerated() {
+            XCTAssertThrowsError(try AccessInternalTestNode.parseSingleShareURI(share), "Invalid case \(index)") { error in
+                XCTAssertFalse(String(reflecting: error).contains("synthetic-untrusted-value"))
+            }
+        }
+        XCTAssertNoThrow(try AccessInternalTestNode.parseSingleShareURI(tcp))
+        let expected = try AccessInternalTestNode.parseSingleShareURI(grpc)
+        for equivalent in [grpc.replacingOccurrences(of: "path=%2Fsample%2FTun", with: "path=/sample/Tun"),
+                           grpc.replacingOccurrences(of: "&path=%2Fsample%2FTun", with: ""),
+                           grpc.replacingOccurrences(of: "&serviceName=%2Fsample%2FTun", with: "")] {
+            XCTAssertTrue(try AccessInternalTestNode.parseSingleShareURI(equivalent) == expected)
+        }
+    }
+
+    func testAdditionalOutboundsReachThePinnedCoreWithExpectedSecurity() async throws {
+        let native = try AccessGoEmbeddedCore(isolated: true)
+        for (share, expectedNetwork) in [(tcpTLSVisionLink, "tcp"), (grpcRealityLink, "grpc")] {
+            let node = try AccessInternalTestNode.parseSingleShareURI(share)
+            let core = PageCore()
+            let publisher = AccessEmbeddedProxyEntryFactory.makeInternalTestPublisher(verifiedCore: core, node: { node },
+                connectionAllowed: { true }, retireDocuments: { _, finish in finish() }, transport: .http)
+            let operation = UUID()
+            defer { publisher.cancel(operationID: operation) }
+            let ready = try await publisher.prepare(.init(operationID: operation, deadline: .seconds(5)))
+            XCTAssertTrue(publisher.validateReady(ready))
+            let bytes = try XCTUnwrap(core.startedConfig.withLock { $0 })
+            let config = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+            XCTAssertEqual((config["inbounds"] as? [Any])?.count, 0)
+            let outbounds = try XCTUnwrap(config["outbounds"] as? [[String: Any]])
+            XCTAssertEqual(outbounds.count, 1)
+            XCTAssertEqual(outbounds.first?["protocol"] as? String, "vless")
+            let settings = try XCTUnwrap(outbounds.first?["settings"] as? [String: Any])
+            let destinations = try XCTUnwrap(settings["vnext"] as? [[String: Any]])
+            XCTAssertEqual(destinations.count, 1)
+            let users = try XCTUnwrap(destinations.first?["users"] as? [[String: String]])
+            XCTAssertEqual(users.count, 1)
+            XCTAssertEqual(users.first?["encryption"], "none")
+            let stream = try XCTUnwrap(outbounds.first?["streamSettings"] as? [String: Any])
+            XCTAssertEqual(stream["network"] as? String, expectedNetwork)
+            if expectedNetwork == "tcp" {
+                XCTAssertEqual(stream["security"] as? String, "tls")
+                XCTAssertEqual(users.first?["flow"], "xtls-rprx-vision")
+                let tls = try XCTUnwrap(stream["tlsSettings"] as? [String: Any])
+                XCTAssertNil(tls["allowInsecure"])
+                XCTAssertEqual(tls["useSystemCA"] as? Bool, true)
+                XCTAssertEqual(tls["serverName"] as? String, "tls.example")
+                XCTAssertEqual(tls["fingerprint"] as? String, "chrome")
+                XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("metadata.example"))
+            } else {
+                XCTAssertEqual(stream["security"] as? String, "reality")
+                XCTAssertNil(users.first?["flow"])
+                XCTAssertEqual(destinations.first?["address"] as? String, "2001:db8::30")
+                let reality = try XCTUnwrap(stream["realitySettings"] as? [String: Any])
+                XCTAssertEqual(reality["serverName"] as? String, "grpc.example")
+                XCTAssertEqual(reality["fingerprint"] as? String, "chrome")
+                XCTAssertTrue(reality["publicKey"] as? String == grpcFixtureKey)
+                XCTAssertEqual(reality["shortId"] as? String, "a1b2c3d4")
+                let grpc = try XCTUnwrap(stream["grpcSettings"] as? [String: Any])
+                XCTAssertEqual(grpc["serviceName"] as? String, "/sample/Tun")
+                XCTAssertNil(grpc["path"])
+            }
+            do {
+                try await native.start(configData: bytes)
+                XCTAssertTrue(native.isRunning)
+            } catch {
+                XCTFail("Pinned core rejected the synthetic \(expectedNetwork) configuration")
+            }
+            await native.stop()
+            XCTAssertFalse(native.isRunning)
+        }
+    }
+
+    func testAdditionalTransportStartupFailureDoesNotSurfaceNativeText() async throws {
+        for share in [tcpTLSVisionLink, grpcRealityLink] {
+            let node = try AccessInternalTestNode.parseSingleShareURI(share)
+            let core = PageCore(beforeStart: {
+                throw NSError(domain: "SyntheticCore", code: 1, userInfo: [NSLocalizedDescriptionKey: share])
+            })
+            let publisher = AccessEmbeddedProxyEntryFactory.makeInternalTestPublisher(verifiedCore: core, node: { node },
+                connectionAllowed: { true }, retireDocuments: { _, finish in finish() }, transport: .http)
+            do {
+                _ = try await publisher.prepare(.init(operationID: UUID(), deadline: .seconds(5)))
+                XCTFail("A failed outbound must not publish a listener")
+            } catch let error as AccessSiteSessionError {
+                XCTAssertTrue(error == .prepareFailed("core.start failed"), "Startup should report only the failed stage")
+            }
+            XCTAssertNil(publisher.currentEndpoint)
+        }
+    }
+
+#if DEBUG
+    func testAdditionalTransportSecretsDoNotAppearInDiagnosticHistory() throws {
+        let grpcShare = grpcRealityLink.replacingOccurrences(of: "%2Fsample%2FTun", with: "synthetic-grpc-service")
+        guard case .vlessTCPTLSVision(let tls) = try AccessInternalTestNode.parseSingleShareURI(tcpTLSVisionLink),
+              case .vlessGRPCReality(let grpc) = try AccessInternalTestNode.parseSingleShareURI(grpcShare) else {
+            return XCTFail("Expected two typed transports")
+        }
+        let log = AccessDiagnosticLog(pollInterval: .seconds(60))
+        let capture = try XCTUnwrap(log.start(level: .info, secrets: tls.diagnosticSecrets + grpc.diagnosticSecrets))
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: capture.path))
+        let inputs = [tls.address, tls.serverName, tls.userID, grpc.serverName, grpc.userID, grpc.publicKey, grpc.shortID, grpc.serviceName]
+        let hosts = inputs.map { "\($0).example" } + ["[\(grpc.address)]", "control.example"]
+        let lines = hosts.map { "2026/11/11 00:00:00 from local accepted //\($0):443\n" }.joined()
+        try writer.write(contentsOf: Data(lines.utf8))
+        try writer.close()
+        XCTAssertTrue(log.stop(capture: capture))
+        let history = log.snapshot()
+        XCTAssertTrue(history.contains("accepted control.example:443"))
+        XCTAssertTrue(history.contains("accepted [redacted]"))
+        for value in inputs + [grpc.address] {
+            XCTAssertFalse(history.localizedCaseInsensitiveContains(value))
+        }
+    }
+#endif
+
     func testTestNodeImportPreservesWebSocketWireValuesAndLegacyReality() throws {
         let address = "xn--bcher-kva.example"
         let uri = try XCTUnwrap(URLComponents(string: webSocketLink.replacingOccurrences(of: "198.51.100.20", with: address)))
@@ -89,7 +329,11 @@ final class AccessTestNodeEditorTests: XCTestCase {
         let original = AccessTestNodeRecord(node)
         let data = try JSONEncoder().encode(original)
         var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        fields["address"] = "fe80::1%lo0"
+        var storedNode = try XCTUnwrap(fields["node"] as? [String: Any])
+        var endpoint = try XCTUnwrap(storedNode["endpoint"] as? [String: Any])
+        endpoint["address"] = "fe80::1%lo0"
+        storedNode["endpoint"] = endpoint
+        fields["node"] = storedNode
         let invalid = try JSONSerialization.data(withJSONObject: fields)
         let storage = Storage()
         storage.encodedValue = invalid
@@ -143,6 +387,32 @@ final class AccessTestNodeEditorTests: XCTestCase {
         XCTAssertEqual(node.serverName, "cert.example.com")
         XCTAssertEqual(node.requestHost, "ws.example.com")
         XCTAssertEqual(node.path, "/inside")
+
+        let previousWS = Data("""
+        {"version":2,"revision":"E1EA5ABF-608B-40E3-886A-9D92520F79A2","address":"198.51.100.20",
+         "port":8443,"userID":"550e8400-e29b-41d4-a716-446655440000","serverName":"cert.example.com",
+         "requestHost":"ws.example.com","path":"/inside","fingerprint":"chrome","alpn":""}
+        """.utf8)
+        let restoredWS = try JSONDecoder().decode(AccessTestNodeRecord.self, from: previousWS)
+        XCTAssertEqual(restoredWS.node, record.node)
+        XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: previousWS), restoredWS.revision)
+        XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: previous), restoredLegacy.revision)
+
+        for record in [restoredLegacy, restoredWS] {
+            let v3 = try JSONEncoder().encode(record)
+            let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: v3) as? [String: Any])
+            XCTAssertEqual(fields["version"] as? Int, 3)
+            var node = try XCTUnwrap(fields["node"] as? [String: Any])
+            XCTAssertEqual(node["kind"] as? String, "vless")
+            XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: v3), record.revision)
+            XCTAssertEqual(try JSONDecoder().decode(AccessTestNodeRecord.self, from: v3).node, record.node)
+            node["kind"] = "unsupported"
+            var wrongKind = fields
+            wrongKind["node"] = node
+            let malformed = try JSONSerialization.data(withJSONObject: wrongKind)
+            XCTAssertThrowsError(try JSONDecoder().decode(AccessTestNodeRecord.self, from: malformed))
+            XCTAssertEqual(try AccessTestNodeRecord.storedRevision(in: malformed), record.revision)
+        }
         XCTAssertThrowsError(try AccessLocalV2RayConfigLoader.parseSingleShareURI(webSocketLink))
         let explicitPort = webSocketLink.replacingOccurrences(of: "host=ws.example.com", with: "host=ws.example.com%3A8443")
         guard case .vlessWebSocketTLS(let authority) = try AccessInternalTestNode.parseSingleShareURI(explicitPort)
