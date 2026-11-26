@@ -528,7 +528,8 @@ final class SettingsLayoutUITests: XCTestCase {
 
     func testWebsiteAccelerationModesInDevSettings() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "--ui-testing-geosite-cache",
+                               "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
         app.launch()
         defer { app.terminate() }
@@ -543,6 +544,15 @@ final class SettingsLayoutUITests: XCTestCase {
         let website = app.descendants(matching: .any)["website-acceleration-section"]
         XCTAssertTrue(website.waitForExistence(timeout: 5))
         XCTAssertEqual(website.label, "访问中国大陆网站")
+        let interval = app.buttons["geosite-refresh-interval"]
+        XCTAssertTrue(reveal(interval, app))
+        XCTAssertEqual(interval.value as? String, "每 3 天")
+        interval.tap()
+        XCTAssertTrue(app.buttons["每天"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["每 3 天"].exists)
+        XCTAssertTrue(app.buttons["每 7 天"].exists)
+        app.buttons["每 7 天"].tap()
+        XCTAssertEqual(interval.value as? String, "每 7 天")
         XCTAssertFalse(app.staticTexts["位置加速"].exists)
 
         let manual = app.buttons["website-acceleration-manual"]
@@ -592,12 +602,15 @@ final class SettingsLayoutUITests: XCTestCase {
 
         app.terminate()
         app.launchArguments.append("--ui-testing-preferences-keep")
+        app.launchArguments.append("--ui-testing-geosite-cache-keep")
         app.launch()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
         XCTAssertTrue(reveal(entry, app))
         entry.tap()
         XCTAssertTrue(smart.waitForExistence(timeout: 5))
         XCTAssertTrue(smart.isSelected)
+        XCTAssertTrue(reveal(interval, app))
+        XCTAssertEqual(interval.value as? String, "每 7 天")
         XCTAssertFalse(manual.isSelected)
         XCTAssertEqual(smartHint.count, 1)
         XCTAssertFalse(manualHint.firstMatch.exists)

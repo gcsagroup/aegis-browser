@@ -104,6 +104,9 @@ def create(output, version, build, team, profile, environment, archive_signing='
         raise ValueError('Archive job must not load ASC or distribution credentials')
     output.mkdir(parents=True, mode=0o700)
     build_env = build_environment(environment)
+    geosite_policy_settings = [key + '=' + build_env[key]
+                               for key in ('AEGIS_GEOSITE_POLICY_URL', 'AEGIS_GEOSITE_POLICY_PUBLIC_KEY')
+                               if build_env.get(key)]
     work = native.stage(output, build_env, profile)
     archive = work / 'Aegis.xcarchive'
     signing_evidence = None
@@ -124,7 +127,8 @@ def create(output, version, build, team, profile, environment, archive_signing='
                        '-disableAutomaticPackageResolution', 'archive', *signing_args,
                        'DEVELOPMENT_TEAM=' + team, 'MARKETING_VERSION=' + version,
                        'CURRENT_PROJECT_VERSION=' + build, 'AEGIS_FIREBASE_CHANNEL=' + profile,
-                       'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, env=build_env, log=output / 'archive.log', timeout=2400)
+                       'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, *geosite_policy_settings,
+                       env=build_env, log=output / 'archive.log', timeout=2400)
             verify_development(archive, team, native.run)
             signing.verify_archive(archive, signing_evidence, native.run)
     else:
@@ -135,9 +139,13 @@ def create(output, version, build, team, profile, environment, archive_signing='
                        '-disableAutomaticPackageResolution', 'archive', *signing_arguments(archive_signing),
                        'DEVELOPMENT_TEAM=' + team, 'MARKETING_VERSION=' + version,
                        'CURRENT_PROJECT_VERSION=' + build, 'AEGIS_FIREBASE_CHANNEL=' + profile,
-                       'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, env=build_env, log=output / 'archive.log', timeout=2400)
+                       'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, *geosite_policy_settings,
+                       env=build_env, log=output / 'archive.log', timeout=2400)
             verify_recorded_archive(archive, team, {'archiveSigning': archive_signing}, native.run)
     native.module('archive_structure', 'verify-ios-archive.py').verify(archive, version, build)
+    native.run(sys.executable, '-B', str(Path(__file__).with_name('verify-geosite-release.py')),
+               '--app', str(archive_bundles(archive)[0]), env=build_env,
+               log=output / 'geosite-verification.log', timeout=240)
     if native.source() != identity:
         raise ValueError('Source changed during Development archive construction')
     manifest = {'schema': 'aegis-development-archive-v2', 'source': identity, 'version': version,

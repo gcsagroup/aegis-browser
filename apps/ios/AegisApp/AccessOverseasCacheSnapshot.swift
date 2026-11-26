@@ -42,7 +42,7 @@ struct AccessOverseasCacheSnapshot: Sendable {
         func isValid(highWater: Admission.Receipt?) -> Bool {
             guard let highWater, (1...AccessGeoSiteStorage.overseasBlobLimit).contains(length),
                   Admission.isSHA256(digest), (try? receipt.validityDeadline()) != nil,
-                  receipt.tag >= AccessGeoSiteCatalogue.bundled.tag, receipt.tag <= highWater.tag,
+                  receipt.tag <= highWater.tag,
                   receipt.tag != highWater.tag || receipt == highWater else { return false }
             return receipt.tag != AccessGeoSiteCatalogue.bundled.tag || receipt.database.sha256 == AccessGeoSiteCatalogue.bundled.rawSHA256
         }
@@ -67,6 +67,11 @@ struct AccessOverseasCacheSnapshot: Sendable {
     let approved: AccessOverseasSelection?
     let fullPolicy: Policy
     let policy: Policy
+
+    static func bundled(in bundle: Bundle = .main) throws -> Self {
+        guard let resources = bundle.resourceURL else { throw AccessGeoSiteCache.Failure.unavailable }
+        return try Self(Admission.admitBundled(resources: resources))
+    }
 
     init(_ candidate: Admission.Candidate) throws {
         guard let catalogue = candidate.overseas, let source = candidate.overseasSource else {

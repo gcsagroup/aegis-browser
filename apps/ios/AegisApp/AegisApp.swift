@@ -136,6 +136,7 @@ struct AegisApp: App {
             locationPreferences: defaults,
             geoSiteCache: geoSiteCache,
             geoSiteTransport: refreshGeoSite ? AccessGeoSiteUpdateTransport() : nil,
+            geoSiteRemoteSource: refreshGeoSite ? AccessGeoSiteRemoteSource.configured() : nil,
             registry: hostRegistry
         )
         retirementOwner = hostStores
@@ -165,7 +166,7 @@ struct AegisApp: App {
             return AccessGeoSiteCache(storage: storage)
         }
 #endif
-        return AccessGeoSiteCache(storage: .product())
+        return AccessGeoSiteCache(storage: .product(), useProductBaseline: true)
     }
 
     var body: some Scene {

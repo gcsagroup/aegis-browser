@@ -38,33 +38,40 @@ public struct AccessGeoSiteCatalogue: Equatable, Sendable {
         self.groups = groups
     }
 
-    // Standard geosite.dat from XTLS/Xray-rules-dat release 20261120235103
-    // (453302649), GeoSite source d74acca73490cb57a937674ce8a8709d2a3021ba.
+    // Standard geosite.dat from XTLS/Xray-rules-dat release 20261126014317
+    // (458847221), GeoSite source d74acca73490cb57a937674ce8a8709d2a3021ba.
     // The three complete groups are signed with the app and have no expiry.
     public static let bundled = Self(
-        tag: "20261120235103",
-        publishedAt: "2026-11-20T23:52:15Z",
-        rawSHA256: "6fb761384d0141a9bd7dc3c18caf74b70516018ca91e3c36af11afefb543dcf9",
-        groups: [
+        tag: "20261126014317",
+        publishedAt: "2026-11-26T01:44:48Z",
+        rawSHA256: "35f58454ed79be85285a333716e3016727d536ef872c53e13c60e411d43b7dd7",
+        groups: originalConsentGroups.merging([
             .debian: domainGroup(
-                typedSHA256: "d865d67c829d0f13bf508e152ef402d5d9634227ed12a8b49434d231baf5a643",
-                domains: ["debian.org", "dotdeb.org"]
-            ),
-            .douban: domainGroup(
-                typedSHA256: "62cfcbf5e006744783206139a2cbb6a3dffb05dbc366f1784a193e887e038619",
-                domains: ["douban.com", "douban.fm", "doubanio.com"]
-            ),
-            .meituan: domainGroup(
-                typedSHA256: "7f23061fb1a46f4150077aa56c369188cfda5bb49bd99649264c5bfb7bf8efa9",
-                domains: [
-                    "100.me", "51ping.com", "baobaoaichi.cn", "ddcorp.net", "ddfresh.net",
-                    "ddimg.mobi", "ddmaicai.net", "ddmc.mobi", "dduser.mobi", "ddxq.mobi",
-                    "dianping.com", "dpfile.com", "imaicai.mobi", "maoyan.com", "meituan.com",
-                    "meituan.net", "mtyun.com", "neixin.cn", "sankuai.com"
-                ]
+                typedSHA256: "06c514bb68567fdf422969927719a7e6c19442509cb2c69eb43cb02efbc83aeb",
+                domains: ["debian.map.fastlydns.net", "debian.org", "dotdeb.org"]
             )
-        ]
+        ]) { _, current in current }
     )
+
+    public static let originalConsentGroups: [AccessGeoSiteCategory: Group] = [
+        .debian: domainGroup(
+            typedSHA256: "d865d67c829d0f13bf508e152ef402d5d9634227ed12a8b49434d231baf5a643",
+            domains: ["debian.org", "dotdeb.org"]
+        ),
+        .douban: domainGroup(
+            typedSHA256: "62cfcbf5e006744783206139a2cbb6a3dffb05dbc366f1784a193e887e038619",
+            domains: ["douban.com", "douban.fm", "doubanio.com"]
+        ),
+        .meituan: domainGroup(
+            typedSHA256: "7f23061fb1a46f4150077aa56c369188cfda5bb49bd99649264c5bfb7bf8efa9",
+            domains: [
+                "100.me", "51ping.com", "baobaoaichi.cn", "ddcorp.net", "ddfresh.net",
+                "ddimg.mobi", "ddmaicai.net", "ddmc.mobi", "dduser.mobi", "ddxq.mobi",
+                "dianping.com", "dpfile.com", "imaicai.mobi", "maoyan.com", "meituan.com",
+                "meituan.net", "mtyun.com", "neixin.cn", "sankuai.com"
+            ]
+        )
+    ]
 
     private static func domainGroup(typedSHA256: String, domains: [String]) -> Group {
         Group(typedSHA256: typedSHA256, rules: domains.map { Rule(kind: .domain, host: $0) })
