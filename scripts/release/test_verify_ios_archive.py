@@ -34,6 +34,12 @@ class ArchiveVerificationTests(unittest.TestCase):
         self.assertFalse(result["TestFlight"])
         self.assertFalse(result["releaseReady"])
 
+    def test_uncredentialed_archive_rejects_private_alpha_resource(self):
+        resource = self.app / 'PlugIns/ShareExtension.appex/aegisalphatestnodes.json'
+        resource.write_text('synthetic')
+        with self.assertRaisesRegex(ValueError, 'Private Alpha resource'):
+            archive_check.verify(self.archive, '0.8.0', '1')
+
     def test_wrong_app_id_version_or_build_fails(self):
         path = self.app / "PlugIns/ShareExtension.appex/Info.plist"
         original = plistlib.loads(path.read_bytes())

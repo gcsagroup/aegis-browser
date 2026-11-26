@@ -1,0 +1,1130 @@
+From 81cdad9fe79d7b892287e700d4734c53a9fa0218 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 05:40:12 +0800
+Subject: [PATCH] fix(browser): reconcile Chromium 158 runtime and native
+ validation
+
+Preserve upstream patch history and V8 source identity while aligning
+the native inputs with the fork runtime repair candidate.
+---
+ chrome/app/settings_chromium_strings.grdp     |   1 -
+ chrome/browser/BUILD.gn                       |  10 +-
+ .../actor/actor_keyed_service_factory.cc      |   2 +-
+ chrome/browser/actor/execution_engine.cc      |   5 +-
+ chrome/browser/aegis/BUILD.gn                 |  25 +++-
+ ...proxying_url_loader_factory_browsertest.cc |  55 ++++++--
+ .../browser/aegis/agent/aegis_actor_bridge.cc |  20 +--
+ .../aegis/agent/aegis_agent_browsertest.cc    | 125 +++++++++++++++++-
+ .../enhancements/enhancement_browsertest.cc   |  47 ++++---
+ .../google_service_prompt_browsertest.cc      |  10 +-
+ .../aegis/webpage_capture_browsertest.cc      |   1 +
+ .../chrome_devtools_manager_delegate.cc       |   2 +-
+ .../protocol/devtools_protocol_browsertest.cc |   8 +-
+ chrome/browser/predictors/prefetch_manager.cc |   8 +-
+ .../render_view_context_menu.cc               |  14 +-
+ .../settings/settings_main/settings_main.ts   |  11 +-
+ chrome/browser/ui/BUILD.gn                    |   4 +-
+ chrome/browser/ui/toolbar/BUILD.gn            |   3 +-
+ .../pinned_toolbar_actions_model.cc           |   1 +
+ .../omnibox_popup_visibility_browsertest.cc   |   9 +-
+ chrome/test/BUILD.gn                          |   1 -
+ .../policy/tools/generate_policy_source.py    |   6 +-
+ .../browser/devtools/devtools_http_handler.cc |   3 +-
+ .../render_frame_devtools_agent_host.cc       |   1 -
+ content/browser/storage_partition_impl.h      |   3 +-
+ content/public/browser/storage_partition.h    |   7 +
+ content/public/test/test_storage_partition.cc |   6 +
+ content/public/test/test_storage_partition.h  |   2 +
+ .../core/editing/finder/async_find_buffer.cc  |   1 -
+ .../metrics/histograms/metadata/ui/enums.xml  |  14 +-
+ 30 files changed, 310 insertions(+), 95 deletions(-)
+ mode change 100644 => 100755 components/policy/tools/generate_policy_source.py
+
+diff --git a/chrome/app/settings_chromium_strings.grdp b/chrome/app/settings_chromium_strings.grdp
+index b3e01ade0051e41359775b1f3ba4aa963cda9b97..301582b128f9e3d9be68bc76850838f85846b0bd 100644
+--- a/chrome/app/settings_chromium_strings.grdp
++++ b/chrome/app/settings_chromium_strings.grdp
+@@ -409,7 +409,6 @@
+     Dangerous site. GCSA Aegis removed notifications.
+   </message>
+ 
+-
+   <!-- Secure connections -->
+   <message name="IDS_SETTINGS_SECURE_CONNECTIONS_SECTION_DESCRIPTION" desc="Description for the Secure Connections section in Security settings, explaining the baseline behavior of the browser even if the 'Always use secure connections' toggle is disabled.">
+     GCSA Aegis upgrades insecure connections to HTTPS automatically when possible
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 514fdfb11e32cd26755b511bbade2859eb0eb634..be8972340554d207e9c6a0c99d1dbe20823a3936 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -408,10 +408,10 @@ source_set("chrome_browser_main") {
+   public = [ "chrome_browser_main.h" ]
+   deps = [
+     ":after_startup_task_utils",
+-    "//chrome/browser/aegis",
+     ":buildflags",
+     "//base",
+     "//build:buildflag_header_h",
++    "//chrome/browser/aegis",
+     "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
+     "//chrome/browser/first_run",
+     "//chrome/browser/lifetime",
+@@ -1096,10 +1096,10 @@ source_set("core") {
+     ":universal_web_contents_observers",
+     "//base/allocator:buildflags",
+     "//build/config/linux/dbus:buildflags",
+-    "//chrome/browser/aegis",
+     "//chrome/browser/accessibility",
+     "//chrome/browser/actor",
+     "//chrome/browser/actor:impl",
++    "//chrome/browser/aegis",
+     "//chrome/browser/ai",
+     "//chrome/browser/app_mode",
+     "//chrome/browser/autocomplete:aim_eligibility_service",
+@@ -1291,8 +1291,8 @@ source_set("core") {
+     "//chrome/browser/webauthn:chrome_web_authentication_delegate",
+     "//chrome/browser/webid",
+     "//chrome/common:version_header",
+-    "//chrome/common/aegis",
+     "//chrome/common/compose:mojo_bindings",
++    "//chrome/common/aegis",
+     "//chrome/services/speech/buildflags",
+     "//components/actor/core",
+     "//components/actor/public/mojom:mojo_bindings",
+@@ -1827,7 +1827,6 @@ source_set("core") {
+       ":app_controller_mac",
+       ":chrome_browser_application_mac",
+       ":chrome_browser_main_mac",
+-      "//chrome/browser/aegis/access:access_local_core_manager",
+       ":fullscreen",
+       ":global_keyboard_shortcuts_mac",
+       ":shutdown_watchdog_mac",
+@@ -2224,7 +2223,6 @@ source_set("core") {
+ source_set("browser") {
+   libs = []
+   public_deps = [
+-    "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+     ":browser_features",
+     ":buildflags",
+     "//chrome/browser/accessibility/accessibility_prefs",
+@@ -2963,7 +2961,6 @@ source_set("browser") {
+       "//chrome/browser/ui:webui_name_variants",
+       "//chrome/browser/ui/views/drive_picker_host:mojo_bindings",
+       "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
+-      "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+       "//chrome/browser/ui/webui/data_sharing:mojo_bindings",
+       "//chrome/browser/ui/webui/downloads:mojo_bindings",
+       "//chrome/browser/ui/webui/drive_picker_host:mojo_bindings",
+@@ -4669,7 +4666,6 @@ source_set("browser") {
+     public_deps += [ "//chrome/browser/signin:bound_session_credentials_proto" ]
+   }
+ 
+-
+   # This target intentionally has no sources of its own; it only aggregates
+   # dependencies. Do NOT add sources here -- new code belongs in a dedicated,
+   # properly-scoped target. Kept last so an accidental `sources += [...]`
+diff --git a/chrome/browser/actor/actor_keyed_service_factory.cc b/chrome/browser/actor/actor_keyed_service_factory.cc
+index e99ffb582df700dc2ffb33bf49ec1dacf3664dd7..1f032fe2148f0e428808d9053be4a1053fefbaf3 100644
+--- a/chrome/browser/actor/actor_keyed_service_factory.cc
++++ b/chrome/browser/actor/actor_keyed_service_factory.cc
+@@ -4,9 +4,9 @@
+ 
+ #include "chrome/browser/actor/actor_keyed_service_factory.h"
+ 
++#include "chrome/browser/browser_actuator/transport/transport_service_factory.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+-#include "chrome/browser/browser_actuator/transport/transport_service_factory.h"
+ #include "chrome/browser/origin_gating/origin_gating_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/signin/identity_manager_factory.h"
+diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
+index c5b535ba65dd5e598951eb90eae3dcd7afe4f0e5..3718ec2e7a9dc112a0aa2720b81c1b1ecc33a097 100644
+--- a/chrome/browser/actor/execution_engine.cc
++++ b/chrome/browser/actor/execution_engine.cc
+@@ -1229,7 +1229,10 @@ void ExecutionEngine::OnNoVerdict(
+   }
+ 
+   if (!requires_user_confirmation) {
+-    if (event.is_page_action()) {
++    // Aegis has already passed its frozen task scope and the preceding safety
++    // predicates. Its local task has no Glic delegate for server confirmation.
++    if (event.is_page_action() ||
++        task_->source_info().type == TaskSourceInfo::Client::kAegis) {
+       std::move(callback).Run({.is_allowed = true, .did_prompt_user = false});
+       return;
+     }
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index bc3075a08f903cee09c0e4aa8b970a58751eae1a..76ed0d97a97e672811dcf0ab423e0e5b263f9708 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -156,6 +156,26 @@ source_set("prefs") {
+   ]
+ }
+ 
++source_set("webpage_capture") {
++  sources = [
++    "webpage_capture.cc",
++    "webpage_capture.h",
++  ]
++  deps = [
++    "//base",
++    "//chrome/browser/profiles:profile",
++    "//chrome/common:constants",
++    "//chrome/common:mojo_bindings",
++    "//components/lens:lens_mojo",
++    "//components/prefs",
++    "//content/public/browser",
++    "//mojo/public/cpp/bindings",
++    "//third_party/blink/public/common",
++    "//ui/gfx/geometry",
++    "//url",
++  ]
++}
++
+ source_set("aegis") {
+   sources = [
+     "aegis_ai_control.cc",
+@@ -192,13 +212,12 @@ source_set("aegis") {
+     "summary_policy.h",
+     "threat_feed_updater.cc",
+     "threat_feed_updater.h",
+-    "webpage_capture.cc",
+-    "webpage_capture.h",
+   ]
+   public_deps = [
+     ":download_prefs",
+     ":prefs",
+     ":profile_support",
++    ":webpage_capture",
+   ]
+   deps = [
+     ":model_provider_policy",
+@@ -375,6 +394,7 @@ if (!is_android) {
+       "//base/test:test_support",
+       "//build:chromeos_buildflags",
+       "//chrome/browser:browser_process",
++      "//chrome/browser/actor",
+       "//chrome/browser/aegis/access:access_browser_request_adapter",
+       "//chrome/browser/aegis/access:access_identity_generation_source",
+       "//chrome/browser/aegis/access:access_network_context_transport",
+@@ -416,6 +436,7 @@ if (!is_android) {
+       "//chrome/common/aegis",
+       "//chrome/test:test_support",
+       "//chrome/test:test_support_ui",
++      "//components/actor/core",
+       "//components/aegis_access",
+       "//components/aegis_access:access_identity_generation_state",
+       "//components/aegis_access:access_proxy_selection_generation_state",
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 91e9efd54395595d2b21dbdb3c980c84df30a8f5..8d28bfb754bcc7278b5ee2d324cdef9752b38ef2 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -78,6 +78,7 @@
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+ #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+ #include "services/network/public/mojom/fetch_api.mojom-shared.h"
++#include "services/network/public/mojom/network_context.mojom.h"
+ #include "services/network/test/test_url_loader_factory.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
+@@ -514,6 +515,21 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+         aegis_access::ChannelNamespace::kDev, base::FilePath());
+     ASSERT_TRUE(owner_.has_value());
+     ASSERT_TRUE(transport_->OwnsConfiguredPartition(*owner_));
++
++    // Startup reserves a policy version even when the durable store is empty.
++    // Join restoration before publishing test policies with newer versions.
++    auto* coordinator =
++        AccessServiceCoordinator::GetOrCreate(browser()->GetProfile());
++    ASSERT_NE(coordinator, nullptr);
++    base::test::TestFuture<bool> initialized;
++    coordinator->InitializeForProfile(*owner_, initialized.GetCallback());
++    ASSERT_TRUE(initialized.Get());
++    auto* runtime =
++        AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
++    ASSERT_NE(runtime, nullptr);
++    const auto* restored = runtime->GetPublishedPolicySnapshot(*owner_);
++    ASSERT_NE(restored, nullptr);
++    bootstrap_policy_generation_ = restored->policy_generation;
+   }
+ 
+  protected:
+@@ -665,9 +681,15 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     network::URLLoaderFactoryBuilder factory_builder;
+     AccessProxyingURLLoaderFactory::MaybeProxyBrowserProcessPrefetch(
+         profile, partition, factory_builder);
+-    scoped_refptr<network::SharedURLLoaderFactory> factory =
+-        std::move(factory_builder)
+-            .Finish(partition->GetURLLoaderFactoryForBrowserProcess());
++    scoped_refptr<network::SharedURLLoaderFactory> factory;
++    if (factory_builder.RequiresFreshFactory()) {
++      factory = std::move(factory_builder)
++                    .Finish(partition->GetNetworkContext(),
++                            partition->CreateURLLoaderFactoryParams());
++    } else {
++      factory = std::move(factory_builder)
++                    .Finish(partition->GetURLLoaderFactoryForBrowserProcess());
++    }
+ 
+     auto request = std::make_unique<network::ResourceRequest>();
+     request->method = "GET";
+@@ -1032,7 +1054,9 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   void PublishCommittedRule(const std::string& destination_host,
+                             aegis_access::AccessMode mode,
+-                            uint64_t policy_generation = 1) {
++                            uint64_t publication_sequence = 1) {
++    const uint64_t policy_generation =
++        bootstrap_policy_generation_ + publication_sequence;
+     aegis_access::AccessPolicyRule rule;
+     rule.rule_id = "rule-browser-test";
+     rule.owner = *owner_;
+@@ -1088,7 +1112,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+   void PublishProxyPolicy(bool publish_endpoint,
+                           std::string destination_host = kTargetHost) {
+     const aegis_access::GenerationTuple generations{
+-        1,
++        bootstrap_policy_generation_ + 1,
+         CommitIdentityGenerationForProxyPolicy(),
+         CommitSelectionGenerationForProxyPolicy(),
+         transport_->network_epoch(),
+@@ -1255,6 +1279,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   std::atomic<size_t> origin_requests_{0};
+   std::atomic<size_t> proxy_requests_{0};
++  uint64_t bootstrap_policy_generation_ = 0;
+   // Servers are destroyed before their callback state (reverse member order).
+   std::atomic<bool> lifecycle_fault_{false};
+   base::Lock lifecycle_lock_;
+@@ -1287,15 +1312,17 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "healthy", false, false));
+   ASSERT_EQ(browser()->GetProfile(), profile);
+ 
++  const uint64_t on_generation = bootstrap_policy_generation_ + 1;
++  const uint64_t off_generation = on_generation + 1;
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+-  ASSERT_EQ(last_publication_generation_, 1u);
++  ASSERT_EQ(last_publication_generation_, on_generation);
+   auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(profile);
+   ASSERT_NE(runtime, nullptr);
+   const auto on = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
+   ASSERT_EQ(on.status, aegis_access::RequestGenerationTupleBuildStatus::kComplete);
+   ASSERT_TRUE(on.generations.has_value());
+-  ASSERT_EQ(on.generations->policy_generation, 1u);
+-  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "on", 1, true));
++  ASSERT_EQ(on.generations->policy_generation, on_generation);
++  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "on", on_generation, true));
+   ASSERT_TRUE(last_lifecycle_ack_.has_value());
+   ASSERT_EQ(last_lifecycle_ack_->policy_generation, on.generations->policy_generation);
+   ASSERT_EQ(last_lifecycle_ack_->selection_generation, on.generations->selection_generation);
+@@ -1313,16 +1340,16 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   ASSERT_EQ(recovered.generations, on.generations);
+ 
+   PublishCommittedRule(kTargetHost, aegis_access::AccessMode::kDirect,
+-                       /*policy_generation=*/2);
++                       /*publication_sequence=*/2);
+   ASSERT_TRUE(transport_->ClearProxySelection(base::FilePath()));
+   ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
+-  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "off", 2, false));
++  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "off", off_generation, false));
+   ASSERT_TRUE(last_lifecycle_ack_.has_value());
+-  ASSERT_EQ(last_lifecycle_ack_->policy_generation, 2u);
++  ASSERT_EQ(last_lifecycle_ack_->policy_generation, off_generation);
+   ASSERT_TRUE(last_lifecycle_ack_->proxy_group_id.empty());
+   ASSERT_EQ(last_lifecycle_ack_->selection_generation, 0u);
+   ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
+-  ASSERT_EQ(last_publication_generation_, 2u);
++  ASSERT_EQ(last_publication_generation_, off_generation);
+   ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "off", false, false));
+   ASSERT_EQ(browser()->GetProfile(), profile);
+ }
+@@ -1914,6 +1941,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        MainNavigationConsumesPreparedSnapshotBeforeCommit) {
+   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(*owner_));
+   ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  const auto restored =
++      store.ReserveCommittedPolicyForPublication(owner_->storage_partition_token);
++  ASSERT_TRUE(restored.value) << restored.detail;
++  ASSERT_EQ(restored.value->policy_generation, bootstrap_policy_generation_);
+   const auto request = PreparedNavigationRequest(*owner_);
+   const auto prepared = store.PrepareSiteGroupMutation(request);
+   ASSERT_TRUE(prepared.value) << prepared.detail;
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 79f78b03cc3dbaeee2f384fd7e2f62a376db1b13..97fc42392052644479b97c2eae17689754793542 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -22,8 +22,8 @@
+ #include "base/time/time.h"
+ #include "base/unguessable_token.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+-#include "chrome/browser/actor/actor_proto_conversion.h"
+ #include "chrome/browser/actor/actor_surface_handle.h"
++#include "chrome/browser/actor/actor_proto_conversion.h"
+ #include "chrome/browser/actor/actor_task.h"
+ #include "chrome/browser/actor/actor_task_metadata.h"
+ #include "chrome/browser/actor/enterprise_policy_checker.h"
+@@ -431,14 +431,8 @@ std::string SafeObservationUrl(std::string_view value) {
+ }
+ 
+ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+-    tabs::TabInterface& tab,
++    actor::ActorSurfaceHandle surface_handle,
+     const AgentToolCall& call) {
+-  // Chromium 的页面句柄与标签页 ID 不保证相同，必须通过受支持的映射获取。
+-  const actor::ActorSurfaceHandle surface_handle =
+-      actor::ActorSurfaceHandle::From(tab.GetHandle());
+-  if (surface_handle.is_null()) {
+-    return nullptr;
+-  }
+   if (call.tool_name == "page.navigate") {
+     const std::string* url = call.arguments.FindString("url");
+     return url ? std::make_unique<actor::NavigateToolRequest>(surface_handle,
+@@ -1056,7 +1050,15 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
+         task_fingerprints->second.at(*tab_id), std::move(callback));
+   }
+ 
+-  std::unique_ptr<actor::ToolRequest> request = BuildActorRequest(*tab, call);
++  const auto surface = actor::ActorSurfaceHandle::From(tab->GetHandle());
++  if (surface.is_null() || !surface.Get()) {
++    std::move(callback).Run(ErrorResult(
++        call.action_id, AgentErrorCode::kStaleDocument,
++        "tab is no longer available for page actions"));
++    return;
++  }
++  std::unique_ptr<actor::ToolRequest> request =
++      BuildActorRequest(surface, call);
+   if (!request) {
+     std::move(callback).Run(ErrorResult(call.action_id,
+                                         AgentErrorCode::kToolUnavailable,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 791d29a6608e282830af0abc6281b88ceeb4877f..fe011b2a68e454d37b217d3e9bad00510046bb3c 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -29,6 +29,7 @@
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/raw_ref.h"
+ #include "base/path_service.h"
+ #include "base/run_loop.h"
+ #include "base/scoped_observation.h"
+@@ -49,6 +50,9 @@
+ #include <unistd.h>
+ #endif
+ #include "chrome/app/chrome_command_ids.h"
++#include "chrome/browser/actor/actor_surface_handle.h"
++#include "chrome/browser/aegis/agent/aegis_actor_bridge.h"
++#include "components/actor/core/actor_features.h"
+ #include "chrome/browser/aegis/aegis_ai_control.h"
+ #include "chrome/browser/aegis/aegis_phish_blocking_page.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+@@ -729,6 +733,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
+ class AegisAgentBrowserTest : public InProcessBrowserTest {
+  public:
+   AegisAgentBrowserTest() {
++    EnablePixelOutput();
+     features_.InitWithFeatures(
+         {features::kAegisAgentWebMcp},
+         {features::kAegisAgentTransactionPilot,
+@@ -750,6 +755,110 @@ class AegisAgentBrowserTest : public InProcessBrowserTest {
+   base::test::ScopedFeatureList features_;
+ };
+ 
++class AegisAgentActorSurfaceBrowserTest
++    : public AegisAgentBrowserTest,
++      public testing::WithParamInterface<bool> {
++ public:
++  AegisAgentActorSurfaceBrowserTest() {
++    actor_features_.InitWithFeatureState(
++        actor::kUseTabHandleAsSurfaceHandle, GetParam());
++  }
++
++ private:
++  base::test::ScopedFeatureList actor_features_;
++};
++
++IN_PROC_BROWSER_TEST_P(AegisAgentActorSurfaceBrowserTest,
++                       NavigationUsesTheAuthorizedTabsActorSurface) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const GURL initial = embedded_test_server()->GetURL("/title1.html");
++  const GURL destination = embedded_test_server()->GetURL("/title2.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), initial));
++  content::WebContents* untouched =
++      browser()->GetTabStripModel()->GetActiveWebContents();
++
++  // Make the independent surface ID space diverge before creating the target
++  // tab, so interpreting a tab's raw ID as a surface ID cannot pass this test.
++  for (int i = 0; i < 16; ++i) {
++    actor::ActorSurfaceHandle::CreateForTesting();
++  }
++  chrome::AddTabAt(browser(), initial, -1, true);
++  auto* tab = browser()->GetTabStripModel()->GetActiveTab();
++  ASSERT_TRUE(tab);
++  ASSERT_TRUE(content::WaitForLoadStop(tab->GetContents()));
++  const auto surface = actor::ActorSurfaceHandle::From(tab->GetHandle());
++  ASSERT_FALSE(surface.is_null());
++  if (GetParam()) {
++    EXPECT_EQ(surface.raw_value(), tab->GetHandle().raw_value());
++  } else {
++    ASSERT_NE(surface.raw_value(), tab->GetHandle().raw_value());
++  }
++
++  AgentTaskScope scope;
++  scope.allowed_origins = {url::Origin::Create(initial)};
++  scope.allowed_tab_ids = {tab->GetHandle().raw_value()};
++  scope.allowed_tools = {"page.navigate", "page.observe"};
++  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = "http://127.0.0.1:8000/v1";
++  scope.model_destination.model = "fixture-model";
++  AegisActorBridge bridge(browser()->GetProfile());
++  const std::string task_id = "surface-navigation";
++  ASSERT_TRUE(bridge.StartTask(task_id, scope));
++
++  AgentToolCall call;
++  call.action_id = "navigate-authorized-surface";
++  call.tool_name = "page.navigate";
++  call.arguments.Set("tab_id", tab->GetHandle().raw_value());
++  call.arguments.Set("url", destination.spec());
++  call.committed_url = initial;
++  base::test::TestFuture<AgentToolResult> completed;
++  bridge.ExecutePageTool(task_id, call, completed.GetCallback());
++  ASSERT_TRUE(completed.Get().ok) << completed.Get().message;
++  EXPECT_EQ(tab->GetURL(), destination);
++  EXPECT_EQ(untouched->GetLastCommittedURL(), initial);
++  EXPECT_TRUE(bridge.StopTask(task_id, /*completed=*/true));
++}
++
++INSTANTIATE_TEST_SUITE_P(TabAndSurfaceIds,
++                        AegisAgentActorSurfaceBrowserTest,
++                        testing::Bool());
++
++
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       SettingsRoutesUnmountPreviousAegisPage) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("chrome://settings/aegisReading")));
++  auto* contents = browser()->GetTabStripModel()->GetActiveWebContents();
++  ASSERT_EQ(true, content::EvalJs(contents, R"JS(
++    (async () => {
++      const ui = document.querySelector('settings-ui');
++      await ui.updateComplete;
++      const main = ui.shadowRoot.querySelector('settings-main');
++      await main.updateComplete;
++      const previous = main.shadowRoot.querySelector(
++          'settings-aegis-page[mode="reading"]');
++      if (!previous) throw new Error('Reading settings did not render');
++      const {Router, routes} = await import('chrome://settings/settings.js');
++      Router.getInstance().navigateTo(routes.AEGIS_OCR);
++      await main.updateComplete;
++      const ocr = main.shadowRoot.querySelector(
++          'settings-aegis-page[mode="ocr"]');
++      if (!ocr || previous.isConnected ||
++          main.shadowRoot.querySelectorAll(
++              'settings-aegis-page:not([mode="home"])').length !== 1) {
++        throw new Error('Changing category retained an inactive Aegis page');
++      }
++      Router.getInstance().navigateTo(routes.AEGIS_READING);
++      await main.updateComplete;
++      const returned = main.shadowRoot.querySelector(
++          'settings-aegis-page[mode="reading"]');
++      return !!returned && returned !== previous && !ocr.isConnected;
++    })()
++  )JS"));
++}
++
+ class AegisAgentUrlMonitorBrowserTest : public AegisAgentBrowserTest {
+  public:
+   void SetUpOnMainThread() override {
+@@ -1231,12 +1340,16 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
+     }
+     AgentMonitorDefinition monitor;
+     AgentTask* task = nullptr;
++    content::TestNavigationObserver navigation(
++        embedded_test_server()->GetURL("/monitor-page"));
++    navigation.StartWatchingNewWebContents();
+     ASSERT_NO_FATAL_FAILURE(
+         PrepareMonitor(embedded_test_server()->GetURL("/monitor-page"),
+                        &monitor, &task, kind));
+     ASSERT_NO_FATAL_FAILURE(WaitForCheck(task->id()));
+     const auto first = service_->GetMonitors(task->id())[0];
+-    ASSERT_EQ(first.last_check_status, AgentMonitorCheckStatus::kSucceeded);
++    ASSERT_EQ(first.last_check_status, AgentMonitorCheckStatus::kSucceeded)
++        << net::ErrorToString(navigation.last_net_error_code());
+     ASSERT_FALSE(first.last_value_hash.empty());
+     ASSERT_FALSE(first.last_observation.empty());
+     EXPECT_TRUE(notifications
+@@ -6418,12 +6531,12 @@ class Mac03Observer : public content::WebContentsObserver,
+     if (error_.empty()) error_ = std::string(reason);
+   }
+   bool CheckDeadline() {
+-    if (!deadline_.Remaining().is_positive()) Fail("MAC03 phase deadline");
++    if (!deadline_->Remaining().is_positive()) Fail("MAC03 phase deadline");
+     return Healthy();
+   }
+   bool Drain(base::DictValue& startup) {
+     if (!CheckDeadline()) return false;
+-    base::test::ScopedRunLoopTimeout drain_timeout(FROM_HERE, deadline_.Remaining());
++    base::test::ScopedRunLoopTimeout drain_timeout(FROM_HERE, deadline_->Remaining());
+     service_->AddObserver(this);
+     attached_ = true;
+     // These OnWorkerCreated calls describe preexisting workers, not new births.
+@@ -6446,7 +6559,7 @@ class Mac03Observer : public content::WebContentsObserver,
+     return CheckDeadline();
+   }
+   bool Begin(std::string_view phase) {
+-    deadline_.StartPhase();
++    deadline_->StartPhase();
+     if (!CheckDeadline()) return false;
+     if (!phase_.empty() || !live_.empty()) Fail("overlapping phase");
+     phase_ = phase;
+@@ -6474,7 +6587,7 @@ class Mac03Observer : public content::WebContentsObserver,
+   bool End() {
+     if (!CheckDeadline()) return false;
+     // EvalJs and retirement consume the same absolute phase interval.
+-    base::test::ScopedRunLoopTimeout retirement_timeout(FROM_HERE, deadline_.Remaining());
++    base::test::ScopedRunLoopTimeout retirement_timeout(FROM_HERE, deadline_->Remaining());
+     if (!base::test::RunUntil([&] { return !Healthy() || live_.empty(); }))
+       Fail("worker retirement timeout");
+     Snapshot("after");
+@@ -6584,7 +6697,7 @@ class Mac03Observer : public content::WebContentsObserver,
+   const std::string run_id_;
+   const std::string challenge_;
+   const base::TimeTicks first_;
+-  Mac03Deadline& deadline_;
++  const raw_ref<Mac03Deadline> deadline_;
+   bool attached_ = false;
+   bool enumerating_startup_ = false;
+   bool startup_ = true;
+diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+index 61887279216b1b71eabadde19a653f95b95c5b20..9488426312fb20fb5fe6f028477e83a71ab7d36a 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+@@ -76,6 +76,10 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
+     ASSERT_TRUE(base::test::RunUntil([&] { return store_->ready(); }));
+   }
+   void TearDownOnMainThread() override {
++    if (markdown_directory_.IsValid()) {
++      base::ScopedAllowBlockingForTesting allow_blocking;
++      EXPECT_TRUE(markdown_directory_.Delete());
++    }
+     // Profile 随浏览器关闭而销毁，测试夹具必须提前释放对其存储的引用。
+     store_ = nullptr;
+     InProcessBrowserTest::TearDownOnMainThread();
+@@ -125,6 +129,7 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
+     )JS"));
+     EXPECT_EQ("undefined", content::EvalJs(frame, "typeof window.unsafe"));
+   }
++  base::ScopedTempDir markdown_directory_;
+   raw_ptr<EnhancementStore> store_ = nullptr;
+ };
+ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+@@ -260,33 +265,43 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+ // 使用真实文件和浏览器导航，不能仅向预览框架直接注入待渲染文本。
+ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+                        MarkdownFirstBrowserOpenRendersWithoutReload) {
+-  base::ScopedTempDir directory;
+-  ASSERT_TRUE(directory.CreateUniqueTempDir());
+-  const auto path = directory.GetPath().AppendASCII("first.MARKDOWN");
+-  ASSERT_TRUE(base::WriteFile(path,
+-      "# 首次打开\n\n<script>window.unsafe=1</script>"));
++  base::FilePath path;
++  {
++    base::ScopedAllowBlockingForTesting allow_blocking;
++    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
++    path = markdown_directory_.GetPath().AppendASCII("first.MARKDOWN");
++    ASSERT_TRUE(base::WriteFile(path,
++        "# 首次打开\n\n<script>window.unsafe=1</script>"));
++  }
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(path)));
+   ExpectMarkdownPreview();
+ }
+ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+                        MarkdownFirstLocalLinkRendersWithoutReload) {
+-  base::ScopedTempDir directory;
+-  ASSERT_TRUE(directory.CreateUniqueTempDir());
+-  const auto path = directory.GetPath().AppendASCII("first.md");
+-  const auto page = directory.GetPath().AppendASCII("open.html");
+-  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+-  ASSERT_TRUE(base::WriteFile(page,
+-      "<!doctype html><a id='open' href='first.md'>打开</a>"));
++  base::FilePath path;
++  base::FilePath page;
++  {
++    base::ScopedAllowBlockingForTesting allow_blocking;
++    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
++    path = markdown_directory_.GetPath().AppendASCII("first.md");
++    page = markdown_directory_.GetPath().AppendASCII("open.html");
++    ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
++    ASSERT_TRUE(base::WriteFile(page,
++        "<!doctype html><a id='open' href='first.md'>打开</a>"));
++  }
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(page)));
+   ASSERT_TRUE(content::ExecJs(contents(), "document.querySelector('#open').click()"));
+   ExpectMarkdownPreview();
+ }
+ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+                        MarkdownFirstFileDropRendersWithoutReload) {
+-  base::ScopedTempDir directory;
+-  ASSERT_TRUE(directory.CreateUniqueTempDir());
+-  const auto path = directory.GetPath().AppendASCII("first.md");
+-  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
++  base::FilePath path;
++  {
++    base::ScopedAllowBlockingForTesting allow_blocking;
++    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
++    path = markdown_directory_.GetPath().AppendASCII("first.md");
++    ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
++  }
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+       browser(), embedded_test_server()->GetURL("/page")));
+   auto* widget = contents()->GetPrimaryMainFrame()->GetRenderWidgetHost();
+diff --git a/chrome/browser/aegis/google_service_prompt_browsertest.cc b/chrome/browser/aegis/google_service_prompt_browsertest.cc
+index 17af34d714ec413bfaffadc4cb3eb0b30aa81e58..37e6d9c3f38abf65ca9d5e775160ecebf433e86c 100644
+--- a/chrome/browser/aegis/google_service_prompt_browsertest.cc
++++ b/chrome/browser/aegis/google_service_prompt_browsertest.cc
+@@ -19,6 +19,7 @@
+ #include "components/signin/public/base/signin_metrics.h"
+ #include "components/translate/core/browser/translate_manager.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/common/content_switches.h"
+ #include "content/public/test/browser_test.h"
+ #include "google_apis/google_api_keys.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+@@ -27,6 +28,13 @@
+ namespace aegis {
+ class GoogleServicePromptBrowserTest : public InProcessBrowserTest {
+  protected:
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    InProcessBrowserTest::SetUpCommandLine(command_line);
++    // Match Chromium's translate-manager fixture: exercise command behavior
++    // without waiting for a separately downloaded language-detection model.
++    command_line->AppendSwitch(::switches::kOverrideLanguageDetection);
++  }
++
+   content::WebContents* contents() {
+     return browser()->GetTabStripModel()->GetActiveWebContents();
+   }
+@@ -95,7 +103,7 @@ IN_PROC_BROWSER_TEST_F(GoogleServicePromptBrowserTest,
+   const int tab_count = browser()->GetTabStripModel()->count();
+   const GURL original_url = contents()->GetLastCommittedURL();
+   EXPECT_EQ(0u, GooglePromptCount());
+-  SigninViewController::From(browser())->ShowDiceEnableSyncTab(
++  SigninViewController::From(browser())->ShowEnableHistorySyncTab(
+       signin_metrics::AccessPoint::kSettings,
+       signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO, std::string());
+   EXPECT_EQ(1u, GooglePromptCount());
+diff --git a/chrome/browser/aegis/webpage_capture_browsertest.cc b/chrome/browser/aegis/webpage_capture_browsertest.cc
+index 29f344c721daaeb0bc8611d09cd145cd6347923c..413a5d568fd1b82787137e888d2882c1cf671ff4 100644
+--- a/chrome/browser/aegis/webpage_capture_browsertest.cc
++++ b/chrome/browser/aegis/webpage_capture_browsertest.cc
+@@ -32,6 +32,7 @@ class WebpageCaptureCommandBrowserTest
+       public testing::WithParamInterface<bool> {
+  public:
+   WebpageCaptureCommandBrowserTest() {
++    EnablePixelOutput();
+     features_.InitWithFeatureState(::features::kUseActionsForBrowserCommands,
+                                    GetParam());
+   }
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+index e6a76af34298aa762fccc19c90d513cf1f5d3446..872ca9d147ae4bdaae2984c72fcaa0da4bab4863 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+@@ -508,7 +508,7 @@ ChromeDevToolsManagerDelegate::CreateNewTargetWithNavigationMode(
+     NewTargetNavigationMode navigation_mode) {
+   Profile* profile = ProfileManager::GetLastUsedProfile();
+   if (!profile) {
+-    // 最近使用的资料无法加载时，不创建远程调试目标。
++    // The last used profile can't be loaded.
+     return nullptr;
+   }
+   NavigateParams params(profile, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index 1ad2966a9dd330cd16917679f39845c9d1c88a5d..f314a88b3d3de5c3da852e29a9066d798e846d76 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -738,7 +738,7 @@ IN_PROC_BROWSER_TEST_F(
+       std::string());
+   ASSERT_TRUE(navigation_manager.WaitForRequestStart());
+   EXPECT_EQ(pending_public_url, target_contents->GetVisibleURL());
+-  EXPECT_EQ(GURL(chrome::kChromeUIAegisURL),
++  EXPECT_EQ(GURL("chrome://settings/aegis"),
+             target_contents->GetLastCommittedURL());
+ 
+   AttachToBrowserTarget();
+@@ -898,7 +898,8 @@ IN_PROC_BROWSER_TEST_F(
+   ClearNotifications();
+ 
+   ASSERT_TRUE(
+-      content::NavigateToURL(target_contents, GURL(chrome::kChromeUIAegisURL)));
++      content::NavigateToURL(target_contents, GURL(chrome::kChromeUIAegisURL),
++                             GURL("chrome://settings/aegis")));
+ 
+   base::DictValue destroyed = WaitForMatchingNotification(
+       "Target.targetDestroyed",
+@@ -954,7 +955,8 @@ IN_PROC_BROWSER_TEST_F(
+   ClearNotifications();
+ 
+   ASSERT_TRUE(
+-      content::NavigateToURL(contents, GURL(chrome::kChromeUIAegisURL)));
++      content::NavigateToURL(contents, GURL(chrome::kChromeUIAegisURL),
++                             GURL("chrome://settings/aegis")));
+   const base::DictValue detached = WaitForMatchingNotification(
+       "Target.detachedFromTarget",
+       base::BindRepeating(
+diff --git a/chrome/browser/predictors/prefetch_manager.cc b/chrome/browser/predictors/prefetch_manager.cc
+index b6830fb3f4d3c111d394bb03c8d952bf4fec5255..e515b971513d09ddd0b317bbbd00e7808d084948 100644
+--- a/chrome/browser/predictors/prefetch_manager.cc
++++ b/chrome/browser/predictors/prefetch_manager.cc
+@@ -327,7 +327,13 @@ void PrefetchManager::PrefetchUrl(
+   aegis::access::AccessProxyingURLLoaderFactory::
+       MaybeProxyBrowserProcessPrefetch(profile_, storage_partition,
+                                        factory_builder);
+-  factory = std::move(factory_builder).Finish(factory);
++  if (factory_builder.RequiresFreshFactory()) {
++    factory = std::move(factory_builder)
++                  .Finish(storage_partition->GetNetworkContext(),
++                          storage_partition->CreateURLLoaderFactoryParams());
++  } else {
++    factory = std::move(factory_builder).Finish(factory);
++  }
+ 
+   // Set up throttles. Use null values for frame/navigation-related params, for
+   // now, since this is just the browser prefetching resources and the requests
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+index b351a84540b2d41bf1e8e3ce067cf3c93cf94e63..e3780e1d63c750bf890bd2bdb72d07309ac04f34 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -722,11 +722,11 @@ int UmaEnumForCommand(int key, UmaEnumIdLookupType type) {
+        {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 167},
+        {IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS, 168},
+        {IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED, 169},
+-       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 170},
++       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 170},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 174},
+        {IDC_CONTENT_CONTEXT_CONTEXTUAL_TASKS_SUBMENU, 171},
+-       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 172},
+-       {IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION, 173},
+-       {IDC_CONTENT_CONTEXT_INDIGO, 174},
++       {IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION, 172},
++       {IDC_CONTENT_CONTEXT_INDIGO, 173},
+        // To add new items:
+        //   - Add one more line above this comment block, using the UMA value
+        //     from the line below this comment block.
+@@ -774,9 +774,9 @@ int UmaEnumForCommand(int key, UmaEnumIdLookupType type) {
+        {IDC_CONTENT_CONTEXT_GLICSHAREIMAGE, 32},
+        {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 33},
+        {IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED, 34},
+-       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 35},
+-       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 36},
+-       {IDC_CONTENT_CONTEXT_INDIGO, 37},
++       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 35},
++       {IDC_CONTENT_CONTEXT_INDIGO, 36},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 37},
+        // To add new items:
+        //   - Add one more line above this comment block, using the UMA value
+        //     from the line below this comment block.
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.ts b/chrome/browser/resources/settings/settings_main/settings_main.ts
+index 4617b17bc92b0b90380c85343a2a437bd6d33d38..41eb2ca4c5336949b5f35c4a63325879ef966107 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.ts
++++ b/chrome/browser/resources/settings/settings_main/settings_main.ts
+@@ -292,16 +292,17 @@ export class SettingsMainElement extends SettingsMainElementBase {
+     this.eventTracker_.add(this.$.switcher, 'change', notifyInteraction);
+   }
+ 
+-  protected renderPlugin_(route: Route): boolean {
+-    return this.hasSearched_ || this.renderedRoutes_.has(route);
+-  }
+-
+   protected renderAegisPlugin_(route: Route): boolean {
+-    // 保留原有离开页面即卸载的行为，避免隐藏的 Aegis 页面继续运行。
++    // Aegis pages own route guards, listeners and embedded tool pages. Keep
++    // their previous restamp lifecycle while upstream plugins remain cached.
+     return this.inSearchMode_ ||
+         (!!this.lastRoute_ && route.contains(this.lastRoute_));
+   }
+ 
++  protected renderPlugin_(route: Route): boolean {
++    return this.hasSearched_ || this.renderedRoutes_.has(route);
++  }
++
+   protected showPage_(
+       visibility?: boolean|AppearancePageVisibility|
+       PrivacyPageVisibility): boolean {
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 046402ee0960e3d645c174fbd9e80c851c968c03..bdbfd395a4c9d9e6138e37c0a417d588d4c70a20 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -386,8 +386,8 @@ if (!is_android) {
+       "//chrome/browser/ui/webui/omnibox_popup",
+       "//chrome/browser/ui/webui/util",
+       "//chrome/browser/undo",
+-      "//chrome/common/aegis",
+       "//components/collaboration/public:features",
++      "//chrome/common/aegis",
+       "//components/commerce/core:metrics",
+       "//components/multistep_filter/core:features",
+       "//components/omnibox/common:features",
+@@ -688,7 +688,6 @@ if (!is_android) {
+     sources = [ "browser_command_controller.cc" ]
+     public_deps = [ ":browser_command_controller" ]
+     deps = [
+-      "//chrome/browser/aegis",
+       "//chrome/common/aegis",
+       ":accelerator_table",
+       ":browser_actions",
+@@ -707,6 +706,7 @@ if (!is_android) {
+       "//chrome/browser:browser_process",
+       "//chrome/browser/actor/ui:actor_overlay",
+       "//chrome/browser/actor/ui:actor_overlay_web_view",
++      "//chrome/browser/aegis:webpage_capture",
+       "//chrome/browser/apps/app_service",
+       "//chrome/browser/bookmarks",
+       "//chrome/browser/browsing_data",
+diff --git a/chrome/browser/ui/toolbar/BUILD.gn b/chrome/browser/ui/toolbar/BUILD.gn
+index e04f1b109667228d08d8c102273a97e17beec995..82a5cedda3f1880827d3bb76ecff876c20711ce0 100644
+--- a/chrome/browser/ui/toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/BUILD.gn
+@@ -136,8 +136,7 @@ source_set("impl") {
+       "//chrome/browser:browser_process",
+       "//chrome/browser:defaults",
+       "//chrome/browser:global_features",
+-      # 桌面菜单直接调用网页截图接口，仅实现目标需要链接 Aegis。
+-      "//chrome/browser/aegis",
++      "//chrome/browser/aegis:webpage_capture",
+       "//chrome/browser/favicon",
+       "//chrome/browser/feedback",
+       "//chrome/browser/feedback:feedback_impl",
+diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
+index b125d09079ad338957429b9521a1a1e298839ca3..7c528b1850cca44001a1aed3565e1b26a99ce3ea 100644
+--- a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
++++ b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
+@@ -257,6 +257,7 @@ void PinnedToolbarActionsModel::MaybeMigrateExistingPinnedStates() {
+     pref_service_->SetBoolean(prefs::kTabsFromOtherDevicesAutoPinnedMigration,
+                               true);
+   }
++
+   if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
+       !pref_service_->GetBoolean(prefs::kAegisAgentAutoPinnedMigration)) {
+     UpdatePinnedState(kActionSidePanelShowAegisAgent, true);
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+index f16830ff248bae22dbaf0228f22d7ce8c76a25be..7951964aafe57aa5d5707f5663c2ce9a4de1c746 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_visibility_browsertest.cc
+@@ -31,17 +31,20 @@ class OmniboxPopupVisibilityBrowserTest
+       public testing::WithParamInterface<bool> {
+  public:
+   OmniboxPopupVisibilityBrowserTest() {
++    EnablePixelOutput();
++    // This fixture exercises popup rendering independently of account eligibility.
+     if (GetParam()) {
+       feature_list_.InitWithFeatures(
+           {omnibox::internal::kWebUIOmniboxPopup,
+            omnibox::internal::kWebUIOmniboxAimPopup,
+-           omnibox::kWebUIOmniboxFullPopup},
+-          {});
++           omnibox::internal::kWebUIOmniboxFullPopup},
++          {omnibox::kOmniboxAimPopupRequireEligibility});
+     } else {
+       feature_list_.InitWithFeatures(
+           {omnibox::internal::kWebUIOmniboxPopup,
+            omnibox::internal::kWebUIOmniboxAimPopup},
+-          {omnibox::kWebUIOmniboxFullPopup});
++          {omnibox::internal::kWebUIOmniboxFullPopup,
++           omnibox::kOmniboxAimPopupRequireEligibility});
+     }
+   }
+ 
+diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
+index eb5b8fa43bee6aa5165e8ce663e82bef20ad5442..d53f6e56e389c46b0237f5549eec72c766552b5b 100644
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -3684,7 +3684,6 @@ test("unit_tests") {
+     "//chrome/browser/aegis:download_prefs",
+     "//chrome/browser/invalidation",
+   ]
+-
+   # This target intentionally has no sources of its own; it only aggregates
+   # test dependencies. Do NOT add sources here -- new tests belong in a
+   # dedicated, properly-scoped target. Kept last so an accidental
+diff --git a/components/policy/tools/generate_policy_source.py b/components/policy/tools/generate_policy_source.py
+old mode 100644
+new mode 100755
+index af9bb41ba1081a7c9a1cc89698629feb5d09bdb8..cd3a5a53bbcfd91ab71d53b0085f740ce22fb165
+--- a/components/policy/tools/generate_policy_source.py
++++ b/components/policy/tools/generate_policy_source.py
+@@ -830,7 +830,7 @@ class SchemaNodesGenerator:
+     )
+ 
+   def GetEnumIntegerType(self, schema, is_sensitive_value, name):
+-    if not (all(type(x) == int for x in schema['enum'])):
++    if not (all(type(x) == int for x in schema['enum'])):  # noqa: E721
+       raise AssertionError("政策定义不满足生成约束")
+     possible_values = schema['enum']
+     if self.IsConsecutiveInterval(possible_values):
+@@ -852,7 +852,7 @@ class SchemaNodesGenerator:
+     )
+ 
+   def GetEnumStringType(self, schema, is_sensitive_value, name):
+-    if not (all(type(x) == str for x in schema['enum'])):
++    if not (all(type(x) == str for x in schema['enum'])):  # noqa: E721
+       raise AssertionError("政策定义不满足生成约束")
+     offset_begin = len(self.string_enums)
+     self.string_enums += schema['enum']
+@@ -1004,7 +1004,7 @@ class SchemaNodesGenerator:
+       required_properties = schema.get('required', [])
+       if not (type(required_properties) is list):
+         raise AssertionError("政策定义不满足生成约束")
+-      if not (all(type(x) == str for x in required_properties)):
++      if not (all(type(x) == str for x in required_properties)):  # noqa: E721
+         raise AssertionError("政策定义不满足生成约束")
+       self.required_properties += required_properties
+       required_end = len(self.required_properties)
+diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
+index 745865945a6db958b74ccf79092948aca39793ad..2ef51743a4f2ed5efd53f01818431d97c3acda4b 100644
+--- a/content/browser/devtools/devtools_http_handler.cc
++++ b/content/browser/devtools/devtools_http_handler.cc
+@@ -1189,7 +1189,8 @@ void DevToolsHttpHandler::OnWebSocketRequest(
+ 
+   auto client = std::make_unique<DevToolsAgentHostClientImpl>(
+       thread_->task_runner(), server_wrapper_.get(), connection_id, agent,
+-      request.peer, std::move(initial_owned_document));
++      request.peer,
++      std::move(initial_owned_document));
+   if (!client->IsAttached()) {
+     Send404(connection_id);
+     return;
+diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
+index 5db96e1d7cf87cd2646ad2a5655da14241dbaf7a..a9f18d30383ad2e629fb5fe356e8d58c3bdc975c 100644
+--- a/content/browser/devtools/render_frame_devtools_agent_host.cc
++++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
+@@ -669,7 +669,6 @@ scoped_refptr<RenderFrameDevToolsAgentHost>
+ RenderFrameDevToolsAgentHost::RevalidateSessionAccess(
+     RenderFrameHostImpl* frame_host) {
+   scoped_refptr<RenderFrameDevToolsAgentHost> retain_this(this);
+-
+   // 渲染帧在提交前就会更换，此时新帧还没有已提交 URL。
+   // 只对已经附加的会话检查匹配的提交请求，新的附加仍采用已提交 URL。
+   NavigationRequest* committing_navigation = nullptr;
+diff --git a/content/browser/storage_partition_impl.h b/content/browser/storage_partition_impl.h
+index 55e9116fe28e72f83ff8d8f2f4e6c819e242bc33..7fab9444490ae7f3a86e639ce07981f84333ebdf 100644
+--- a/content/browser/storage_partition_impl.h
++++ b/content/browser/storage_partition_impl.h
+@@ -157,7 +157,8 @@ class CONTENT_EXPORT StoragePartitionImpl
+   bool IsNetworkContextInitialized() override;
+   cert_verifier::mojom::CertVerifierServiceUpdater*
+   GetCertVerifierServiceUpdater() override;
+-  network::mojom::URLLoaderFactoryParamsPtr CreateURLLoaderFactoryParams();
++  network::mojom::URLLoaderFactoryParamsPtr CreateURLLoaderFactoryParams()
++      override;
+   scoped_refptr<network::SharedURLLoaderFactory>
+   GetURLLoaderFactoryForBrowserProcess() override;
+   std::unique_ptr<network::PendingSharedURLLoaderFactory>
+diff --git a/content/public/browser/storage_partition.h b/content/public/browser/storage_partition.h
+index b5ccd48cfa23085bbd10314f9ec325babf3f5249..8de55eb4b96f489ba1b461971ba50cfe54919ec8 100644
+--- a/content/public/browser/storage_partition.h
++++ b/content/public/browser/storage_partition.h
+@@ -21,6 +21,7 @@
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/mojom/cert_verifier_service_updater.mojom-forward.h"
+ #include "services/network/public/mojom/cookie_manager.mojom-forward.h"
++#include "services/network/public/mojom/network_context.mojom-forward.h"
+ #include "services/network/public/mojom/restricted_cookie_manager.mojom-forward.h"
+ #include "services/network/public/mojom/trust_tokens.mojom-forward.h"
+ 
+@@ -110,6 +111,12 @@ class CONTENT_EXPORT StoragePartition {
+   virtual cert_verifier::mojom::CertVerifierServiceUpdater*
+   GetCertVerifierServiceUpdater() = 0;
+ 
++  // Creates parameters for a fresh browser-process factory when an interceptor
++  // requires its own NetworkContext terminal. The browser-process security
++  // restrictions documented below also apply to this factory.
++  virtual network::mojom::URLLoaderFactoryParamsPtr
++  CreateURLLoaderFactoryParams() = 0;
++
+   // Returns a pointer/info to a URLLoaderFactory/CookieManager owned by
+   // the storage partition. Prefer to use this instead of creating a new
+   // URLLoaderFactory when issuing requests from the Browser process, to
+diff --git a/content/public/test/test_storage_partition.cc b/content/public/test/test_storage_partition.cc
+index 9bee57c5486852ba8a059d27513eb789d9a33913..5ae686b857e66eb946ff67ec3abff7baab9fd6f9 100644
+--- a/content/public/test/test_storage_partition.cc
++++ b/content/public/test/test_storage_partition.cc
+@@ -11,6 +11,7 @@
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+ #include "services/network/public/mojom/cookie_manager.mojom.h"
++#include "services/network/public/mojom/network_context.mojom.h"
+ #include "services/network/test/test_url_loader_factory.h"
+ #include "storage/browser/quota/quota_manager.h"
+ 
+@@ -40,6 +41,11 @@ TestStoragePartition::GetCertVerifierServiceUpdater() {
+   return nullptr;
+ }
+ 
++network::mojom::URLLoaderFactoryParamsPtr
++TestStoragePartition::CreateURLLoaderFactoryParams() {
++  NOTREACHED() << "Fresh browser-process factories require a real partition.";
++}
++
+ scoped_refptr<network::SharedURLLoaderFactory>
+ TestStoragePartition::GetURLLoaderFactoryForBrowserProcess() {
+   return test_url_loader_factory_->GetSafeWeakWrapper();
+diff --git a/content/public/test/test_storage_partition.h b/content/public/test/test_storage_partition.h
+index 9e229381415b6344bf38f72832a4f2cf416cb66f..1fe6195fe0e0052e3d374dcf53f4431415285fdb 100644
+--- a/content/public/test/test_storage_partition.h
++++ b/content/public/test/test_storage_partition.h
+@@ -71,6 +71,8 @@ class TestStoragePartition : public StoragePartition {
+   bool IsNetworkContextInitialized() override;
+   cert_verifier::mojom::CertVerifierServiceUpdater*
+   GetCertVerifierServiceUpdater() override;
++  network::mojom::URLLoaderFactoryParamsPtr CreateURLLoaderFactoryParams()
++      override;
+ 
+   void set_url_loader_factory_for_browser_process(
+       network::TestURLLoaderFactory* factory) {
+diff --git a/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc b/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
+index 9fc93090c73248b86ae668150aa10e3829558721..9e2bcf566d121522d8860e3690315cd92b5c5d65 100644
+--- a/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
++++ b/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
+@@ -51,7 +51,6 @@ void AsyncFindBuffer::Run(RangeInFlatTree* search_range,
+     std::move(completeCallback).Run(EphemeralRangeInFlatTree());
+     return;
+   }
+-  // 每次异步恢复查找都重新建立强制显示锁作用域。
+   Document* document = search_range->StartPosition().GetDocument();
+   auto forced_lock_scope =
+       document->GetDisplayLockDocumentState().GetScopedForceActivatableLocks();
+diff --git a/tools/metrics/histograms/metadata/ui/enums.xml b/tools/metrics/histograms/metadata/ui/enums.xml
+index 2995971450a8619659c38e000d8a58d6b41898bf..90be50895611d3563471a31f2c2eab8c913cb861 100644
+--- a/tools/metrics/histograms/metadata/ui/enums.xml
++++ b/tools/metrics/histograms/metadata/ui/enums.xml
+@@ -80,9 +80,9 @@ chromium-metrics-reviews@google.com.
+   <int value="32" label="Create image with Gemini in Chrome"/>
+   <int value="33" label="Remove from dictionary"/>
+   <int value="34" label="Open link in isolated window"/>
+-  <int value="35" label="Send page context to Aegis Agent"/>
+-  <int value="36" label="Ask Google about this page"/>
+-  <int value="37" label="Try it on (Indigo)"/>
++  <int value="35" label="Ask Google about this page"/>
++  <int value="36" label="Try it on (Indigo)"/>
++  <int value="37" label="Send page context to Aegis Agent"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:ContextMenuOptionDesktop) -->
+@@ -449,11 +449,11 @@ chromium-metrics-reviews@google.com.
+   <int value="167" label="IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY"/>
+   <int value="168" label="IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS"/>
+   <int value="169" label="IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED"/>
+-  <int value="170" label="IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT"/>
++  <int value="170" label="IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE"/>
+   <int value="171" label="IDC_CONTENT_CONTEXT_CONTEXTUAL_TASKS_SUBMENU"/>
+-  <int value="172" label="IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE"/>
+-  <int value="173" label="IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION"/>
+-  <int value="174" label="IDC_CONTENT_CONTEXT_INDIGO"/>
++  <int value="172" label="IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION"/>
++  <int value="173" label="IDC_CONTENT_CONTEXT_INDIGO"/>
++  <int value="174" label="IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:RenderViewContextMenuItem) -->

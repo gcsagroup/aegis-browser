@@ -199,7 +199,7 @@ test('Bot admission rejects missing configuration, impersonation and replaced Ap
 test('Bot cannot borrow candidate pushes, other contexts, stale sources or broader operations', async () => {
   const {requireIosAdministrator} = await load();
   for (const options of [{inputs: {approved_source_sha: ''}}, {inputs: {approved_source_sha: 'b'.repeat(40)}},
-    {inputs: {operation: 'Distribute external'}}, {inputs: {private_beta: 'yes'}},
+    {inputs: {operation: 'Distribute external'}}, {inputs: {private_beta: 'yes'}}, {inputs: {private_alpha: 'yes'}},
     {env: {GITHUB_REF: 'refs/heads/releases/ios/1.0'}, changes: {head_branch: 'releases/ios/1.0'}},
     {env: {GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/tags/candidate/ios/1.1.0-beta.4'}, changes: {event: 'push', head_branch: 'candidate/ios/1.1.0-beta.4'}},
     {changes: {path: '.github/workflows/ios-clear-empty-upload.yml'}}]) {

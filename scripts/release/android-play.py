@@ -43,9 +43,9 @@ def download_ids(row):
     universal = row.get('generatedUniversalApk')
     if isinstance(universal, dict) and isinstance(universal.get('downloadId'), str) and universal['downloadId']:
         found.append(universal['downloadId'])
-    for key in ('generatedSplitApks', 'generatedAssetPackSlices', 'generatedAssetPackApks', 'generatedStandaloneApks',
-                'unprotectedGeneratedSplitApks', 'unprotectedGeneratedStandaloneApks'):
-        items = row.get(key) or []
+    for key in ('generatedSplitApks', 'generatedAssetPackSlices', 'generatedStandaloneApks',
+                'generatedRecoveryModules', 'unprotectedGeneratedSplitApks', 'unprotectedGeneratedStandaloneApks'):
+        items = row.get(key, [])
         require(isinstance(items, list), 'Play generated APK list is invalid')
         for item in items:
             require(isinstance(item, dict), 'Play generated APK row is invalid')
@@ -56,23 +56,12 @@ def download_ids(row):
 
 
 def interpret_generated_apks(document, version_code):
-    require(isinstance(document, dict) and isinstance(document.get('generatedApks'), list),
+    require(isinstance(document, dict) and (not document or isinstance(document.get('generatedApks'), list)),
             'Play generated APK response is invalid')
-    rows = document['generatedApks']
-    # generatedApks.list is versionCode-scoped. Real rows are per signing key and omit
-    # versionCode; older list-shaped fixtures still carry it and must stay unique.
-    if rows and all(isinstance(row, dict) and 'versionCode' in row for row in rows):
-        matches = [row for row in rows if row.get('versionCode') == version_code]
-        require(len(matches) <= 1, 'Play returned more than one row for this versionCode')
-    else:
-        matches = [row for row in rows if isinstance(row, dict)]
-        require(len(matches) == len(rows), 'Play generated APK row is invalid')
+    groups = document.get('generatedApks', [])
+    require(all(isinstance(group, dict) for group in groups), 'Play signing-key group is invalid')
+    ids = [download for group in groups for download in download_ids(group)]
     base = {'packageName': APPLICATION_ID, 'versionCode': version_code, 'expired': False}
-    if not matches:
-        return {**base, 'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
-    ids = []
-    for match in matches:
-        ids.extend(download_ids(match))
     if not ids:
         return {**base, 'processingState': 'PROCESSING', 'uploadState': 'PROCESSING'}
     identity = canonical({'downloadIds': sorted(set(ids)), 'packageName': APPLICATION_ID, 'versionCode': version_code})
@@ -95,75 +84,64 @@ class Play:
     def _request(self, method, url, body=None, headers=None, ok=(200,)):
         response = self.transport(method, url, body, {'Authorization': 'Bearer ' + self.token, **(headers or {})})
         require(isinstance(response, tuple) and len(response) == 3, 'Play transport response is invalid')
-        status, response_headers, payload = response
-        require(status not in {301, 302, 303, 307, 308}, 'Play refused to follow a redirect')
-        require(status in ok, 'Play request failed')
-        return response_headers, payload
-
-    def generated_apks(self, version_code):
-        """Return the generatedApks document, or None when Play has no such versionCode."""
-        require(isinstance(version_code, int) and version_code > 0, 'Invalid Play versionCode')
-        url = API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/generatedApks/{version_code}'
-        response = self.transport('GET', url, None, {'Authorization': 'Bearer ' + self.token})
-        require(isinstance(response, tuple) and len(response) == 3, 'Play transport response is invalid')
         status, _headers, payload = response
         require(status not in {301, 302, 303, 307, 308}, 'Play refused to follow a redirect')
-        # Play returns HTTP 404 when this versionCode has never been uploaded.
-        if status == 404:
-            return None
-        require(status == 200, 'Play request failed')
-        return json.loads(payload.decode())
+        require(status in ok, 'Play request failed')
+        return status, payload
+
+    def _write(self, authorize, method, url, body, headers=None):
+        authorize()
+        return self._request(method, url, body, headers)
 
     def status(self, version_code):
-        require(isinstance(version_code, int) and version_code > 0, 'Invalid Play versionCode')
-        document = self.generated_apks(version_code)
-        if document is None:
+        require(type(version_code) is int and 1 <= version_code <= receipt.MAX_CODE, 'Invalid Play versionCode')
+        status, payload = self._request(
+            'GET', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/generatedApks/{version_code}', ok=(200, 404))
+        if status == 404:
             return {'packageName': APPLICATION_ID, 'versionCode': version_code, 'expired': False,
                     'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
-        return interpret_generated_apks(document, version_code)
+        return interpret_generated_apks(json.loads(payload.decode()), version_code)
 
-    def upload_draft(self, aab, version_code, track):
+    def upload_draft(self, aab, version_code, track, *, authorize_write):
         require(track in {'internal', 'beta'}, 'Play draft upload cannot target production')
         remote = self.status(version_code)
         require(remote['processingState'] == 'NOT_FOUND', 'Play already has this versionCode')
-        _headers, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
-                                          {'Content-Type': 'application/json'})
+        edits = API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits'
+        _status, payload = self._write(authorize_write, 'POST', edits, b'{}', {'Content-Type': 'application/json'})
         edit = json.loads(payload.decode())
         edit_id = edit.get('id')
         require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
         upload = API + f'/upload/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}/bundles?uploadType=media'
-        _headers, payload = self._request('POST', upload, Path(aab).read_bytes(),
-                                          {'Content-Type': 'application/octet-stream'}, ok=(200,))
+        _status, payload = self._write(authorize_write, 'POST', upload, Path(aab).read_bytes(),
+                                       {'Content-Type': 'application/octet-stream'})
         bundle = json.loads(payload.decode())
         require(bundle.get('versionCode') == version_code, 'Play stored a different versionCode')
         release = {'status': 'draft', 'versionCodes': [str(version_code)]}
         body = canonical({'releases': [release], 'track': track}).encode()
-        self._request('PUT', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}/tracks/{track}',
-                      body, {'Content-Type': 'application/json'})
-        self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}:commit', b'')
+        self._write(authorize_write, 'PUT', f'{edits}/{edit_id}/tracks/{track}', body, {'Content-Type': 'application/json'})
+        self._write(authorize_write, 'POST', f'{edits}/{edit_id}:commit', b'')
         return {'editId': edit_id, 'packageName': APPLICATION_ID, 'releaseStatus': 'draft',
                 'status': 'uploaded_draft', 'track': track, 'versionCode': version_code}
 
-    def update_track(self, version_code, track, status, user_fraction=''):
+    def update_track(self, version_code, track, status, user_fraction='', *, authorize_write):
         require(track in TRACKS and status in {'inProgress', 'completed'}, 'Unsupported Play track update')
         require(self.status(version_code)['processingState'] == 'VALID', 'Play has not finished this versionCode')
         require(status != 'completed' or (track == 'production' and user_fraction == ''),
                 'Only an explicit production submission can complete a rollout')
         require(status != 'inProgress' or (track != 'production' and user_fraction),
                 'A partial rollout needs a non-production track and a user fraction')
-        _headers, payload = self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits', b'{}',
-                                          {'Content-Type': 'application/json'})
-        edit_id = json.loads(payload.decode()).get('id')
-        require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
         if user_fraction:
             require(re.fullmatch(r'0\.(?:[0-9]{0,3}[1-9])', user_fraction), 'Invalid Play user fraction')
             body = ('{"releases":[{"status":"%s","userFraction":%s,"versionCodes":["%s"]}],"track":"%s"}'
                     % (status, user_fraction, version_code, track)).encode()
         else:
             body = canonical({'releases': [{'status': status, 'versionCodes': [str(version_code)]}], 'track': track}).encode()
-        self._request('PUT', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}/tracks/{track}',
-                      body, {'Content-Type': 'application/json'})
-        self._request('POST', API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits/{edit_id}:commit', b'')
+        edits = API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits'
+        _status, payload = self._write(authorize_write, 'POST', edits, b'{}', {'Content-Type': 'application/json'})
+        edit_id = json.loads(payload.decode()).get('id')
+        require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
+        self._write(authorize_write, 'PUT', f'{edits}/{edit_id}/tracks/{track}', body, {'Content-Type': 'application/json'})
+        self._write(authorize_write, 'POST', f'{edits}/{edit_id}:commit', b'')
         return {'editId': edit_id, 'status': status, 'track': track, 'versionCode': version_code}
 
 
@@ -195,10 +173,15 @@ def openssl_signer(unsigned, private_key):
     return _b64(result.stdout)
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
 def urllib_transport(method, url, body, headers):
     request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.build_opener(NoRedirect()).open(request, timeout=120) as response:
             return response.status, dict(response.headers), response.read()
     except urllib.error.HTTPError as error:
         return error.code, dict(error.headers), error.read()

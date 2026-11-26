@@ -270,6 +270,7 @@ try {
   }
   writeFileSync(join(reportDirectory, 'preview-result.json'), `${JSON.stringify(previewResult, null, 2)}\n`);
 
+  await command('android-release-python-tests', 'python3', ['-B', 'scripts/ci/run-android-release-tests.py']);
   await command('ci-tests', 'corepack', ['pnpm', 'run', 'ci:test'], {env: instrumentedEnvironment});
   await command('workflow-validation', 'corepack', ['pnpm', 'run', 'ci:validate-workflow'], {env: instrumentedEnvironment});
   if (values['public-base']) {

@@ -39,12 +39,18 @@ class ReleaseFixture < Minitest::Test
     AegisRelease::Request.new(platform, {profile: 'release'}.merge(options), root: @root)
   end
 
-  def package(platform = 'ios', **options)
+  def package(platform = 'ios', draft_resource: nil, **options)
     req = request(platform, **options)
     FileUtils.mkdir_p(req.directory)
     extension = req.format
     path = File.join(req.directory, "Aegis.#{extension}")
-    File.write(path, 'fixture, not a real package')
+    if req.destination == 'github-draft'
+      AegisRelease.command('python3', '-c',
+                           'from zipfile import ZipFile; import sys; ZipFile(sys.argv[1], "w").writestr(sys.argv[2], "fixture")',
+                           path, draft_resource || 'Payload/Aegis.app/Info.plist')
+    else
+      File.write(path, 'fixture, not a real package')
+    end
     sha = AegisRelease::Receipt.create(req, [path], AegisRelease.source(@root), 'signing' => 'fixture', 'appleTeamId' => 'ABCDEFGHIJ', 'certificateSha1' => 'A' * 40,
                                       'provisioningProfiles' => AegisRelease::IOS_TARGETS.values.to_h { |id| [id, 'fixture'] })
     [req, sha, path]
@@ -442,10 +448,18 @@ class ReleaseTest < ReleaseFixture
     end
   end
 
-  def draft
-    req, sha = package('ios', destination: 'github-draft', tag: 'candidate/ios/3.2-release.69')
+  def draft(draft_resource: nil)
+    req, sha = package('ios', draft_resource: draft_resource, destination: 'github-draft', tag: 'candidate/ios/3.2-release.69')
     receipt = AegisRelease::Receipt.verify(req, sha)
     AegisRelease::Draft.new(req, receipt, sha, environment: {}).extend(DraftStub).configure_fixture
+  end
+
+  def test_draft_rejects_private_alpha_resource_without_manifest_marker
+    publisher = draft(draft_resource: 'Payload/Aegis.app/AegisAlphaTestNodes.json')
+    publisher.on_read = -> { flunk 'Private package must be rejected before GitHub access' }
+    error = assert_raises(AegisRelease::Error) { publisher.upload }
+    assert_includes error.message, 'Private iOS test resources cannot be published'
+    assert_empty publisher.mutations
   end
 
   def test_draft_downloaded_bytes_must_match_even_when_server_digest_matches

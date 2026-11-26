@@ -465,7 +465,8 @@ def unstarted_store_run(row):
             if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
                 return False
             name = str(job.get('name', '')).rsplit(' / ', 1)[-1]
-            if name in {'store', 'upload-new', 'private-beta-store'}:
+            if name in {'store', 'upload-new', 'private-beta-store', 'private-alpha',
+                        'private-alpha-package', 'private-alpha-store'}:
                 cancelled_upload = name in {'store', 'upload-new'} and job.get('conclusion') == 'cancelled'
                 if job.get('status') != 'completed' or job.get('steps') != [] or not (job.get('conclusion') == 'skipped' or cancelled_upload):
                     return False

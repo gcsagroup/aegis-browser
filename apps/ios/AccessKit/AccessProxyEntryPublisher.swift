@@ -24,6 +24,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
 
     private let provision: @MainActor (UInt64, Duration) async throws -> Provision
     private let shutdown: @MainActor (String) -> Void
+    private let activate: (@MainActor () -> Bool)?
     private let healthCheck: (@MainActor () -> Bool)?
     /// State lives only as long as a flight, callback, waiter or host owns this generation.
     /// Late completions share its terminal flags without retaining an ever-growing history.
@@ -50,20 +51,30 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
     private var streamContinuation: AsyncStream<AccessManagedProxyEndpoint>.Continuation?
     private var cachedStream: AsyncStream<AccessManagedProxyEndpoint>?
     private var healthTask: Task<Void, Never>?
+    // Allows tests to gate a specific waiter after the shared flight completes.
+    var beforeFlightPublication: (@MainActor (UUID) async -> Void)?
 
     public init(
         provision: @escaping @MainActor (UInt64, Duration) async throws -> Provision,
         shutdown: @escaping @MainActor (String) -> Void = { _ in },
+        activate: (@MainActor () -> Bool)? = nil,
         healthCheck: (@MainActor () -> Bool)? = nil
     ) {
         self.provision = provision
         self.shutdown = shutdown
+        self.activate = activate
         self.healthCheck = healthCheck
     }
 
     public var currentEndpoint: AccessManagedProxyEndpoint? {
-        guard let instance, isHealthy(instance.provision), !instance.generation.isClosed else { return nil }
+        guard let instance, isHealthy(instance.provision), !instance.generation.isClosed,
+              healthCheck?() ?? true else { return nil }
         return instance.provision.endpoint
+    }
+
+    /// Reads the live readiness predicate also used by the periodic health watch.
+    public var isCurrentEntryHealthy: Bool {
+        currentEndpoint != nil && (healthCheck?() ?? true)
     }
 
     public var stateChanges: AsyncStream<AccessManagedProxyEndpoint> {
@@ -76,6 +87,9 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
     }
 
     public func prepare(_ request: AccessProxyEntryPrepareRequest) async throws -> AccessProxyEntryPrepareResult {
+        if instance?.generation.isClosed == false, healthCheck?() == false {
+            closeCurrentGeneration()
+        }
         if let current = currentEndpoint, let instance {
             waiters[request.operationID] = instance.generation
             return AccessProxyEntryPrepareResult(operationID: request.operationID, endpoint: current)
@@ -109,6 +123,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
             }
             throw error
         }
+        if let beforeFlightPublication { await beforeFlightPublication(request.operationID) }
         let publication = Publication(provision: provisioned, generation: generation)
         guard waiters[request.operationID] === generation else {
             // Keep the completed flight available until a survivor publishes or the
@@ -125,6 +140,13 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
             discardIfUnclaimed(publication)
             throw AccessSiteSessionError.prepareFailed("入口版本与这次准备不一致")
         }
+        if instance?.generation !== generation, let activate {
+            guard isHealthy(provisioned), activate() else {
+                waiters.removeValue(forKey: request.operationID)
+                discardIfUnclaimed(publication)
+                throw AccessSiteSessionError.runtimeNotReady
+            }
+        }
         instance = publication
         if inflight?.generation === generation { inflight = nil }
         emit(provisioned.endpoint)
@@ -140,18 +162,22 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
 
     public func validateReady(_ result: AccessProxyEntryPrepareResult) -> Bool {
         guard let instance, waiters[result.operationID] === instance.generation else { return false }
-        guard !instance.generation.isClosed, isHealthy(instance.provision) else { return false }
-        guard result.endpoint.identity == instance.provision.endpoint.identity else { return false }
+        guard !instance.generation.isClosed, isHealthy(instance.provision), healthCheck?() ?? true else { return false }
+        guard result.endpoint == instance.provision.endpoint else { return false }
         guard result.endpoint.generation == instance.generation.number else { return false }
         guard result.endpoint.state == .ready else { return false }
-        guard result.endpoint.loopbackHost == "127.0.0.1", result.endpoint.port != 0 else { return false }
+        guard result.endpoint.loopbackHost == "127.0.0.1", result.endpoint.port != 0,
+              result.endpoint.transport != .socks5 || result.endpoint.port != 1080 else { return false }
         return true
     }
 
-    public func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey) -> Bool {
-        guard let instance, !instance.generation.isClosed, isHealthy(instance.provision) else { return false }
-        guard endpoint.identity == instance.provision.endpoint.identity,
-              endpoint.generation == instance.generation.number
+    public func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey,
+                       admitting: () -> Bool) -> Bool {
+        guard let instance, !instance.generation.isClosed, isHealthy(instance.provision),
+              healthCheck?() ?? true else { return false }
+        guard endpoint == instance.provision.endpoint,
+              endpoint.generation == instance.generation.number,
+              admitting()
         else { return false }
         consumers[key] = instance
         return true
@@ -201,6 +227,7 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
             && provision.endpoint.state == .ready
             && provision.endpoint.loopbackHost == "127.0.0.1"
             && provision.endpoint.port != 0
+            && (provision.endpoint.transport != .socks5 || provision.endpoint.port != 1080)
             && !provision.endpoint.identity.isEmpty
     }
 

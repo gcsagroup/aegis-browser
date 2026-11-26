@@ -19,7 +19,7 @@ final class AccessHTTPTunnelBridgeTests: XCTestCase {
         let registration = try registration(port: port)
         let opener = RecordingOpener()
         let listener = try AccessHTTPInboundListener(registration: registration, tunnels: opener)
-        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        try await listener.start()
         defer { try? listener.stop() }
 
         let received = expectation(description: "origin bytes")
@@ -67,7 +67,7 @@ final class AccessHTTPTunnelBridgeTests: XCTestCase {
         let registration = try registration(port: port)
         let opener = RecordingOpener()
         let listener = try AccessHTTPInboundListener(registration: registration, tunnels: opener)
-        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        try await listener.start()
         defer { try? listener.stop() }
         let established = expectation(description: "200")
         let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
@@ -99,25 +99,26 @@ final class AccessHTTPTunnelBridgeTests: XCTestCase {
 
     func testDialFailureClosesWithoutAnotherAttempt() async throws {
         let port: UInt16 = 18_221
-        let registration = try registration(port: port)
-        let listener = try AccessHTTPInboundListener(registration: registration, tunnels: FailingOpener())
-        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        let opener = FailingOpener()
+        let listener = try await makeListener(port: port, tunnels: opener)
         defer { try? listener.stop() }
-        let response = expectation(description: "200 then close")
+        let received = expectation(description: "peer observes the failed CONNECT")
         let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
-        connection.stateUpdateHandler = { state in
-            guard case .ready = state else { return }
-            let payload = Data("CONNECT example.com:80 HTTP/1.1\r\n\r\n".utf8)
+        defer { connection.cancel() }
+        connection.stateUpdateHandler = { [weak connection] state in
+            guard case .ready = state, let connection else { return }
+            let payload = Data("CONNECT probe.invalid:443 HTTP/1.1\r\n\r\n".utf8)
             connection.send(content: payload, completion: .contentProcessed { _ in })
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 1_024) { data, _, _, _ in
-                let text = String(data: data ?? Data(), encoding: .utf8) ?? ""
-                if text.contains("200") { response.fulfill() }
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1_024) { data, _, isComplete, error in
+                XCTAssertTrue(isComplete || error != nil, "Expected peer EOF or a receive error")
+                XCTAssertTrue(data?.isEmpty != false, "A failed dial must close without sending a CONNECT response")
+                received.fulfill()
             }
         }
         connection.start(queue: .global())
-        await fulfillment(of: [response], timeout: 3)
-        connection.cancel()
-        XCTAssertEqual(listener.establishedConnectCount, 1)
+        await fulfillment(of: [received], timeout: 3)
+        XCTAssertEqual(opener.opens, 1)
+        XCTAssertEqual(listener.establishedConnectCount, 0)
     }
 
     func testUploadWaitsForWriteBeforeReadingAgainAndDrainsFinalBytes() async throws {
@@ -240,7 +241,7 @@ final class AccessHTTPTunnelBridgeTests: XCTestCase {
 
     private func makeListener(port: UInt16, tunnels: any AccessHTTPTunnelOpening) async throws -> AccessHTTPInboundListener {
         let listener = try AccessHTTPInboundListener(registration: try registration(port: port), tunnels: tunnels)
-        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        try await listener.start()
         return listener
     }
 
@@ -280,7 +281,7 @@ final class AccessHTTPTunnelBridgeTests: XCTestCase {
             transport: .http,
             endpoint: try AccessEndpoint(host: "127.0.0.1", port: port),
             credentialSlot: try AccessCredentialSlot(id: "cred-tunnel-\(port)"),
-            lease: try AccessLease(generation: 1, expiresAt: Date(timeIntervalSince1970: 1_700_000_060))
+            lease: try AccessLease(generation: 1, expiresAt: Date().addingTimeInterval(60))
         )
     }
 }
@@ -311,8 +312,12 @@ private final class TextHandler: @unchecked Sendable {
     func call(_ connection: NWConnection, _ text: String) { body(connection, text) }
 }
 
-private final class FailingOpener: AccessHTTPTunnelOpening, @unchecked Sendable {
+private final class FailingOpener: AccessHTTPTunnelOpening {
+    private let lock = OSAllocatedUnfairLock(initialState: 0)
+    var opens: Int { lock.withLock { $0 } }
+
     func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
-        throw CancellationError()
+        lock.withLock { $0 += 1 }
+        throw AccessHTTPRealityPathError.dialFailed("fixture")
     }
 }

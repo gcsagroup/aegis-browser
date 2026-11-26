@@ -59,6 +59,7 @@ async function requireDeliveryBot(user, run, environment, identityApi, token, co
   const deliveryInputsValid = inputs && typeof inputs === 'object' && !Array.isArray(inputs) &&
     inputs.approved_source_sha === environment.GITHUB_SHA &&
     ['Package', 'Package and upload', 'Draft', 'Status', 'Wait', 'Release Wait'].includes(inputs.operation) &&
+    (!inputs.private_alpha || inputs.private_alpha === 'no') &&
     (!inputs.private_beta || inputs.private_beta === 'no');
   requireValue(inputs && inputs.approved_source_sha === environment.GITHUB_SHA &&
     (releaseContext ? releaseInputsValid : deliveryInputsValid), 'Bot operation and approved source inputs required');

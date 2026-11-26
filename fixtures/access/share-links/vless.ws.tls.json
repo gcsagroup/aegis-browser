@@ -1,0 +1,24 @@
+{
+  "profileKey": "vless.ws.tls",
+  "aliases": ["ws_tls_compat", "vless_ws_tls"],
+  "legacyOutboundTag": "internal_vless_ws_tls",
+  "share": "vless://00000000-0000-4000-8000-000000000002@192.0.2.20:8443?type=ws&security=tls&host=ws.example.com&fp=chrome&sni=cert.example.com&path=%2Fws%3Ftoken%3D%2574est-value%26opaque%3D%25E9&encryption=none&alpn=http%2F1.1#synthetic-ws",
+  "rejectedQuerySuffixes": ["&allowInsecure=0", "&security=none", "&unknown=1"],
+  "embeddedConfig": {
+    "log": {"loglevel": "none", "access": "none", "error": "none"},
+    "inbounds": [],
+    "outbounds": [{
+      "tag": "internal_vless_ws_tls",
+      "protocol": "vless",
+      "settings": {"vnext": [{
+        "address": "192.0.2.20", "port": 8443,
+        "users": [{"id": "00000000-0000-4000-8000-000000000002", "encryption": "none"}]
+      }]},
+      "streamSettings": {
+        "network": "ws", "security": "tls",
+        "tlsSettings": {"serverName": "cert.example.com", "fingerprint": "chrome", "useSystemCA": true, "alpn": ["http/1.1"]},
+        "wsSettings": {"host": "ws.example.com", "path": "/ws?token=%74est-value&opaque=%E9"}
+      }
+    }]
+  }
+}

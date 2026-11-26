@@ -22,7 +22,7 @@
 不创建正式 tag 或 Release。
 
 本轮本地证据目录：
-`/Users/lazy/Projects/GCSA-aegis/.artifacts/chromium-upstream/continue-20261108/`。
+`.artifacts/chromium-upstream/continue-20261108/`。
 其中 `desktop-304/result.json`、`android-304/result.json`、
 `windows-attempt-02/result.json`、`ci-tests-fixed-metadata.log`、
 `quality-fast-304.log` 分别保留本轮验证结果；源码切换及后续构建状态另行记录。

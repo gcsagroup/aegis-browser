@@ -39,7 +39,7 @@ public struct AccessProxyRegistrationFixture: Codable, Sendable, Equatable, Hash
         guard Self.isNumericLoopback(loopbackHost) else {
             throw AccessProxyConfigurationError.nonLoopbackHost(loopbackHost)
         }
-        guard port != 0 else {
+        guard port != 0, transport != .socks5 || port != 1080 else {
             throw AccessProxyConfigurationError.invalidPort
         }
         self.registrationId = trimmedId

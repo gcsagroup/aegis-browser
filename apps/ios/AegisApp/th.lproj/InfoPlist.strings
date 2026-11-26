@@ -1,3 +1,3 @@
-"NSCameraUsageDescription" = "Aegis จะขออนุญาตก่อนที่เว็บไซต์จะใช้กล้องของคุณ";
+"NSCameraUsageDescription" = "Aegis ขออนุญาตก่อนที่เว็บไซต์จะใช้กล้อง หรือก่อนที่คุณจะสแกนรหัส QR ของโหนดทดสอบ";
 "NSMicrophoneUsageDescription" = "Aegis จะขออนุญาตก่อนที่เว็บไซต์จะใช้ไมโครโฟนของคุณ";
 "Markdown 文档" = "เอกสาร Markdown";

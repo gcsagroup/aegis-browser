@@ -1,11 +1,17 @@
+import CryptoKit
 import Foundation
 
 /// PSL 的精确、通配与例外规则；保留私有后缀，避免将共享托管的不同租户视为同站。
 public enum RegisteredDomain {
     private final class ResourceAnchor: NSObject { }
+    private static let data: Data? = {
+        guard let url = Bundle(for: ResourceAnchor.self).url(forResource: "public_suffix_list", withExtension: "dat")
+        else { return nil }
+        return try? Data(contentsOf: url)
+    }()
+
     private static let rules: Set<String> = {
-        guard let url = Bundle(for: ResourceAnchor.self).url(forResource: "public_suffix_list", withExtension: "dat"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        guard let data, let text = String(data: data, encoding: .utf8) else { return [] }
         return Set(text.split(separator: "\n").compactMap { line in
             let rule = line.trimmingCharacters(in: .whitespaces)
             guard !rule.isEmpty, !rule.hasPrefix("//") else { return nil }
@@ -13,6 +19,74 @@ public enum RegisteredDomain {
             return normalizedHost(String(rule.dropFirst(prefix.count))).map { prefix + $0 }
         })
     }()
+
+    private static let pinnedSHA256 = "ba7d836c0ea57a8bcf9f1fcb868066a7554bed029b441ecc6204ad8494a32612"
+
+    private struct GeoSiteSuffixList {
+        let knownRoots: Set<String>
+        let nestedBoundaries: Set<String>
+    }
+
+    private static let strictGeoSiteList: GeoSiteSuffixList? = {
+        guard let data, SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == pinnedSHA256,
+              !rules.isEmpty else { return nil }
+        var knownRoots: Set<String> = []
+        var nested: Set<String> = []
+        for rule in rules {
+            let wildcard = rule.hasPrefix("*.")
+            var suffix = rule.dropFirst(wildcard ? 2 : (rule.hasPrefix("!") ? 1 : 0))
+            if wildcard { nested.insert(String(suffix)) }
+            while let dot = suffix.firstIndex(of: ".") {
+                suffix = suffix[suffix.index(after: dot)...]
+                nested.insert(String(suffix))
+            }
+            knownRoots.insert(String(suffix))
+        }
+        return GeoSiteSuffixList(knownRoots: knownRoots, nestedBoundaries: nested)
+    }()
+
+    /// Available only when the exact pinned ICANN and PRIVATE resource loaded.
+    public static var verifiedGeoSiteSuffixListSHA256: String? {
+        strictGeoSiteList == nil ? nil : pinnedSHA256
+    }
+
+    /// Checks an already-canonical release rule. Broad rules cannot enclose
+    /// another ICANN or PRIVATE boundary, including a wildcard suffix.
+    public static func allowsGeoSiteHost(_ host: String, includingDescendants: Bool) -> Bool {
+        guard let list = strictGeoSiteList, isCanonicalDNSName(host, allowsSingleLabel: false),
+              !host.hasSuffix(".local"), !host.hasSuffix(".localhost"),
+              host != "home.arpa", !host.hasSuffix(".home.arpa") else { return false }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard let root = labels.last, list.knownRoots.contains(String(root)),
+              labels.count > suffixLength(labels.map(String.init)),
+              !includingDescendants || !list.nestedBoundaries.contains(host) else { return false }
+        return true
+    }
+
+    /// Syntax and IDNA only. A negative suffix rule can cover a PSL boundary.
+    public static func isCanonicalDNSName(_ host: String, allowsSingleLabel: Bool) -> Bool {
+        guard (1...253).contains(host.utf8.count) else { return false }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard (allowsSingleLabel || labels.count >= 2),
+              labels.allSatisfy({ label in
+                  (1...63).contains(label.utf8.count) && label.first != "-" && label.last != "-"
+                      && label.utf8.allSatisfy { (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
+              })
+        else { return false }
+        let idnaLabels = labels.filter { $0.hasPrefix("xn--") }
+        guard !idnaLabels.isEmpty else { return true }
+        // Validate Bidi constraints across the whole name and require each
+        // A-label to decode, even when other labels decode successfully.
+        return idnaRoundTrip(host) && idnaLabels.allSatisfy { idnaRoundTrip("\($0).invalid") }
+    }
+
+    private static func idnaRoundTrip(_ host: String) -> Bool {
+        guard let unicode = URLComponents(string: "https://\(host)/")?.host,
+              unicode.utf8.contains(where: { $0 >= 128 }),
+              var components = URLComponents(string: "https://example.com/") else { return false }
+        components.host = unicode
+        return components.url?.host == host
+    }
 
     public static func normalizedHost(_ raw: String) -> String? {
         let host = raw.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
@@ -31,14 +105,19 @@ public enum RegisteredDomain {
         guard let host = normalizedHost(raw) else { return nil }
         if host.contains(":") || host.split(separator: ".").allSatisfy({ Int($0) != nil }) { return host }
         let labels = host.split(separator: ".").map(String.init)
+        let suffixCount = suffixLength(labels)
+        guard labels.count > suffixCount else { return nil }
+        return labels.suffix(suffixCount + 1).joined(separator: ".")
+    }
+
+    private static func suffixLength(_ labels: [String]) -> Int {
         var suffixCount = 1
         for index in labels.indices {
             let suffix = labels[index...].joined(separator: ".")
-            if rules.contains("!" + suffix) { suffixCount = labels.count - index - 1; break }
+            if rules.contains("!" + suffix) { return labels.count - index - 1 }
             if rules.contains(suffix) { suffixCount = max(suffixCount, labels.count - index) }
             if index > 0, rules.contains("*." + suffix) { suffixCount = max(suffixCount, labels.count - index + 1) }
         }
-        guard labels.count > suffixCount else { return nil }
-        return labels.suffix(suffixCount + 1).joined(separator: ".")
+        return suffixCount
     }
 }

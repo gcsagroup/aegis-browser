@@ -82,7 +82,7 @@ def extract_verified_package_archive(bundle, destination, expected_digest):
     with zipfile.ZipFile(bundle) as zipped:
         rows = zipped.infolist()
         require(len(rows) == 1 and rows[0].filename == 'package.zip' and not rows[0].is_dir()
-                and not stat.S_ISLNK(rows[0].external_attr >> 16) and rows[0].file_size <= 1024 ** 3,
+                and not stat.S_ISLNK(rows[0].external_attr >> 16) and rows[0].file_size <= archive.MAX_MEMBER,
                 'Sealed package artifact must contain exactly one bounded package.zip file')
         destination.parent.mkdir(parents=True, exist_ok=True)
         with zipped.open(rows[0]) as source, destination.open('xb') as target:
@@ -108,10 +108,10 @@ def _require_fresh_observation(value, max_age_seconds=1800):
     require(-120 <= age <= max_age_seconds, 'Play VALID status is stale; run Release Wait again before publication')
 
 
-def _run_identity(run, expected_id, expected_sha, path):
+def _run_identity(run, expected_id, expected_sha, path, *, completed=True):
     return (run.get('id') == expected_id and run.get('run_attempt') == 1
             and run.get('head_sha') == expected_sha and run.get('head_branch') == 'main'
-            and run.get('status') == 'completed' and run.get('conclusion') == 'success'
+            and (not completed or (run.get('status') == 'completed' and run.get('conclusion') == 'success'))
             and run.get('event') == 'workflow_dispatch' and run.get('path') == path
             and run.get('repository', {}).get('id') == REPOSITORY_ID
             and run.get('repository', {}).get('full_name') == REPOSITORY
@@ -132,10 +132,32 @@ def _successful_job(run, name):
     return job
 
 
-def _package_jobs(run, run_id, sha):
+def _package_job(run, run_id, sha, *, same_run=False):
     path = run.get('path')
-    require(path in PREFIXES and _run_identity(run, run_id, sha, path), 'Package producer run identity/source differs')
-    return {name: _successful_job(run, PREFIXES[path] + name) for name in ('package', 'store')}
+    # A subsequent store or draft job can fail after an immutable package is
+    # recorded. Its own successful job is the authoritative producer.
+    require(path in PREFIXES and _run_identity(run, run_id, sha, path, completed=False)
+            and (same_run or (run.get('status') == 'completed' and run.get('conclusion') in {'success', 'failure'})),
+            'Package producer run identity/source differs')
+    return _successful_job(run, PREFIXES[path] + 'package')
+
+
+def verify_play_upload(plan, origin, intent, terminal, upload_run):
+    require(isinstance(intent, dict) and isinstance(terminal, dict), 'Permanent Play upload records are incomplete')
+    track = (intent.get('parameters') or {}).get('track')
+    expected = play.draft_intent(plan['version'], plan['build'], plan['profile'], origin['manifestSha256'], track)
+    result = terminal.get('result', {})
+    run_id = terminal.get('uploadRunId')
+    path = upload_run.get('path')
+    require(intent == expected and terminal.get('intent') == intent and result.get('status') == 'uploaded_draft'
+            and result.get('packageName') == APPLICATION_ID and result.get('track') == track
+            and result.get('releaseStatus') == 'draft' and result.get('versionCode') == int(plan['build']),
+            'Permanent upload intent/result does not identify this exact draft package')
+    require(is_id(run_id) and terminal.get('uploadRunAttempt') == 1 and path in PREFIXES
+            and _run_identity(upload_run, run_id, origin['sourceSha'], path),
+            'Play upload run differs from the approved package source')
+    _successful_job(upload_run, PREFIXES[path] + 'store')
+    return run_id
 
 
 def _exact_artifact(value, artifact_id, name, digest):
@@ -166,10 +188,10 @@ def validate_delivery_evidence(evidence, release_type, publication):
             and origin.get('sourceTree') == source_tree and origin.get('runIdLocal') == f'android-gh-{package_id}-1',
             'Package origin is not bound to current main and producer run')
     require(is_sha(origin.get('manifestSha256'), 64), 'Package manifest digest is invalid')
-    jobs = _package_jobs(package_run, package_id, source_sha)
+    producer = _package_job(package_run, package_id, source_sha)
     package_record = evidence.get('package_record', {})
     require(package_record.get('profile') == 'release' and package_record.get('version') == version
-            and package_record.get('build') == build and package_record.get('package_job_id') == jobs['package']['id']
+            and package_record.get('build') == build and package_record.get('package_job_id') == producer['id']
             and package_record.get('artifact_name') == f'android-package-{package_id}-1'
             and _exact_artifact(evidence.get('package_artifact', {}), package_record.get('artifact_id'),
                                 package_record.get('artifact_name'), package_record.get('artifact_digest')),
@@ -183,15 +205,8 @@ def validate_delivery_evidence(evidence, release_type, publication):
             and manifest.get('source') == {'sha': source_sha, 'tree': source_tree, 'dirty': False}
             and {row.get('name') for row in manifest.get('assets', []) if isinstance(row, dict)} >= {aab_name, symbols_name},
             'Product manifest identity/source/profile differs')
-    intent = evidence.get('upload_start', {})
-    track = (intent.get('parameters') or {}).get('track')
-    expected = play.draft_intent(version, build, 'release', origin['manifestSha256'], track)
-    terminal = evidence.get('upload_result', {})
-    result = terminal.get('result', {})
-    require(intent == expected and terminal.get('intent') == intent and result.get('status') == 'uploaded_draft'
-            and result.get('packageName') == APPLICATION_ID and result.get('track') == track
-            and result.get('releaseStatus') == 'draft',
-            'Permanent upload intent/result does not identify this exact draft package')
+    upload_id = verify_play_upload(manifest, origin, evidence.get('upload_start'),
+                                   evidence.get('upload_result'), evidence.get('upload_run', {}))
     status_run = evidence.get('status_run', {})
     status_id = status_run.get('id')
     require(is_id(status_id) and status_run.get('path') in PREFIXES
@@ -216,17 +231,21 @@ def validate_delivery_evidence(evidence, release_type, publication):
     _require_fresh_observation(remote.get('observedAt'))
     return {'channel': 'stable', 'profile': 'release', 'publication': publication, 'version': version, 'build': build,
             'source': {'sha': source_sha, 'tree': source_tree}, 'manifestSha256': origin['manifestSha256'],
-            'packageRunId': package_id, 'packageAttempt': 1, 'statusRunId': status_id,
+            'packageRunId': package_id, 'packageAttempt': 1, 'uploadRunId': upload_id, 'statusRunId': status_id,
             'playBuildIdentitySha256': remote['buildIdentitySha256'], 'playObservedAt': remote['observedAt'],
             'artifactId': package_record['artifact_id'], 'artifactDigest': package_record['artifact_digest'],
             'artifactName': package_record['artifact_name'], 'statusArtifactId': status_artifact['id'],
             'statusArtifactDigest': status_artifact['digest'], 'manifest': manifest}
 
 
-def build_release_plan(candidate):
+def _release_tag(candidate):
+    return f"android/{candidate['version']}-release.{candidate['build']}"
+
+
+def build_release_plan(candidate, *, stable_release_id=None):
     publication = candidate['publication']
     version, build = candidate['version'], candidate['build']
-    tag = f'android/{version}-release.{build}'
+    tag = _release_tag(candidate)
     payloads = archive.public_manifest_payloads(candidate['manifest'])
     asset_hashes = {row['name']: row['sha256'] for row in candidate['manifest']['assets']
                     if row['name'].endswith(('.aab', '.symbols.zip'))}
@@ -235,15 +254,18 @@ def build_release_plan(candidate):
     core = {'schema': 'aegis-android-github-release-plan-v1', 'channel': 'stable', 'profile': 'release',
             'version': version, 'build': build, 'tag': tag, 'source': candidate['source'],
             'manifestSha256': candidate['manifestSha256'], 'packageRunId': candidate['packageRunId'],
-            'packageAttempt': 1, 'statusRunId': candidate['statusRunId'],
+            'packageAttempt': 1, 'uploadRunId': candidate['uploadRunId'], 'statusRunId': candidate['statusRunId'],
             'playObservedAt': candidate['playObservedAt'], 'playBuildIdentitySha256': candidate['playBuildIdentitySha256'],
             'assets': dict(sorted(asset_hashes.items())), 'prerelease': publication == 'prerelease',
-            'makeLatest': publication == 'stable'}
+            'makeLatest': False}
     release_identity = {key: value for key, value in core.items()
                         if key not in {'statusRunId', 'playObservedAt', 'prerelease', 'makeLatest'}}
     release_identity_sha = hashlib.sha256(json.dumps(release_identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     core['evidenceArtifacts'] = {'package': {'id': candidate['artifactId'], 'digest': candidate['artifactDigest']},
                                  'status': {'id': candidate['statusArtifactId'], 'digest': candidate['statusArtifactDigest']}}
+    if publication == 'stable':
+        require(is_id(stable_release_id), 'Stable approval requires a positive GitHub Release ID')
+        core['releaseId'] = stable_release_id
     plan_sha = hashlib.sha256(json.dumps(core, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     body = ('Aegis Android public release\n\n'
             f'Channel: {label}\nSource: {candidate["source"]["sha"]}\nSource tree: {candidate["source"]["tree"]}\n'
@@ -336,6 +358,14 @@ def _get_jobs(run_id):
     return _api_items(f'actions/runs/{run_id}/attempts/1/jobs?per_page=100', 'jobs')
 
 
+def load_upload_run(record):
+    run_id = record.get('uploadRunId') if isinstance(record, dict) else None
+    require(is_id(run_id) and record.get('uploadRunAttempt') == 1, 'Successful first-attempt Play upload is required')
+    run = _get_run(run_id)
+    run['jobs'] = _get_jobs(run_id)
+    return run
+
+
 def _get_artifact(run_id, artifact_id, name):
     rows = _api_items(f'actions/runs/{run_id}/artifacts?per_page=100', 'artifacts')
     found = [row for row in rows if row.get('id') == artifact_id and row.get('name') == name]
@@ -381,8 +411,10 @@ def locate_package(version, build):
             'manifest_sha256': origin['manifestSha256']}
 
 
-def download_package_artifact(run_id, artifact_id, destination):
+def download_package_artifact(run_id, artifact_id, destination, *, expected_digest=None):
     artifact = _get_artifact(run_id, artifact_id, f'android-package-{run_id}-1')
+    require(expected_digest is None or artifact['digest'] == expected_digest,
+            'Package artifact digest differs from the permanent record')
     with tempfile.TemporaryDirectory(prefix='aegis-android-package-') as temp:
         bundle = Path(temp) / 'package-artifact.zip'
         _download_actions_artifact_zip(artifact_id, bundle)
@@ -406,7 +438,7 @@ def extract_package(version, build, bundle, destination):
     run_id = locator['package_run_id']
     producer = _get_run(run_id)
     producer['jobs'] = _get_jobs(run_id)
-    _package_jobs(producer, run_id, locator['source_sha'])
+    _package_job(producer, run_id, locator['source_sha'])
     archive.extract_flat(Path(bundle), Path(destination))
     manifest = archive.verify_package(destination, locator['source_sha'], locator['source_tree'], locator['manifest_sha256'])
     require(manifest.get('version') == version and manifest.get('build') == build and manifest.get('profile') == 'release',
@@ -428,6 +460,7 @@ def _collect_evidence(version, build, release_type, publication, status_run_id, 
     upload_result = store.read('upload-result', key)
     require(package_record is not None and upload_start is not None and upload_result is not None,
             'Permanent package/upload records are incomplete')
+    upload_run = load_upload_run(upload_result)
     package_artifact = _get_artifact(locator['package_run_id'], locator['package_artifact_id'], locator['package_artifact_name'])
     with tempfile.TemporaryDirectory(prefix='aegis-android-evidence-') as temp:
         status_path = Path(temp) / 'status.json'
@@ -440,6 +473,7 @@ def _collect_evidence(version, build, release_type, publication, status_run_id, 
     evidence = {'repository': repo, 'current_sha': current_sha, 'current_tree': current_tree,
                 'version': version, 'build': build, 'package_run': package_run, 'package_record': package_record,
                 'package_artifact': package_artifact, 'upload_start': upload_start, 'upload_result': upload_result,
+                'upload_run': upload_run,
                 'manifest': manifest, 'manifest_sha256': origin['manifestSha256'], 'status_run': status_run,
                 'status_artifact': status_artifact, 'status': status}
     candidate = validate_delivery_evidence(evidence, release_type, publication)
@@ -448,7 +482,10 @@ def _collect_evidence(version, build, release_type, publication, status_run_id, 
 
 
 def _write_plan(candidate, assets, path):
-    plan = build_release_plan(candidate)
+    release_id = None
+    if candidate['publication'] == 'stable':
+        release_id = _public_release_for_promotion(_release_tag(candidate))['id']
+    plan = build_release_plan(candidate, stable_release_id=release_id)
     require({asset['name']: asset['sha256'] for asset in assets} == plan['assets'], 'Public asset inventory differs from the plan')
     if path:
         Path(path).write_text(json.dumps(plan, indent=2, sort_keys=True) + '\n')
@@ -461,10 +498,11 @@ def _write_plan(candidate, assets, path):
             output.write(f"status_run_id={plan['statusRunId']}\n")
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
+        release_id_line = f"- GitHub Release ID: `{plan['releaseId']}`\n" if not plan['prerelease'] else ''
         with open(summary, 'a') as output:
             output.write(f"## Android GitHub Release preview\n\n- Channel: {plan['channel']}\n- Publication: "
-                         f"{'stable' if plan['makeLatest'] else 'prerelease'}\n- Tag: `{plan['tag']}`\n"
-                         f"- Source: `{plan['source']['sha']}`\n- Plan SHA-256: `{plan['planSha256']}`\n\n"
+                         f"{'prerelease' if plan['prerelease'] else 'stable'}\n- Tag: `{plan['tag']}`\n"
+                         f"{release_id_line}- Source: `{plan['source']['sha']}`\n- Plan SHA-256: `{plan['planSha256']}`\n\n"
                          f"### Proposed release notes\n\n{plan['body']}\n")
             for asset in assets:
                 output.write(f"| `{asset['name']}` | {asset['size']} | `{asset['sha256']}` |\n")
@@ -494,6 +532,28 @@ def _release_by_tag(tag, *, include_drafts=True):
         drafts = [row for row in _api_list('releases') if row.get('tag_name') == tag and row.get('draft') is True]
         require(len(drafts) <= 1, 'Multiple drafts exist for this release tag')
         return drafts[0] if drafts else None
+
+
+def _public_release_for_promotion(tag):
+    release = _release_by_tag(tag, include_drafts=False)
+    require(release is not None and is_id(release.get('id')) and release.get('tag_name') == tag
+            and release.get('draft') is False and type(release.get('prerelease')) is bool,
+            'Stable promotion requires the public prerelease or its promoted release')
+    return release
+
+
+def _read_release_by_id(plan, release_id):
+    fresh = _api(f'releases/{release_id}')
+    require(is_id(fresh.get('id')) and fresh['id'] == release_id and fresh.get('tag_name') == plan['tag'],
+            'Release ID or tag changed before publication')
+    return fresh
+
+
+def require_candidate_tag_source(tag, source_sha):
+    require(is_sha(source_sha) and isinstance(tag, str) and tag.startswith('candidate/android/'),
+            'Candidate draft needs an exact tag and source')
+    commit = _api('commits/' + quote('refs/tags/' + tag, safe=''))
+    require(commit.get('sha') == source_sha, 'Candidate tag no longer points at this source')
 
 
 def _tag_target(tag):
@@ -528,16 +588,19 @@ def _verify_release_tag(plan, tag):
             'Existing release tag conflicts with the exact source/plan')
 
 
-def _verify_release_assets(plan, release):
+def _verify_release_assets(plan, release, *, complete=False):
     expected = plan['assets']
     found = release.get('assets', [])
-    require(isinstance(found, list) and len(found) <= len(expected) and {item.get('name') for item in found} <= set(expected),
+    require(isinstance(found, list) and all(isinstance(item, dict) for item in found),
+            'Existing release asset inventory is invalid')
+    names = {item.get('name') for item in found}
+    require(len(names) == len(found) and names <= set(expected),
             'Existing release asset inventory conflicts with the exact plan')
-    if release['draft'] is False:
-        require({item.get('name') for item in found} == set(expected), 'Public release asset inventory is incomplete')
+    if complete or release['draft'] is False:
+        require(names == set(expected), 'Release asset inventory is incomplete')
     for item in found:
         require(item.get('state') == 'uploaded' and item.get('digest') == 'sha256:' + expected[item['name']],
-                'Existing release asset digest conflicts with the exact plan: ' + item.get('name', '?'))
+                'Existing release asset digest conflicts with the exact plan: ' + item['name'])
 
 
 def _verify_existing_release(plan, release, tag):
@@ -546,12 +609,12 @@ def _verify_existing_release(plan, release, tag):
     _verify_release_assets(plan, release)
 
 
-def _verify_latest_stable(plan, release):
-    if not plan['makeLatest']:
+def _verify_release_is_off_latest(release):
+    try:
+        latest = _api('releases/latest')
+    except NotFoundError:
         return
-    latest = _api('releases/latest')
-    require(latest.get('id') == release.get('id') and latest.get('tag_name') == plan['tag'],
-            'Stable release did not become the repository Latest release')
+    require(latest.get('id') != release.get('id'), 'Android release is occupying the repository Latest release')
 
 
 def _create_tag(plan, api):
@@ -633,26 +696,26 @@ def _check_approval(plan, current_run_id):
 def preview_release(plan):
     _verify_tag_ruleset()
     existing_tag = _tag_target(plan['tag'])
-    release = _release_by_tag(plan['tag'], include_drafts=False)
-    if release is not None:
-        if plan['makeLatest'] and release.get('prerelease') is True:
-            require(release.get('draft') is False and release.get('tag_name') == plan['tag'],
-                    'Stable promotion requires the public prerelease')
+    if not plan['prerelease']:
+        release = _public_release_for_promotion(plan['tag'])
+        require(release['id'] == plan['releaseId'], 'GitHub Release ID changed during stable preview')
+        if release['prerelease']:
             _verify_release_tag(plan, plan['tag'])
             _verify_release_assets(plan, release)
         else:
             _verify_existing_release(plan, release, plan['tag'])
-    elif existing_tag is not None:
-        require(existing_tag['target_sha'] == plan['source']['sha'] and existing_tag['object_type'] == 'commit'
-                and existing_tag['message'] == _expected_tag_message(plan),
-                'Conflicting tag exists; release preview is blocked')
-    if plan['makeLatest']:
-        require(release is not None and release.get('draft') is False,
-                'Stable promotion requires the public prerelease')
         _production_environment_config()
+    else:
+        release = _release_by_tag(plan['tag'], include_drafts=False)
+        if release is not None:
+            _verify_existing_release(plan, release, plan['tag'])
+        elif existing_tag is not None:
+            require(existing_tag['target_sha'] == plan['source']['sha'] and existing_tag['object_type'] == 'commit'
+                    and existing_tag['message'] == _expected_tag_message(plan),
+                    'Conflicting tag exists; release preview is blocked')
     return {'tag': plan['tag'], 'existingTag': existing_tag is not None, 'existingRelease': release is not None,
             'draftStatus': 'visible-public-release' if release else 'unverified',
-            'productionEnvironmentVerified': bool(plan['makeLatest'])}
+            'productionEnvironmentVerified': not plan['prerelease']}
 
 
 def _assert_current_release_source(plan):
@@ -683,32 +746,30 @@ def _upload_asset_once(release_id, asset):
 
 def _promote_to_stable(plan):
     _assert_current_release_source(plan)
-    release = _release_by_tag(plan['tag'], include_drafts=False)
-    require(release is not None, 'Publish the prerelease before promoting it to the stable release')
-    release_id = release.get('id')
-    require(is_id(release_id) and release.get('draft') is False and release.get('tag_name') == plan['tag'],
-            'Stable promotion requires the public prerelease')
+    release_id = plan['releaseId']
+    require(is_id(release_id), 'Stable approval requires a positive GitHub Release ID')
+    release = _public_release_for_promotion(plan['tag'])
+    require(release['id'] == release_id, 'Public Release ID differs from the approved stable plan')
     _verify_release_tag(plan, plan['tag'])
     _verify_release_assets(plan, release)
     if release.get('prerelease') is False:
         _verify_existing_release(plan, release, plan['tag'])
-        _verify_latest_stable(plan, release)
+        _verify_release_is_off_latest(release)
         return release
-    require(release.get('prerelease') is True, 'Only a public prerelease can be promoted')
     _check_approval(plan, os.environ['GITHUB_RUN_ID'])
-    staged = _api(f'releases/{release_id}')
-    require(staged.get('id') == release_id and staged.get('draft') is False and staged.get('prerelease') is True,
-            'Prerelease changed before promotion')
     _verify_release_tag(plan, plan['tag'])
-    _verify_release_assets(plan, staged)
     _assert_release_write_allowed(plan)
+    staged = _read_release_by_id(plan, release_id)
+    require(staged.get('draft') is False and staged.get('prerelease') is True,
+            'Prerelease changed before promotion')
+    _verify_release_assets(plan, staged)
     _api(f'releases/{release_id}', {'name': plan['name'], 'body': plan['body'], 'draft': False,
-                                    'prerelease': False, 'make_latest': 'true'}, method='PATCH')
-    reread = _release_by_tag(plan['tag'])
-    require(reread is not None and reread.get('id') == release_id and reread.get('draft') is False
-            and reread.get('prerelease') is False, 'Promoted release cannot be read back')
+                                    'prerelease': False, 'make_latest': 'false'}, method='PATCH')
+    reread = _public_release_for_promotion(plan['tag'])
+    require(reread['id'] == release_id and reread['prerelease'] is False,
+            'Promoted release cannot be read back')
     _verify_existing_release(plan, reread, plan['tag'])
-    _verify_latest_stable(plan, reread)
+    _verify_release_is_off_latest(reread)
     print(json.dumps({'state': 'promoted-and-verified', 'tag': plan['tag'], 'releaseId': release_id, 'url': reread.get('html_url')}))
     return reread
 
@@ -717,7 +778,7 @@ def publish_release(plan, assets):
     require(plan.get('planSha256') == os.environ.get('EXPECTED_PLAN_SHA256'),
             'Post-approval evidence differs from the reviewed release plan')
     _verify_tag_ruleset()
-    if plan['makeLatest']:
+    if not plan['prerelease']:
         _check_approval(plan, os.environ['GITHUB_RUN_ID'])
         return _promote_to_stable(plan)
     _assert_current_release_source(plan)
@@ -731,12 +792,21 @@ def publish_release(plan, assets):
     _verify_existing_release(plan, release, plan['tag'])
     release_id = release.get('id')
     require(is_id(release_id), 'Exact release ID is required for staging')
+
+    def read_draft(*, complete=False):
+        _verify_release_tag(plan, plan['tag'])
+        fresh = _read_release_by_id(plan, release_id)
+        require(fresh.get('draft') is True, 'Exact release draft moved during staging')
+        _verify_release_metadata(plan, fresh)
+        _verify_release_assets(plan, fresh, complete=complete)
+        return fresh
+
     if release['draft']:
-        existing = {item['name'] for item in release['assets']}
         for asset in assets:
-            if asset['name'] in existing:
-                continue
             _assert_release_write_allowed(plan)
+            current = read_draft()
+            if asset['name'] in {item['name'] for item in current['assets']}:
+                continue
             try:
                 _upload_asset_once(release_id, asset)
             except (OSError, ValueError, http.client.HTTPException) as error:
@@ -745,20 +815,14 @@ def publish_release(plan, assets):
                 if (len(match) != 1 or match[0].get('state') != 'uploaded'
                         or match[0].get('digest') != 'sha256:' + asset['sha256']):
                     raise ValueError('Asset upload outcome unknown; reconcile draft before retrying: ' + asset['name']) from error
-        _assert_current_release_source(plan)
-        _verify_release_tag(plan, plan['tag'])
-        staged = _api(f'releases/{release_id}')
-        require(staged.get('id') == release_id and staged.get('draft') is True, 'Exact release draft moved during staging')
-        _verify_release_metadata(plan, staged)
-        _verify_release_assets(plan, staged)
-        require({item.get('name') for item in staged['assets']} == set(plan['assets']), 'Staged asset inventory is incomplete')
         _assert_release_write_allowed(plan)
+        read_draft(complete=True)
         _api(f'releases/{release_id}', {'draft': False, 'make_latest': 'false'}, method='PATCH')
     reread = _release_by_tag(plan['tag'])
     require(reread is not None and reread.get('id') == release_id and reread.get('draft') is False,
             'Published release cannot be read back')
     _verify_existing_release(plan, reread, plan['tag'])
-    _verify_latest_stable(plan, reread)
+    _verify_release_is_off_latest(reread)
     print(json.dumps({'state': 'published-and-verified', 'tag': plan['tag'], 'releaseId': release_id, 'url': reread.get('html_url')}))
     return reread
 

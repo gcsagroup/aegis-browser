@@ -57,6 +57,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Run AccessKit simulator tests
+        env:
+          AEGIS_IOS_ACCESS_TEST_CLASSES: ''
         run: bash scripts/release/ios-access-tests.sh
   internal:
     name: internal-archive
@@ -90,6 +92,7 @@ jobs:
         id: access_tests
         env:
           ALPHA_ROOT: ${{ steps.archive.outputs.root }}
+          AEGIS_IOS_ACCESS_TEST_CLASSES: ''
         run: |
           set -euo pipefail
           bash scripts/release/ios-access-tests.sh 2>&1 | tee "$ALPHA_ROOT/access-tests.log"

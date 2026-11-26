@@ -7,8 +7,8 @@ import tempfile
 from ios_embedded_core import verify_bundle
 
 
-def check(bundle, products, derived, platform):
-    verify_bundle(bundle, products, derived, platform)
+def check(bundle, products, derived, platform, *, owned_linker_paths=False):
+    verify_bundle(bundle, products, derived, platform, owned_linker_paths=owned_linker_paths)
     with tempfile.TemporaryDirectory() as directory:
         clone = Path(directory) / bundle.name
         frame = Path("Frameworks/AccessKit.framework")
@@ -22,7 +22,7 @@ def check(bundle, products, derived, platform):
             if problem == "swapped":
                 copy2(bundle / "Frameworks/BrowserKit.framework/BrowserKit", carrier)
             try:
-                verify_bundle(clone, products, derived, platform)
+                verify_bundle(clone, products, derived, platform, owned_linker_paths=owned_linker_paths)
             except (FileNotFoundError, ValueError) as error:
                 print(f"Rejected {problem} core carrier: {error}")
             else:
@@ -34,5 +34,6 @@ if __name__ == "__main__":
     for argument in ["bundle", "products", "derived"]:
         parser.add_argument(argument, type=Path)
     parser.add_argument("platform", choices=("simulator", "device"))
+    parser.add_argument("--owned-linker-paths", action="store_true")
     args = parser.parse_args()
-    check(args.bundle, args.products, args.derived, args.platform)
+    check(args.bundle, args.products, args.derived, args.platform, owned_linker_paths=args.owned_linker_paths)

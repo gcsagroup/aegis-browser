@@ -36,6 +36,8 @@ class AccessAsyncRuleStore {
       base::OnceCallback<void(AsyncAccessStorePrepared)> completion);
   void Commit(PendingMutationRecord expected,
       base::OnceCallback<void(StoreResult<PendingMutationRecord>)> completion);
+  void Supersede(PendingMutationRecord expected,
+      base::OnceCallback<void(StoreStatus)> completion);
   void RecoverFailedMutation(PendingMutationRecord expected,
       base::OnceCallback<void(AsyncAccessStoreRestoration)> completion);
   void ReadCommitted(std::string partition,

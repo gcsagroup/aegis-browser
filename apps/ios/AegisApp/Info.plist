@@ -10,6 +10,8 @@
 	<string>$(AEGIS_ACCOUNT_SERVICE_ORIGIN)</string>
 	<key>AegisFirebaseChannel</key>
 	<string>$(AEGIS_FIREBASE_CHANNEL)</string>
+	<key>AegisAccessInternalOptions</key>
+	<string>$(AEGIS_ACCESS_INTERNAL_OPTIONS)</string>
 	<key>AegisAccessReleaseChannel</key>
 	<string>$(AEGIS_ACCESS_RELEASE_CHANNEL)</string>
 	<key>FirebaseAppDelegateProxyEnabled</key>
@@ -33,7 +35,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>在你明确同意后，向当前网站提供相机画面。</string>
+	<string>当网站请求使用相机，或你扫描测试节点二维码时，Aegis 会先征求你的许可。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>在你明确同意后，向当前网站提供麦克风音频。</string>
 	<key>NSAppTransportSecurity</key>

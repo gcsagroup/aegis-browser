@@ -1,9 +1,17 @@
 package embeddedcore
 
 import (
+	"encoding/json"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	clog "github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/infra/conf"
 )
 
 const freedomConfig = `{
@@ -42,6 +50,50 @@ func TestDialRequiresRunningInstance(t *testing.T) {
 	}
 }
 
+func TestStopAwaitsStreamCloseAlreadyRemovedFromRuntime(t *testing.T) {
+	runtime := NewRuntime()
+	if err := runtime.Start(freedomConfig); err != nil {
+		t.Fatal(err)
+	}
+	local, peer := net.Pipe()
+	defer peer.Close()
+	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	runtime.mu.Lock()
+	runtime.streams[1] = &streamHandle{conn: delayedCloseConn{local, entered, release}, cancel: func() {}}
+	runtime.mu.Unlock()
+	runtime.CloseStreamAsync(1)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("independent stream close did not start")
+	}
+	stopped := make(chan asyncResult, 1)
+	runtime.StopAsync(resultReceiver{stopped})
+	select {
+	case <-stopped:
+		t.Fatal("stop acknowledged before the detached stream finished closing")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	if result := awaitResult(t, stopped); result.failure != "" {
+		t.Fatal(result.failure)
+	}
+}
+
+type delayedCloseConn struct {
+	net.Conn
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (c delayedCloseConn) Close() error {
+	close(c.entered)
+	<-c.release
+	return c.Conn.Close()
+}
+
 // Thousands of reads exceed the practical dispatch-worker limit, but must not
 // prevent async write, another dial, close or stop callbacks from completing.
 func TestAsyncIOBeyondDispatchCapacity(t *testing.T) {
@@ -57,10 +109,10 @@ func TestAsyncIOBeyondDispatchCapacity(t *testing.T) {
 	ids := make([]int64, 0, count)
 	for i := 0; i < count; i++ {
 		a, b := net.Pipe()
-		id := nextID.Add(1)
-		mu.Lock()
-		streams[id] = &streamHandle{conn: observedReadConn{a, entered}, cancel: func() {}}
-		mu.Unlock()
+		id := legacy.nextID.Add(1)
+		legacy.mu.Lock()
+		legacy.streams[id] = &streamHandle{conn: observedReadConn{a, entered}, cancel: func() {}}
+		legacy.mu.Unlock()
 		peers = append(peers, b)
 		ids = append(ids, id)
 		ReadAsync(id, 1, resultReceiver{reads})
@@ -158,10 +210,10 @@ func TestAsyncWriteOwnsBorrowedArgument(t *testing.T) {
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
-	id := nextID.Add(1)
-	mu.Lock()
-	streams[id] = &streamHandle{conn: a, cancel: func() {}}
-	mu.Unlock()
+	id := legacy.nextID.Add(1)
+	legacy.mu.Lock()
+	legacy.streams[id] = &streamHandle{conn: a, cancel: func() {}}
+	legacy.mu.Unlock()
 	defer CloseStream(id)
 	written := make(chan asyncResult, 1)
 	input := []byte("original")
@@ -177,5 +229,235 @@ func TestAsyncWriteOwnsBorrowedArgument(t *testing.T) {
 	}
 	if r := awaitResult(t, written); r.failure != "" {
 		t.Fatal(r.failure)
+	}
+}
+
+func TestRuntimeOwnershipSeparatesStreamsAndStop(t *testing.T) {
+	first, second := NewRuntime(), NewRuntime()
+	if err := first.Start(freedomConfig); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Start(freedomConfig); err != nil {
+		t.Fatal(err)
+	}
+	defer first.Stop()
+	defer second.Stop()
+	a, b := net.Pipe()
+	defer b.Close()
+	first.streams[1] = &streamHandle{conn: a, cancel: func() {}}
+	if _, err := second.Read(1, 1); err == nil {
+		t.Fatal("another runtime must not read an owned stream")
+	}
+	second.CloseStream(1)
+	if _, err := first.lookup(1); err != nil {
+		t.Fatal("another runtime closed an owned stream")
+	}
+	if err := second.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if !first.IsRunning() {
+		t.Fatal("another runtime stopped first runtime")
+	}
+}
+
+func TestConcurrentRuntimeInitialization(t *testing.T) {
+	const count = 12
+	gate := make(chan struct{})
+	results := make(chan error, count)
+	runtimes := make([]*Runtime, count)
+	for i := range runtimes {
+		runtimes[i] = NewRuntime()
+		go func(runtime *Runtime) {
+			<-gate
+			results <- runtime.Start(freedomConfig)
+		}(runtimes[i])
+	}
+	close(gate)
+	for range count {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stopped sync.WaitGroup
+	for _, runtime := range runtimes {
+		stopped.Go(func() { _ = runtime.Stop() })
+	}
+	stopped.Wait()
+}
+
+func diagnosticConfig(t *testing.T, path, mask string, generation int64) string {
+	t.Helper()
+	var value map[string]any
+	if err := json.Unmarshal([]byte(freedomConfig), &value); err != nil {
+		t.Fatal(err)
+	}
+	value["log"] = map[string]any{"loglevel": "info", "access": "none", "error": path, "maskAddress": mask}
+	if generation != 0 {
+		value["aegisLogCaptureGeneration"] = generation
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func nativeLogRoot(t *testing.T) *os.Root {
+	t.Helper()
+	logs, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logs.Close() })
+	return logs
+}
+
+func requireNativeLog(t *testing.T, logs *os.Root, name, marker string) {
+	t.Helper()
+	clog.Record(&clog.GeneralMessage{Severity: clog.Severity_Info, Content: marker})
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		data, _ := logs.ReadFile(name)
+		if strings.Contains(string(data), marker) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("active native logger lost %q", marker)
+}
+
+func TestRotatedCaptureOutlivesRuntimeThatOpenedIt(t *testing.T) {
+	logs := nativeLogRoot(t)
+	const oldLog, resumedLog = "old.log", "resumed.log"
+	oldPath, resumedPath := filepath.Join(logs.Name(), oldLog), filepath.Join(logs.Name(), resumedLog)
+	first, second := NewRuntime(), NewRuntime()
+	if err := first.Start(diagnosticConfig(t, oldPath, "", 0)); err != nil {
+		t.Fatal(err)
+	}
+	defer first.Stop()
+	requireNativeLog(t, logs, oldLog, "old-capture-only")
+	if err := second.Start(diagnosticConfig(t, resumedPath, "", 0)); err != nil {
+		t.Fatal(err)
+	}
+	defer second.Stop()
+	if err := second.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if !first.IsRunning() || clog.GetSeverity() != clog.Severity_Info {
+		t.Fatal("expected surviving runtime and info logger")
+	}
+	requireNativeLog(t, logs, resumedLog, "surviving-runtime-marker")
+	if data, err := logs.ReadFile(resumedLog); err != nil || strings.Contains(string(data), "old-capture-only") {
+		t.Fatalf("old capture record reached the resumed sink: %v", err)
+	}
+}
+
+func TestQuietStartAndLoggerFailureKeepTheActiveNativeSink(t *testing.T) {
+	logs := nativeLogRoot(t)
+	const activeLog = "active.log"
+	path := filepath.Join(logs.Name(), activeLog)
+	first, quiet := NewRuntime(), NewRuntime()
+	if err := first.Start(diagnosticConfig(t, path, "", 0)); err != nil {
+		t.Fatal(err)
+	}
+	defer first.Stop()
+	if err := quiet.Start(diagnosticConfig(t, path, "invalid-mask", 0)); err == nil {
+		t.Fatal("expected a failed logging startup")
+	}
+	requireNativeLog(t, logs, activeLog, "after-failed-logging-start")
+	if err := quiet.Start(freedomConfig); err != nil {
+		t.Fatal(err)
+	}
+	defer quiet.Stop()
+	requireNativeLog(t, logs, activeLog, "while-quiet-runtime-is-live")
+	if err := quiet.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	requireNativeLog(t, logs, activeLog, "after-quiet-runtime-stop")
+}
+
+func TestLateStartCannotRestoreRetiredCapture(t *testing.T) {
+	logs := nativeLogRoot(t)
+	const oldLog, newLog = "retired.log", "resumed.log"
+	oldPath := filepath.Join(logs.Name(), oldLog)
+	newPath := filepath.Join(logs.Name(), newLog)
+	oldGeneration := NewLogCaptureGeneration()
+	oldConfig := diagnosticConfig(t, oldPath, "", oldGeneration)
+	RetireLogCaptureGeneration(oldGeneration)
+	late, resumed := NewRuntime(), NewRuntime()
+	defer late.Stop()
+	defer resumed.Stop()
+	if err := late.Start(oldConfig); err != nil || !late.IsRunning() {
+		t.Fatalf("retired capture prevented runtime startup: %v", err)
+	}
+	if severity := clog.GetSeverity(); severity != clog.Severity_Unknown {
+		t.Fatalf("retired capture installed a logger while off: %v", severity)
+	}
+	if err := late.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	newGeneration := NewLogCaptureGeneration()
+	RetireLogCaptureGeneration(oldGeneration) // old owner must not retire the new capture
+	if err := resumed.Start(diagnosticConfig(t, newPath, "", newGeneration)); err != nil {
+		t.Fatal(err)
+	}
+	if err := late.Start(oldConfig); err != nil || !late.IsRunning() {
+		t.Fatalf("late runtime did not start: %v", err)
+	}
+	requireNativeLog(t, logs, newLog, "after-late-start")
+	if err := resumed.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	requireNativeLog(t, logs, newLog, "after-new-runtime-stop")
+	if _, err := logs.Stat(oldLog); !os.IsNotExist(err) {
+		t.Fatalf("retired capture reopened: %v", err)
+	}
+}
+
+func TestQuietRuntimeAdvertisesDisabledSeverity(t *testing.T) {
+	runtime := NewRuntime()
+	if err := runtime.Start(freedomConfig); err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Stop()
+	if severity := clog.GetSeverity(); severity != clog.Severity_Unknown {
+		t.Fatalf("quiet runtime advertises %v instead of disabled", severity)
+	}
+}
+
+func TestRealityClientFieldAdmissionMatchesPinnedBuilder(t *testing.T) {
+	for _, test := range []struct{ fingerprint, spider, invalidField string }{
+		{"Chrome", "", ""}, {"random", "/", ""}, {"helloios_14", "/path%20name?q=1", ""},
+		{"unsafe", "", "fingerprint"}, {"HelloGolang", "", "fingerprint"}, {"unknown-hello", "", "fingerprint"},
+		{"chrome", "relative", "spiderX"}, {"chrome", "/bad%ZZ", "spiderX"}, {"chrome", "/bad\x00", "spiderX"},
+	} {
+		if field := ValidateRealityClientFields(test.fingerprint, test.spider); field != test.invalidField {
+			t.Errorf("fingerprint %q, spider %q: got %q, want %q", test.fingerprint, test.spider, field, test.invalidField)
+		}
+		// The pinned builder dereferences a nil URL for these malformed paths.
+		if test.spider == "/bad%ZZ" || test.spider == "/bad\x00" {
+			continue
+		}
+		config := conf.REALITYConfig{Fingerprint: test.fingerprint, SpiderX: test.spider,
+			PublicKey: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", ServerName: "example.invalid"}
+		if _, err := config.Build(); (err != nil) != (test.invalidField != "") {
+			t.Errorf("pinned builder diverged for %q, %q: %v", test.fingerprint, test.spider, err)
+		}
+	}
+}
+
+func TestManualRealityRejectsSpiderWorkControls(t *testing.T) {
+	for _, spider := range []string{
+		"/?p=1000000000", "/?c=1000000000", "/?t=1-1000000000", "/?i=1000000000", "/?r=1000000000",
+		"/?q=ordinary&%63=1", "/?c=&c=1000000000", "/?r", "/?q=%ZZ&c=1000000000",
+	} {
+		if got := ValidateRealityClientFields("chrome", spider); got != "spiderX" {
+			t.Errorf("manual spider %q: got %q, want spiderX", spider, got)
+		}
+	}
+	for _, spider := range []string{"", "/", "/path%20name?color=red&color=blue", "/?q=p%3D1%26c%3D2"} {
+		if got := ValidateRealityClientFields("chrome", spider); got != "" {
+			t.Errorf("manual spider %q: unexpected rejection %q", spider, got)
+		}
 	}
 }

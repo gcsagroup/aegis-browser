@@ -57,17 +57,20 @@ class AccessAsyncRuleStore::Worker {
   StoreResult<PendingMutationRecord> Commit(const PendingMutationRecord& expected) {
     return store_.CommitPreparedMutation(expected);
   }
-  AsyncAccessStoreRestoration RecoverFailedMutation(
-      const PendingMutationRecord& expected) {
+  StoreStatus Supersede(const PendingMutationRecord& expected) {
     const auto& partition = expected.owner.storage_partition_token;
     if (!initialized_.contains(partition) ||
         expected.owner.channel != store_.binding().channel() ||
         expected.owner.profile_token != store_.binding().runtime_profile_token())
-      return {.status = StoreStatus::kConflict, .detail = "mutation_owner_mismatch"};
-    const auto status = store_.SupersedePreparedMutation(expected.operation_id,
-                                                        expected.request_fingerprint);
+      return StoreStatus::kConflict;
+    return store_.SupersedePreparedMutation(expected.operation_id,
+                                            expected.request_fingerprint);
+  }
+  AsyncAccessStoreRestoration RecoverFailedMutation(
+      const PendingMutationRecord& expected) {
+    const auto status = Supersede(expected);
     if (status != StoreStatus::kValid) return {.status = status};
-    return ReserveCommitted(partition);
+    return ReserveCommitted(expected.owner.storage_partition_token);
   }
   StoreResult<StoredPolicySnapshot> ReadCommitted(const std::string& partition) {
     return store_.ReadCommittedSnapshot(partition);
@@ -110,6 +113,11 @@ void AccessAsyncRuleStore::Prepare(SiteGroupMutationRequest request,
 void AccessAsyncRuleStore::Commit(PendingMutationRecord expected,
     base::OnceCallback<void(StoreResult<PendingMutationRecord>)> completion) {
   worker_.AsyncCall(&Worker::Commit).WithArgs(std::move(expected))
+      .Then(std::move(completion));
+}
+void AccessAsyncRuleStore::Supersede(PendingMutationRecord expected,
+    base::OnceCallback<void(StoreStatus)> completion) {
+  worker_.AsyncCall(&Worker::Supersede).WithArgs(std::move(expected))
       .Then(std::move(completion));
 }
 void AccessAsyncRuleStore::RecoverFailedMutation(PendingMutationRecord expected,

@@ -7,6 +7,15 @@ SRC="$CHROMIUM_ROOT/src"
 OUT="${OUT_DIR:-$SRC/out/AegisAndroid}"
 ARGS_FILE="$ROOT_DIR/args/aegis-android.gn"
 
+bundle_profile=""
+if [[ "$#" -ne 0 ]]; then
+  if [[ "$#" != 2 || "$1" != --app-bundle || ! "$2" =~ ^(alpha|beta|release)$ ]]; then
+    echo "Usage: build-android.sh [--app-bundle alpha|beta|release]" >&2
+    exit 2
+  fi
+  bundle_profile="$2"
+fi
+
 need_gb="${AEGIS_ANDROID_MIN_FREE_GB:-80}"
 
 fail_host() {
@@ -30,10 +39,10 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 host_arch="$(uname -m)"
-if [[ "$host_arch" != "x86_64" ]]; then
-  if [[ "$host_arch" == "aarch64" && "${AEGIS_ANDROID_ALLOW_ARM64_HOST:-}" == "1" ]]; then
+if [[ "$host_arch" != x86_64 ]]; then
+  if [[ "$host_arch" == aarch64 && "${AEGIS_ANDROID_ALLOW_ARM64_HOST:-}" == "1" ]]; then
     echo "Experimental Linux ARM64 host; pinned x86-64 tools require working emulation." >&2
-  else
+  elif [[ -z "$bundle_profile" || ! "$host_arch" =~ ^(aarch64|arm64)$ || "${AEGIS_ANDROID_EXPERIMENTAL_ARM64:-}" != true ]]; then
     echo "Android 构建宿主必须为 x86-64 Linux；不自动改用旧版 QEMU 构建路径。" >&2
     echo "本地 ARM64（如 colima）需显式设置 AEGIS_ANDROID_ALLOW_ARM64_HOST=1。" >&2
     exit 2
@@ -61,6 +70,33 @@ fi
 # 旧实现会先覆盖 overlay，再直接复用旧 build.ninja，可能把 151 缓存
 # 和 153 产品输入混在一起。构建只接受已完成迁移且可重放的干净源码。
 python3 "$ROOT_DIR/scripts/verify-build-source.py" --source "$SRC" --platform android
+if [[ -n "$bundle_profile" ]]; then
+  if [[ ! "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]{0,15}$ || "${GITHUB_RUN_ATTEMPT:-}" != 1 ||
+        ! "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ||
+        "$OUT" != "$SRC/out/AegisAndroidDelivery-$GITHUB_RUN_ID-1" ||
+        -L "$SRC/out" || -e "$OUT" || -L "$OUT" ]]; then
+    echo "Android App Bundle requires a new output directory for this producer run." >&2
+    exit 1
+  fi
+  ensure_depot_tools_on_path
+  cd "$SRC"
+  mkdir -p out
+  mkdir "$OUT"
+  printf '%s\n%s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > "$OUT/.aegis-producer"
+  args="$(cat "$ARGS_FILE")"
+  if [[ "$bundle_profile" == release ]]; then
+    args="$(sed -E 's/^symbol_level = [0-9]+$/symbol_level = 1/' "$ARGS_FILE")"
+    if ! grep -qx 'symbol_level = 1' <<< "$args"; then
+      echo "Android Release requires effective native symbol generation." >&2
+      exit 1
+    fi
+  fi
+  args="$(printf '%s\n%s' "$args" 'debuggable_apks = false')"
+  gn gen "$OUT" --args="$args"
+  autoninja -C "$OUT" chrome_public_bundle
+  python3 "$ROOT_DIR/scripts/verify-build-source.py" --source "$SRC" --platform android
+  exit 0
+fi
 if [[ "$OUT" != "$SRC/out/AegisAndroid" || -L "$SRC/out" || -L "$OUT" ]]; then
   echo "Android 只使用固定的实际输出目录：$SRC/out/AegisAndroid" >&2
   exit 1

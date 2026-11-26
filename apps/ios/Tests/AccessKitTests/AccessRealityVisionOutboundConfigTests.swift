@@ -162,6 +162,96 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         XCTAssertTrue(restored.snapshot().contains("final.example:443"))
     }
 
+    func testSharedDiagnosticsKeepTheSurvivingCoreReaderAndAllSecretFilters() throws {
+        let log = AccessDiagnosticLog(pollInterval: .seconds(60))
+        defer { log.stop() }
+        let first = log.acquireShared(level: .info, secrets: ["first-secret.example"])
+        let second = log.acquireShared(level: .debug, secrets: ["second-secret.example"])
+        let path = try XCTUnwrap(first.path)
+        XCTAssertEqual(path, second.path)
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(second.level, .debug)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? writer.close() }
+        try writer.write(contentsOf: Data((
+            "2026/11/11 00:00:00 from local accepted //first-secret.example:443\n" +
+            "2026/11/11 00:00:00 from local accepted //second-secret.example:443\n" +
+            "2026/11/11 00:00:00 from local accepted //second-").utf8))
+        XCTAssertTrue(log.stop(lease: second))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        try writer.write(contentsOf: Data("secret.example:443\n2026/11/11 00:00:00 from local accepted //surviving.example:443\n".utf8))
+        XCTAssertTrue(log.stop(lease: first))
+        XCTAssertTrue(log.snapshot().contains("surviving.example:443"))
+        XCTAssertEqual(log.snapshot().components(separatedBy: "accepted [redacted]").count - 1, 2)
+        XCTAssertFalse(log.snapshot().contains("first-secret.example"))
+        XCTAssertFalse(log.snapshot().contains("second-secret.example"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    func testLateNativeRecordsStayRedactedInSharedCaptureAndRestoredHistory() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let log = AccessDiagnosticLog(storageDirectory: directory, pollInterval: .seconds(60))
+        let survivor = log.acquireShared(level: .info, secrets: [])
+        let retired = log.acquireShared(level: .info, secrets: ["c0decafe"])
+        addTeardownBlock { log.stop(lease: retired); log.stop(lease: survivor) }
+        let path = try XCTUnwrap(survivor.path)
+        XCTAssertEqual(retired.path, path)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? writer.close() }
+
+        // Model a native logger message still queued when the core releases
+        // its lease. No bytes for this message are in the FIFO at that point.
+        XCTAssertTrue(log.stop(lease: retired))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        try writer.write(contentsOf: Data((
+            "2026/11/11 00:00:00 from local accepted //C0DECAFE.example:443\n" +
+            "2026/11/11 00:00:01 from local accepted //survivor.example:443\n").utf8))
+        XCTAssertTrue(log.stop(lease: survivor))
+        try await log.flush()
+        let restored = AccessDiagnosticLog(storageDirectory: directory)
+        try await restored.flush()
+        for snapshot in [log.snapshot(), restored.snapshot()] {
+            XCTAssertTrue(snapshot.contains("accepted [redacted]"))
+            XCTAssertTrue(snapshot.contains("survivor.example:443"))
+            XCTAssertFalse(snapshot.lowercased().contains("c0decafe"))
+        }
+    }
+
+    func testWebSocketQueryDoesNotAlterSharedDiagnosticHistory() async throws {
+        let log = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { log.stop() }
+        let subscription = log.acquireShared(level: .info, secrets: [])
+        let subscriptionPath = try XCTUnwrap(subscription.path)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: subscriptionPath))
+        defer { try? writer.close() }
+        let prior = "2026/11/11 00:00:00 from local accepted //existing.example:443\n"
+        try writer.write(contentsOf: Data(prior.utf8))
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !log.snapshot().contains("existing.example:443"), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(log.snapshot().contains("2026/11/11 00:00:00 [Access] accepted existing.example:443"))
+
+        let node = try AccessVLESSWebSocketTLSParameters(address: "route.example", port: 443,
+            userID: "550e8400-e29b-41d4-a716-446655440000", serverName: "ws.example",
+            requestHost: "ws.example", path: "/local-upgrade-path?v=fixture-query-value", fingerprint: "", alpn: "")
+        let secrets = try AccessOutboundConfigRegistry.diagnosticSecrets(for: .vlessWebSocketTLS(node))
+        let webSocket = log.acquireShared(level: .info, secrets: secrets)
+        XCTAssertTrue(log.snapshot().contains("2026/11/11 00:00:00 [Access] accepted existing.example:443"))
+        try writer.write(contentsOf: Data((
+            "2026/11/11 00:00:01 [Error] transport/internet/websocket: upgrade error /local-upgrade-path?v=fixture-query-value\n" +
+            "2026/11/11 00:00:02 from local accepted https://ws.example/local-upgrade-path?v=fixture-query-value\n").utf8))
+        XCTAssertTrue(log.stop(lease: webSocket))
+        XCTAssertTrue(log.stop(lease: subscription))
+        let history = log.snapshot()
+        XCTAssertTrue(history.contains("existing.example:443"))
+        XCTAssertTrue(history.contains("ws.example:443"))
+        XCTAssertTrue(history.contains("details withheld"))
+        XCTAssertFalse(history.contains("local-upgrade-path"))
+        XCTAssertFalse(history.contains("?v="))
+    }
+
     func testStopDrainPreservesClearAndNoneDiscardBoundaries() throws {
         for disable in [false, true] {
             let log = AccessDiagnosticLog(pollInterval: .seconds(60))
@@ -177,6 +267,180 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
             if disable { XCTAssertEqual(log.snapshot(), "") }
             else { XCTAssertTrue(log.snapshot().contains("after-clear.example:443")) }
         }
+    }
+
+    func testActiveAndRetiredSecretLimitDisablesSharedCaptureUntilAllOwnersEnd() throws {
+        let log = AccessDiagnosticLog(pollInterval: .seconds(60))
+        let subscription = log.acquireShared(level: .info, secrets: ["subscription.invalid"])
+        defer { log.stop(lease: subscription) }
+        let originalPath = try XCTUnwrap(subscription.path)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: originalPath))
+        defer { try? writer.close() }
+
+        for index in 0..<255 {
+            let page = log.acquireShared(level: .info, secrets: ["retired-\(index).invalid"])
+            XCTAssertEqual(page.path, originalPath)
+            XCTAssertTrue(log.stop(lease: page))
+        }
+        try writer.write(contentsOf: Data("2026/11/11 00:00:00 from local accepted //retired-0.invalid:443\n".utf8))
+        XCTAssertTrue(log.stop(lease: log.acquireShared(level: .info, secrets: [])))
+        XCTAssertTrue(log.snapshot().contains("accepted [redacted]"))
+        XCTAssertFalse(log.snapshot().contains("retired-0.invalid"))
+        let overflow = log.acquireShared(level: .info, secrets: ["retired-overflow.invalid"])
+        XCTAssertNil(overflow.path)
+        XCTAssertTrue(log.unavailable)
+        XCTAssertTrue(log.stop(lease: overflow))
+
+        log.disableAndClear()
+        let blocked = log.acquireShared(level: .info, secrets: [])
+        defer { log.stop(lease: blocked) }
+        XCTAssertNil(blocked.path, "Off/On cannot reenable capture while an old core can still emit")
+        try writer.write(contentsOf: Data("2026/11/11 00:00:00 from local accepted //retired-overflow.invalid:443\n".utf8))
+        XCTAssertTrue(log.stop(lease: blocked))
+        XCTAssertTrue(log.stop(lease: subscription))
+        XCTAssertEqual(log.snapshot(), "")
+
+        let recovered = log.acquireShared(level: .info, secrets: [])
+        defer { log.stop(lease: recovered) }
+        XCTAssertNotEqual(try XCTUnwrap(recovered.path), originalPath)
+        XCTAssertFalse(log.unavailable)
+    }
+
+    func testDelayedRestoreDropsHistoryWhenItsRedactionLimitIsExceeded() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let line = "2026/11/11 00:00:00 [Access] accepted retired-0.invalid:443"
+        let history = directory.appendingPathComponent("history.json")
+        try JSONSerialization.data(withJSONObject: ["version": 1, "lines": [line]]).write(to: history)
+        let storageQueue = DispatchQueue(label: "access.restore.filter.limit.test")
+        storageQueue.suspend()
+        let log = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info, storageQueue: storageQueue)
+        for index in 0...256 {
+            let page = log.acquireShared(level: .none, secrets: ["retired-\(index).invalid"], disableCaptureWhenQuiet: false)
+            XCTAssertTrue(log.stop(lease: page))
+        }
+        storageQueue.resume()
+        try await log.flush()
+        XCTAssertEqual(log.snapshot(), "")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: history.path))
+    }
+
+    func testDisabledSharedCaptureKeepsLiveLeasesWhenLoggingResumes() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let log = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info, pollInterval: .seconds(60))
+        let subscription = log.acquireShared(level: .info, secrets: ["subscription-secret.example"])
+        defer { log.stop(lease: subscription) }
+        let path = try XCTUnwrap(subscription.path)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? writer.close() }
+        let retiredBeforeOff = log.acquireShared(level: .info, secrets: ["retired-before-off.invalid"])
+        XCTAssertTrue(log.stop(lease: retiredBeforeOff))
+        log.disableAndClear()
+        let quietPage = log.acquireShared(level: .none, secrets: ["quiet-secret.example"])
+        defer { log.stop(lease: quietPage) }
+        XCTAssertNil(quietPage.path)
+        XCTAssertEqual(quietPage.level, .none)
+        try writer.write(contentsOf: Data("2026/11/11 00:00:00 from local accepted //disabled.example:443\n".utf8))
+        let page = log.acquireShared(level: .info, secrets: ["page-secret.example"])
+        defer { log.stop(lease: page) }
+        let newPath = try XCTUnwrap(page.path)
+        XCTAssertNotEqual(newPath, path)
+        // These bytes were queued by the old native logger during Off, but did
+        // not reach its FIFO until after the new capture was enabled.
+        try writer.write(contentsOf: Data("2026/11/11 00:00:00 from local accepted //delayed-off.example:443\n".utf8))
+        let resumed = try FileHandle(forWritingTo: URL(fileURLWithPath: newPath))
+        defer { try? resumed.close() }
+        try resumed.write(contentsOf: Data((
+            "2026/11/11 00:00:00 from local accepted //subscription-secret.example:443\n" +
+            "2026/11/11 00:00:00 from local accepted //page-secret.example:443\n" +
+            "2026/11/11 00:00:00 from local accepted //quiet-secret.example:443\n" +
+            "2026/11/11 00:00:00 from local accepted //retired-before-off.invalid:443\n" +
+            "2026/11/11 00:00:00 from local accepted //resumed.example:443\n").utf8))
+        XCTAssertTrue(log.stop(lease: page))
+        XCTAssertTrue(log.stop(lease: quietPage))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        XCTAssertTrue(log.stop(lease: subscription))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newPath))
+        try await log.flush()
+        let restored = AccessDiagnosticLog(storageDirectory: directory)
+        try await restored.flush()
+        for snapshot in [log.snapshot(), restored.snapshot()] {
+            XCTAssertTrue(snapshot.contains("resumed.example:443"))
+            for hidden in ["disabled.example", "delayed-off.example", "subscription-secret.example",
+                           "page-secret.example", "quiet-secret.example", "retired-before-off.invalid"] {
+                XCTAssertFalse(snapshot.contains(hidden))
+            }
+        }
+    }
+
+    @MainActor
+    func testQuietCoreRedactsAfterAnotherCoreEnablesCaptureAndReusesSelectedSeverity() async throws {
+        let log = AccessDiagnosticLog(pollInterval: .seconds(60))
+        let quiet = PersistenceRecordingCore()
+        let debug = PersistenceRecordingCore()
+        let strict = PersistenceRecordingCore()
+        let quietOutbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: makeParameters(shortID: "1234abcd"))
+        let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: makeParameters(shortID: "abcdef01"))
+        let quietLease = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(
+            core: quiet, outbound: quietOutbound, diagnostics: log, level: .none)
+        addTeardownBlock { await quiet.stop(); log.stop(lease: quietLease) }
+        let debugLease = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(
+            core: debug, outbound: outbound, diagnostics: log, level: .debug)
+        addTeardownBlock { await debug.stop(); log.stop(lease: debugLease) }
+        let strictLease = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(
+            core: strict, outbound: outbound, diagnostics: log, level: .error)
+        addTeardownBlock { await strict.stop(); log.stop(lease: strictLease) }
+        let path = try XCTUnwrap(debugLease.path)
+        XCTAssertEqual(strictLease.path, path)
+        XCTAssertNil(quietLease.path)
+        for (core, level) in [(quiet, "none"), (debug, "debug"), (strict, "error")] {
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(core.configs.first)) as? [String: Any])
+            let config = try XCTUnwrap(json["log"] as? [String: String])
+            XCTAssertEqual(config["loglevel"], level)
+            XCTAssertEqual(config["error"], level == "none" ? "none" : path)
+        }
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? writer.close() }
+        try writer.write(contentsOf: Data((
+            "2026/11/11 00:00:00 from local accepted //filtered.example:443\n" +
+            "2026/11/11 00:00:00 [Error] proxy/vless/outbound: tunneling request to tcp:1234abcd.example:443 via tcp:abcdef01.example:443\n" +
+            "2026/11/11 00:00:00 [Error] proxy/vless/outbound: tunneling request to tcp:visible.example:443 via tcp:relay.example:443\n").utf8))
+        await strict.stop()
+        XCTAssertTrue(log.stop(lease: strictLease))
+        XCTAssertTrue(debug.isRunning)
+        XCTAssertTrue(quiet.isRunning)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        XCTAssertTrue(log.snapshot().contains("visible.example"))
+        XCTAssertFalse(log.snapshot().contains("filtered.example"))
+        XCTAssertFalse(log.snapshot().contains("1234abcd"))
+        XCTAssertFalse(log.snapshot().contains("abcdef01"))
+    }
+
+    @MainActor
+    func testQuietFixtureRegistersAgainstAnActiveCaptureWithoutClearingIt() async throws {
+        let log = AccessDiagnosticLog(pollInterval: .seconds(60))
+        let active = log.acquireShared(level: .info, secrets: [])
+        defer { log.stop(lease: active) }
+        let core = PersistenceRecordingCore()
+        let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: makeParameters(shortID: "f12e34a5"))
+        let quiet = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(
+            core: core, outbound: outbound, diagnostics: log, level: .none, disableCaptureWhenQuiet: false)
+        addTeardownBlock { await core.stop(); log.stop(lease: quiet) }
+        XCTAssertNil(quiet.path)
+        let path = try XCTUnwrap(active.path)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? writer.close() }
+        try writer.write(contentsOf: Data((
+            "2026/11/11 00:00:00 from local accepted //f12e34a5.example:443\n" +
+            "2026/11/11 00:00:00 from local accepted //still-capturing.example:443\n").utf8))
+        await core.stop()
+        XCTAssertTrue(log.stop(lease: quiet))
+        XCTAssertTrue(log.snapshot().contains("still-capturing.example"))
+        XCTAssertTrue(log.snapshot().contains("accepted [redacted]"))
+        XCTAssertFalse(log.snapshot().contains("f12e34a5"))
     }
 
     func testStartupCleanupRemovesAbandonedArchivesWithoutFollowingLinks() throws {
@@ -284,9 +548,9 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         let diagnostics = AccessDiagnosticLog()
         defer { diagnostics.stop() }
         let core = LogInitializationFailingCore(message: "failed to initialize error logger")
-        let capture = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(
+        let lease = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(
             core: core, outbound: outbound, diagnostics: diagnostics, level: .warning)
-        XCTAssertNil(capture)
+        addTeardownBlock { await core.stop(); diagnostics.stop(lease: lease) }
         XCTAssertTrue(diagnostics.unavailable)
         XCTAssertEqual(core.configs.count, 2)
         let first = try XCTUnwrap(JSONSerialization.jsonObject(with: core.configs[0]) as? [String: Any])
@@ -553,6 +817,11 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
     }
 
     func testDelayedRestoreRedactsCredentialsAfterCaptureStops() async throws {
+        try await assertDelayedRestoreRedactsCredentialsAfterCaptureStops(shared: false)
+        try await assertDelayedRestoreRedactsCredentialsAfterCaptureStops(shared: true)
+    }
+
+    private func assertDelayedRestoreRedactsCredentialsAfterCaptureStops(shared: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("access-stop-before-restore-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -563,8 +832,14 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         storageQueue.suspend()
         let log = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info, storageQueue: storageQueue)
         do {
-            let capture = try XCTUnwrap(log.start(level: .info, secrets: ["private"]))
-            XCTAssertTrue(log.stop(capture: capture))
+            if shared {
+                let lease = log.acquireShared(level: .info, secrets: ["private"])
+                XCTAssertNotNil(lease.path)
+                XCTAssertTrue(log.stop(lease: lease))
+            } else {
+                let capture = try XCTUnwrap(log.start(level: .info, secrets: ["private"]))
+                XCTAssertTrue(log.stop(capture: capture))
+            }
         } catch {
             storageQueue.resume()
             throw error
@@ -649,12 +924,11 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         let log = AccessDiagnosticLog(storageDirectory: invalidDirectory)
         let core = PersistenceRecordingCore()
         let outbound = try AccessRealityVisionOutboundConfigBuilder.build(parameters: makeParameters())
-        _ = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(core: core, outbound: outbound, diagnostics: log, level: .warning)
-        defer { log.stop() }
+        let lease = try await AccessEmbeddedProxyEntrySession.startCoreWithDiagnostics(core: core, outbound: outbound, diagnostics: log, level: .warning)
+        addTeardownBlock { await core.stop(); log.stop(lease: lease) }
         XCTAssertTrue(core.isRunning)
         // Queue a real filtered event so flush must attempt a write.
-        let capture = try XCTUnwrap(log.start(level: .warning, secrets: []))
-        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: capture.path))
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: XCTUnwrap(lease.path)))
         try writer.write(contentsOf: Data("2026/11/11 00:00:00 [Warning] core: Xray 26.11.9 started\n".utf8)); try writer.close()
         let deadline = Date().addingTimeInterval(2)
         while log.snapshot().isEmpty && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
@@ -792,9 +1066,136 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         ) { error in
             XCTAssertEqual(
                 error as? AccessRealityVisionOutboundConfigError,
-                .unsupportedNetwork("ws")
+                .fieldNotCanonical("root")
             )
         }
+    }
+
+    func testAlphaRouteIdentityComparesWireBytesNotCanonicalEquivalence() throws {
+        let base = try makeParameters()
+        func reality(_ spiderX: String) throws -> AccessRealityVisionParameters {
+            try AccessRealityVisionParameters(address: base.address, port: base.port, userID: base.userID,
+                serverName: base.serverName, publicKey: base.publicKey, shortID: base.shortID, spiderX: spiderX)
+        }
+        let composed = try reality("/caf\u{E9}"), decomposed = try reality("/cafe\u{301}")
+        XCTAssertEqual(composed, decomposed, "Swift String equality is canonical equivalence")
+        let lhs = AccessInternalTestNode.realityVision(composed), rhs = AccessInternalTestNode.realityVision(decomposed)
+        XCTAssertEqual(lhs, rhs)
+        XCTAssertTrue(lhs.isWireIdentical(to: .realityVision(try reality("/caf\u{E9}"))))
+        XCTAssertFalse(lhs.isWireIdentical(to: rhs))
+        XCTAssertFalse(rhs.isWireIdentical(to: lhs))
+    }
+
+    func testAlphaDiagnosticsRedactRelayAddressForEveryTransport() throws {
+        // Synthetic canonical X25519 public key (bytes 0...31, base64url without padding).
+        let reality = try makeParameters(address: "relay-reality.example",
+                                         publicKey: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")
+        let expandedIPv6 = "[2001:0db8:0000:0000:0000:0000:0000:0001]"
+        let mappedIPv6 = "0000:0000:0000:0000:0000:ffff:c000:0201"
+        let userID = reality.userID
+        let nodes: [(String, AccessInternalTestNode)] = [
+            ("relay-reality.example", .realityVision(reality)),
+            ("relay-ws.example", .vlessWebSocketTLS(try AccessVLESSWebSocketTLSParameters(address: "relay-ws.example",
+                port: 443, userID: userID, serverName: "cert.example", requestHost: "cert.example", path: "/inside",
+                fingerprint: "", alpn: ""))),
+            ("relay-tcp.example", .vlessTCPTLSVision(try AccessVLESSTCPTLSVisionParameters(address: "relay-tcp.example",
+                port: 443, userID: userID, serverName: "cert.example"))),
+            ("relay-grpc.example", .vlessGRPCReality(try AccessVLESSGRPCRealityParameters(address: "relay-grpc.example",
+                port: 443, userID: userID, serverName: "cert.example", publicKey: reality.publicKey,
+                shortID: reality.shortID, serviceName: "FixtureService"))),
+            ("[2001:db8::1]", .realityVision(try makeParameters(address: expandedIPv6))),
+            ("[2001:db8::1]", .vlessWebSocketTLS(try AccessVLESSWebSocketTLSParameters(address: expandedIPv6,
+                port: 443, userID: userID, serverName: "cert.example", requestHost: "cert.example", path: "/inside",
+                fingerprint: "", alpn: ""))),
+            ("192.0.2.1", .vlessTCPTLSVision(try AccessVLESSTCPTLSVisionParameters(address: mappedIPv6,
+                port: 443, userID: userID, serverName: "cert.example"))),
+            ("[::ffff:192.0.2.1]", .vlessGRPCReality(try AccessVLESSGRPCRealityParameters(address: mappedIPv6,
+                port: 443, userID: userID, serverName: "cert.example", publicKey: reality.publicKey,
+                shortID: reality.shortID, serviceName: "FixtureService"))),
+        ]
+        for (relay, node) in nodes {
+            let line = "2026/11/11 00:00:00 [Info] proxy/vless/outbound: tunneling request to tcp:target.example:443 via \(relay):443\n"
+            // The unredacted control proves the fixture line reaches the shared history.
+            for redacts in [false, true] {
+                let log = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+                defer { log.stop() }
+                let lease = log.acquireShared(level: .info, secrets: redacts ? node.diagnosticSecrets : [])
+                let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(lease.path)))
+                defer { try? writer.close() }
+                try writer.write(contentsOf: Data(line.utf8))
+                let deadline = Date().addingTimeInterval(2)
+                while log.snapshot().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+                XCTAssertTrue(log.stop(lease: lease))
+                let history = log.snapshot().lowercased()
+                XCTAssertFalse(history.isEmpty, relay)
+                XCTAssertTrue(history.contains("via " + (redacts ? "[redacted]" : "\(relay):443")), relay)
+                XCTAssertEqual(history.contains(relay), !redacts, "\(relay) redacted=\(redacts)")
+                XCTAssertFalse(history.contains(userID.lowercased()), relay)
+            }
+        }
+    }
+
+    func testDiagnosticIPRedactionPreservesUnrelatedDestinationWithSamePrefix() throws {
+        let log = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { log.stop() }
+        let lease = log.acquireShared(level: .info, secrets: [AccessDiagnosticLog.relayFilter("192.0.2.1")])
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(lease.path)))
+        defer { try? writer.close() }
+        try writer.write(contentsOf: Data(
+            "2026/11/11 00:00:00 [Info] proxy/vless/outbound: tunneling request to tcp:192.0.2.10:443 via 192.0.2.1:443\n".utf8))
+        XCTAssertTrue(log.stop(lease: lease))
+        XCTAssertTrue(log.snapshot().contains("tunneling request to tcp:192.0.2.10:443 via [redacted]"))
+    }
+
+    func testIPShapedTextualCredentialStaysOnSubstringRedactionInLiveAndRestoredRecords() throws {
+        // Synthetic canonical X25519 public key (bytes 0...31, base64url without padding).
+        let syntheticKey = Data(0...31).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let reality = try makeParameters(publicKey: syntheticKey)
+        let grpc = try AccessVLESSGRPCRealityParameters(address: "198.51.100.7", port: 443,
+            userID: reality.userID, serverName: "cert.example", publicKey: reality.publicKey,
+            shortID: reality.shortID, serviceName: "192.0.2.1")
+        let line = "2026/11/11 00:00:00 [Info] proxy/vless/outbound: tunneling request to tcp:192.0.2.10:443 via 198.51.100.7:443\n"
+        let expected = "tunneling request to [redacted] via [redacted]"
+
+        // Live record: the service name is textual, so the IP-shaped destination
+        // containing it is withheld rather than compared by identity.
+        let live = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { live.stop() }
+        let lease = live.acquireShared(level: .info, secrets: grpc.diagnosticSecrets)
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(lease.path)))
+        try writer.write(contentsOf: Data(line.utf8))
+        try writer.close()
+        XCTAssertTrue(live.stop(lease: lease))
+        XCTAssertTrue(live.snapshot().contains(expected), live.snapshot())
+        XCTAssertFalse(live.snapshot().contains("192.0.2.1"))
+        XCTAssertFalse(live.snapshot().contains("198.51.100.7"))
+
+        // Recorded before the gRPC owner registers, then redacted again when it does.
+        let restored = AccessDiagnosticLog(pollInterval: .milliseconds(15))
+        defer { restored.stop() }
+        let first = restored.acquireShared(level: .info, secrets: [])
+        let earlier = try FileHandle(forWritingTo: URL(fileURLWithPath: try XCTUnwrap(first.path)))
+        try earlier.write(contentsOf: Data(line.utf8))
+        try earlier.close()
+        let deadline = Date().addingTimeInterval(2)
+        while restored.snapshot().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+        XCTAssertTrue(restored.snapshot().contains("192.0.2.10:443"), "unredacted control must reach history")
+        let second = restored.acquireShared(level: .info, secrets: grpc.diagnosticSecrets)
+        XCTAssertTrue(restored.stop(lease: second))
+        XCTAssertTrue(restored.stop(lease: first))
+        XCTAssertTrue(restored.snapshot().contains(expected), restored.snapshot())
+        XCTAssertFalse(restored.snapshot().contains("192.0.2.1"))
+        XCTAssertFalse(restored.snapshot().contains("198.51.100.7"))
+    }
+
+    func testAlphaRouteIdentityUsesCoreFingerprintCase() throws {
+        let userID = try makeParameters().userID
+        let link = "vless://\(userID)@relay.example:443?type=tcp&security=tls&flow=xtls-rprx-vision&sni=cert.example&fp="
+        let canonical = try AccessInternalTestNode.parseSingleShareURI(link + "chrome")
+        let differentCase = try AccessInternalTestNode.parseSingleShareURI(link + "Chrome")
+        XCTAssertTrue(canonical.isWireIdentical(to: differentCase))
     }
 }
 

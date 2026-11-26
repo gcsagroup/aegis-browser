@@ -5,6 +5,7 @@ This fixture uses a FilePath character-type shim for installer constants. It is
 not a Chromium GN build, a setup/mini_installer binary, or Explorer/token proof.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -12,21 +13,32 @@ import re
 import shutil
 from pathlib import Path
 import subprocess
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
-CHROMIUM = "1de57fa19722fa6d6841d4f596c394d015580656"
 GTEST = "4fe3307fb2d9f86d19777c7eb0e4809e9694dde7"
 GTEST_SHA256 = "7da5cbd7991e88e61a2e2142475041fe6685484ad13013401e8f1e3fb5f3001a"
+# Hosted runners intermittently receive 5xx/429 from Gitiles; retry before failing.
+RETRY_DELAYS = (5, 15, 30, 60)
+# The three common inputs are identical at every approved Chromium pin.
 HEADERS = {
     "build/win/common_controls.manifest":
         "3a8ca9721b476635b2bb6567f61c74adc85fdc168d4fd762d9b08414bb3f35c6",
-    "chrome/installer/util/util_constants.h":
-        "a0afe0f69ad9165af8d2f21680568df9eac95294ef8d493e1a6c4b07f121a859",
     "chrome/installer/mini_installer/mini_installer_resource.h":
         "294851fd8c62a5ff0ee9ace34473a6a498a68c32ff6d4713036d30aaffd89caf",
     "testing/gtest/include/gtest/gtest.h":
         "e65bc0f551d8016c5027352b013ecd90f0ee3c61ff0ddd9d1f8e7ba6676dee58",
+}
+UTIL_CONSTANTS = "chrome/installer/util/util_constants.h"
+UTIL_CONSTANTS_SHA256 = {
+    "43a195105613ac83c21d3f14de279f4a045c7da0":
+        "f40b2e5872bb326970857f23949b411964a902fa76f9feabe07b40bfaec2c749",
+    "b8c2be851f62f6a394ec57955d7f31335d7cb6d4":
+        "a0afe0f69ad9165af8d2f21680568df9eac95294ef8d493e1a6c4b07f121a859",
+    "1de57fa19722fa6d6841d4f596c394d015580656":
+        "a0afe0f69ad9165af8d2f21680568df9eac95294ef8d493e1a6c4b07f121a859",
 }
 SOURCES = [
     "chrome/installer/aegis_install_progress.h",
@@ -44,25 +56,74 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def download(url, destination, expected):
-    with urllib.request.urlopen(url, timeout=60) as response:
-        data = response.read()
-    if digest(data) != expected:
+def pinned_headers(chromium_pin):
+    try:
+        return {**HEADERS, UTIL_CONSTANTS: UTIL_CONSTANTS_SHA256[chromium_pin]}
+    except KeyError as error:
+        raise RuntimeError(f"Update pinned fixture inputs for Chromium {chromium_pin}") from error
+
+
+def transient(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code == 429 or error.code >= 500
+    return True
+
+
+def fetch(url):
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return response.read()
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if delay is None or not transient(error):
+                raise
+            print(f"Retrying {url} in {delay}s after {error}", flush=True)
+            time.sleep(delay)
+
+
+def download(url, destination, expected_sha256, *, gitiles_text=False):
+    data = fetch(url)
+    if gitiles_text:
+        data = base64.b64decode(b"".join(data.split()), validate=True)
+    actual = digest(data)
+    if actual != expected_sha256:
         raise RuntimeError(f"Pinned download mismatch: {destination.name}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(data)
+    return actual
 
 
-def verify_inputs(root, head, overlay):
+def git_executable():
+    # Windows can implicitly search the current directory for a bare command.
+    # Use only absolute entries from the runner's PATH and require a native EXE.
+    for entry in os.get_exec_path():
+        directory = Path(entry.strip('"'))
+        if not directory.is_absolute():
+            continue
+        candidate = directory / "git.exe"
+        if candidate.is_file():
+            executable = candidate.resolve(strict=True)
+            if executable.suffix.lower() == ".exe":
+                return str(executable)
+    raise RuntimeError("Native Git executable not found in the runner's PATH")
+
+
+def git_output(executable, root, *args):
+    # The executable comes from the runner's absolute PATH entries. The fixture
+    # supplies fixed Git operations, repository paths and a checked-out SHA.
+    # nosemgrep: dangerous-subprocess-use-audit
+    return subprocess.check_output(  # nosec B603
+        [executable, *args], cwd=root, shell=False).strip()
+
+
+def verify_inputs(git, root, head, overlay):
     for name in SOURCES:
         relative = f"apps/browser/overlay/{name}"
-        committed = subprocess.check_output(
-            ["git", "rev-parse", f"{head}:{relative}"], cwd=root).strip()
+        committed = git_output(git, root, "rev-parse", f"{head}:{relative}")
         # Honor Git's clean conversion for text (e.g. Windows autocrlf), but
         # require byte identity for the icon. hash-object without -w is read-only.
         options = ["--no-filters"] if name.endswith(".ico") else ["--path", relative]
-        actual = subprocess.check_output(
-            ["git", "hash-object", *options, str(overlay / name)], cwd=root).strip()
+        actual = git_output(git, root, "hash-object", *options, str(overlay / name))
         if committed != actual:
             raise RuntimeError(f"Fixture input differs from tested SHA: {name}")
 
@@ -126,7 +187,7 @@ def main():
     report_dir = Path(args.report_dir).resolve()
     report_dir.mkdir(parents=True, exist_ok=True)
     report = {"result": "FAIL", "testedSha": args.tested_sha,
-              "chromiumPin": CHROMIUM, "googletestPin": GTEST,
+              "chromiumPin": None, "googletestPin": GTEST,
               "nativeWindows": os.name == "nt", "fullChromiumBuild": False,
               "installerExecuted": False, "explorerTokenAcceptance": False,
               "shim": "base::FilePath::CharType and FILE_PATH_LITERAL only",
@@ -134,14 +195,17 @@ def main():
     try:
         if os.name != "nt":
             raise RuntimeError("Native Windows is required")
-        head = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
-        if head != args.tested_sha:
+        git = git_executable()
+        head = git_output(git, root, "rev-parse", "HEAD").decode("ascii")
+        if not re.fullmatch(r"[0-9a-f]{40}", head) or head != args.tested_sha:
             raise RuntimeError("Tested SHA does not match checkout")
-        if (root / "apps/browser/CHROMIUM_COMMIT").read_text().strip() != CHROMIUM:
-            raise RuntimeError("Update pinned fixture inputs for the new Chromium pin")
+        chromium_pin = git_output(git, root, "show", f"{head}:apps/browser/CHROMIUM_COMMIT").decode("ascii")
+        if not re.fullmatch(r"[0-9a-f]{40}", chromium_pin):
+            raise RuntimeError("Tested Chromium pin must be a full SHA")
+        report["chromiumPin"] = chromium_pin
+        headers = pinned_headers(chromium_pin)
         overlay = root / "apps/browser/overlay"
-        verify_inputs(root, head, overlay)
+        verify_inputs(git, root, head, overlay)
         hashes = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
         report["inputHashes"] = hashes
         fixture = report_dir / "fixture"
@@ -150,9 +214,11 @@ def main():
             destination = fixture / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes((overlay / name).read_bytes())
-        for name, expected in HEADERS.items():
-            download(f"https://raw.githubusercontent.com/chromium/chromium/{CHROMIUM}/{name}",
-                     fixture / name, expected)
+        report["chromiumHeaderSha256"] = {
+            name: download(f"https://chromium.googlesource.com/chromium/src/+/{chromium_pin}/{name}?format=TEXT",
+                           fixture / name, approved, gitiles_text=True)
+            for name, approved in headers.items()
+        }
         archive = fixture / "googletest.zip"
         download(f"https://codeload.github.com/google/googletest/zip/{GTEST}",
                  archive, GTEST_SHA256)

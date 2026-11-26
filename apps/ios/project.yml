@@ -34,11 +34,13 @@ settings:
   configs:
     Debug:
       AEGIS_ACCESS_RELEASE_CHANNEL: dev
+      AEGIS_ACCESS_INTERNAL_OPTIONS: 'YES'
       DEBUG_INFORMATION_FORMAT: dwarf
       ENABLE_TESTABILITY: YES
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     Release:
       AEGIS_ACCESS_RELEASE_CHANNEL: release
+      AEGIS_ACCESS_INTERNAL_OPTIONS: 'NO'
       DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
       SWIFT_COMPILATION_MODE: wholemodule
 
@@ -109,6 +111,15 @@ targets:
         outputFiles:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisPrivateTestNode.vless
         basedOnDependencyAnalysis: false
+      - name: Select private Alpha test nodes
+        script: |
+          /usr/bin/python3 -B "${SRCROOT}/scripts/private_alpha_nodes.py"
+        inputFiles:
+          - $(SRCROOT)/scripts/private_alpha_nodes.py
+          - $(AEGIS_PRIVATE_ALPHA_NODES_FILE)
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisAlphaTestNodes.json
+        basedOnDependencyAnalysis: false
       - name: Select Aegis Firebase registration
         script: |
           /usr/bin/python3 -B "${SRCROOT}/scripts/firebase_config.py" install \
@@ -130,6 +141,7 @@ targets:
         Release:
           AEGIS_FIREBASE_CHANNEL: disabled
       base:
+        AEGIS_PRIVATE_ALPHA_NODES_FILE: /dev/null
         AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE: /dev/null
         AEGIS_PRIVATE_TEST_NODE_FILE: /dev/null
         OTHER_LDFLAGS: "$(inherited) -ObjC -lresolv"
@@ -190,6 +202,8 @@ targets:
       - path: EmbeddedCore/embedded-core-lock.json
         buildPhase: none
     dependencies:
+      - target: AegisPolicyKit
+        embed: false
       # Local Products/ is gitignored; run scripts/release/build-ios-access-core.sh
       # before xcodegen when linking the verified in-process core.
       - framework: $(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework
@@ -301,6 +315,9 @@ targets:
       - path: Tests/AgentKitTests
       - path: Tests/AegisPolicyKitTests
       - path: Tests/AccessKitTests
+      - path: ../../fixtures/access/share-links
+        type: folder
+        buildPhase: resources
       - path: Tests/Fixtures
         type: folder
         buildPhase: resources
@@ -312,6 +329,14 @@ targets:
       - target: AegisPolicyKit
       - target: AccessKit
       - target: AgentKit
+    preBuildScripts:
+      - name: Generate GeoSite WebKit test identity
+        script: /bin/sh "${SCRIPT_INPUT_FILE_0}"
+        inputFiles:
+          - $(SRCROOT)/scripts/generate-geosite-webkit-test-identity.sh
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/geosite-beta-hold-test-only.p12
+        basedOnDependencyAnalysis: false
     settings:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"

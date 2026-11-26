@@ -14,7 +14,7 @@ spec.loader.exec_module(receipt)
 STAGE_INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
           'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input', 'signing_mode',
-          'archive_signing', 'package_entrypoint', 'private_beta'}
+          'archive_signing', 'package_entrypoint', 'private_alpha', 'private_beta'}
 ARCHIVE_SIGNING = {'development', 'ad-hoc', 'unsigned'}
 
 
@@ -50,6 +50,8 @@ def reject_constant(_value):
 
 def normalize(event, ref, inputs, mode='simple', source_sha=None):
     allowed = {'operation', 'product', 'version', 'build', 'signing_mode', 'archive_signing', 'private_beta', 'approved_source_sha'}
+    if mode == 'simple':
+        allowed.add('private_alpha')
     if mode == 'full':
         allowed |= {'source', 'groups', 'stage_input', 'package_entrypoint'}
     require(mode in {'simple', 'full'}, 'Unknown delivery mode')
@@ -75,6 +77,12 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None):
     require(private_beta == 'no' or (operation == 'package-upload' and signing_mode == 'manual'
             and receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS) == 'beta'),
             'Private Beta requires Beta, manual signing, and Package and upload')
+    private_alpha = inputs.get('private_alpha', 'no')
+    require(private_alpha in {'no', 'yes'}, 'Invalid private Alpha selection')
+    require(private_alpha == 'no' or (mode == 'simple' and ref == 'refs/heads/main'
+            and operation == 'package-upload' and signing_mode == 'manual' and private_beta == 'no'
+            and receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS) == 'alpha'),
+            'Private Alpha requires Simple on main, Alpha, manual signing, and Package and upload')
     entrypoint = inputs.get('package_entrypoint') or 'actions'
     require(entrypoint in {'actions', 'fastlane'}, 'Unknown package entrypoint')
     require(entrypoint == 'actions' or operation in {'package', 'package-upload', 'draft'}, 'Entrypoint applies only to a new package')
@@ -121,6 +129,7 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None):
     values['signing_mode'] = signing_mode if new_package else ''
     values['archive_signing'] = archive_signing if new_package and signing_mode == 'cloud' else ''
     values['package_entrypoint'] = entrypoint
+    values['private_alpha'] = 'true' if private_alpha == 'yes' else 'false'
     values['private_beta'] = 'true' if private_beta == 'yes' else 'false'
     if package_upload:
         values.update(operation='package-upload', destination='testflight')
@@ -140,6 +149,7 @@ def _normalize_stage(event, ref, inputs):
         values['signing_mode'] = 'cloud'
         values['archive_signing'] = 'development'
         values['package_entrypoint'] = 'actions'
+        values['private_alpha'] = 'false'
         values['private_beta'] = 'false'
     else:
         require_admitted_dispatch(event, ref)

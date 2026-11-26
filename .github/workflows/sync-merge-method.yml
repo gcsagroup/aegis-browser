@@ -1,0 +1,45 @@
+name: Sync PR Merge Method
+
+on:
+  pull_request_target:
+    branches: [develop, main]
+    types: [auto_merge_enabled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: "${{ github.workflow }}-pr-${{ github.event.pull_request.number }}"
+  cancel-in-progress: false
+
+jobs:
+  enforce-merge-method:
+    name: enforce-sync-merge-method
+    if: "${{ github.event.pull_request.head.repo.id == github.event.repository.id }}"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted develop
+        if: "${{ github.base_ref == 'develop' }}"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/heads/develop
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Check out trusted main
+        if: "${{ github.base_ref == 'main' }}"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Reject incorrect sync PR auto-merge
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          github-token: "${{ github.token }}"
+          script: |
+            const {pathToFileURL} = require('node:url');
+            const moduleUrl = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/ci/sync-merge-method-hook.mjs`).href;
+            const hook = await import(moduleUrl);
+            await hook.run({github, context, core});

@@ -1,0 +1,270 @@
+From 08db186b35d64b447d91526dfe00e58ade23cb06 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sun, 22 Nov 2026 07:56:32 +0800
+Subject: [PATCH] fix(omnibox): follow the requesting permission manager
+
+---
+ .../omnibox/omnibox_aim_popup_browsertest.cc  | 32 ++++++--
+ .../omnibox/omnibox_popup_presenter_base.cc   | 82 +++++++++++++++++--
+ .../omnibox/omnibox_popup_presenter_base.h    | 12 ++-
+ .../permissions/permission_prompt_factory.cc  |  6 +-
+ 4 files changed, 112 insertions(+), 20 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+index ce391d3f791b4419e7c278565c7b177303c5f966..e4bbef4f2cf0c175570a71c3e449636c35074048 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_aim_popup_browsertest.cc
+@@ -941,6 +941,9 @@ class TestPermissionPromptDelegate
+ // synchronously and prevents the popup from closing on deactivation.
+ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupBrowserTest,
+                        PermissionPromptCreationPreventsPopupCloseWhenOpen) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/empty.html")));
+   ASSERT_TRUE(ShowPopupAndGetWebUIContent());
+   auto* presenter = location_bar()->GetOmniboxPopupAimPresenter();
+   ASSERT_TRUE(presenter);
+@@ -951,14 +954,18 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupBrowserTest,
+   EXPECT_FALSE(presenter->IsPermissionPromptPreventingClose());
+ 
+   auto* web_contents = browser()->GetTabStripModel()->GetActiveWebContents();
+-  TestPermissionPromptDelegate test_delegate(web_contents);
+-
+-  // Directly call `PermissionPromptFactory::CreatePermissionPrompt`
+-  // synchronously.
+-  CreatePermissionPrompt(web_contents, &test_delegate);
+-
+-  // Presenter MUST be locked synchronously by `PermissionPromptFactory`.
+-  EXPECT_TRUE(presenter->IsPermissionPromptPreventingClose());
++  auto* manager =
++      permissions::PermissionRequestManager::FromWebContents(web_contents);
++  ASSERT_TRUE(manager);
++  manager->AddRequest(
++      web_contents->GetPrimaryMainFrame(),
++      std::make_unique<permissions::MockPermissionRequest>(
++          web_contents->GetLastCommittedURL().DeprecatedGetOriginAsURL(),
++          permissions::RequestType::kMicStream));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return manager->IsRequestInProgress() &&
++           presenter->IsPermissionPromptPreventingClose();
++  }));
+ 
+   // Deactivating the widget via `OnWidgetActivationChanged` while permission
+   // prompt is active should NOT close the popup.
+@@ -983,6 +990,15 @@ IN_PROC_BROWSER_TEST_F(OmniboxAimPopupBrowserTest,
+                   ->popup_state(),
+               OmniboxPopupState::kAim);
+   }
++  manager->Dismiss(/*prompt_options=*/std::monostate());
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return !manager->IsRequestInProgress(); }));
++  // Activation finishes the dismissal focus handoff. A lock owned by the
++  // requesting manager must no longer survive that handoff.
++  static_cast<views::WidgetObserver*>(presenter)->OnWidgetActivationChanged(
++      presenter->GetWidget(), /*active=*/true);
++  EXPECT_FALSE(presenter->IsPermissionPromptPreventingClose());
++
+ }
+ 
+ // Verifies that when the Omnibox popup is closed, creating a permission prompt
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+index 3bc6ea5cbf8a056d676bb55a89bbe481a33b4c18..2fb3182720cd8013916bdd5651d7951f326d9d06 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+@@ -69,6 +69,49 @@ std::string_view CreationReasonToString(
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(OmniboxPopupPresenterBase,
+                                       kRoundedResultsFrame);
+ 
++// A microphone prompt can belong to the active tab even when the omnibox's
++// WebUI is the widget that temporarily loses activation to the prompt.
++class OmniboxPopupPresenterBase::RequestingPromptObservation
++    : public permissions::PermissionRequestManager::Observer {
++ public:
++  explicit RequestingPromptObservation(OmniboxPopupPresenterBase& presenter)
++      : presenter_(presenter) {}
++
++  base::ScopedClosureRunner Lock(
++      permissions::PermissionRequestManager& manager) {
++    if (IsLocked()) {
++      return {};
++    }
++    observation_.Observe(&manager);
++    return base::ScopedClosureRunner(base::BindOnce(
++        &RequestingPromptObservation::Reset, weak_factory_.GetWeakPtr()));
++  }
++
++  bool IsLocked() const { return observation_.IsObserving(); }
++
++  void Reset() {
++    observation_.Reset();
++    weak_factory_.InvalidateWeakPtrs();
++  }
++
++ private:
++  void OnPromptRemoved() override {
++    Reset();
++    presenter_->RestoreFocusAfterPermissionPromptDismissed();
++  }
++
++  void OnPromptRecreateViewFailed() override { Reset(); }
++  void OnPromptCreationFailedHiddenTab() override { Reset(); }
++  void OnRequestsFinalized() override { Reset(); }
++  void OnPermissionRequestManagerDestructed() override { Reset(); }
++
++  const raw_ref<OmniboxPopupPresenterBase> presenter_;
++  base::ScopedObservation<permissions::PermissionRequestManager,
++                          permissions::PermissionRequestManager::Observer>
++      observation_{this};
++  base::WeakPtrFactory<RequestingPromptObservation> weak_factory_{this};
++};
++
+ OmniboxPopupPresenterBase::OmniboxPopupPresenterBase(
+     LocationBar* location_bar,
+     OmniboxPopupPresenterDelegate& presenter_delegate,
+@@ -84,6 +127,7 @@ OmniboxPopupPresenterBase::~OmniboxPopupPresenterBase() {
+   // Permission managers owned by pre-warmed contents can be destroyed by
+   // widget teardown. Stop observing them before destroying popup state.
+   permission_observation_.Reset();
++  requesting_prompt_observation_.reset();
+   ReleaseWidget();
+   // `ReleaseWidget()` only queues the widget for deferred destruction, so drain
+   // the queue here: this destroys both the widget just closed above and any
+@@ -787,7 +831,8 @@ void OmniboxPopupPresenterBase::UnregisterBlocker() {
+ void OmniboxPopupPresenterBase::OnFileSelectionClosed() {}
+ 
+ base::ScopedClosureRunner OmniboxPopupPresenterBase::LockForPermissionPrompt(
+-    LocationBar& bar) {
++    LocationBar& bar,
++    permissions::PermissionRequestManager* requesting_manager) {
+   OmniboxPopupPresenterBase* presenter = nullptr;
+   if (auto* delegate = bar.GetPresenterDelegate()) {
+     if (auto* aim = delegate->GetOmniboxPopupAimPresenter();
+@@ -800,7 +845,18 @@ base::ScopedClosureRunner OmniboxPopupPresenterBase::LockForPermissionPrompt(
+       presenter = popup->presenter();
+     }
+   }
+-  if (!presenter || !presenter->IsShown() || presenter->is_prompt_showing_) {
++  if (!presenter || !presenter->IsShown()) {
++    return {};
++  }
++  if (requesting_manager &&
++      !presenter->permission_observation_.IsObservingSource(requesting_manager)) {
++    auto& observer = presenter->requesting_prompt_observation_;
++    if (!observer) {
++      observer = std::make_unique<RequestingPromptObservation>(*presenter);
++    }
++    return observer->Lock(*requesting_manager);
++  }
++  if (presenter->is_prompt_showing_) {
+     return {};
+   }
+   presenter->SetPermissionPromptShowing(true);
+@@ -818,15 +874,22 @@ void OmniboxPopupPresenterBase::SetPermissionPromptShowing(bool showing) {
+ 
+ void OmniboxPopupPresenterBase::ResetPermissionPromptShowingState() {
+   SetPermissionPromptShowing(false);
++  if (requesting_prompt_observation_) {
++    requesting_prompt_observation_->Reset();
++  }
+   is_handling_prompt_dismissal_ = false;
+ }
+ 
+ void OmniboxPopupPresenterBase::HandlePermissionPromptDismissal() {
+   SetPermissionPromptShowing(false);
+-  // If the prompt was removed because the popup widget itself was hidden (e.g.
+-  // during browser window teardown), do not enter dismissal mode or refocus the
+-  // location bar.
+-  if (!IsShown()) {
++  RestoreFocusAfterPermissionPromptDismissed();
++}
++
++void OmniboxPopupPresenterBase::RestoreFocusAfterPermissionPromptDismissed() {
++  // Another prompt can still own the popup, or it can be hidden by teardown.
++  if (!IsShown() || is_prompt_showing_ ||
++      (requesting_prompt_observation_ &&
++       requesting_prompt_observation_->IsLocked())) {
+     return;
+   }
+   is_handling_prompt_dismissal_ = true;
+@@ -858,7 +921,8 @@ void OmniboxPopupPresenterBase::OnRequestsFinalized() {
+ 
+ void OmniboxPopupPresenterBase::OnPermissionRequestManagerDestructed() {
+   permission_observation_.Reset();
+-  ResetPermissionPromptShowingState();
++  SetPermissionPromptShowing(false);
++  is_handling_prompt_dismissal_ = false;
+ }
+ 
+ void OmniboxPopupPresenterBase::OnWidgetActivated() {
+@@ -866,5 +930,7 @@ void OmniboxPopupPresenterBase::OnWidgetActivated() {
+ }
+ 
+ bool OmniboxPopupPresenterBase::IsPermissionPromptPreventingClose() const {
+-  return is_prompt_showing_ || is_handling_prompt_dismissal_;
++  return is_prompt_showing_ || is_handling_prompt_dismissal_ ||
++         (requesting_prompt_observation_ &&
++          requesting_prompt_observation_->IsLocked());
+ }
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+index 1afadef4b066c184350d888bb07692a94c6fa327..94ff2657dab1dd8999fdf61fc3e78eeff120d52f 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+@@ -205,7 +205,9 @@ class OmniboxPopupPresenterBase
+ 
+   // Protects the visible popup while a prompt is constructed. The returned
+   // closure rolls back only this attempt. Release it when creation succeeds.
+-  static base::ScopedClosureRunner LockForPermissionPrompt(LocationBar& bar);
++  static base::ScopedClosureRunner LockForPermissionPrompt(
++      LocationBar& bar,
++      permissions::PermissionRequestManager* requesting_manager = nullptr);
+ 
+   // Resets prompt showing and dismissal state flags.
+   void ResetPermissionPromptShowingState();
+@@ -348,6 +350,11 @@ class OmniboxPopupPresenterBase
+                           permissions::PermissionRequestManager::Observer>
+       permission_observation_{this};
+ 
++  class RequestingPromptObservation;
++  std::unique_ptr<RequestingPromptObservation> requesting_prompt_observation_;
++
++  void RestoreFocusAfterPermissionPromptDismissed();
++
+   // Set to true when a permission prompt is added/showing.
+   bool is_prompt_showing_ = false;
+ 
+@@ -445,9 +452,10 @@ class OmniboxPopupPresenterBase
+   // Weak pointer factory for callbacks related to visual state.
+   base::WeakPtrFactory<OmniboxPopupPresenterBase> visual_state_weak_factory_{
+       this};
+-  // Weak pointer factory for general callbacks.
++  // Invalidated by permission lifecycle changes that supersede a rollback.
+   base::WeakPtrFactory<OmniboxPopupPresenterBase>
+       permission_prompt_rollback_factory_{this};
++  // Weak pointer factory for general callbacks.
+   base::WeakPtrFactory<OmniboxPopupPresenterBase> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
+index dd90b788d12bedc0915e435c64981d60826135bd..748fcd67165ac8f515cc7e8ca78deb81bbd7d132 100644
+--- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
+@@ -31,6 +31,7 @@
+ #include "chrome/browser/ui/webui/webui_embedding_context.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "components/permissions/permission_request.h"
++#include "components/permissions/permission_request_manager.h"
+ #include "components/permissions/permission_uma_util.h"
+ #include "components/permissions/permission_util.h"
+ #include "components/permissions/permissions_client.h"
+@@ -345,8 +346,9 @@ std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
+   if (has_mic_request) {
+     if (LocationBar* location_bar =
+             ::location_bar::GetLocationBarForWebContents(web_contents)) {
+-      popup_lock =
+-          OmniboxPopupPresenterBase::LockForPermissionPrompt(*location_bar);
++      popup_lock = OmniboxPopupPresenterBase::LockForPermissionPrompt(
++          *location_bar,
++          permissions::PermissionRequestManager::FromWebContents(web_contents));
+     }
+   }
+ 

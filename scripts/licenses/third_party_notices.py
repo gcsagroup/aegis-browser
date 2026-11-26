@@ -67,8 +67,9 @@ def render(platform, root=ROOT):
     sections = ["GCSA Aegis — Third-party licenses and acknowledgements\n",
                 "Third-party works retain their own licenses. These notices do not change those licenses.\n"]
 
-    def include(title, path):
-        sections.append(f"\n{'=' * 72}\n{title}\nSource file: {path}\n\n" + read(root, path).decode("utf-8").rstrip() + "\n")
+    def include(title, path, attribution=""):
+        sections.append(f"\n{'=' * 72}\n{title}\nSource file: {path}\n\n" + attribution
+                        + read(root, path).decode("utf-8").rstrip() + "\n")
 
     include("Web enhancements — component versions and sources", f"{ENHANCEMENTS}/NOTICE.txt")
     for name in JS_LICENSES:
@@ -95,6 +96,14 @@ def render(platform, root=ROOT):
                         "apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/bergamot\n"
                         "Downloaded model weights have separate notices and are not covered by this inventory.\n")
     elif platform == "ios":
+        include(
+            "XTLS/Xray-rules-dat 20261120235103 — GeoSite — MIT",
+            f"{ACCESS}/v2fly-domain-list-community.txt",
+            "Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261120235103\n"
+            "DEBIAN, DOUBAN and MEITUAN are unmodified groups inherited from V2Fly domain-list-community.\n"
+            "Source: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/README.md\n"
+            "Inherited license: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited\n\n",
+        )
         include("EasyList and EasyPrivacy — The EasyList authors", f"{RULES}/FILTER-LICENSE.txt")
         include("NoCoin — Hosh — https://github.com/hoshsadiq/adblock-nocoin-list", f"{RULES}/nocoin-LICENSE.txt")
         include("Phishing Block List — The Block List Project", f"{RULES}/phishing-LICENSE.txt")

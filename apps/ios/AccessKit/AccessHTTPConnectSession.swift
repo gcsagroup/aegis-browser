@@ -19,14 +19,17 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
     private var finished = false
     private var admissionTimeout: DispatchWorkItem?
     private let onOutcome: (Outcome) -> Void
+    private let defersSuccessReply: Bool
 
     public init(
         connection: NWConnection,
         queue: DispatchQueue,
+        defersSuccessReply: Bool = false,
         onOutcome: @escaping (Outcome) -> Void
     ) {
         self.connection = connection
         self.queue = queue
+        self.defersSuccessReply = defersSuccessReply
         self.onOutcome = onOutcome
     }
 
@@ -91,6 +94,10 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
     }
 
     private func writeSuccess(for request: AccessHTTPConnectRequest, remainder: Data) {
+        if defersSuccessReply {
+            finish(.established(request, remainder))
+            return
+        }
         finished = true
         admissionTimeout?.cancel()
         admissionTimeout = nil

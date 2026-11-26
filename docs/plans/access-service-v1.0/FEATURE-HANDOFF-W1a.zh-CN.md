@@ -42,7 +42,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 - 在共享计划添加本 PR 的 W1a 链接，保留 W0 独立结论及其精确被测候选。
 - A10/A11/A15/A16/A53/A76/A78/A108/A113/A115 与 PF01–PF03 可链接到本合同的场景输入；实现、浏览器运行和主行结果不因模型测试升级。
 - W1b 开始前取得 Q 的完整 W0 回执，然后将本设计拟新增 API 逐点落实到固定 Chromium；同 PR 交付真实 unit 和入口 regression。
-- W1c 必须另行证明旧连接与缓存不串用、Network Service 重启及 HTTP/SOCKS5 最小认证。源码 hook 或模拟凭据查询不能替代实际握手。
+- W1c 必须另行证明旧连接与缓存不串用、Network Service 重启及 HTTP/SOCKS5 无认证入站的登记隔离与撤销（冻结修订 5）。源码 hook 或模拟登记查询不能替代实际握手。
 
 ## 2026-09-24 新发现：canonical 尾点与生产入口
 

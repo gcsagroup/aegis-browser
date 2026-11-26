@@ -106,19 +106,66 @@ struct AegisApp: App {
         }
         _windows = StateObject(wrappedValue: BrowserWindowStore(persistenceURL: windowsURL, legacyURLs: workspaceStore.sessionURLs))
         let registry = AccessSiteProxyStoreRegistry()
-        let subscription = AccessSubscriptionUsageSession.product()
+        let alphaNodes = AccessAlphaNodeCatalogue.shared
+        let subscription = AccessSubscriptionUsageSession.product(usesAlphaNodes: alphaNodes.isConfigured,
+                                                                  alphaRoutes: alphaNodes.routes)
         _subscriptionUsage = StateObject(wrappedValue: subscription)
-        let publisher = AccessThreeXUIWebEntry.makePublisher(for: subscription)
+        let hostRegistry = AccessHostDataStoreRegistry()
+        weak var retirementOwner: AccessHostStoreCoordinator?
+        let publisher = AccessThreeXUIWebEntry.makePublisher(for: subscription, alphaNodes: alphaNodes) { identity, finish in
+            if let retirementOwner {
+                retirementOwner.retireManagedDocuments(identity: identity, finish: finish)
+            } else {
+                _ = hostRegistry.retireListener(identity: identity, finish: finish)
+            }
+        }
+        let channel = AccessProductChannel.resolve()
+        let alphaAcceleration = alphaNodes.enablesWebsiteAcceleration
+        let geoSiteCache = Self.makeGeoSiteCache(channel: channel, alphaAcceleration: alphaAcceleration, isUITest: isTest)
+#if DEBUG && targetEnvironment(simulator)
+        let isHostedTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+#else
+        let isHostedTest = false
+#endif
+        let refreshGeoSite = (channel == .dev || (channel == .alpha && alphaAcceleration)) && !isTest && !isHostedTest
         let hostStores = AccessHostStoreCoordinator(
             publisher: publisher,
-            channel: AccessProductChannel.resolve(),
+            channel: channel,
+            alphaWebsiteAcceleration: alphaAcceleration,
             defaultLocationPrivacy: !(publisher is AccessFailClosedProxyEntryPublisher),
-            locationPreferences: defaults
+            locationPreferences: defaults,
+            geoSiteCache: geoSiteCache,
+            geoSiteTransport: refreshGeoSite ? AccessGeoSiteUpdateTransport() : nil,
+            registry: hostRegistry
         )
+        retirementOwner = hostStores
         registry.hostRouting = hostStores
         hostStores.startForegroundSweep()
         _accessSiteProxyRegistry = StateObject(wrappedValue: registry)
         _hostStores = StateObject(wrappedValue: hostStores)
+    }
+
+    private static func makeGeoSiteCache(channel: AccessReleaseChannel, alphaAcceleration: Bool, isUITest: Bool) -> AccessGeoSiteCache? {
+        guard channel == .dev || (channel == .alpha && alphaAcceleration) else { return nil }
+#if DEBUG
+        if isUITest {
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("--ui-testing-overseas-fixture") {
+                return (try? AccessGeoSiteStorage.overseasUITest(keep: true)).map { AccessGeoSiteCache(storage: $0) }
+            }
+#if targetEnvironment(simulator)
+            if arguments.contains("--ui-testing-geosite-consent-fixture") {
+                guard let storage = try? AccessGeoSiteStorage.consentUITest(keep: true) else { return nil }
+                return AccessGeoSiteCache(storage: storage)
+            }
+#endif
+            guard arguments.contains("--ui-testing-geosite-cache"),
+                  let storage = try? AccessGeoSiteStorage.uiTest(keep: arguments.contains("--ui-testing-geosite-cache-keep"))
+            else { return nil }
+            return AccessGeoSiteCache(storage: storage)
+        }
+#endif
+        return AccessGeoSiteCache(storage: .product())
     }
 
     var body: some Scene {
@@ -145,12 +192,13 @@ struct AegisApp: App {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             subscriptionUsage.setActive(phase == .active)
+            if phase == .active { hostStores.checkpointGeoSiteClock() }
         }
     }
 
     private func browserWindow(id: UUID) -> some View {
         AegisWindowView(id: id, dataStore: dataStore, workspaces: workspaceStore, windows: windows,
-                        preferences: settings.browserPreferences)
+                        preferences: settings.browserPreferences, hostStores: hostStores)
             .environmentObject(language)
             .environment(\.locale, language.snapshot.locale)
             .environment(\.calendar, Calendar.autoupdatingCurrent)
@@ -225,17 +273,17 @@ struct AegisApp: App {
 
 /// 浏览会话的生命周期跟随窗口，公共资料与下载仍由 App 持有。
 private struct AegisWindowView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var language: AppLanguageSettings
     @EnvironmentObject private var accessRegistry: AccessSiteProxyStoreRegistry
-    @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
     @StateObject private var browser: BrowserSession
     @StateObject private var lifetime = AegisWindowLifetime()
     @ObservedObject var windows: BrowserWindowStore
     init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore,
-         preferences: BrowserPreferences) {
+         preferences: BrowserPreferences, hostStores: AccessHostStoreCoordinator) {
         self.windows = windows
         _browser = StateObject(wrappedValue: BrowserSession(dataStore: dataStore, workspaceStore: workspaces,
-            windowID: id, windowStore: windows, preferences: preferences))
+            windowID: id, windowStore: windows, preferences: preferences, hostCoordinator: hostStores))
     }
     @Environment(\.locale) private var localizationLocale
     var body: some View {
@@ -249,17 +297,17 @@ private struct AegisWindowView: View {
                 lifetime.browser = browser
                 lifetime.accessRegistry = accessRegistry
                 windows.register(browser.windowID)
-                browser.hostCoordinator = hostStores
-                hostStores.tabs = { [weak browser] in
-                    guard let browser else { return [] }
-                    return browser.standardTabs + browser.privateTabs
-                }
+                browser.setWindowForeground(scenePhase == .active)
                 browser.persistSession()
             }
             .onChange(of: browser.retiredPrivateWebsiteDataStoreRevision) { _, _ in
                 accessRegistry.release(browser.consumeRetiredPrivateWebsiteDataStores())
             }
+            .onChange(of: scenePhase) { _, phase in
+                browser.setWindowForeground(phase == .active)
+            }
             .onDisappear {
+                browser.setWindowForeground(false)
                 browser.persistSession()
             }
     }

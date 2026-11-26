@@ -496,7 +496,6 @@ module AegisRelease
       receipt = Receipt.verify(request, expected_digest)
       preflight_upload
       if request.destination == 'github-draft'
-        AegisRelease.require!(!receipt.fetch('details')['privateBetaTestNode'], 'Private Beta is only delivered to TestFlight')
         result = Draft.new(request, receipt, expected_digest, admission: method(:preflight_upload)).upload
         AegisRelease.write_new(File.join(request.directory, 'github-upload-result.json'), result)
       else
@@ -692,6 +691,9 @@ module AegisRelease
 
     def upload
       Receipt.verify(@request, @expected_digest)
+      AegisRelease.command('python3', File.expand_path('../../scripts/release/artifact-transport.py', __dir__),
+                           'assert-public', '--directory', @request.directory,
+                           '--manifest-sha256', @expected_digest, cwd: @request.root)
       sha = @receipt.fetch('source').fetch('sha')
       tag = URI.encode_www_form_component(@request.tag)
       AegisRelease.require!(api("commits/#{tag}")['sha'] == sha, 'Existing upstream candidate tag must resolve to the exact package commit')

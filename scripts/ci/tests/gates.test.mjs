@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, join, relative, resolve, sep} from 'node:path';
+import {basename, dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
@@ -105,87 +105,6 @@ test('fixed ripgrep installer selects pinned releases and rejects unknown platfo
   assert.match(unsupported.stderr, /Unsupported ripgrep platform: Linux\/riscv64/u);
 });
 
-test('Bash coverage keeps only real production shell sources and retains zero-hit files', () => {
-  const runnerPath = join(scripts, 'run-shell-coverage.sh');
-  const runnerSource = readFileSync(runnerPath, 'utf8');
-  const normalizer = runnerSource.match(
-    /# BEGIN_SHELL_COVERAGE_REPORT_PYTHON[\s\S]*?<<'PY'\n([\s\S]*?)\nPY\n# END_SHELL_COVERAGE_REPORT_PYTHON/u,
-  );
-  assert.ok(normalizer, 'shell coverage report normalizer must remain testable');
-
-  const directory = mkdtempSync(join(root, '.artifacts', 'shell-coverage-filter-'));
-  try {
-    const browserScripts = join(root, 'apps/browser/scripts');
-    const production = readdirSync(browserScripts, {withFileTypes: true})
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.sh') && !entry.name.endsWith('_test.sh'))
-      .map((entry) => `apps/browser/scripts/${entry.name}`)
-      .sort();
-    const required = new Set([
-      'apps/browser/scripts/common.sh',
-      'apps/browser/scripts/run.sh',
-      'apps/browser/scripts/status.sh',
-    ]);
-    const classes = production.map((path) =>
-      `<class filename="${path}"><lines><line number="1" hits="${required.has(path) ? 1 : 0}"/></lines></class>`,
-    );
-    classes.push(
-      '<class filename="apps/browser/scripts/verify-agent-runtime.mjs"><lines><line number="1" hits="999"/></lines></class>',
-    );
-    const input = join(directory, 'polluted-cobertura.xml');
-    const output = join(directory, 'output');
-    const results = join(directory, 'test-results.txt');
-    mkdirSync(output);
-    writeFileSync(input, `<coverage><packages><package><classes>${classes.join('')}</classes></package></packages></coverage>\n`);
-    writeFileSync(results, 'run_test.sh\tPASS\n');
-
-    const result = run('python3', ['-', root, browserScripts, input, output, results], {
-      input: normalizer[1],
-      env: {
-        KCOV_VERSION_OUTPUT: 'kcov 43',
-        KCOV_BINARY_SHA256: '1'.repeat(64),
-        KCOV_SOURCE_URL: 'https://example.invalid/kcov.tar.gz',
-        KCOV_SOURCE_SHA256: '2'.repeat(64),
-        KCOV_SOURCE_COMMIT: 'a39874f938ce13f7a65f253120d1ec946b349ffe',
-        KCOV_SOURCE_TAG: 'v43',
-        TESTED_SHA: git(root, 'rev-parse', 'HEAD'),
-      },
-    });
-    assert.equal(result.status, 0, result.stderr);
-
-    const metadata = JSON.parse(readFileSync(join(output, 'metadata.json'), 'utf8'));
-    assert.deepEqual(metadata.scope.reportedProductionFiles, production);
-    assert.deepEqual(metadata.scope.unmeasuredProductionFiles, []);
-    assert.equal(metadata.totals.lines.covered, required.size);
-    assert.equal(metadata.totals.lines.total, production.length);
-    const lcov = readFileSync(join(output, 'lcov.info'), 'utf8');
-    const cobertura = readFileSync(join(output, 'cobertura.xml'), 'utf8');
-    assert.doesNotMatch(lcov, /\.mjs/u);
-    assert.doesNotMatch(cobertura, /\.mjs/u);
-    assert.match(lcov, /SF:apps\/browser\/scripts\/build-release\.sh\nDA:1,0/u);
-
-    const incompleteInput = join(directory, 'incomplete-cobertura.xml');
-    const incompleteOutput = join(directory, 'incomplete-output');
-    mkdirSync(incompleteOutput);
-    writeFileSync(incompleteInput, `<coverage><packages><package><classes>${classes.filter((entry) => !entry.includes('build-release.sh')).join('')}</classes></package></packages></coverage>\n`);
-    const incomplete = run('python3', ['-', root, browserScripts, incompleteInput, incompleteOutput, results], {
-      input: normalizer[1],
-      env: {
-        KCOV_VERSION_OUTPUT: 'kcov 43',
-        KCOV_BINARY_SHA256: '1'.repeat(64),
-        KCOV_SOURCE_URL: 'https://example.invalid/kcov.tar.gz',
-        KCOV_SOURCE_SHA256: '2'.repeat(64),
-        KCOV_SOURCE_COMMIT: 'a39874f938ce13f7a65f253120d1ec946b349ffe',
-        KCOV_SOURCE_TAG: 'v43',
-        TESTED_SHA: git(root, 'rev-parse', 'HEAD'),
-      },
-    });
-    assert.notEqual(incomplete.status, 0);
-    assert.match(incomplete.stderr, /omits production Bash sources: apps\/browser\/scripts\/build-release\.sh/u);
-  } finally {
-    rmSync(directory, {recursive: true, force: true});
-  }
-});
-
 test('source snapshot detects tracked and untracked source changes but excludes ignored evidence', () => {
   const cwd = initRepo();
   writeFileSync(join(cwd, '.gitignore'), '.artifacts/\n');
@@ -228,7 +147,7 @@ test('freeze gate uses the trusted base and rejects file or self-consistent mani
   writeFileSync(join(directory, 'spec.zh-CN.md'), specification);
   const manifest = {
     specVersion: 'V1.0',
-    specRevision: 4,
+    specRevision: 5,
     specificationStatus: 'FROZEN',
     authority: 'spec.zh-CN.md',
     counts: {functionalAndDeliveryCases: 118, performanceMetrics: 13, deliveryGates: 4},
@@ -256,6 +175,59 @@ test('freeze gate uses the trusted base and rejects file or self-consistent mani
   };
   writeFileSync(join(directory, 'freeze.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   result = run(process.execPath, [join(scripts, 'check-access-freeze.mjs'), '--base', base, '--repo', cwd]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /freeze\.json differs from trusted baseline/u);
+});
+
+const revision4Commit = 'd60b5952b40e511d6f98f3f33be926dbe7ab1eb7';
+const revision4Available = spawnSync('git', ['cat-file', '-e', `${revision4Commit}^{commit}`], {cwd: root}).status === 0;
+
+test('freeze gate admits only the pinned revision 4 to 5 migration', {skip: revision4Available ? false : 'revision 4 commit is absent from this shallow checkout'}, () => {
+  const freezeDirectory = 'docs/plans/access-service-v1.0';
+  const showRevision4 = (path) => {
+    const result = spawnSync('git', ['show', `${revision4Commit}:${path}`], {cwd: root, maxBuffer: 16 * 1024 * 1024});
+    assert.equal(result.status, 0, String(result.stderr));
+    return result.stdout;
+  };
+  const cwd = initRepo();
+  const directory = join(cwd, freezeDirectory);
+  mkdirSync(directory, {recursive: true});
+  const revision4Manifest = showRevision4(`${freezeDirectory}/freeze.json`);
+  writeFileSync(join(directory, 'freeze.json'), revision4Manifest);
+  for (const name of Object.keys(JSON.parse(revision4Manifest.toString('utf8')).files)) {
+    writeFileSync(join(directory, name), showRevision4(`${freezeDirectory}/${name}`));
+  }
+  const base = commitAll(cwd, 'revision 4 freeze');
+  const revision5Manifest = readFileSync(join(root, freezeDirectory, 'freeze.json'));
+  const revision5Names = Object.keys(JSON.parse(revision5Manifest.toString('utf8')).files);
+  const installRevision5 = () => {
+    writeFileSync(join(directory, 'freeze.json'), revision5Manifest);
+    for (const name of revision5Names) cpSync(join(root, freezeDirectory, name), join(directory, name));
+  };
+  const check = () => run(process.execPath, [join(scripts, 'check-access-freeze.mjs'), '--base', base, '--repo', cwd]);
+  const appendByte = (name) => writeFileSync(join(directory, name), Buffer.concat([readFileSync(join(directory, name)), Buffer.from('\n')]));
+
+  installRevision5();
+  let result = check();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).migration, '4->5');
+
+  appendByte('interaction-example.html');
+  result = check();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /interaction-example\.html differs from trusted baseline/u);
+
+  installRevision5();
+  appendByte('spec.zh-CN.md');
+  result = check();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /spec\.zh-CN\.md/u);
+
+  installRevision5();
+  const altered = JSON.parse(revision5Manifest.toString('utf8'));
+  altered.recordedAt = '2026-11-24T00:00:00+00:00';
+  writeFileSync(join(directory, 'freeze.json'), `${JSON.stringify(altered, null, 2)}\n`);
+  result = check();
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /freeze\.json differs from trusted baseline/u);
 });
@@ -442,20 +414,38 @@ test('push and dispatch identity admit configured maintenance lines while reject
   for (const event of ['push', 'workflow_dispatch']) assert.notEqual(verify(event, 'refs/heads/develop', unrelated).status, 0, 'unrelated base must fail');
 });
 
-test('workflow validator enforces Mac-only automatic gates and safe manual workflows', () => {
-  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml']
+test('the sync merge guard selects only the corresponding trusted integration branch', () => {
+  const path = join(root, '.github/workflows/sync-merge-method.yml');
+  const workflow = YAML.parse(readFileSync(path, 'utf8'));
+  const checkouts = workflow.jobs['enforce-merge-method'].steps
+    .filter((step) => step.uses.startsWith('actions/checkout@'));
+  assert.deepEqual(checkouts.map((step) => [step.if, step.with.ref]), [
+    ["${{ github.base_ref == 'develop' }}", 'refs/heads/develop'],
+    ["${{ github.base_ref == 'main' }}", 'refs/heads/main'],
+  ]);
+});
+
+test('workflow validator enforces automatic platform reporting and its execution boundaries', () => {
+  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml', 'sync-merge-method.yml']
     .map((name) => join(root, '.github/workflows', name));
   const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
   const validate = (args, cwd) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args], {cwd});
-  const fixedPaths = paths.slice(0, -1);
+  const fixedPaths = paths.slice(0, 6);
   const result = validate(fixedPaths);
   assert.equal(result.status, 0, result.stderr);
-  assert.notEqual(validate(paths).status, 0, 'the iOS workflow path cannot be overridden');
+  assert.notEqual(validate(paths.slice(0, 7)).status, 0, 'the iOS workflow path cannot be overridden');
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'];
-  const automaticJobs = [[0, 'impact'], [0, 'quality'], [0, 'quality-summary'], [0, 'other-platforms'], [5, 'cpp-unit-tests'], [6, 'impact'], [6, 'contracts'], [6, 'ios-archive']];
+  const reportingJobs = [
+    [2, 'shell-coverage'], [2, 'powershell-coverage'],
+    [3, 'impact'], [3, 'android-java-coverage'],
+  ];
+  const automaticJobs = [
+    [0, 'impact'], [0, 'quality'], [0, 'quality-summary'], [0, 'other-platforms'], ...reportingJobs,
+    [5, 'cpp-unit-tests'], [6, 'impact'], [6, 'contracts'], [6, 'ios-archive'],
+  ];
   const mutations = [
-    ...[0, 5, 6].flatMap((index) => [
+    ...[0, 2, 3, 5, 6].flatMap((index) => [
       [index, (w) => { delete w.on.pull_request.types; }, 'missing PR event selection'],
       ...prTypes.map((type) => [index, (w) => {
         w.on.pull_request.types = prTypes.filter((value) => value !== type);
@@ -532,14 +522,43 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [0, (w) => { w.jobs['quality-summary'].steps[1].env.REQUIRED_RESULTS = value; }]),
     [0, (w) => { w.jobs['quality-summary'].steps[1].run += ' || true'; }],
     [0, (w) => { w.jobs['quality-summary'].steps[1].if = '${{ false }}'; }],
-    ...[1, 2, 3].flatMap((index) => [
-      [index, (w) => { w.on.push = {branches: ['main']}; }],
-      [index, (w) => { w.permissions.contents = 'write'; }],
-      [index, (w) => { Object.values(w.jobs)[0]['continue-on-error'] = true; }],
-      [index, (w) => { Object.values(w.jobs)[0].permissions = {'contents': 'write'}; }],
-      [index, (w) => { Object.values(w.jobs)[0].steps[0].with['persist-credentials'] = true; }],
-      [index, (w) => { Object.values(w.jobs)[0].steps[0].uses = 'actions/checkout@v7'; }],
+    [0, (w) => { delete w.jobs['other-platforms']['continue-on-error']; }, 'advisory job can fail the workflow'],
+    [0, (w) => { w.jobs['other-platforms'].steps.at(-1)['continue-on-error'] = true; }, 'advisory step must retain its failure'],
+    ...['impact', 'quality', 'quality-summary'].map(job =>
+      [0, (w) => { w.jobs[job]['continue-on-error'] = true; }, `${job} ignores failure`]),
+    ...[2, 3].flatMap((index) => [
+      [index, (w) => { delete w.on.push; }, 'reporting loses post-merge coverage'],
+      [index, (w) => { delete w.on.workflow_dispatch; }, 'reporting loses manual diagnostics'],
+      [index, (w) => { w.on.push.branches = ['main']; }, 'reporting misses develop pushes'],
+      [index, (w) => { w.on.pull_request.branches.push('feature'); }, 'reporting admits unrelated PR base'],
+      [index, (w) => { w.on.push['tags-ignore'] = ['**']; }, 'reporting must specify only branch pushes'],
+      [index, (w) => { w.concurrency.group = 'report'; }, 'reporting loses SHA-specific concurrency'],
+      [index, (w) => { w.concurrency['cancel-in-progress'] = true; }, 'an automatic push must not cancel another push'],
     ]),
+    ...[1, 2, 3].map(index => [index, (w) => {
+      w.permissions.contents = 'write';
+    }, 'coverage workflow must have read-only permissions']),
+    ...[[1, 'ios-coverage'], ...reportingJobs].flatMap(([index, job]) => [
+      [index, (w) => { w.jobs[job]['continue-on-error'] = true; }, `${job} ignores failure`],
+      [index, (w) => { w.jobs[job].permissions = {contents: 'write'}; }, `${job} gains write permissions`],
+      [index, (w) => {
+        const checkout = w.jobs[job].steps.find(step => step.uses?.startsWith('actions/checkout@'));
+        checkout.with['persist-credentials'] = true;
+      }, `${job} retains checkout credentials`],
+      [index, (w) => {
+        const checkout = w.jobs[job].steps.find(step => step.uses?.startsWith('actions/checkout@'));
+        checkout.uses = 'actions/checkout@v7';
+      }, `${job} uses an unpinned action`],
+    ]),
+    ...reportingJobs.map(([index, job]) => [index, (w) => {
+      w.jobs[job]['runs-on'] = ['self-hosted', 'macOS', 'ARM64', 'aegis-test'];
+    }, `${job} must run on the declared hosted platform`]),
+    [1, (w) => { w.on.push = {branches: ['main']}; }, 'iOS coverage remains manual'],
+    [2, (w) => { w.on.push.paths = ['apps/browser/**']; }, 'desktop reports must also cover shared changes'],
+    [3, (w) => { w.on.push.paths = ['apps/browser/**']; }, 'Android routing must inspect the complete push diff'],
+    [3, (w) => { delete w.jobs['android-java-coverage'].needs; }, 'emulator allocation must wait for routing'],
+    [3, (w) => { w.jobs.impact.outputs.pr_base = '${{ github.event.pull_request.base.sha }}'; }, 'router must emit the exact merge base'],
+    [3, (w) => { w.jobs['android-java-coverage'].env.AEGIS_PR_HEAD_SHA = '${{ github.event.pull_request.head.sha }}'; }, 'report must use the verified second parent'],
     [3, (w) => {
       const step = w.jobs['android-java-coverage'].steps.find((entry) => entry.name === 'Run six fixtures and collect real Java coverage');
       delete step.run;
@@ -556,21 +575,38 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
     [4, (w) => { w.jobs['normalize-title'].steps[1].uses = 'actions/github-script@v8'; }],
     [4, (w) => { w.jobs['normalize-title'].steps[1].with['github-token'] = '${{ secrets.GITHUB_TOKEN }}'; }],
     [4, (w) => { w.jobs['normalize-title'].steps.push({name: 'unsafe', run: 'node candidate.mjs'}); }],
+    [7, (w) => { w.on.pull_request_target.types.push('synchronize'); }, 'only auto-merge enablement is admitted'],
+    [7, (w) => { w.on.pull_request_target.branches = ['main']; }, 'must cover both integration branches'],
+    [7, (w) => { w.permissions.contents = 'write'; }, 'contents must stay read-only'],
+    [7, (w) => { w.concurrency['cancel-in-progress'] = true; }, 'a mutation must complete before the next run'],
+    [7, (w) => { delete w.jobs['enforce-merge-method'].if; }, 'do not allocate a runner for cross-repository PRs'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[0].with.ref = '${{ github.event.pull_request.head.sha }}'; }, 'only the trusted base can execute'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[1].with.ref = 'refs/pull/1/merge'; }, 'main cannot execute a PR merge ref'],
+    [7, (w) => { delete w.jobs['enforce-merge-method'].steps[0].if; }, 'checkout must match the PR target'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps[0].with['persist-credentials'] = true; }, 'checkout may not persist credentials'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps.at(-1).uses = 'actions/github-script@v8'; }, 'pin the metadata action'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps.at(-1).with['github-token'] = '${{ secrets.APP_TOKEN }}'; }, 'do not expose repository secrets'],
+    [7, (w) => { w.jobs['enforce-merge-method'].steps.at(-1).with.script += 'process.exit(0);'; }, 'only invoke the trusted guard'],
   ];
   try {
-    const iosFixture = join(directory, '.github/workflows/ios-release-validation.yml');
-    mkdirSync(dirname(iosFixture), {recursive: true});
-    writeFileSync(iosFixture, readFileSync(paths[6]));
+    const fixtures = paths.map((path, index) => index < fixedPaths.length ? null :
+      join(directory, '.github/workflows', basename(path)));
+    mkdirSync(dirname(fixtures[6]), {recursive: true});
+    for (const [index, path] of fixtures.entries()) {
+      if (path) writeFileSync(path, readFileSync(paths[index]));
+    }
     const control = validate(fixedPaths, directory);
     assert.equal(control.status, 0, control.stderr);
     for (const [number, [index, mutate, reason]] of mutations.entries()) {
       const copy = structuredClone(originals[index]);
       mutate(copy);
-      const path = index === 6 ? iosFixture : join(directory, `mutation-${number}.yml`);
+      const fixture = fixtures[index];
+      const path = fixture ?? join(directory, `mutation-${number}.yml`);
       writeFileSync(path, YAML.stringify(copy));
       const args = [...fixedPaths];
-      if (index !== 6) args[index] = path;
-      assert.notEqual(validate(args, index === 6 ? directory : root).status, 0, `workflow mutation ${number} (${paths[index]}: ${reason ?? 'existing contract'}) unexpectedly passed`);
+      if (!fixture) args[index] = path;
+      assert.notEqual(validate(args, fixture ? directory : root).status, 0, `workflow mutation ${number} (${paths[index]}: ${reason ?? 'existing contract'}) unexpectedly passed`);
+      if (fixture) writeFileSync(path, readFileSync(paths[index]));
     }
   } finally {
     rmSync(directory, {recursive: true, force: true});
@@ -580,18 +616,165 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
 test('Mac quality chain retains shared tests and isolates platform-specific execution', () => {
   const rootScripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts;
   const browserScripts = JSON.parse(readFileSync(join(root, 'apps/browser/package.json'), 'utf8')).scripts;
+  const fullQuality = readFileSync(join(scripts, 'run-quality.mjs'), 'utf8');
   const browserScriptQualityChecks = readFileSync(
     join(root, 'apps/browser/scripts/run-script-quality-checks.sh'),
     'utf8',
   );
   assert.doesNotMatch(rootScripts['quality:fast'], /test:android|test:model-relay|test:winrm/u);
+  assert.match(fullQuality, /await command\('android-release-python-tests', 'python3', \['-B', 'scripts\/ci\/run-android-release-tests\.py'\]\)/u);
+  assert.match(fullQuality, /await command\('ci-tests', 'corepack', \['pnpm', 'run', 'ci:test'\]/u);
+  assert.match(rootScripts['ci:test'], /scripts\/ci\/tests\/\*\.test\.mjs/u);
   for (const name of ['test:scripts', 'test:agent-ui', 'test:local-model']) assert.ok(rootScripts['quality:fast'].includes(name));
   assert.match(browserScripts['test:local-model'], /verify-agent-local-model_test/u);
   assert.equal(browserScripts['test:scripts'], 'bash ./scripts/run-script-quality-checks.sh');
   assert.doesNotMatch(browserScriptQualityChecks, /package-android|winrm-model-relay/u);
   for (const name of ['patch-series-format-regression_test.sh', 'test-aegis-access-native.sh', 'sign-chromium-app_test.sh', 'fetch-toolchain_test.sh', 'verify-agent-local-model.mjs']) assert.ok(browserScriptQualityChecks.includes(name));
   assert.match(browserScriptQualityChecks, /run_check 'patch series regression fixtures'/u);
-  for (const name of ['test:android-target', 'test:android-ui', 'test:scripts:android', 'test:winrm-model-relay']) assert.ok(rootScripts['quality:other-platforms'].includes(name));
+  assert.equal(rootScripts['quality:other-platforms'], 'corepack pnpm run quality:android && corepack pnpm run quality:windows');
+  for (const name of ['test:android-target', 'test:android-ui', 'test:scripts:android']) assert.ok(rootScripts['quality:android'].includes(name));
+  assert.doesNotMatch(rootScripts['quality:android'], /winrm/u);
+  assert.equal(rootScripts['quality:windows'], 'corepack pnpm --filter @gcsa-aegis/browser test:winrm-model-relay');
+  assert.doesNotMatch(rootScripts['ci:test'], /platform-tests|quality:linux/u);
+  assert.equal(rootScripts['quality:linux'], 'node --test scripts/ci/platform-tests/kcov-fixture.test.mjs scripts/ci/tests/shell-coverage.test.mjs');
+});
+
+test('required Android Python runner requires suite success and a complete Android case', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'aegis-android-release-tests-'));
+  const release = join(cwd, 'scripts/release');
+  const fixture = 'test_android_fixture.py';
+  const runner = join(scripts, 'run-android-release-tests.py');
+  const execute = () => run('python3', ['-B', runner], {cwd});
+  const syncCase = `import unittest
+
+class AndroidReleaseTest(unittest.TestCase):`;
+  const passing = `${syncCase}
+    def test_release(self):
+        self.assertTrue(True)
+`;
+  const skippedSubtest = `        with self.subTest(case="skipped"):
+            self.skipTest("fixture skip")`;
+  const partialBody = `        with self.subTest(case="passed"):
+            self.assertTrue(True)
+${skippedSubtest}`;
+  const asyncCase = `import asyncio
+import unittest
+
+class AndroidReleaseTest(unittest.IsolatedAsyncioTestCase):`;
+  const noCompleteCase = /No complete Android release tests passed/u;
+  try {
+    const nested = join(release, 'non_package');
+    mkdirSync(nested, {recursive: true});
+    writeFileSync(join(nested, fixture), passing);
+    writeFileSync(join(release, 'test_ios_fixture.py'), passing.replace('AndroidReleaseTest', 'IOSReleaseTest'));
+    const empty = execute();
+    assert.equal(empty.status, 1, empty.stderr);
+    assert.match(empty.stderr, /No Android release tests discovered/u);
+
+    for (const [name, source, exitCode, output] of [
+      ['complete case', passing, 0, /Ran 1 test\b/u],
+      ['failure alongside a complete case', `${passing}
+    def test_failure(self):
+        self.fail("fixture test failed")
+`, 1, /AssertionError: fixture test failed/u],
+      ['load error', 'raise ImportError("fixture suite could not load")\n', 1, /ImportError: fixture suite could not load/u],
+      ['whole case skipped', passing.replace('self.assertTrue(True)', 'self.skipTest("fixture skip")'), 1, noCompleteCase],
+      ['expected failure only', `${syncCase}
+    @unittest.expectedFailure
+    def test_release(self):
+        self.fail("fixture expected failure")
+`, 1, noCompleteCase],
+      ['partial body', passing.replace('        self.assertTrue(True)', partialBody), 1, noCompleteCase],
+      ['complete case with partial and skipped siblings', `${passing}
+    def test_partial(self):
+${partialBody}
+
+    def test_skipped(self):
+        self.skipTest("fixture skip")
+`, 0, /OK \(skipped=2\)/u],
+      ['partial body in a fresh context', `from contextvars import Context
+${syncCase}
+    def test_release(self):
+        Context().run(self.check_subtests)
+
+    def check_subtests(self):
+${partialBody}
+`, 1, noCompleteCase],
+      ['complete async case in a fresh context', `from contextvars import Context
+${asyncCase}
+    async def test_release(self):
+        await asyncio.sleep(0)
+        Context().run(self.check_subtest)
+
+    def check_subtest(self):
+        with self.subTest(case="passed"):
+            self.assertTrue(True)
+`, 0, /Ran 1 test\b/u],
+      ['setup subtest before whole case skip', `${syncCase}
+    def setUp(self):
+        with self.subTest(case="setup"):
+            self.assertTrue(True)
+        self.skipTest("fixture skip")
+
+    def test_release(self):
+        self.fail("fixture body must not run")
+`, 1, noCompleteCase],
+      ['partial setup', `${syncCase}
+    def setUp(self):
+        with self.subTest(case="setup"):
+            self.assertTrue(True)
+        with self.subTest(case="setup-skipped"):
+            self.skipTest("fixture skip")
+
+    def test_release(self):
+        self.fail("fixture body must not run")
+`, 1, noCompleteCase],
+      ['teardown subtest using the body’s asyncio runner', `import asyncio
+${syncCase}
+    def test_release(self):
+        self.runner = asyncio.Runner()
+        self.addCleanup(self.runner.close)
+        self.runner.run(asyncio.sleep(0))
+${skippedSubtest}
+
+    def tearDown(self):
+        self.runner.run(self.report_subtest())
+
+    async def report_subtest(self):
+        with self.subTest(case="teardown"):
+            self.assertTrue(True)
+`, 1, noCompleteCase],
+      ['background subtest from async setup', `${asyncCase}
+    async def asyncSetUp(self):
+        async def report_subtest():
+            await asyncio.sleep(0)
+            with self.subTest(case="setup-task"):
+                self.assertTrue(True)
+
+        self.setup_task = asyncio.create_task(report_subtest())
+
+    async def test_release(self):
+        await self.setup_task
+${skippedSubtest}
+`, 1, noCompleteCase],
+      ['background subtest from async body', `${asyncCase}
+    async def test_release(self):
+        async def report_subtest():
+            with self.subTest(case="child-task"):
+                self.assertTrue(True)
+
+        await asyncio.create_task(report_subtest())
+${skippedSubtest}
+`, 1, noCompleteCase],
+    ]) {
+      writeFileSync(join(release, fixture), source);
+      const result = execute();
+      assert.equal(result.status, exitCode, `${name}\n${result.stderr}`);
+      assert.match(result.stderr, output, `${name}\n${result.stderr}`);
+    }
+  } finally {
+    rmSync(cwd, {recursive: true, force: true});
+  }
 });
 
 test('native classification is NUL-safe, rename-safe, and conservative for unknown production paths', () => {

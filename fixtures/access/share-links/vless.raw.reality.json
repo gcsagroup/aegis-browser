@@ -1,0 +1,27 @@
+{
+  "profileKey": "vless.raw.reality",
+  "aliases": ["reality_vision"],
+  "legacyOutboundTag": "reality_vision",
+  "share": "vless://00000000-0000-4000-8000-000000000001@192.0.2.10:443?type=tcp&security=reality&flow=xtls-rprx-vision&sni=cert.example.com&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=01020304&spx=%2Ftest#synthetic-reality",
+  "rejectedQuerySuffixes": ["&allowInsecure=false", "&type=ws", "&unknown=1"],
+  "embeddedConfig": {
+    "log": {"loglevel": "none", "access": "none", "error": "none"},
+    "inbounds": [],
+    "outbounds": [{
+      "tag": "reality_vision",
+      "protocol": "vless",
+      "settings": {"vnext": [{
+        "address": "192.0.2.10", "port": 443,
+        "users": [{"id": "00000000-0000-4000-8000-000000000001", "encryption": "none", "flow": "xtls-rprx-vision"}]
+      }]},
+      "streamSettings": {
+        "network": "tcp", "security": "reality",
+        "realitySettings": {
+          "serverName": "cert.example.com", "fingerprint": "chrome",
+          "publicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "shortId": "01020304", "spiderX": "/test"
+        }
+      }
+    }]
+  }
+}

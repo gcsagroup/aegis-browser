@@ -1,3 +1,3 @@
-"NSCameraUsageDescription" = "O Aegis pede autorização antes de um site utilizar a sua câmara.";
+"NSCameraUsageDescription" = "O Aegis pede autorização antes de um site utilizar a câmara ou de ler um código QR de um nó de teste.";
 "NSMicrophoneUsageDescription" = "O Aegis pede autorização antes de um site utilizar o seu microfone.";
 "Markdown 文档" = "Documento Markdown";

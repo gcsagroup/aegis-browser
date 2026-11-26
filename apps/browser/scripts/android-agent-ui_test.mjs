@@ -121,9 +121,10 @@ test('JaCoCo XML 只用完整 Driver class 集和真实源码行计数生成百�
   ].join('');
   assert.deepEqual(summarizeJacocoXml(xml, classes),
     {measurement: 'jacoco-line-counter', covered: 5, missed: 3, total: 8, percent: 62.5});
-  const legacyPath = 'app/gcsa/aegis/qa/driver';
-  assert.throws(() => summarizeJacocoXml(xml.replaceAll(packagePath, legacyPath),
-    classes.map(name => name.replace(packagePath, legacyPath))), /缺少 Driver package/);
+  for (const wrongPackage of ['app/gcsa/aegis/qa/driver', 'com/gcsa/aegis/qa/driver-extra']) {
+    const wrongClasses = classes.map(name => name.replace(packagePath, wrongPackage));
+    assert.throws(() => summarizeJacocoXml(xml.replaceAll(packagePath, wrongPackage), wrongClasses), /缺少 Driver package/);
+  }
   assert.throws(() => summarizeJacocoXml(xml, classes.slice(1)));
   assert.throws(() => summarizeJacocoXml(xml.replace('covered="5"', 'covered="0"'), classes));
   assert.throws(() => summarizeJacocoXml(xml.replace('<sourcefile name="Driver.java">', '<sourcefile name="Other.java">'), classes));

@@ -9,19 +9,28 @@ public struct AccessManagedProxyEndpoint: Sendable, Equatable {
     public var loopbackHost: String
     public var port: UInt16
     public var state: AccessProxyEndpointState
+    public var transport: AccessInboundTransport
+
+    public var hasAdmittedBinding: Bool {
+        !identity.isEmpty && generation != 0
+            && (loopbackHost == "127.0.0.1" || loopbackHost == "::1")
+            && port != 0 && (transport != .socks5 || port != 1080)
+    }
 
     public init(
         identity: String,
         generation: UInt64,
         loopbackHost: String,
         port: UInt16,
-        state: AccessProxyEndpointState
+        state: AccessProxyEndpointState,
+        transport: AccessInboundTransport = .http
     ) {
         self.identity = identity
         self.generation = generation
         self.loopbackHost = loopbackHost
         self.port = port
         self.state = state
+        self.transport = transport
     }
 }
 
@@ -31,12 +40,13 @@ public final class AccessHostDataStoreRegistry {
     public private(set) var switchGeneration: UInt64 = 0
     private var entries: [AccessHostStoreKey: Entry] = [:]
     private var endpoints: [AccessHostStoreKey: AccessManagedProxyEndpoint] = [:]
+    private var listenerRetirements: [String: @MainActor () -> Void] = [:]
     public var onRetire: ((AccessHostStoreKey) -> Void)?
 
     private struct Entry {
         var store: WKWebsiteDataStore
         var record: AccessHostStoreRecord
-        var appliedGeneration: UInt64?
+        var appliedEndpoint: AccessManagedProxyEndpoint
         var retiringDocuments: Set<UUID> = []
     }
 
@@ -53,22 +63,35 @@ public final class AccessHostDataStoreRegistry {
         endpoints[key(scopeID, host, isPrivate)]
     }
 
-    /// Ignores a generation older than the one already accepted for this host.
+    /// Reports whether the registry accepted the endpoint. A rejected ready
+    /// generation blocks new attachments and leaves the old document's proxy intact.
+    @discardableResult
     public func setEndpoint(
         _ endpoint: AccessManagedProxyEndpoint,
         scopeID: String,
         host: AccessSiteHost,
         isPrivate: Bool
-    ) {
+    ) -> Bool {
         let storeKey = key(scopeID, host, isPrivate)
         if let current = endpoints[storeKey], endpoint.generation < current.generation {
-            return
+            return false
+        }
+        if endpoint.state == .ready {
+            if listenerRetirements[endpoint.identity] != nil { return false }
+            if let applied = entries[storeKey]?.appliedEndpoint, listenerRetirements[applied.identity] != nil { return false }
+            guard let configuration = configuration(for: endpoint) else {
+                var rejected = endpoint
+                rejected.state = .failed
+                endpoints[storeKey] = rejected
+                return false
+            }
+            if let entry = entries[storeKey] {
+                entry.store.proxyConfigurations = [configuration]
+                entries[storeKey]?.appliedEndpoint = endpoint
+            }
         }
         endpoints[storeKey] = endpoint
-        if endpoint.state == .ready, let entry = entries[storeKey] {
-            apply(endpoint, to: entry.store)
-            entries[storeKey]?.appliedGeneration = endpoint.generation
-        }
+        return true
     }
 
     public func setProxyEnabled(
@@ -136,8 +159,8 @@ public final class AccessHostDataStoreRegistry {
         }
     }
 
-    /// Disables the host and drops its store. Returns tab ids that were bound so
-    /// the caller can send each one back to its original store first.
+    /// Disables new attachments. The caller detaches the returned tabs and
+    /// acknowledges their documents before the store can be dropped.
     public func revoke(
         scopeID: String,
         host: AccessSiteHost,
@@ -149,12 +172,15 @@ public final class AccessHostDataStoreRegistry {
         let tabs = entries[storeKey]?.record.boundTabIDs ?? []
         if var entry = entries[storeKey] {
             entry.record.proxyEnabled = false
-            entry.record.boundTabIDs = []
             entries[storeKey] = entry
         }
         endpoints[storeKey]?.state = .unavailable
         sweep(now: now)
         return tabs
+    }
+
+    public func isBound(_ tabID: String, to key: AccessHostStoreKey) -> Bool {
+        entries[key]?.record.boundTabIDs.contains(tabID) == true
     }
 
     public func unbind(_ tabID: String, now: Date = Date()) {
@@ -168,6 +194,17 @@ public final class AccessHostDataStoreRegistry {
             changed = true
         }
         if changed { sweep(now: now) }
+    }
+
+    /// Transfer a live binding to a document receipt before the tab changes stores.
+    public func detachTab(_ tabID: String, from store: WKWebsiteDataStore) -> (@MainActor () -> Void)? {
+        guard let key = entries.first(where: {
+            $0.value.store === store && $0.value.record.boundTabIDs.contains(tabID)
+        })?.key,
+              let finish = retainRetiringDocument(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate)
+        else { return nil }
+        entries[key]?.record.boundTabIDs.remove(tabID)
+        return finish
     }
 
     public func endPrivateSession(scopeID: String, now: Date = Date()) {
@@ -192,6 +229,40 @@ public final class AccessHostDataStoreRegistry {
         )
         for eviction in evictions {
             retire(eviction.key)
+        }
+        finishListenerRetirements()
+    }
+
+    /// Fences one listener's stores immediately. Bound tabs (including those
+    /// closing a window) and previously detached documents both owe a receipt.
+    public func retireListener(identity: String, finish: @escaping @MainActor () -> Void) -> [AccessHostStoreKey: Set<String>] {
+        var bound: [AccessHostStoreKey: Set<String>] = [:]
+        for (key, endpoint) in endpoints where endpoint.identity == identity {
+            if endpoint.state == .ready { endpoints[key]?.state = .failed }
+        }
+        for (key, entry) in entries where entry.appliedEndpoint.identity == identity {
+            bound[key] = entry.record.boundTabIDs
+        }
+        listenerRetirements[identity] = finish
+        finishListenerRetirements()
+        return bound
+    }
+
+    public func acknowledgeRetiredTab(_ tabID: String, key: AccessHostStoreKey, identity: String) {
+        guard entries[key]?.appliedEndpoint.identity == identity, listenerRetirements[identity] != nil else { return }
+        entries[key]?.record.boundTabIDs.remove(tabID)
+        finishListenerRetirements()
+    }
+
+    private func finishListenerRetirements() {
+        for (identity, finish) in listenerRetirements {
+            let keys = entries.keys.filter { entries[$0]?.appliedEndpoint.identity == identity }
+            guard keys.allSatisfy({ key in
+                entries[key]?.record.boundTabIDs.isEmpty == true && entries[key]?.retiringDocuments.isEmpty == true
+            }) else { continue }
+            listenerRetirements.removeValue(forKey: identity)
+            for key in keys { retire(key) }
+            finish()
         }
     }
 
@@ -222,6 +293,11 @@ public final class AccessHostDataStoreRegistry {
         endpoints[key] = nil
     }
 
+    public func releaseIdleStore(for key: AccessHostStoreKey) {
+        guard entries[key]?.record.isInUse == false else { return }
+        retire(key)
+    }
+
     public func releaseIdleStores() {
         for (key, entry) in entries where !entry.record.isInUse { retire(key) }
     }
@@ -243,12 +319,13 @@ public final class AccessHostDataStoreRegistry {
     ) -> WKWebsiteDataStore? {
         let storeKey = key(scopeID, host, isPrivate)
         let endpoint = endpoints[storeKey]
+        if let endpoint, !endpoint.hasAdmittedBinding { return nil }
+        if let applied = entries[storeKey]?.appliedEndpoint, listenerRetirements[applied.identity] != nil { return nil }
+        if let endpoint, listenerRetirements[endpoint.identity] != nil { return nil }
         if entries[storeKey] == nil {
-            guard endpoint?.state == .ready else { return nil }
+            guard let endpoint, let configuration = configuration(for: endpoint) else { return nil }
             let store = WKWebsiteDataStore.nonPersistent()
-            if let endpoint {
-                apply(endpoint, to: store)
-            }
+            store.proxyConfigurations = [configuration]
             entries[storeKey] = Entry(
                 store: store,
                 record: AccessHostStoreRecord(
@@ -257,15 +334,16 @@ public final class AccessHostDataStoreRegistry {
                     proxyEnabled: true,
                     idleSince: nil
                 ),
-                appliedGeneration: endpoint?.generation
+                appliedEndpoint: endpoint
             )
         }
         guard var entry = entries[storeKey] else { return nil }
         entry.record.boundTabIDs.insert(tabID)
         entry.record.idleSince = nil
-        if let endpoint, endpoint.state == .ready, entry.appliedGeneration != endpoint.generation {
-            apply(endpoint, to: entry.store)
-            entry.appliedGeneration = endpoint.generation
+        if let endpoint, endpoint.state == .ready, entry.appliedEndpoint != endpoint {
+            guard let configuration = configuration(for: endpoint) else { return nil }
+            entry.store.proxyConfigurations = [configuration]
+            entry.appliedEndpoint = endpoint
         }
         entries[storeKey] = entry
         _ = now
@@ -299,23 +377,27 @@ public final class AccessHostDataStoreRegistry {
 
     private func retire(_ key: AccessHostStoreKey) {
         guard entries[key]?.retiringDocuments.isEmpty == true,
+              entries[key]?.record.boundTabIDs.isEmpty == true,
               let entry = entries.removeValue(forKey: key) else { return }
         entry.store.proxyConfigurations = []
         endpoints[key] = nil
         onRetire?(key)
     }
 
-    private func apply(_ endpoint: AccessManagedProxyEndpoint, to store: WKWebsiteDataStore) {
+    private func configuration(for endpoint: AccessManagedProxyEndpoint) -> ProxyConfiguration? {
         guard endpoint.state == .ready,
-              endpoint.port != 0,
+              endpoint.hasAdmittedBinding,
               let port = NWEndpoint.Port(rawValue: endpoint.port)
-        else { return }
-        var configuration = ProxyConfiguration(httpCONNECTProxy: .hostPort(
-            host: NWEndpoint.Host(endpoint.loopbackHost),
-            port: port
-        ))
+        else { return nil }
+        let address = NWEndpoint.hostPort(host: NWEndpoint.Host(endpoint.loopbackHost), port: port)
+        var configuration: ProxyConfiguration
+        switch endpoint.transport {
+        case .http: configuration = ProxyConfiguration(httpCONNECTProxy: address)
+        case .https: configuration = ProxyConfiguration(httpCONNECTProxy: address, tlsOptions: NWProtocolTLS.Options())
+        case .socks5: configuration = ProxyConfiguration(socksv5Proxy: address)
+        }
         configuration.allowFailover = false
-        store.proxyConfigurations = [configuration]
+        return configuration
     }
 
     private func key(

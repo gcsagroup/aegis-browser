@@ -78,6 +78,8 @@ function createFixture(t) {
   }
   write(root, 'apps/ios/Tests/SharedWebExtension/SafariNavigationIdentityTests.mjs', '// Fixture preflight.\n');
   write(root, 'apps/ios/scripts/simulator-fixture-server.py', '# Fixture self-test.\n');
+  write(root, 'apps/ios/scripts/geosite-https-fixture.py',
+    'import subprocess, sys\nsys.exit(subprocess.call(sys.argv[sys.argv.index("--") + 1:]))\n');
   // Upstream Access packaging calls this before xcodegen; keep the fixture self-contained.
   write(root, 'scripts/release/prepare-ios-package-core.sh',
     '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p "${2:?missing EmbeddedCore products}/AegisEmbeddedCore.xcframework"\n' +
@@ -145,14 +147,35 @@ if (tool === 'python3') {
     {name: 'Aegis CI com.gcsa.aegis iPhone 17', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', udid: 'phone'},
     {name: 'Aegis CI com.gcsa.aegis iPad Air 11-inch (M4)', deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4', udid: 'tablet'},
   ];
+  const duoType = 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo';
+  const supported = process.env.EVIDENCE_SUPPORTED_TYPES;
+  const runtimeEntry = {identifier: runtime, version: '26.5', isAvailable: true};
+  if (supported !== undefined) {
+    runtimeEntry.supportedDeviceTypes = supported.split(',').filter(Boolean).map(identifier => ({identifier}));
+  }
   if (args[0] === 'simctl' && args[2] === 'runtimes') {
-    output({runtimes: [{identifier: runtime, version: '26.5', isAvailable: true}]});
+    output({runtimes: [runtimeEntry]});
   } else if (args[0] === 'simctl' && args[2] === 'devicetypes') {
-    output({devicetypes: devices.map(device => ({identifier: device.deviceTypeIdentifier}))});
+    output({devicetypes: [...devices.map(device => ({identifier: device.deviceTypeIdentifier})),
+      {identifier: duoType, name: 'iPhone Duo'}]});
   } else if (args[0] === 'simctl' && args[2] === 'devices') {
-    output({devices: {[runtime]: devices}});
+    output({devices: {[runtime]: process.env.EVIDENCE_NO_DEVICES === '1' ? [] : devices}});
+  } else if (args[0] === 'simctl' && args[1] === 'create') {
+    if (process.env.EVIDENCE_CREATE_FAIL === 'fail') {
+      console.error('An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=403)');
+      console.log('Unable to create a device for device type');
+      process.exit(1);
+    }
+    if (process.env.EVIDENCE_CREATE_FAIL === 'text') {
+      console.log('Unable to create a device for device type');
+    } else {
+      console.log('11111111-2222-3333-4444-555555555555');
+    }
   } else if (args[0] === 'xcresulttool') {
-    output({result: 'Passed', totalTestCount: 1});
+    const seed = (option('--path') ?? '').endsWith('-overseas-seed.xcresult');
+    const passed = seed && process.env.EVIDENCE_FAIL_OVERSEAS_SEED === '1' ? 0 : 1;
+    output({result: passed ? 'Passed' : 'Failed', totalTestCount: 1, passedTests: passed,
+      failedTests: 1 - passed, skippedTests: 0});
   } else if (args[0] === 'xccov') {
     output({targets: [{name: 'Aegis', files: [{path: path.join(ios, 'AegisApp/Main.swift'),
       coveredLines: 1, executableLines: 1, lineCoverage: 1}]}]});
@@ -164,7 +187,7 @@ if (tool === 'python3') {
 }
 `;
 
-function runFixture(fixture, overrides = {}, mode = '--execute') {
+function runFixture(fixture, overrides = {}, mode = '--execute', extraArgs = []) {
   const bin = path.join(fixture.sandbox, 'bin');
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
   fs.mkdirSync(bin);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
@@ -175,7 +198,7 @@ function runFixture(fixture, overrides = {}, mode = '--execute') {
   }
   const report = path.join(fixture.sandbox, 'report');
   const result = spawnSync('bash', [path.join(fixture.root, 'apps/ios/scripts/run-simulator-tests.sh'),
-    mode, '--output-dir', report], {
+    mode, '--output-dir', report, ...extraArgs], {
     cwd: fixture.root,
     encoding: 'utf8',
     timeout: 90_000,
@@ -241,6 +264,22 @@ test('runner distinguishes clean source from generated inputs and binds coverage
   assert.equal(coverage.metadata.gitTreeState, 'dirty');
   assert.equal(coverage.metadata.buildNumber, '35');
   assert.equal(coverage.metadata.inputManifestSha256, digest(before));
+  for (const device of ['iPhone', 'iPad']) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- The report path belongs to this temporary test fixture.
+    const seed = JSON.parse(fs.readFileSync(path.join(result.report, `${device}-overseas-seed-summary.json`), 'utf8'));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+    assert.equal(seed.passedTests, 1);
+  }
+});
+
+test('runner refuses the full suite when the overseas settings seed does not pass', t => {
+  const fixture = createFixture(t);
+  const result = runFixture(fixture, {EVIDENCE_FAIL_OVERSEAS_SEED: '1'});
+  assert.notEqual(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout + result.stderr, /SIMULATOR_TESTS=FAIL/);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The report path belongs to this temporary test fixture.
+  assert.ok(!fs.existsSync(path.join(result.report, 'iPhone.xcresult')));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The report path belongs to this temporary test fixture.
+  assert.ok(!fs.existsSync(path.join(result.report, 'iPad.xcresult')));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
 });
 
 test('runner rejects shared-vector drift during testing and retains both manifests', t => {
@@ -295,4 +334,54 @@ test('dry run keeps the source and report directory untouched', t => {
   assert.equal(git(fixture.root, ['status', '--porcelain']), '');
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
   assert.ok(!fs.existsSync(result.report));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+});
+
+function exists(file) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  return fs.existsSync(file);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+}
+
+function readText(file) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+  return fs.readFileSync(file, 'utf8');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
+}
+
+const duoType = 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo';
+const createdUdid = '11111111-2222-3333-4444-555555555555';
+
+test('runner refuses a runtime that lacks the requested device type before creating devices', t => {
+  const result = runFixture(createFixture(t), {EVIDENCE_SUPPORTED_TYPES: duoType, EVIDENCE_NO_DEVICES: '1'});
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stderr, /runtime 不支持设备类型/);
+  assert.ok(!exists(result.report));
+});
+
+test('runner stops when simulator creation fails or returns something that is not a UDID', t => {
+  for (const [mode, message] of [['fail', /创建 Simulator 失败/], ['text', /返回的不是 UDID/]]) {
+    const result = runFixture(createFixture(t), {EVIDENCE_NO_DEVICES: '1', EVIDENCE_CREATE_FAIL: mode});
+    assert.equal(result.status, 1, result.stderr + result.stdout);
+    assert.match(result.stderr, message);
+    assert.doesNotMatch(result.stdout, /已创建专用 Simulator/);
+    assert.ok(!exists(result.report));
+  }
+});
+
+test('runner can run iPhone only with another phone type when the runtime has no iPad', t => {
+  const result = runFixture(createFixture(t), {EVIDENCE_SUPPORTED_TYPES: duoType, EVIDENCE_NO_DEVICES: '1'},
+    '--execute', ['--phone-device-type', duoType, '--tablet-device-type', 'none']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const metadata = readText(path.join(result.report, 'run-metadata.txt'));
+  const lines = metadata.split('\n');
+  assert.ok(lines.includes('iphone=Aegis CI com.gcsa.aegis iPhone Duo|' + createdUdid));
+  assert.match(metadata, /(?:^|\n)ipad=<skipped>(?:\n|$)/);
+  assert.ok(lines.includes('ipad_exit=skipped'));
+  assert.ok(!lines.includes('ipad_exit=0'));
+  assert.ok(exists(path.join(result.report, 'iPhone.xcresult')));
+  assert.ok(!exists(path.join(result.report, 'iPad.xcresult')));
+});
+
+test('runner rejects a malformed device type identifier', t => {
+  const result = runFixture(createFixture(t), {}, '--dry-run', ['--phone-device-type', 'iPhone-17']);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stderr, /设备类型格式无效/);
 });

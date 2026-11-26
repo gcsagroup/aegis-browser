@@ -28,6 +28,14 @@ public protocol AccessProxyEntryPublishing: AnyObject {
     func prepare(_ request: AccessProxyEntryPrepareRequest) async throws -> AccessProxyEntryPrepareResult
     func cancel(operationID: UUID)
     func validateReady(_ result: AccessProxyEntryPrepareResult) -> Bool
-    func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey) -> Bool
+    /// Checks acceptance before replacing an existing store consumer.
+    func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey,
+                admitting: () -> Bool) -> Bool
     func release(for key: AccessHostStoreKey)
+}
+
+public extension AccessProxyEntryPublishing {
+    func retain(_ endpoint: AccessManagedProxyEndpoint, for key: AccessHostStoreKey) -> Bool {
+        retain(endpoint, for: key, admitting: { true })
+    }
 }

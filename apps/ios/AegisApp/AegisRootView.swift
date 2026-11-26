@@ -420,7 +420,7 @@ private struct BrowserPane: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("隐藏地理位置")
-            .accessibilityValue(Text(LocalizedStringKey(AccessSiteProxyToggleModel.connectionLine(for: snapshot.connectionStatus))))
+            .accessibilityValue(Text(LocalizedStringKey(AccessSiteProxyToggleModel.siteStatusLine(snapshot))))
             .accessibilityAddTraits(snapshot.toggleOn ? .isSelected : [])
             .accessibilityIdentifier("address-location-privacy")
         }
@@ -644,34 +644,53 @@ struct PageLoadFailureBanner: View {
     @ObservedObject var tab: BrowserTab
     var locationPrivacyOn = false
     var offersLocationService = true
+    var failureProxyRetry: AccessHostStoreCoordinator.FailureProxyRetry? = nil
     var autoRecoveryOn: Bool = false
     var autoRecoveryLine: String? = nil
     var setAutoRecovery: ((BrowserTab, Bool) -> Void)? = nil
-    var addressProxyPreparing = false
+    var pendingAddressProxyState: ((BrowserTab, BrowserPendingAddressNavigation) -> AccessHostStoreCoordinator.PendingAddressProxyState)? = nil
     var openAddressViaProxy: ((BrowserTab, BrowserPendingAddressNavigation) -> Void)? = nil
     var editAddress: (() -> Void)? = nil
     var proxyRetry: (BrowserTab) -> Void
 
+    private var availableProxyRetry: AccessHostStoreCoordinator.FailureProxyRetry {
+        guard tab.loadingErrorAllowsProxyRetry else { return .unavailable }
+        if let failureProxyRetry { return failureProxyRetry }
+        if locationPrivacyOn { return .required }
+        return offersLocationService ? .optional : .unavailable
+    }
+
     var body: some View {
         let _ = localizationLocale
         if let error = tab.loadingError {
+            let failure = tab.lastMainFrameFailure
+            let retry = availableProxyRetry
             VStack(alignment: .leading, spacing: 8) {
-                if let failure = tab.lastMainFrameFailure {
+                if let failure {
                     Text(verbatim: AccessSiteDisplayName.title(failure.url.host(percentEncoded: true)))
                         .font(.callout.weight(.semibold))
                         .accessibilityIdentifier("page-load-failed-host")
                 }
                 Label("页面暂时无法打开", systemImage: "exclamationmark.circle")
                     .font(.headline)
-                if tab.loadingErrorAllowsProxyRetry && (locationPrivacyOn || offersLocationService) {
-                    ProxyRetryButton(title: AegisLocalization.string(locationPrivacyOn ? "重试" : "隐藏位置并重试")) { proxyRetry(tab) }
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                if retry != .unavailable {
+                    ProxyRetryButton(title: AegisLocalization.string(retry == .required ? "重试" : "隐藏位置并重试")) {
+                        guard tab.loadingErrorAllowsProxyRetry, tab.lastMainFrameFailure == failure else { return }
+                        proxyRetry(tab)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
-                if !locationPrivacyOn || !tab.loadingErrorAllowsProxyRetry {
-                    if tab.safeRouteReloadRequest != nil {
-                        Button("重试") { tab.reload() }.frame(minHeight: 44)
-                            .accessibilityIdentifier("page-load-retry")
+                if retry != .required {
+                    if let request = tab.safeRouteReloadRequest,
+                       failure == nil || (request.url == failure?.url && request.httpMethod == failure?.method) {
+                        Button("重试") {
+                            guard !tab.isLoading, tab.loadingError != nil, tab.lastMainFrameFailure == failure,
+                                  tab.safeRouteReloadRequest == request else { return }
+                            tab.reload()
+                        }
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("page-load-retry")
                     } else {
                         resubmissionActions
                     }
@@ -713,25 +732,27 @@ struct PageLoadFailureBanner: View {
             .padding(12)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("page-reload-refused")
-        } else if (offersLocationService || addressProxyPreparing), let pending = tab.pendingAddressNavigation,
-                  tab.matchesPendingAddressNavigation(pending),
+        } else if let pending = tab.pendingAddressNavigation, tab.matchesPendingAddressNavigation(pending),
                   let openAddressViaProxy {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(verbatim: AccessSiteDisplayName.title(pending.url.host(percentEncoded: true)))
-                    .font(.callout.weight(.semibold))
-                    .accessibilityIdentifier("page-load-pending-host")
-                Text(AegisLocalization.string(addressProxyPreparing ? "正在准备连接…" : "正在连接…"))
-                    .font(.caption)
-                    .accessibilityIdentifier("page-load-pending-status")
-                if !addressProxyPreparing {
-                    ProxyRetryButton(title: AegisLocalization.string("隐藏位置并打开")) { openAddressViaProxy(tab, pending) }
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            let state = pendingAddressProxyState?(tab, pending) ?? (offersLocationService ? .available : .unavailable)
+            if offersLocationService || state == .preparing {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verbatim: AccessSiteDisplayName.title(pending.url.host(percentEncoded: true)))
+                        .font(.callout.weight(.semibold))
+                        .accessibilityIdentifier("page-load-pending-host")
+                    Text(AegisLocalization.string(state == .preparing ? "正在准备连接…" : "正在连接…"))
+                        .font(.caption)
+                        .accessibilityIdentifier("page-load-pending-status")
+                    if state == .available {
+                        ProxyRetryButton(title: AegisLocalization.string("隐藏位置并打开")) { openAddressViaProxy(tab, pending) }
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
                 }
+                .padding(12)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("page-load-pending-proxy")
             }
-            .padding(12)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("page-load-pending-proxy")
         }
     }
 
@@ -763,7 +784,7 @@ private struct BrowserPageShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-private struct ActiveTabView: View {
+struct ActiveTabView: View {
     @ObservedObject var tab: BrowserTab
     @Binding var address: String
     let addressIsEditing: Bool
@@ -776,17 +797,18 @@ private struct ActiveTabView: View {
     @Environment(\.locale) private var localizationLocale
     var body: some View {
         let _ = localizationLocale
+        let site = hostStores.snapshot(for: tab)
         VStack(spacing: 0) {
             PageLoadFailureBanner(
                 tab: tab,
-                locationPrivacyOn: hostStores.snapshot(for: tab, forLocationControl: true).toggleOn,
                 offersLocationService: hostStores.offersLocationService,
-                autoRecoveryOn: hostStores.snapshot(for: tab).autoRecoveryEnabled,
-                autoRecoveryLine: hostStores.snapshot(for: tab).autoRecoveryLine,
+                failureProxyRetry: hostStores.failureProxyRetry(for: tab),
+                autoRecoveryOn: site.autoRecoveryEnabled,
+                autoRecoveryLine: site.autoRecoveryLine,
                 setAutoRecovery: { failed, enabled in
                     _ = hostStores.setAutoRecoveryEnabled(enabled, for: failed)
                 },
-                addressProxyPreparing: hostStores.isPreparingAddressProxy(tab: tab),
+                pendingAddressProxyState: { hostStores.pendingAddressProxyState(tab: $0, pending: $1) },
                 openAddressViaProxy: { pendingTab, pending in
                     _ = hostStores.openPendingAddressViaProxy(tab: pendingTab, pending: pending)
                 },

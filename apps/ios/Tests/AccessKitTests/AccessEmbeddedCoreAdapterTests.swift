@@ -135,6 +135,159 @@ final class AccessGoSchedulingTests: XCTestCase {
         let eof = try await stream.read(maxBytes: 1)
         XCTAssertNil(eof)
     }
+
+    func testStopJoinsAStreamCloseAlreadyRemovedFromTheNativeRegistry() async throws {
+        let closing = expectation(description: "stream close is in flight outside the native registry")
+        let registryStopped = expectation(description: "first native stop drained its registry")
+        let nextRegistryStopped = expectation(description: "second owner stopped its native registry")
+        let allowClose = DispatchSemaphore(value: 0)
+        let stopped = Mutex(false)
+        let native = ControlledAsyncNativeCore(onRead: {}, onClose: {
+            closing.fulfill()
+            _ = allowClose.wait(timeout: .now() + 5)
+        }, onStop: { count in
+            switch count {
+            case 1: registryStopped.fulfill()
+            case 2: nextRegistryStopped.fulfill()
+            default: XCTFail("Unexpected native stop \(count)")
+            }
+        })
+        let ownership = AccessGoRuntimeOwnership()
+        let core = AccessGoEmbeddedCore(native: native, ownership: ownership)
+        let next = AccessGoEmbeddedCore(native: native, ownership: ownership)
+        defer { allowClose.signal() }
+        try await core.start(configData: Data("{}".utf8))
+        let stream = try await core.dial(host: "controlled.invalid", port: 443)
+        // Close runs outside the caller and can take longer than the core stop receipt.
+        Task.detached { stream.close() }
+        await fulfillment(of: [closing], timeout: 2)
+        let completion = expectation(description: "full teardown")
+        let stop = Task {
+            await core.stop()
+            stopped.withLock { $0 = true }
+            completion.fulfill()
+        }
+        await fulfillment(of: [registryStopped], timeout: 2)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertFalse(stopped.withLock { $0 })
+        XCTAssertFalse(stream.isOpen)
+        XCTAssertFalse(native.isRunning)
+        do {
+            try await next.start(configData: Data("next".utf8))
+            XCTFail("A new adapter acquired the runtime before the previous stream drained")
+        } catch AccessEmbeddedCoreError.unverifiedAsset {}
+        XCTAssertEqual(native.snapshot.starts, 1)
+        XCTAssertEqual(native.snapshot.stops, 1)
+        allowClose.signal()
+        await fulfillment(of: [completion], timeout: 2)
+        await stop.value
+        XCTAssertEqual(native.snapshot.closes[1], 1)
+        XCTAssertEqual(native.snapshot.stops, 1)
+        try await next.start(configData: Data("next".utf8))
+        XCTAssertEqual(native.snapshot.starts, 2)
+        await core.stop()
+        XCTAssertEqual(native.snapshot.stops, 1)
+        XCTAssertTrue(next.isRunning)
+        let nextStream = try await next.dial(host: "controlled.invalid", port: 443)
+        try await nextStream.write(Data("next".utf8))
+        XCTAssertEqual(native.snapshot.writes, 1)
+        await next.stop()
+        await fulfillment(of: [nextRegistryStopped], timeout: 2)
+        await next.stop()
+        XCTAssertEqual(native.snapshot.stops, 2)
+        XCTAssertFalse(nextStream.isOpen)
+        XCTAssertFalse(next.isRunning)
+        XCTAssertFalse(native.isRunning)
+    }
+
+    func testSharedNativeClaimSurvivesCancelAndConcurrentShutdownUntilDrain() async throws {
+        let startup = AccessProvisionTestGate(entered: expectation(description: "native start entered"))
+        let gate = AccessGoRuntimeOwnership()
+        let native = ControlledAsyncNativeCore(onRead: {}, beforeStart: { if $0 == 1 { await startup.wait() } })
+        let owner = AccessGoEmbeddedCore(native: native, ownership: gate)
+        let other = AccessGoEmbeddedCore(native: native, ownership: gate)
+        let start = Task { try await owner.start(configData: Data("owner".utf8)) }
+        defer { startup.finish() }
+        await fulfillment(of: [startup.entered], timeout: 2)
+        do {
+            try await other.start(configData: Data("foreign".utf8))
+            XCTFail("A second adapter acquired the runtime")
+        } catch AccessEmbeddedCoreError.unverifiedAsset {}
+        await other.stop()
+        XCTAssertEqual(native.snapshot.stops, 0)
+        XCTAssertFalse(other.isRunning)
+        start.cancel()
+        let stopped = expectation(description: "both shutdown callers received the drain")
+        let stop = Task {
+            async let a: Void = owner.stop()
+            async let b: Void = owner.stop()
+            _ = await (a, b)
+            stopped.fulfill()
+        }
+        await Task.yield()
+        startup.finish()
+        // The start either reports ownership or observes shutdown's fence.
+        // Both outcomes still owe a stop for the successful native start.
+        do { try await start.value } catch is CancellationError {}
+        await fulfillment(of: [stopped], timeout: 2)
+        await stop.value
+        XCTAssertEqual(native.snapshot.starts, 1)
+        XCTAssertEqual(native.snapshot.stops, 1)
+        XCTAssertFalse(native.isRunning)
+        try await other.start(configData: Data("foreign-after-drain".utf8))
+        XCTAssertTrue(other.isRunning)
+        await owner.stop()
+        XCTAssertTrue(other.isRunning)
+        XCTAssertEqual(native.snapshot.stops, 1)
+        await other.stop()
+    }
+
+    func testRedundantStartCannotFenceCloseForAnActiveParkedStream() async throws {
+        let (retry, gate) = AsyncStream<Void>.makeStream()
+        let reading = expectation(description: "an owned native stream parked in read")
+        let closed = expectation(description: "native close completed")
+        let native = ControlledAsyncNativeCore(onRead: { reading.fulfill() }, onClose: { closed.fulfill() },
+            beforeStart: { attempt in if attempt > 1 { for await _ in retry { break } } })
+        let core = AccessGoEmbeddedCore(native: native)
+        defer { gate.finish(); native.finishAll() }
+        try await core.start(configData: Data("configured".utf8))
+        let stream = try await core.dial(host: "controlled.invalid", port: 443)
+        let reader = Task { try await stream.read(maxBytes: 128) }
+        await fulfillment(of: [reading], timeout: 2)
+        let returned = Mutex(false)
+        let duplicate = Task {
+            defer { returned.withLock { $0 = true } }
+            try await core.start(configData: Data("redundant".utf8))
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while native.snapshot.starts == 1, !returned.withLock({ $0 }), ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        duplicate.cancel()
+        reader.cancel()
+        stream.close()
+        await fulfillment(of: [closed], timeout: 2)
+        gate.finish()
+        do { try await duplicate.value; XCTFail("Redundant native start succeeded") }
+        catch AccessEmbeddedCoreError.unverifiedAsset {}
+        let value = try await reader.value
+        XCTAssertNil(value)
+        XCTAssertEqual(native.snapshot.starts, 1)
+        XCTAssertEqual(native.snapshot.closes[1], 1)
+        XCTAssertTrue(core.isRunning)
+        await core.stop()
+    }
+
+    func testNativeTeardownAcknowledgementReportsTheNativeError() async throws {
+        for shouldFail in [false, true] {
+            let native = ControlledAsyncNativeCore(onRead: {}, failStop: shouldFail)
+            let core = AccessGoEmbeddedCore(native: native)
+            try await core.start(configData: Data("{}".utf8))
+            let acknowledged = await core.stopAndConfirm()
+            XCTAssertEqual(acknowledged, !shouldFail)
+            XCTAssertFalse(core.isRunning)
+        }
+    }
 }
 
 /// Native callback contract double. Actual blocking saturation is exercised by
@@ -143,6 +296,8 @@ private final class ControlledAsyncNativeCore: AccessGoNativeCore, Sendable {
     struct State {
         var running = false
         var nextID: Int64 = 0
+        var starts = 0
+        var stops = 0
         var finished = 0
         var writes = 0
         var closes: [Int64: Int] = [:]
@@ -151,10 +306,29 @@ private final class ControlledAsyncNativeCore: AccessGoNativeCore, Sendable {
     }
     private let state = Mutex(State())
     private let onRead: @Sendable () -> Void
-    init(onRead: @escaping @Sendable () -> Void) { self.onRead = onRead }
+    private let onClose: @Sendable () -> Void
+    private let onStop: @Sendable (Int) -> Void
+    private let beforeStart: @Sendable (Int) async -> Void
+    private let failStop: Bool
+    init(onRead: @escaping @Sendable () -> Void, onClose: @escaping @Sendable () -> Void = {},
+         onStop: @escaping @Sendable (Int) -> Void = { _ in },
+         beforeStart: @escaping @Sendable (Int) async -> Void = { _ in }, failStop: Bool = false) {
+        self.onRead = onRead
+        self.onClose = onClose
+        self.onStop = onStop
+        self.beforeStart = beforeStart
+        self.failStop = failStop
+    }
     var snapshot: State { state.withLock { $0 } }
     var isRunning: Bool { snapshot.running }
-    func start(_ json: String) async { state.withLock { $0.running = true } }
+    func start(_ json: String) async throws {
+        let attempt = state.withLock { $0.starts += 1; return $0.starts }
+        await beforeStart(attempt)
+        try state.withLock {
+            guard !$0.running else { throw AccessEmbeddedCoreError.unverifiedAsset }
+            $0.running = true
+        }
+    }
     func dial(host: String, port: UInt16) async throws -> Int64 {
         try state.withLock {
             guard $0.running else { throw AccessEmbeddedCoreError.unverifiedAsset }
@@ -184,9 +358,15 @@ private final class ControlledAsyncNativeCore: AccessGoNativeCore, Sendable {
             if read != nil { $0.finished += 1 }
             return read
         }
+        onClose()
         read?.resume(returning: Data())
     }
-    func stop() async { finishAll() }
+    func stop() async throws {
+        let count = state.withLock { $0.stops += 1; return $0.stops }
+        finishAll()
+        onStop(count)
+        if failStop { throw AccessEmbeddedCoreError.unverifiedAsset }
+    }
     func finishAll() {
         let reads = state.withLock {
             $0.running = false
@@ -200,6 +380,84 @@ private final class ControlledAsyncNativeCore: AccessGoNativeCore, Sendable {
 
 @MainActor
 final class AccessGoNativeCallbackIntegrationTests: XCTestCase {
+    func testTwoNativeRuntimesKeepTrafficAndSharedCaptureOpen() async throws {
+        let listener = try NWListener(using: .tcp, on: .any)
+        let connections = Mutex<[NWConnection]>([])
+        listener.newConnectionHandler = { connection in
+            connections.withLock { $0.append(connection) }
+            connection.start(queue: .global())
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, _, _ in
+                if let data { connection.send(content: data, completion: .contentProcessed { _ in }) }
+            }
+        }
+        let ready = expectation(description: "local diagnostic origin ready")
+        listener.stateUpdateHandler = { if case .ready = $0 { ready.fulfill() } }
+        listener.start(queue: .global())
+        await fulfillment(of: [ready], timeout: 3)
+        let port = try XCTUnwrap(listener.port?.rawValue)
+        defer { listener.cancel(); connections.withLock { $0.forEach { $0.cancel() } } }
+        let diagnostics = AccessDiagnosticLog()
+        // Test-only local transport: no external target or product DIRECT fallback.
+        let first = try AccessGoEmbeddedCore(isolated: true)
+        let second = try AccessGoEmbeddedCore(isolated: true)
+        let firstCapture = diagnostics.acquireShared(level: .info, secrets: [])
+        addTeardownBlock { await first.stop(); diagnostics.stop(lease: firstCapture) }
+        let path = try XCTUnwrap(firstCapture.path)
+        func config(path: String, capture: AccessDiagnosticLog.Lease) throws -> Data {
+            try JSONSerialization.data(withJSONObject: [
+                "log": ["loglevel": "info", "access": path, "error": path],
+                "aegisLogCaptureGeneration": try XCTUnwrap(capture.generation),
+                "inbounds": [], "outbounds": [["protocol": "freedom"]]
+            ])
+        }
+        let oldConfig = try config(path: path, capture: firstCapture)
+        try await first.start(configData: oldConfig)
+        let lateCapture = diagnostics.acquireShared(level: .info, secrets: [])
+        XCTAssertEqual(lateCapture.generation, firstCapture.generation)
+        let late = try AccessGoEmbeddedCore(isolated: true)
+        addTeardownBlock { await late.stop(); diagnostics.stop(lease: lateCapture) }
+        diagnostics.disableAndClear()
+        let oldWriter = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? oldWriter.close() }
+        try oldWriter.write(contentsOf: Data("2026/11/20 00:00:00 from local accepted //off-period.invalid:443\n".utf8))
+        let secondCapture = diagnostics.acquireShared(level: .info, secrets: [])
+        addTeardownBlock { await second.stop(); diagnostics.stop(lease: secondCapture) }
+        let resumedPath = try XCTUnwrap(secondCapture.path)
+        XCTAssertNotEqual(path, resumedPath)
+        try await second.start(configData: config(path: resumedPath, capture: secondCapture))
+        try await late.start(configData: oldConfig)
+        XCTAssertTrue(late.isRunning)
+        await second.stop()
+        XCTAssertTrue(diagnostics.stop(lease: secondCapture))
+        XCTAssertTrue(first.isRunning)
+        let quiet = try AccessGoEmbeddedCore(isolated: true)
+        let quietLease = diagnostics.acquireShared(level: .none, secrets: [], disableCaptureWhenQuiet: false)
+        addTeardownBlock { await quiet.stop(); diagnostics.stop(lease: quietLease) }
+        try await quiet.start(configData: Data(#"{"log":{"loglevel":"none"},"inbounds":[],"outbounds":[{"protocol":"freedom"}]}"#.utf8))
+        let previousInfoCount = diagnostics.snapshot().components(separatedBy: "[Info] details withheld").count
+        let stream = try await first.dial(host: "127.0.0.1", port: port)
+        defer { stream.close() }
+        try await stream.write(Data("surviving-core".utf8))
+        let echoed = try await stream.read(maxBytes: 1024)
+        XCTAssertEqual(echoed, Data("surviving-core".utf8))
+        // The pinned freedom outbound logs its local connection through Xray.
+        // The production redactor retains its severity and withholds details.
+        let deadline = Date().addingTimeInterval(3)
+        while diagnostics.snapshot().components(separatedBy: "[Info] details withheld").count == previousInfoCount,
+              Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let captured = diagnostics.snapshot()
+        XCTAssertGreaterThan(captured.components(separatedBy: "[Info] details withheld").count, previousInfoCount)
+        XCTAssertFalse(captured.contains("off-period.invalid"))
+        await quiet.stop()
+        XCTAssertTrue(diagnostics.stop(lease: quietLease))
+        await late.stop()
+        XCTAssertTrue(diagnostics.stop(lease: lateCapture))
+        await first.stop()
+        XCTAssertTrue(diagnostics.stop(lease: firstCapture))
+    }
+
     func testFreshNativeCallbacksSupportDuplexCancellationAndStop() async throws {
         let listener = try NWListener(using: .tcp, on: .any)
         let connections = Mutex<[NWConnection]>([])

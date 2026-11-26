@@ -22,7 +22,8 @@ class WorkflowStorageTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/ios-release-validation.yml").read_text()
         self.assertNotIn('-derivedDataPath "$RUNNER_TEMP/DerivedData"', workflow)
         self.assertIn("scripts/ci/ios-ci-storage.py prepare", workflow)
-        self.assertIn("scripts/ci/ios-ci-storage.py seal", workflow)
+        self.assertIn("scripts/ci/run-ios-unsigned-archive.sh", workflow)
+        self.assertIn("steps.storage.outputs.source", workflow)
         self.assertIn("Aegis.xcarchive.zip", workflow)
         self.assertIn("unsigned-artifact.json", workflow)
 
@@ -234,6 +235,30 @@ class StorageTests(unittest.TestCase):
         self.assertNotIn("volume_uuid", receipt)
         self.assertNotIn("mount_point", receipt)
         self.assertEqual(receipt["source_sha"], self.environment["GITHUB_SHA"])
+
+    def test_archive_source_keeps_the_admitted_tree_after_the_runner_checks_out_another_job(self):
+        old_job = self.prepare()
+        old_source = old_job / "Source"
+        self.assertEqual((old_source / "README").read_text(), "disposable source\n")
+        self.assertFalse((old_source / ".git/objects/info/alternates").exists())
+        (self.repo / "README").write_text("next job source\n")
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=Fixture", "-c",
+                        "user.email=fixture@example.invalid", "commit", "-qam", "next job"], check=True)
+        next_sha = subprocess.check_output(["git", "-C", str(self.repo), "rev-parse", "HEAD"], text=True).strip()
+        new_job = self.prepare(GITHUB_SHA=next_sha, GITHUB_RUN_ID="124")
+        self.assertEqual((new_job / "Source/README").read_text(), "next job source\n")
+        self.assertEqual((old_source / "README").read_text(), "disposable source\n")
+        old_env = {**self.environment, "GITHUB_WORKSPACE": str(old_source)}
+        self.assertEqual(self.storage.source_metadata(old_env)["source_sha"], self.environment["GITHUB_SHA"])
+
+    @unittest.skipUnless(os.uname().sysname == "Darwin", "native archive sealing")
+    def test_changed_archive_source_cannot_be_sealed(self):
+        root = self.prepare()
+        (root / "Source/README").write_text("mutated archive input\n")
+        (root / "Aegis.xcarchive").mkdir()
+        with self.assertRaisesRegex(ValueError, "tracked changes"):
+            self.storage.seal(root, self.environment)
+        self.assertFalse((root / "unsigned-artifact.json").exists())
 
     def test_job_HOME_cannot_select_a_different_host_enrollment(self):
         spec = importlib.util.spec_from_file_location("storage_home_override", HELPER)

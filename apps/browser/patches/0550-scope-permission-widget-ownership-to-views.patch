@@ -1,0 +1,283 @@
+From 546e8c3e12eede16a142f4b815c2ed0245e42b59 Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 20:24:37 +0800
+Subject: [PATCH] Resolve permission activation from the owning Views widget
+
+---
+ chrome/browser/ui/views/omnibox/BUILD.gn      |  1 +
+ .../omnibox/omnibox_popup_full_presenter.cc   |  5 +-
+ .../omnibox/omnibox_popup_presenter_base.cc   | 57 +++++++++++++++----
+ .../omnibox/omnibox_popup_presenter_base.h    |  2 +-
+ .../permissions/embedded_permission_prompt.cc |  7 ---
+ .../permissions/embedded_permission_prompt.h  |  1 -
+ .../permissions/permission_prompt_bubble.cc   |  6 --
+ .../permissions/permission_prompt_bubble.h    |  1 -
+ .../permissions/permission_prompt_chip.cc     | 14 -----
+ .../permissions/permission_prompt_chip.h      |  1 -
+ components/permissions/permission_prompt.h    |  3 -
+ 11 files changed, 50 insertions(+), 48 deletions(-)
+
+diff --git a/chrome/browser/ui/views/omnibox/BUILD.gn b/chrome/browser/ui/views/omnibox/BUILD.gn
+index f871c5ba7a5ae221be0b8b96de46bb55110cb303..fbc92b7325574016e4033046a125c61f1fd5ce10 100644
+--- a/chrome/browser/ui/views/omnibox/BUILD.gn
++++ b/chrome/browser/ui/views/omnibox/BUILD.gn
+@@ -153,6 +153,7 @@ source_set("impl") {
+     "//chrome/browser/ui/views/interaction",
+     "//chrome/browser/ui/views/location_bar",
+     "//chrome/browser/ui/views/page_action",
++    "//chrome/browser/ui/views/permissions",
+     "//chrome/browser/ui/views/send_tab_to_self",
+     "//chrome/browser/ui/views/tab_contents",
+     "//chrome/browser/ui/views/tabs/organizer",
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
+index ce8a8b677f2dcd1369acc94c323fa49717564990..8ac617dc2e438b8bc7930077047b4ab6e0c95856 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_full_presenter.cc
+@@ -607,8 +607,9 @@ void OmniboxPopupFullPresenter::RefocusAfterActivation() {
+ 
+ void OmniboxPopupFullPresenter::BlurIfBrowserOrPopupInactive() {
+   // The permission manager has installed the prompt by the time this task
+-  // runs. A widget owned by that prompt can be the destination of the handoff.
+-  if (!IsBrowserOrPopupActive() && !HasActivePermissionPromptWidget()) {
++  // runs, so its browser-owned widget can hold activation.
++  if (!IsBrowserOrPopupActive() &&
++      !HasActivePermissionPromptWidget(GetBrowserWidget())) {
+     BlurForWindowDeactivation();
+   }
+ }
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+index 9def550d76ee8aa8cca69f3f801ad8685b30fc9d..4046ae9ce08740cbb83579924283c16d2cc47b55 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.cc
+@@ -28,12 +28,12 @@
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_presenter_delegate.h"
+ #include "chrome/browser/ui/views/omnibox/omnibox_popup_webui_content.h"
+ #include "chrome/browser/ui/views/omnibox/rounded_omnibox_results_frame.h"
++#include "chrome/browser/ui/views/permissions/permission_prompt_base_view.h"
+ #include "chrome/browser/ui/views/theme_copying_widget.h"
+ #include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_ui.h"
+ #include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_web_contents_helper.h"
+ #include "components/omnibox/common/omnibox_features.h"
+ #include "components/omnibox/common/omnibox_metrics_utils.h"
+-#include "components/permissions/permission_prompt.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "ui/compositor/compositor.h"
+ #include "ui/views/metadata/view_factory.h"
+@@ -51,10 +51,11 @@ const void* kOmniboxWebUIPopupWidgetId = &kOmniboxWebUIPopupWidgetId;
+ 
+ namespace {
+ 
+-bool ManagerHasActivePromptWidget(
+-    const permissions::PermissionRequestManager* manager) {
+-  const auto* prompt = manager ? manager->GetCurrentPrompt() : nullptr;
+-  return prompt && prompt->HasActivePromptWidget();
++const content::WebContents* GetWebContentsWithCurrentPrompt(
++    permissions::PermissionRequestManager* manager) {
++  return manager && manager->GetCurrentPrompt()
++             ? manager->GetAssociatedWebContents()
++             : nullptr;
+ }
+ 
+ std::string_view CreationReasonToString(
+@@ -96,8 +97,8 @@ class OmniboxPopupPresenterBase::RequestingPromptObservation
+ 
+   bool IsLocked() const { return observation_.IsObserving(); }
+ 
+-  bool HasActivePromptWidget() const {
+-    return ManagerHasActivePromptWidget(observation_.GetSource());
++  permissions::PermissionRequestManager* GetLockedManager() {
++    return observation_.GetSource();
+   }
+ 
+   void Reset() {
+@@ -955,9 +956,41 @@ bool OmniboxPopupPresenterBase::IsPermissionPromptPreventingClose() const {
+           requesting_prompt_observation_->IsLocked());
+ }
+ 
+-bool OmniboxPopupPresenterBase::HasActivePermissionPromptWidget() const {
+-  return (is_prompt_showing_ &&
+-          ManagerHasActivePromptWidget(permission_observation_.GetSource())) ||
+-         (requesting_prompt_observation_ &&
+-          requesting_prompt_observation_->HasActivePromptWidget());
++bool OmniboxPopupPresenterBase::HasActivePermissionPromptWidget(
++    const views::Widget* browser_widget) {
++  if (!browser_widget) {
++    return false;
++  }
++
++  const auto* popup_contents =
++      is_prompt_showing_
++          ? GetWebContentsWithCurrentPrompt(
++                permission_observation_.GetSource())
++          : nullptr;
++  const auto* requesting_contents =
++      requesting_prompt_observation_
++          ? GetWebContentsWithCurrentPrompt(
++                requesting_prompt_observation_->GetLockedManager())
++          : nullptr;
++  if (!popup_contents && !requesting_contents) {
++    return false;
++  }
++
++  // Owned widgets include permission bubbles nested under a content scrim.
++  for (const views::Widget* widget :
++       views::Widget::GetAllOwnedWidgets(browser_widget->GetNativeView())) {
++    if (widget->IsClosed() || !widget->IsVisible() || !widget->IsActive()) {
++      continue;
++    }
++    // For a bubble, the root contents are the non-client frame.
++    const auto* prompt_view = views::AsViewClass<PermissionPromptBaseView>(
++        widget->GetClientContentsView());
++    const auto* prompt_contents =
++        prompt_view ? prompt_view->web_contents() : nullptr;
++    if (prompt_contents && (prompt_contents == popup_contents ||
++                            prompt_contents == requesting_contents)) {
++      return true;
++    }
++  }
++  return false;
+ }
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+index 2235f8c8c9d2e37c3a2e747d9a5368ff1c97e459..b33f05bf156fba8a1e30651cffec5e63acdcba7f 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
++++ b/chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h
+@@ -329,7 +329,7 @@ class OmniboxPopupPresenterBase
+   void OnPermissionRequestManagerDestructed() override;
+ 
+   // Whether a permission prompt protected by this presenter holds activation.
+-  bool HasActivePermissionPromptWidget() const;
++  bool HasActivePermissionPromptWidget(const views::Widget* browser_widget);
+ 
+   // Called by subclasses when widget activation changes to active = true.
+   void FinishPermissionPromptFocusRestore();
+diff --git a/chrome/browser/ui/views/permissions/embedded_permission_prompt.cc b/chrome/browser/ui/views/permissions/embedded_permission_prompt.cc
+index 789db6001ab37540a964194a5eba800876b725a2..d0d9322965d0fd1c176c6845c91e6047f956ae81 100644
+--- a/chrome/browser/ui/views/permissions/embedded_permission_prompt.cc
++++ b/chrome/browser/ui/views/permissions/embedded_permission_prompt.cc
+@@ -24,7 +24,6 @@
+ #include "components/permissions/permissions_client.h"
+ #include "content/public/browser/web_contents.h"
+ #include "ui/color/color_id.h"
+-#include "ui/views/widget/widget.h"
+ 
+ #if BUILDFLAG(IS_MAC)
+ #include "base/mac/mac_util.h"
+@@ -149,12 +148,6 @@ std::optional<gfx::Rect> EmbeddedPermissionPrompt::GetViewBoundsInScreen()
+   return std::nullopt;
+ }
+ 
+-bool EmbeddedPermissionPrompt::HasActivePromptWidget() const {
+-  const auto* view = prompt_view_tracker_.view();
+-  const views::Widget* widget = view ? view->GetWidget() : nullptr;
+-  return widget && widget->IsActive();
+-}
+-
+ void EmbeddedPermissionPrompt::Allow() {
+   prompt_model_->PrecalculateVariantsForMetrics();
+   prompt_model_->RecordPermissionActionUKM(
+diff --git a/chrome/browser/ui/views/permissions/embedded_permission_prompt.h b/chrome/browser/ui/views/permissions/embedded_permission_prompt.h
+index 99f23699446ebf296bf083a55d383ac901a95a59..7b327adca307566e102fa7afce5b694678648838 100644
+--- a/chrome/browser/ui/views/permissions/embedded_permission_prompt.h
++++ b/chrome/browser/ui/views/permissions/embedded_permission_prompt.h
+@@ -48,7 +48,6 @@ class EmbeddedPermissionPrompt : public PermissionPromptDesktop,
+   std::optional<permissions::feature_params::PermissionElementPromptPosition>
+   GetPromptPosition() const override;
+   std::optional<gfx::Rect> GetViewBoundsInScreen() const override;
+-  bool HasActivePromptWidget() const override;
+ 
+   // EmbeddedPermissionPromptViewDelegate:
+   void Allow() override;
+diff --git a/chrome/browser/ui/views/permissions/permission_prompt_bubble.cc b/chrome/browser/ui/views/permissions/permission_prompt_bubble.cc
+index d0da54196ff69447c92040fc8aadfb81725852c2..d3166d05016efc3ef157fcb385f6a4dae1304b2a 100644
+--- a/chrome/browser/ui/views/permissions/permission_prompt_bubble.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_bubble.cc
+@@ -107,12 +107,6 @@ std::optional<gfx::Rect> PermissionPromptBubble::GetViewBoundsInScreen() const {
+              : std::nullopt;
+ }
+ 
+-bool PermissionPromptBubble::HasActivePromptWidget() const {
+-  const auto* bubble = GetPromptBubble();
+-  const views::Widget* widget = bubble ? bubble->GetWidget() : nullptr;
+-  return widget && widget->IsActive();
+-}
+-
+ bool PermissionPromptBubble::UpdateAnchor() {
+   bool was_browser_changed = UpdateBrowser();
+   // TODO(crbug.com/40747230): Investigate why prompt_bubble_ can be null
+diff --git a/chrome/browser/ui/views/permissions/permission_prompt_bubble.h b/chrome/browser/ui/views/permissions/permission_prompt_bubble.h
+index 06d31515d6a1b58dac64993918a00d360bd41a02..9321dd22da76912764972a3b43169ff75d8cfcbe 100644
+--- a/chrome/browser/ui/views/permissions/permission_prompt_bubble.h
++++ b/chrome/browser/ui/views/permissions/permission_prompt_bubble.h
+@@ -34,7 +34,6 @@ class PermissionPromptBubble : public PermissionPromptDesktop,
+   permissions::PermissionPromptDisposition GetPromptDisposition()
+       const override;
+   std::optional<gfx::Rect> GetViewBoundsInScreen() const override;
+-  bool HasActivePromptWidget() const override;
+ 
+   views::Widget* GetPromptBubbleWidgetForTesting() override;
+ 
+diff --git a/chrome/browser/ui/views/permissions/permission_prompt_chip.cc b/chrome/browser/ui/views/permissions/permission_prompt_chip.cc
+index cf2514223169e3c4d379843ceb70d8703550e454..de0b89c318d5b142248f9efa3072335648bdc470 100644
+--- a/chrome/browser/ui/views/permissions/permission_prompt_chip.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_chip.cc
+@@ -15,7 +15,6 @@
+ #include "chrome/browser/ui/views/permissions/permission_prompt_observer.h"
+ #include "components/permissions/features.h"
+ #include "components/permissions/permission_prompt.h"
+-#include "components/permissions/permission_request_manager.h"
+ #include "components/permissions/permission_util.h"
+ #include "components/permissions/request_type.h"
+ #include "components/strings/grit/components_strings.h"
+@@ -26,7 +25,6 @@
+ #include "ui/gfx/geometry/size.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+-#include "ui/views/widget/widget.h"
+ 
+ PermissionPromptChip::PermissionPromptChip(content::WebContents* web_contents,
+                                            Delegate* delegate)
+@@ -104,18 +102,6 @@ std::optional<gfx::Rect> PermissionPromptChip::GetViewBoundsInScreen() const {
+              : std::nullopt;
+ }
+ 
+-bool PermissionPromptChip::HasActivePromptWidget() const {
+-  // The chip controller is shared by multiple managers and can show page info.
+-  if (!is_prompt_bubble_showing_ ||
+-      chip_controller_->active_permission_request_manager() !=
+-          permissions::PermissionRequestManager::FromWebContents(
+-              web_contents())) {
+-    return false;
+-  }
+-  const views::Widget* widget = chip_controller_->GetBubbleWidget();
+-  return widget && widget->IsActive();
+-}
+-
+ views::Widget* PermissionPromptChip::GetPromptBubbleWidgetForTesting() {
+   CHECK_IS_TEST();
+   LocationBar* lb = GetLocationBar();
+diff --git a/chrome/browser/ui/views/permissions/permission_prompt_chip.h b/chrome/browser/ui/views/permissions/permission_prompt_chip.h
+index eb70fc1a1932dcb77d5d7bcb4638c81265573fee..b92aa6e0b155b9ebf4689c815a7d39ed6aa7aa27 100644
+--- a/chrome/browser/ui/views/permissions/permission_prompt_chip.h
++++ b/chrome/browser/ui/views/permissions/permission_prompt_chip.h
+@@ -37,7 +37,6 @@ class PermissionPromptChip : public PermissionPromptDesktop,
+   permissions::PermissionPromptDisposition GetPromptDisposition()
+       const override;
+   std::optional<gfx::Rect> GetViewBoundsInScreen() const override;
+-  bool HasActivePromptWidget() const override;
+ 
+   // PermissionPromptDesktop:
+   views::Widget* GetPromptBubbleWidgetForTesting() override;
+diff --git a/components/permissions/permission_prompt.h b/components/permissions/permission_prompt.h
+index 4255e4c4afb7320a32445637d5e6d5f46f1e3626..a126ac33eba4f31bec9fc3c839de434104c66fc3 100644
+--- a/components/permissions/permission_prompt.h
++++ b/components/permissions/permission_prompt.h
+@@ -187,9 +187,6 @@ class PermissionPrompt {
+   // Get the prompt view bounds in screen coordinates.
+   virtual std::optional<gfx::Rect> GetViewBoundsInScreen() const = 0;
+ 
+-  // Whether this prompt's own widget currently holds window activation.
+-  virtual bool HasActivePromptWidget() const { return false; }
+-
+   // Return what variant of the secondary UI is shown for Page Embedded
+   // Permission Element.
+   virtual std::vector<permissions::ElementAnchoredBubbleVariant>

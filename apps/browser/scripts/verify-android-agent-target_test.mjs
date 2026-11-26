@@ -48,7 +48,7 @@ test('只用打开的 Profile 文件证明目录，不根据参数或缓存推�
 });
 
 test('Profile 目录只接受当前 Android 应用 ID', () => {
-  for (const otherPackage of ['app.gcsa.aegis', PACKAGE + '.other']) {
+  for (const otherPackage of ['app.gcsa.aegis', 'com-gcsa.aegis', 'com.gcsa-aegis', PACKAGE + '.other']) {
     const otherProfile = profile.replace(PACKAGE, otherPackage);
     assert.deepEqual(activeProfileRoots(fdRecords(openFile(otherProfile + '/Default/History'))), []);
     assert.throws(() => verifyTarget({...good(), profileRoots: [otherProfile]}, hash, otherProfile),

@@ -123,9 +123,15 @@ final class AccessNavigationRecoveryTests: XCTestCase {
                 await waitUntil({ !tab.isLoading && tab.webView.url == target }, timeout: 10)
                 XCTAssertEqual(tab.requestedURL, target)
                 XCTAssertEqual(origin.receivedRequests.count, 1)
+                if variant == "GET" {
+                    XCTAssertEqual(tab.websiteRouteControlURL, target, "\(route) must preserve the displayed site's controls")
+                } else {
+                    XCTAssertNil(tab.websiteRouteControlURL, "\(variant) must stay ineligible after \(route)")
+                }
                 if route == "replaceState" {
                     let evicted = await tab.suspendIfSafe()
                     XCTAssertTrue(evicted)
+                    XCTAssertNil(tab.websiteRouteControlURL, "An evicted view cannot authorize a site choice")
                 }
                 tab.reload()
                 if variant == "GET" {
@@ -140,6 +146,25 @@ final class AccessNavigationRecoveryTests: XCTestCase {
                     XCTAssertEqual(origin.receivedRequests.count, 1)
                 }
                 XCTAssertNil(tab.loadingError)
+
+                if variant == "GET" {
+                    let view = tab.webView
+                    let lateTarget = root.appendingPathComponent("reload-spa-after-finish")
+                    _ = try await view.evaluateJavaScript("history.\(route)({}, '', '\(lateTarget.path)'); true")
+                    await waitUntil({ view.url == lateTarget }, timeout: 10)
+                    XCTAssertEqual(view.url, lateTarget)
+                    XCTAssertEqual(tab.websiteRouteControlURL, lateTarget)
+                    XCTAssertEqual(origin.receivedRequests.count, 2)
+
+                    if route == "replaceState" {
+                        tab.pauseAfterWebsiteRouteChange(detachStore: false)
+                        XCTAssertEqual(tab.websiteRouteControlURL, target, "The verified paused address stays editable")
+                    }
+                    for pending in [lateTarget, target] {
+                        tab.adoptPolicyMainFrameNavigationForTests(url: pending)
+                        XCTAssertNil(tab.websiteRouteControlURL, "The previous document cannot authorize a new attempt to \(pending)")
+                    }
+                }
             }
         }
     }

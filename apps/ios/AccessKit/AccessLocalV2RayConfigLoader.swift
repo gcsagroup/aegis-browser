@@ -98,6 +98,67 @@ public enum AccessLocalV2RayConfigLoader {
         return try parameters(fromFlat: root)
     }
 
+    /// Options accepts one whole share link. Keep the file and subscription parsers' existing contracts.
+    public static func parseSingleShareURI(_ input: String) throws -> AccessRealityVisionParameters {
+        let link = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+        guard input.utf8.count <= 8_192,
+              link.lowercased().hasPrefix("vless://"),
+              link.unicodeScalars.allSatisfy({ !forbidden.contains($0) }),
+              !link.dropFirst("vless://".count).contains("://"),
+              var components = URLComponents(string: link),
+              components.password == nil,
+              components.path.isEmpty || components.path == "/" else {
+            throw AccessLocalV2RayConfigError.invalidJSON
+        }
+        let items = components.queryItems ?? []
+        let acceptedKeys: Set<String> = [
+            "type", "security", "flow", "encryption", "headerType", "spx", "pcks",
+            "sni", "serverName", "server_name", "pbk", "publicKey", "public_key",
+            "sid", "shortId", "short_id", "fp", "fingerprint", "support-x25519mlkem768"
+        ]
+        let aliasGroups = [
+            ["sni", "serverName", "server_name"], ["pbk", "publicKey", "public_key"],
+            ["sid", "shortId", "short_id"], ["fp", "fingerprint"]
+        ]
+        let names = Set(items.map(\.name))
+        guard names.count == items.count,
+              names.isSubset(of: acceptedKeys),
+              items.contains(where: { $0.name == "flow" && $0.value == AccessRealityVisionParameters.admittedFlow }),
+              aliasGroups.allSatisfy({ names.intersection($0).count <= 1 }),
+              items.allSatisfy({ $0.value != nil && ($0.name != "headerType" || $0.value == "none")
+                  && ($0.name != "pcks" || $0.value == "")
+                  && ($0.name != "support-x25519mlkem768" || $0.value == "true") }) else {
+            throw AccessLocalV2RayConfigError.invalidJSON
+        }
+        // 3X-UI's REALITY share capability hint is implemented by the pinned
+        // native core/fingerprint, not an additional Xray JSON setting. Only
+        // its affirmative form is admitted; never silently promise an override.
+        // The fragment is untrusted and can itself contain credentials.
+        components.fragment = nil
+        guard let uri = components.string else { throw AccessLocalV2RayConfigError.invalidJSON }
+        let parameters = try parseShareURI(uri)
+        try validateManualParameters(parameters)
+        return parameters
+    }
+
+    /// Manual imports and restored manual revisions share native admission.
+    public static func validateManualParameters(_ parameters: AccessRealityVisionParameters) throws {
+        // Match the pinned REALITY builder's RawURLEncoding and hex decoding.
+        let publicKey = parameters.publicKey
+        let base64url = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+        let base64 = publicKey.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        guard publicKey.utf8.count == 43,
+              publicKey.unicodeScalars.allSatisfy({ base64url.contains($0) }),
+              Data(base64Encoded: base64 + "=")?.count == 32 else {
+            throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("publicKey")
+        }
+        guard parameters.shortID.utf8.count.isMultiple(of: 2) else {
+            throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("shortID")
+        }
+        try AccessGoEmbeddedCore.validateRealityClientFields(fingerprint: parameters.fingerprint, spiderX: parameters.spiderX)
+    }
+
     // MARK: - vless:// share URI
 
     /// `vless://<uuid>@<host>:<port>?flow=...&security=reality&...#name`

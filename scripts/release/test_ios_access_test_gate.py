@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ios_access_test_gate import evaluate, expected_cases, observed_cases
+from ios_access_test_gate import evaluate, expected_cases, observed_cases, select_cases
 
 
 class GateTests(unittest.TestCase):
@@ -65,6 +65,26 @@ class GateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(expected_cases([root]), {("SampleTests", "testOne")})
+
+    def test_default_selects_fixture_free_cases_and_keeps_exact_operator_selection(self):
+        base = Path(__file__).resolve().parents[2] / "apps/ios/Tests"
+        roots = [base / "AccessKitTests", base / "AegisTests"]
+        selectors, default = select_cases(roots, "")
+        probes = {
+            ("AccessTestNodeDeviceTests", "testPhysicalDomainCampaign"),
+            ("AccessTestNodeDeviceTests", "testAuthorizedAppPath"),
+            ("AccessPhysicalSOCKSAdmissionTests", "testControlledSOCKSWebKitAdmission"),
+        }
+        self.assertTrue(probes.isdisjoint(default))
+        self.assertEqual(select_cases(roots, "AccessTestNodeDeviceTests,AccessPhysicalSOCKSAdmissionTests")[1], probes)
+        self.assertIn("AccessSOCKS5InboundTests", selectors)
+        mixed = "AccessAccountRefreshTests"
+        self.assertNotIn(mixed, selectors)
+        self.assertIn(f"{mixed}/testInvalidExternalCredentialClearsCachedSnapshotBeforeRequest", selectors)
+        self.assertNotIn((mixed, "testQuotaRefreshCannotCancelQueuedProxySelection"), default)
+        self.assertIn((mixed, "testQuotaRefreshCannotCancelQueuedProxySelection"), select_cases(roots, mixed)[1])
+        with self.assertRaises(ValueError):
+            select_cases(roots, "UnknownTests")
 
 
 if __name__ == "__main__":

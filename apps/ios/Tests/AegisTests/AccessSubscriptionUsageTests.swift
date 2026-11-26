@@ -376,7 +376,7 @@ final class AccessSubscriptionUsageTests: XCTestCase {
         let core = try AccessGoEmbeddedCore()
         let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher(verifiedCore: core, parameters: {
             try await session.connectionParameters()
-        }, connectionAllowed: { session.permitsExistingConnection })
+        }, connectionAllowed: { session.permitsExistingConnection }, retireDocuments: { _, finish in finish() })
         let operation = UUID()
         do {
             let result = try await publisher.prepare(.init(operationID: operation, deadline: .seconds(45)))

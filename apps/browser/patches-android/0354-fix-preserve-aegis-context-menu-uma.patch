@@ -1,0 +1,77 @@
+From 1e45caee294b07dd686eda9c9e8c163172dae8ef Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 21 Nov 2026 06:42:18 +0800
+Subject: [PATCH] fix(browser): preserve persisted Aegis context menu UMA
+ values
+
+---
+ .../render_view_context_menu.cc                    | 14 +++++++-------
+ tools/metrics/histograms/metadata/ui/enums.xml     | 14 +++++++-------
+ 2 files changed, 14 insertions(+), 14 deletions(-)
+
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+index 5fc8f8bf76cdedeee1d58ffa82e60e20e9dcefbc..479acac25f60924472901764a3771a30ff5b05fa 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -721,11 +721,11 @@ int UmaEnumForCommand(int key, UmaEnumIdLookupType type) {
+        {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 167},
+        {IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS, 168},
+        {IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED, 169},
+-       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 170},
+-       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 174},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 170},
+        {IDC_CONTENT_CONTEXT_CONTEXTUAL_TASKS_SUBMENU, 171},
+-       {IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION, 172},
+-       {IDC_CONTENT_CONTEXT_INDIGO, 173},
++       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 172},
++       {IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION, 173},
++       {IDC_CONTENT_CONTEXT_INDIGO, 174},
+        // To add new items:
+        //   - Add one more line above this comment block, using the UMA value
+        //     from the line below this comment block.
+@@ -773,9 +773,9 @@ int UmaEnumForCommand(int key, UmaEnumIdLookupType type) {
+        {IDC_CONTENT_CONTEXT_GLICSHAREIMAGE, 32},
+        {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 33},
+        {IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED, 34},
+-       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 35},
+-       {IDC_CONTENT_CONTEXT_INDIGO, 36},
+-       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 37},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 35},
++       {IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE, 36},
++       {IDC_CONTENT_CONTEXT_INDIGO, 37},
+        // To add new items:
+        //   - Add one more line above this comment block, using the UMA value
+        //     from the line below this comment block.
+diff --git a/tools/metrics/histograms/metadata/ui/enums.xml b/tools/metrics/histograms/metadata/ui/enums.xml
+index 90be50895611d3563471a31f2c2eab8c913cb861..2995971450a8619659c38e000d8a58d6b41898bf 100644
+--- a/tools/metrics/histograms/metadata/ui/enums.xml
++++ b/tools/metrics/histograms/metadata/ui/enums.xml
+@@ -80,9 +80,9 @@ chromium-metrics-reviews@google.com.
+   <int value="32" label="Create image with Gemini in Chrome"/>
+   <int value="33" label="Remove from dictionary"/>
+   <int value="34" label="Open link in isolated window"/>
+-  <int value="35" label="Ask Google about this page"/>
+-  <int value="36" label="Try it on (Indigo)"/>
+-  <int value="37" label="Send page context to Aegis Agent"/>
++  <int value="35" label="Send page context to Aegis Agent"/>
++  <int value="36" label="Ask Google about this page"/>
++  <int value="37" label="Try it on (Indigo)"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:ContextMenuOptionDesktop) -->
+@@ -449,11 +449,11 @@ chromium-metrics-reviews@google.com.
+   <int value="167" label="IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY"/>
+   <int value="168" label="IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS"/>
+   <int value="169" label="IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED"/>
+-  <int value="170" label="IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE"/>
++  <int value="170" label="IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT"/>
+   <int value="171" label="IDC_CONTENT_CONTEXT_CONTEXTUAL_TASKS_SUBMENU"/>
+-  <int value="172" label="IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION"/>
+-  <int value="173" label="IDC_CONTENT_CONTEXT_INDIGO"/>
+-  <int value="174" label="IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT"/>
++  <int value="172" label="IDC_CONTENT_CONTEXT_ASK_GOOGLE_ABOUT_THIS_PAGE"/>
++  <int value="173" label="IDC_CONTENT_CONTEXT_GLIC_SMART_SUGGESTION"/>
++  <int value="174" label="IDC_CONTENT_CONTEXT_INDIGO"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:RenderViewContextMenuItem) -->

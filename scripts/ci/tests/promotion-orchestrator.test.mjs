@@ -72,11 +72,15 @@ test('any existing fork upstream PR blocks a second batch, including legacy/manu
   assert.throws(()=>inspectOpenPromotionPulls({...config,personalOpen:[{...dev,base:{ref:'main'}}],upstreamOpen:[pull()]}),/Multiple/u);
 });
 
-test('active candidate accepts descendant fix independently of moving develop; rejects rewrites and auto-merge',async()=>{
+test('active candidate accepts descendant fixes and only merge-commit auto-merge',async()=>{
   const active={repo:config.upstreamRepo,pr:pull()};
   const deps={fetchBranch:()=>H,isAncestor:(source,head)=>[D,B].includes(source)&&head===H,assertHeads:async()=>{}};
   assert.equal(await validateActivePull(active,config,deps),true);
-  await assert.rejects(validateActivePull({...active,pr:{...active.pr,auto_merge:{}}},config,deps),/auto-merge/u);
+  const withAutoMerge = (auto_merge) => ({...active, pr: {...active.pr, auto_merge}});
+  assert.equal(await validateActivePull(withAutoMerge({merge_method: 'merge'}), config, deps), true);
+  for (const method of ['squash', 'rebase', undefined]) {
+    await assert.rejects(validateActivePull(withAutoMerge({merge_method: method}), config, deps), /auto-merge/u);
+  }
   await assert.rejects(validateActivePull(active,config,{...deps,isAncestor:()=>false}),/frozen source/u);
   await assert.rejects(validateActivePull(active,config,{...deps,fetchBranch:()=>D}),/changed/u);
   assert.equal(await validateActivePull({repo:config.upstreamRepo,pr:pull('automation/export-legacy')},config,deps),false);

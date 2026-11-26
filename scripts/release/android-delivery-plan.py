@@ -174,6 +174,7 @@ def _full(inputs):
         values.update(pinned)
         values.update(operation='upload', destination='play-draft', track=track, stage_input='{}')
         return values
+    require(pinned['upload_run_id'], 'Track changes require a receipt for a successful Play upload')
     if operation == 'distribute':
         track = advanced.get('track', '')
         require(set(advanced) == {'track', 'userFraction'} and _track_allowed(profile, track) and track != 'production',

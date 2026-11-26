@@ -29,6 +29,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ref.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
@@ -49,6 +50,9 @@
 #include <unistd.h>
 #endif
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/actor/actor_surface_handle.h"
+#include "chrome/browser/aegis/agent/aegis_actor_bridge.h"
+#include "components/actor/core/actor_features.h"
 #include "chrome/browser/aegis/aegis_ai_control.h"
 #include "chrome/browser/aegis/aegis_phish_blocking_page.h"
 #include "chrome/browser/aegis/aegis_service.h"
@@ -729,6 +733,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
 class AegisAgentBrowserTest : public InProcessBrowserTest {
  public:
   AegisAgentBrowserTest() {
+    EnablePixelOutput();
     features_.InitWithFeatures(
         {features::kAegisAgentWebMcp},
         {features::kAegisAgentTransactionPilot,
@@ -749,6 +754,110 @@ class AegisAgentBrowserTest : public InProcessBrowserTest {
  private:
   base::test::ScopedFeatureList features_;
 };
+
+class AegisAgentActorSurfaceBrowserTest
+    : public AegisAgentBrowserTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  AegisAgentActorSurfaceBrowserTest() {
+    actor_features_.InitWithFeatureState(
+        actor::kUseTabHandleAsSurfaceHandle, GetParam());
+  }
+
+ private:
+  base::test::ScopedFeatureList actor_features_;
+};
+
+IN_PROC_BROWSER_TEST_P(AegisAgentActorSurfaceBrowserTest,
+                       NavigationUsesTheAuthorizedTabsActorSurface) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  const GURL initial = embedded_test_server()->GetURL("/title1.html");
+  const GURL destination = embedded_test_server()->GetURL("/title2.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), initial));
+  content::WebContents* untouched =
+      browser()->GetTabStripModel()->GetActiveWebContents();
+
+  // Make the independent surface ID space diverge before creating the target
+  // tab, so interpreting a tab's raw ID as a surface ID cannot pass this test.
+  for (int i = 0; i < 16; ++i) {
+    actor::ActorSurfaceHandle::CreateForTesting();
+  }
+  chrome::AddTabAt(browser(), initial, -1, true);
+  auto* tab = browser()->GetTabStripModel()->GetActiveTab();
+  ASSERT_TRUE(tab);
+  ASSERT_TRUE(content::WaitForLoadStop(tab->GetContents()));
+  const auto surface = actor::ActorSurfaceHandle::From(tab->GetHandle());
+  ASSERT_FALSE(surface.is_null());
+  if (GetParam()) {
+    EXPECT_EQ(surface.raw_value(), tab->GetHandle().raw_value());
+  } else {
+    ASSERT_NE(surface.raw_value(), tab->GetHandle().raw_value());
+  }
+
+  AgentTaskScope scope;
+  scope.allowed_origins = {url::Origin::Create(initial)};
+  scope.allowed_tab_ids = {tab->GetHandle().raw_value()};
+  scope.allowed_tools = {"page.navigate", "page.observe"};
+  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
+  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+  scope.model_destination.provider = "openai";
+  scope.model_destination.endpoint = "http://127.0.0.1:8000/v1";
+  scope.model_destination.model = "fixture-model";
+  AegisActorBridge bridge(browser()->GetProfile());
+  const std::string task_id = "surface-navigation";
+  ASSERT_TRUE(bridge.StartTask(task_id, scope));
+
+  AgentToolCall call;
+  call.action_id = "navigate-authorized-surface";
+  call.tool_name = "page.navigate";
+  call.arguments.Set("tab_id", tab->GetHandle().raw_value());
+  call.arguments.Set("url", destination.spec());
+  call.committed_url = initial;
+  base::test::TestFuture<AgentToolResult> completed;
+  bridge.ExecutePageTool(task_id, call, completed.GetCallback());
+  ASSERT_TRUE(completed.Get().ok) << completed.Get().message;
+  EXPECT_EQ(tab->GetURL(), destination);
+  EXPECT_EQ(untouched->GetLastCommittedURL(), initial);
+  EXPECT_TRUE(bridge.StopTask(task_id, /*completed=*/true));
+}
+
+INSTANTIATE_TEST_SUITE_P(TabAndSurfaceIds,
+                        AegisAgentActorSurfaceBrowserTest,
+                        testing::Bool());
+
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       SettingsRoutesUnmountPreviousAegisPage) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), GURL("chrome://settings/aegisReading")));
+  auto* contents = browser()->GetTabStripModel()->GetActiveWebContents();
+  ASSERT_EQ(true, content::EvalJs(contents, R"JS(
+    (async () => {
+      const ui = document.querySelector('settings-ui');
+      await ui.updateComplete;
+      const main = ui.shadowRoot.querySelector('settings-main');
+      await main.updateComplete;
+      const previous = main.shadowRoot.querySelector(
+          'settings-aegis-page[mode="reading"]');
+      if (!previous) throw new Error('Reading settings did not render');
+      const {Router, routes} = await import('chrome://settings/settings.js');
+      Router.getInstance().navigateTo(routes.AEGIS_OCR);
+      await main.updateComplete;
+      const ocr = main.shadowRoot.querySelector(
+          'settings-aegis-page[mode="ocr"]');
+      if (!ocr || previous.isConnected ||
+          main.shadowRoot.querySelectorAll(
+              'settings-aegis-page:not([mode="home"])').length !== 1) {
+        throw new Error('Changing category retained an inactive Aegis page');
+      }
+      Router.getInstance().navigateTo(routes.AEGIS_READING);
+      await main.updateComplete;
+      const returned = main.shadowRoot.querySelector(
+          'settings-aegis-page[mode="reading"]');
+      return !!returned && returned !== previous && !ocr.isConnected;
+    })()
+  )JS"));
+}
 
 class AegisAgentUrlMonitorBrowserTest : public AegisAgentBrowserTest {
  public:
@@ -1231,12 +1340,16 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
     }
     AgentMonitorDefinition monitor;
     AgentTask* task = nullptr;
+    content::TestNavigationObserver navigation(
+        embedded_test_server()->GetURL("/monitor-page"));
+    navigation.StartWatchingNewWebContents();
     ASSERT_NO_FATAL_FAILURE(
         PrepareMonitor(embedded_test_server()->GetURL("/monitor-page"),
                        &monitor, &task, kind));
     ASSERT_NO_FATAL_FAILURE(WaitForCheck(task->id()));
     const auto first = service_->GetMonitors(task->id())[0];
-    ASSERT_EQ(first.last_check_status, AgentMonitorCheckStatus::kSucceeded);
+    ASSERT_EQ(first.last_check_status, AgentMonitorCheckStatus::kSucceeded)
+        << net::ErrorToString(navigation.last_net_error_code());
     ASSERT_FALSE(first.last_value_hash.empty());
     ASSERT_FALSE(first.last_observation.empty());
     EXPECT_TRUE(notifications
@@ -6418,12 +6531,12 @@ class Mac03Observer : public content::WebContentsObserver,
     if (error_.empty()) error_ = std::string(reason);
   }
   bool CheckDeadline() {
-    if (!deadline_.Remaining().is_positive()) Fail("MAC03 phase deadline");
+    if (!deadline_->Remaining().is_positive()) Fail("MAC03 phase deadline");
     return Healthy();
   }
   bool Drain(base::DictValue& startup) {
     if (!CheckDeadline()) return false;
-    base::test::ScopedRunLoopTimeout drain_timeout(FROM_HERE, deadline_.Remaining());
+    base::test::ScopedRunLoopTimeout drain_timeout(FROM_HERE, deadline_->Remaining());
     service_->AddObserver(this);
     attached_ = true;
     // These OnWorkerCreated calls describe preexisting workers, not new births.
@@ -6446,7 +6559,7 @@ class Mac03Observer : public content::WebContentsObserver,
     return CheckDeadline();
   }
   bool Begin(std::string_view phase) {
-    deadline_.StartPhase();
+    deadline_->StartPhase();
     if (!CheckDeadline()) return false;
     if (!phase_.empty() || !live_.empty()) Fail("overlapping phase");
     phase_ = phase;
@@ -6474,7 +6587,7 @@ class Mac03Observer : public content::WebContentsObserver,
   bool End() {
     if (!CheckDeadline()) return false;
     // EvalJs and retirement consume the same absolute phase interval.
-    base::test::ScopedRunLoopTimeout retirement_timeout(FROM_HERE, deadline_.Remaining());
+    base::test::ScopedRunLoopTimeout retirement_timeout(FROM_HERE, deadline_->Remaining());
     if (!base::test::RunUntil([&] { return !Healthy() || live_.empty(); }))
       Fail("worker retirement timeout");
     Snapshot("after");
@@ -6584,7 +6697,7 @@ class Mac03Observer : public content::WebContentsObserver,
   const std::string run_id_;
   const std::string challenge_;
   const base::TimeTicks first_;
-  Mac03Deadline& deadline_;
+  const raw_ref<Mac03Deadline> deadline_;
   bool attached_ = false;
   bool enumerating_startup_ = false;
   bool startup_ = true;

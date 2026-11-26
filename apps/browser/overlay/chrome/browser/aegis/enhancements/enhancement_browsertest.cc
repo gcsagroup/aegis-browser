@@ -76,6 +76,10 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
     ASSERT_TRUE(base::test::RunUntil([&] { return store_->ready(); }));
   }
   void TearDownOnMainThread() override {
+    if (markdown_directory_.IsValid()) {
+      base::ScopedAllowBlockingForTesting allow_blocking;
+      EXPECT_TRUE(markdown_directory_.Delete());
+    }
     // Profile 随浏览器关闭而销毁，测试夹具必须提前释放对其存储的引用。
     store_ = nullptr;
     InProcessBrowserTest::TearDownOnMainThread();
@@ -125,6 +129,7 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
     )JS"));
     EXPECT_EQ("undefined", content::EvalJs(frame, "typeof window.unsafe"));
   }
+  base::ScopedTempDir markdown_directory_;
   raw_ptr<EnhancementStore> store_ = nullptr;
 };
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
@@ -260,33 +265,43 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
 // 使用真实文件和浏览器导航，不能仅向预览框架直接注入待渲染文本。
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
                        MarkdownFirstBrowserOpenRendersWithoutReload) {
-  base::ScopedTempDir directory;
-  ASSERT_TRUE(directory.CreateUniqueTempDir());
-  const auto path = directory.GetPath().AppendASCII("first.MARKDOWN");
-  ASSERT_TRUE(base::WriteFile(path,
-      "# 首次打开\n\n<script>window.unsafe=1</script>"));
+  base::FilePath path;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
+    path = markdown_directory_.GetPath().AppendASCII("first.MARKDOWN");
+    ASSERT_TRUE(base::WriteFile(path,
+        "# 首次打开\n\n<script>window.unsafe=1</script>"));
+  }
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(path)));
   ExpectMarkdownPreview();
 }
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
                        MarkdownFirstLocalLinkRendersWithoutReload) {
-  base::ScopedTempDir directory;
-  ASSERT_TRUE(directory.CreateUniqueTempDir());
-  const auto path = directory.GetPath().AppendASCII("first.md");
-  const auto page = directory.GetPath().AppendASCII("open.html");
-  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
-  ASSERT_TRUE(base::WriteFile(page,
-      "<!doctype html><a id='open' href='first.md'>打开</a>"));
+  base::FilePath path;
+  base::FilePath page;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
+    path = markdown_directory_.GetPath().AppendASCII("first.md");
+    page = markdown_directory_.GetPath().AppendASCII("open.html");
+    ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+    ASSERT_TRUE(base::WriteFile(page,
+        "<!doctype html><a id='open' href='first.md'>打开</a>"));
+  }
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(page)));
   ASSERT_TRUE(content::ExecJs(contents(), "document.querySelector('#open').click()"));
   ExpectMarkdownPreview();
 }
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
                        MarkdownFirstFileDropRendersWithoutReload) {
-  base::ScopedTempDir directory;
-  ASSERT_TRUE(directory.CreateUniqueTempDir());
-  const auto path = directory.GetPath().AppendASCII("first.md");
-  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+  base::FilePath path;
+  {
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    ASSERT_TRUE(markdown_directory_.CreateUniqueTempDir());
+    path = markdown_directory_.GetPath().AppendASCII("first.md");
+    ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+  }
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL("/page")));
   auto* widget = contents()->GetPrimaryMainFrame()->GetRenderWidgetHost();
