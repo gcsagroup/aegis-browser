@@ -2,7 +2,7 @@ import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 if (process.argv.length !== 2) {
-  console.error('Usage: node scripts/dev/sign-geosite-policy.mjs 3<private-key.pem <payload.json');
+  console.error('Run node scripts/dev/sign-geosite-policy.mjs with the Ed25519 private key on file descriptor 3 and the JSON payload on standard input.');
   process.exit(2);
 }
 
