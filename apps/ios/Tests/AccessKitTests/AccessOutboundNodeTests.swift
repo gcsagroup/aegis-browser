@@ -3,6 +3,91 @@ import XCTest
 @testable import AccessKit
 
 final class AccessOutboundNodeTests: XCTestCase {
+    func testAdditionalTLSOutboundsProduceSingleVerifiedRouteAndKeepTheirStorageShape() async throws {
+        let id = "aa000000-0000-4000-8000-000000000001"
+        func vmess(_ network: String, cipher: String = "auto") throws -> String {
+            let fields = ["v": "2", "aid": "0", "id": id, "add": "relay.invalid", "port": "443",
+                          "tls": "tls", "net": network, "scy": cipher, "host": "relay.invalid", "path": "/test"]
+            return "vmess://" + (try JSONEncoder().encode(fields)).base64EncodedString()
+        }
+        let trojan = "trojan://\(id)@relay.invalid:443?sni=relay.invalid&alpn=http%2F1.1"
+        let hysteria = "hy2://\(id)@relay.invalid:443?peer=relay.invalid&insecure=0&upmbps=50&downmbps=100"
+        let routes = [(trojan, "trojan", "tcp"), (try vmess("ws"), "vmess", "ws"),
+                      (try vmess("httpupgrade"), "vmess", "httpupgrade"), (hysteria, "hysteria", "hysteria")]
+        let core = try AccessGoEmbeddedCore()
+        for (share, expectedProtocol, expectedNetwork) in routes {
+            let node = try AccessOutboundNode.parseSingleShareURI(share)
+            let restored = try JSONDecoder().decode(AccessOutboundNode.self, from: JSONEncoder().encode(node))
+            XCTAssertTrue(node.isWireIdentical(to: restored))
+            XCTAssertEqual(node.testSubscriptionIdentity, UUID(uuidString: id))
+
+            let data = try AccessOutboundConfigRegistry.embeddedInstanceJSONData(for: node)
+            var document = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            var egress = try XCTUnwrap(document["outbounds"] as? [[String: Any]])
+            XCTAssertEqual(egress.count, 1)
+            XCTAssertEqual(egress[0]["protocol"] as? String, expectedProtocol)
+            var stream = try XCTUnwrap(egress[0]["streamSettings"] as? [String: Any])
+            XCTAssertEqual(stream["network"] as? String, expectedNetwork)
+            var tls = try XCTUnwrap(stream["tlsSettings"] as? [String: Any])
+            XCTAssertEqual(tls["useSystemCA"] as? Bool, true)
+
+            try await core.start(configData: data)
+            XCTAssertTrue(core.isRunning)
+            let stopped = await core.stopAndConfirm()
+            XCTAssertTrue(stopped)
+
+            tls["allowInsecure"] = true
+            stream["tlsSettings"] = tls
+            egress[0]["streamSettings"] = stream
+            document["outbounds"] = egress
+            XCTAssertThrowsError(try AccessOutboundConfigRegistry.assertFailClosed(document, profile: node.profileKey))
+        }
+        for cipher in ["none", "zero"] {
+            XCTAssertThrowsError(try AccessOutboundNode.parseSingleShareURI(vmess("ws", cipher: cipher)))
+        }
+        XCTAssertThrowsError(try AccessOutboundNode.parseSingleShareURI(hysteria.replacingOccurrences(of: "insecure=0", with: "insecure=1")))
+        XCTAssertThrowsError(try AccessOutboundNode.parseSingleShareURI(trojan + "&sni=other.invalid"))
+        let old = try AccessOutboundNode.parseSingleShareURI(trojan)
+        let different = try AccessOutboundNode.parseSingleShareURI(trojan.replacingOccurrences(of: id, with: id.uppercased()))
+        XCTAssertEqual(old.testSubscriptionIdentity, different.testSubscriptionIdentity)
+        XCTAssertFalse(old.isWireIdentical(to: different))
+    }
+
+    func testAdditionalTLSOutboundsTransferThroughControlledRelays() async throws {
+        guard let input = ProcessInfo.processInfo.environment["AEGIS_EGRESS_LOOPBACK_FIXTURES"] else {
+            throw XCTSkip("Requires local TLS/QUIC relay fixtures and an isolated simulator with their CA")
+        }
+        let links = try JSONDecoder().decode([String].self, from: Data(input.utf8))
+        let nodes = try links.map(AccessOutboundNode.parseSingleShareURI)
+        XCTAssertEqual(nodes.map(\.profileKey), [.trojanRawTLS, .vmessWsTls, .vmessHTTPUpgradeTLS, .hysteria2])
+        let core = try AccessGoEmbeddedCore()
+        for node in nodes {
+            XCTAssertEqual(node.endpoint.address, "127.0.0.1")
+            let config = try AccessOutboundConfigRegistry.embeddedInstanceJSONData(for: node)
+            try await core.start(configData: config)
+            let watchdog = Task {
+                try await Task.sleep(for: .seconds(10))
+                await core.stop()
+            }
+            do {
+                let stream = try await core.dial(host: "fixture-origin.invalid", port: 80)
+                defer { stream.close() }
+                try await stream.write(Data("GET / HTTP/1.1\r\nHost: fixture-origin.invalid\r\nConnection: close\r\n\r\n".utf8))
+                var received = Data()
+                while received.count < 4_096, let part = try await stream.read(maxBytes: 1_024), !part.isEmpty {
+                    received.append(part)
+                    if received.range(of: Data("aegis-egress-ok".utf8)) != nil { break }
+                }
+                XCTAssertNotNil(received.range(of: Data("aegis-egress-ok".utf8)), node.profileKey.rawValue)
+            } catch {
+                XCTFail("Fixture CONNECT and transfer failed for \(node.profileKey.rawValue)")
+            }
+            watchdog.cancel()
+            let stopped = await core.stopAndConfirm()
+            XCTAssertTrue(stopped)
+        }
+    }
+
     func testSharedShareLinksPreserveLegacyConfigBytesAndAdmission() throws {
         for fixture in try fixtures() {
             let key = try XCTUnwrap(AccessOutboundProfileKey(profileName: fixture.profileKey))

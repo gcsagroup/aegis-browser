@@ -72,7 +72,7 @@ enum AccessTestNodeTransport: String {
 }
 
 enum AccessTestNodeError: Error {
-    case unavailable, invalidLink, cameraDenied, cameraUnavailable, conflict, storageUnavailable
+    case unavailable, invalidLink, unsupportedVMessCipher, cameraDenied, cameraUnavailable, conflict, storageUnavailable
 }
 
 struct AccessTestNodeRecord: Codable {
@@ -342,15 +342,7 @@ final class AccessTestNodeEditor {
 
     var allowsEditing: Bool { repository.allowsEditing(isPrivate: isPrivate) }
     var hasDraft: Bool { draft != nil }
-    var draftProtocolName: String? {
-        switch draft {
-        case .realityVision: "VLESS / TCP / REALITY / Vision"
-        case .vlessWebSocketTLS: "VLESS / WS / TLS"
-        case .vlessTCPTLSVision: "VLESS / TCP / TLS / Vision"
-        case .vlessGRPCReality: "VLESS / gRPC / REALITY"
-        case nil: nil
-        }
-    }
+    var draftProtocolName: String? { draft?.protocolDisplayName }
     var hasSavedNode: Bool { baseRevision != nil }
     var showsEmptyProfile: Bool { loaded && !hasSavedNode }
     var canApply: Bool { loaded && hasDraft && scan == nil }
@@ -386,6 +378,9 @@ final class AccessTestNodeEditor {
         do {
             draft = try AccessInternalTestNode.parseSingleShareURI(input)
             error = nil
+        } catch AccessLocalV2RayConfigError.unsupportedVMessCipher {
+            draft = nil
+            self.error = .unsupportedVMessCipher
         } catch {
             // Remove an earlier candidate so Apply cannot save it after a failed preview.
             draft = nil

@@ -97,8 +97,9 @@ enum AccessSubscriptionClient {
         guard let identity = UUID(uuidString: userID) else { throw AccessSubscriptionQueryError.invalid }
         return try nodeLines(data).compactMap { line in
             let uri = String(line)
-            guard URLComponents(string: uri)?.user.flatMap(UUID.init(uuidString:)) == identity else { return nil }
-            return try? AccessInternalTestNode.parseSingleShareURI(uri)
+            guard let node = try? AccessInternalTestNode.parseSingleShareURI(uri),
+                  node.testSubscriptionIdentity == identity else { return nil }
+            return node
         }
     }
 

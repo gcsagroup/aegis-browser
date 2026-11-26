@@ -8,6 +8,11 @@ public enum AccessOutboundProfileKey: String, Codable, Sendable {
     case vlessRawTls = "vless.raw.tls"
     case vlessGrpcReality = "vless.grpc.reality"
 
+    case vmessWsTls = "vmess.ws.tls"
+    case vmessHTTPUpgradeTLS = "vmess.httpupgrade.tls"
+    case trojanRawTLS = "trojan.raw.tls"
+    case hysteria2 = "hysteria2"
+
     private static let aliases: [String: Self] = [
         AccessOutboundProfile.realityVision.rawValue: .vlessRawReality,
         AccessOutboundProfile.reservedWsTlsCompat: .vlessWsTls,
@@ -28,8 +33,10 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
     case vlessTCPTLSVision(AccessVLESSTCPTLSVisionParameters)
     case vlessGRPCReality(AccessVLESSGRPCRealityParameters)
 
+    case additionalTLS(AccessAdditionalTLSParameters)
+
     public enum Kind: String, Codable, Sendable {
-        case vless
+        case vless, vmess, trojan, hysteria2
     }
 
     public struct Endpoint: Codable, Equatable, Sendable {
@@ -66,16 +73,21 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
         case raw
         case ws(path: String, host: String)
         case grpc(serviceName: String)
+        case httpupgrade(path: String, host: String)
+        case hysteria(upMbps: Int, downMbps: Int)
 
         private enum CodingKeys: String, CodingKey {
             case raw = "raw"
             case ws = "ws"
             case grpc = "grpc"
+            case httpupgrade, hysteria
         }
         private enum WsCodingKeys: String, CodingKey {
             case path = "path"
             case host = "host"
         }
+        private enum HttpupgradeCodingKeys: String, CodingKey { case path, host }
+        private enum HysteriaCodingKeys: String, CodingKey { case upMbps, downMbps }
         private enum GrpcCodingKeys: String, CodingKey {
             case serviceName = "serviceName"
         }
@@ -84,7 +96,14 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
     public enum Credentials: Codable, Equatable, Sendable {
         case vless(userID: String, encryption: String, flow: String?)
 
-        private enum CodingKeys: String, CodingKey { case vless = "vless" }
+        case vmess(userID: String, security: String)
+        case trojan(password: String)
+        case hysteria2(password: String)
+
+        private enum CodingKeys: String, CodingKey { case vless, vmess, trojan, hysteria2 }
+        private enum VmessCodingKeys: String, CodingKey { case userID, security }
+        private enum TrojanCodingKeys: String, CodingKey { case password }
+        private enum Hysteria2CodingKeys: String, CodingKey { case password }
         private enum VlessCodingKeys: String, CodingKey {
             case userID = "userID"
             case encryption = "encryption"
@@ -92,7 +111,10 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
         }
     }
 
-    public var kind: Kind { .vless }
+    public var kind: Kind {
+        if case .additionalTLS(let parameters) = self { return parameters.kind }
+        return .vless
+    }
 
     public var profileKey: AccessOutboundProfileKey {
         switch self {
@@ -100,6 +122,7 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
         case .vlessWebSocketTLS: .vlessWsTls
         case .vlessTCPTLSVision: .vlessRawTls
         case .vlessGRPCReality: .vlessGrpcReality
+        case .additionalTLS(let parameters): parameters.profileKey
         }
     }
 
@@ -109,11 +132,13 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
         case .vlessWebSocketTLS(let parameters): Endpoint(address: parameters.address, port: parameters.port)
         case .vlessTCPTLSVision(let parameters): Endpoint(address: parameters.address, port: parameters.port)
         case .vlessGRPCReality(let parameters): Endpoint(address: parameters.address, port: parameters.port)
+        case .additionalTLS(let parameters): parameters.endpoint
         }
     }
 
     public var security: Security {
         switch self {
+        case .additionalTLS(let parameters): parameters.security
         case .realityVision(let parameters):
             .reality(serverName: parameters.serverName, fingerprint: parameters.fingerprint,
                      publicKey: parameters.publicKey, shortID: parameters.shortID, spiderX: parameters.spiderX)
@@ -132,11 +157,13 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
         case .realityVision, .vlessTCPTLSVision: .raw
         case .vlessWebSocketTLS(let parameters): .ws(path: parameters.path, host: parameters.requestHost)
         case .vlessGRPCReality(let parameters): .grpc(serviceName: parameters.serviceName)
+        case .additionalTLS(let parameters): parameters.transport
         }
     }
 
     public var credentials: Credentials {
         switch self {
+        case .additionalTLS(let parameters): parameters.credentials
         case .realityVision(let parameters):
             .vless(userID: parameters.userID, encryption: AccessRealityVisionParameters.admittedEncryption,
                    flow: AccessRealityVisionParameters.admittedFlow)
@@ -191,6 +218,10 @@ public enum AccessOutboundNode: Codable, Equatable, Sendable {
                 address: endpoint.address, port: endpoint.port, userID: userID, serverName: serverName,
                 publicKey: publicKey, shortID: shortID, fingerprint: fingerprint, serviceName: serviceName
             ))
+        case (.vmess, .tls, .ws, .vmess), (.vmess, .tls, .httpupgrade, .vmess),
+             (.trojan, .tls, .raw, .trojan), (.hysteria2, .tls, .hysteria, .hysteria2):
+            self = .additionalTLS(try AccessAdditionalTLSParameters(endpoint: endpoint, security: security,
+                                                                  transport: transport, credentials: credentials))
         default:
             throw AccessLocalV2RayConfigError.invalidJSON
         }

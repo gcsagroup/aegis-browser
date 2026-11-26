@@ -1,4 +1,4 @@
-"""Install an explicitly supplied, ordered VLESS list in the Alpha app bundle."""
+"""Install an explicitly supplied, ordered test relay list in the Alpha app bundle."""
 import base64
 import ipaddress
 import json
@@ -199,7 +199,106 @@ def validate_transport(uri, *, anchor=False):
     return identity
 
 
+def distinct_json_fields(pairs):
+    fields = dict(pairs)
+    if len(fields) != len(pairs):
+        raise ValueError('Duplicate VMess field')
+    return fields
+
+
+def tls_name(sni, peer, fallback):
+    if sni and peer and sni != peer:
+        raise ValueError('Conflicting TLS names')
+    name = sni or peer or fallback
+    if not dns_name(name):
+        raise ValueError('Invalid TLS name')
+    return name
+
+
+def validate_vmess(payload):
+    if not re.fullmatch(r'[A-Za-z0-9+/_-]+={0,2}', payload):
+        raise ValueError('Invalid VMess share')
+    fields = json.loads(base64.b64decode(payload + '=' * (-len(payload) % 4), altchars=b'-_', validate=True)
+                        .decode('utf-8'), object_pairs_hook=distinct_json_fields)
+    allowed = {'v', 'ps', 'add', 'port', 'id', 'aid', 'net', 'type', 'host', 'path', 'tls',
+               'sni', 'peer', 'fp', 'alpn', 'scy', 'method'}
+    if (not isinstance(fields, dict) or not fields.keys() <= allowed
+            or any(type(value) not in ((str, int) if key in {'port', 'v', 'aid'} else (str,))
+                   for key, value in fields.items())):
+        raise ValueError('Invalid VMess fields')
+    net, address, port, client = (fields.get(key, '') for key in ('net', 'add', 'port', 'id'))
+    if (str(fields.get('v', '2')) != '2' or str(fields.get('aid', '0')) != '0'
+            or net not in {'ws', 'httpupgrade'} or fields.get('tls') != 'tls'
+            or fields.get('type', '') not in {'', 'none'} or not UUID.fullmatch(client)
+            or not re.fullmatch(r'[0-9]{1,5}', str(port))):
+        raise ValueError('Invalid VMess format')
+    dial_address = f'[{address}]' if ':' in address and not address.startswith('[') else address
+    if not valid_authority(f'{dial_address}:{port}', port_required=True):
+        raise ValueError('Invalid VMess endpoint')
+
+    server = tls_name(fields.get('sni'), fields.get('peer'), address)
+    host, path = fields.get('host') or server, fields.get('path') or '/'
+    fingerprint = fields.get('fp', '')
+    alpn = fields.get('alpn') or 'http/1.1'
+    primary, alternate = fields.get('scy'), fields.get('method')
+    cipher = primary or alternate or 'auto'
+    if (fingerprint not in WS_FINGERPRINTS or alpn != 'http/1.1'
+            or not valid_authority(host) or not valid_ws_target(path)
+            or (primary and alternate and primary != alternate)
+            or cipher not in {'auto', 'aes-128-gcm', 'chacha20-poly1305'}):
+        raise ValueError('Invalid VMess TLS transport or cipher')
+    identity = client.lower()
+    return identity, ('vmess', net, dial_address.strip('[]'), int(port), identity, server,
+                      fingerprint, alpn, host, path, cipher)
+
+
+def bandwidth(value):
+    if not re.fullmatch(r'[0-9]{1,6}', value) or int(value) > 100_000:
+        raise ValueError('Invalid Hysteria2 bandwidth')
+    return int(value)
+
+
+def validate_additional_tls(uri, scheme):
+    wire, _, label = uri.partition('#')
+    if (len(uri.encode('utf-8')) > MAX_URI_BYTES or not wire.isascii() or '://' in label
+            or any(c.isspace() or control(c) or c == chr(92) for c in uri) or BAD_ESCAPE.search(wire)):
+        raise ValueError('Invalid TLS share')
+    if scheme == 'vmess':
+        return validate_vmess(wire.split('://', 1)[1])
+
+    parts = urlsplit(wire)
+    password, separator, authority = parts.netloc.partition('@')
+    host, port_separator, port = authority.rpartition(':')
+    address = relay_host(unquote(host, errors='strict'))
+    password = unquote(password, errors='strict')
+    if (not separator or not port_separator or not UUID.fullmatch(password)
+            or parts.path not in {'', '/'} or not valid_authority(f'{address}:{port}', port_required=True)
+            or not URI_QUERY.fullmatch(parts.query)):
+        raise ValueError('Invalid private Alpha TLS relay')
+    query = share_query(parts.query) if parts.query else {}
+    server = tls_name(query.get('sni'), query.get('peer'), address)
+    tls = {'sni', 'peer', 'alpn'}
+    key = (address.strip('[]'), int(port), password, server)
+    if scheme == 'trojan':
+        fingerprint = query.get('fp', '')
+        if (not query.keys() <= (tls | {'fp', 'type', 'security'})
+                or query.get('alpn', 'http/1.1') != 'http/1.1'
+                or query.get('security', 'tls') != 'tls' or query.get('type', 'tcp') not in {'tcp', 'raw'}
+                or fingerprint not in WS_FINGERPRINTS):
+            raise ValueError('Invalid Trojan TLS fields')
+        return password.lower(), ('trojan', *key, fingerprint)
+
+    if (not query.keys() <= (tls | {'insecure', 'upmbps', 'downmbps'})
+            or query.get('alpn', 'h3') != 'h3' or query.get('insecure', '0') != '0'):
+        raise ValueError('Invalid Hysteria2 TLS fields')
+    return password.lower(), ('hysteria2', *key, bandwidth(query.get('upmbps', '0')),
+                              bandwidth(query.get('downmbps', '0')))
+
+
 def validated_route(uri, *, anchor=False):
+    scheme = uri.partition('://')[0].lower() if isinstance(uri, str) else ''
+    if not anchor and scheme in {'vmess', 'trojan', 'hysteria2', 'hy2'}:
+        return validate_additional_tls(uri, scheme)
     parts, identity, address = share(uri)
     # The bundled list parser splits at the first Character equal to '#'.
     # An extending scalar would hide the delimiter from that parser.
@@ -309,5 +408,5 @@ if __name__ == '__main__':
     try:
         install(os.environ.get('AEGIS_ACCESS_RELEASE_CHANNEL'), os.environ['SCRIPT_INPUT_FILE_1'],
                 Path(os.environ['SCRIPT_OUTPUT_FILE_0']))
-    except (KeyError, OSError, ValueError, RecursionError):
+    except (KeyError, OSError, ValueError, UnicodeError, RecursionError):
         sys.exit('Cannot package the private Alpha node list. Check the private input and channel.')

@@ -99,6 +99,26 @@ class PrivateAlphaInputsTests(unittest.TestCase):
         self.assertNotEqual(self.hook('beta', source, target).returncode, 0)
         self.assertFalse(target.exists())
 
+    def test_stage_admits_mixed_tls_routes_and_rejects_cross_account_password(self):
+        def vmess(network, cipher='auto'):
+            fields = dict(v='2', add='relay.invalid', port='443', id=UID, aid='0', net=network,
+                          type='none', host='relay.invalid', path='/entry', tls='tls', scy=cipher)
+            return 'vmess://' + encode(fields)
+
+        routes = LIST + [
+            f'trojan://{UID}@relay.invalid:443?sni=relay.invalid&alpn=http%2F1.1',
+            vmess('ws'), vmess('httpupgrade'),
+            f'hysteria2://{UID}@relay.invalid:443?sni=relay.invalid&insecure=0&alpn=h3',
+        ]
+        directory = self.stage(AEGIS_IOS_ALPHA_NODES_BASE64=encode(routes))
+        self.assertEqual(json.loads((directory / 'inputs' / NODES).read_bytes()), routes)
+        for invalid in (vmess('ws', 'none'), routes[-1].replace('insecure=0', 'insecure=1'),
+                        routes[-1].replace(UID, 'aa000000-0000-4000-8000-000000000002')):
+            with self.subTest(protocol=invalid.partition('://')[0]):
+                result = self.cli([HELPER, 'stage'], dict(self.env, **secrets(nodes=[invalid])))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn(UID, result.stdout + result.stderr)
+
     def test_hook_uses_utf8_limit_and_refuses_unsafe_input(self):
         source = self.root / 'input'
         target = self.root / NODES

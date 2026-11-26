@@ -81,12 +81,15 @@ with no repository or organization fallback. Do
 not put their values in a dispatch field, variable, repo file, or receipt:
 
 - `AEGIS_IOS_ALPHA_NODES_BASE64`: one-line base64 for an ordered UTF-8 JSON
-  array of VLESS URI strings. Supply the four intended nodes for the first
-  package. The format admits 1–16 distinct entries, each at most 8,192 UTF-8
-  bytes, with a canonical JSON size of at most 131,500 bytes. It accepts
-  TCP/TLS/Vision, WS/TLS, TCP/REALITY/Vision and gRPC/REALITY. Duplicate query
+  array of supported node share strings. The format admits 1–16 distinct
+  entries, each at most 8,192 UTF-8 bytes, with a canonical JSON size of at most 131,500 bytes. It accepts
+  the four VLESS combinations, VMess over WebSocket or HTTPUpgrade with TLS,
+  Trojan over TCP/TLS, and Hysteria2 over QUIC/TLS. Duplicate query
   keys, ambiguous aliases and unsupported options fail the build. Each URI
-  must have the same client UUID as the anchored node. Use compact
+  must have the same client UUID as the anchored node. For password-based routes,
+  the test password must be that account UUID. The live subscription must still
+  advertise each route with its exact password. VMess with an explicit none or
+  zero cipher and Hysteria2 with disabled TLS verification are rejected. Use compact
   JSON: [GitHub limits each secret to 48 KB](https://docs.github.com/en/actions/reference/security/secrets#limits-for-secrets).
 - `AEGIS_IOS_TEST_NODE_BASE64`: base64 for the existing anchored TCP/REALITY
   VLESS URI used by the shared quota session.
@@ -118,12 +121,12 @@ runs and validate the signed package before distribution. To revoke a
 distributed credential, disable it at the subscription service and relay.
 Changing an Actions secret affects subsequent builds.
 
-For the four-node Alpha delivery, the authenticated subscription response must
-advertise all four nodes with matching parsed node parameters. Serve the list
+The authenticated subscription response must advertise every intended route
+with matching parsed node parameters. Serve the list
 as plain text or base64 from the same HTTPS origin and path as the signed
 quota descriptor, with the `format=info` query removed. A matching UUID alone
 is insufficient. The app checks the subscription on refresh. Verifying real
-traffic counters through all four nodes requires a device test.
+traffic counts per route requires a device test.
 
 The signing job verifies the exported IPA has one main-app copy of each of
 `AegisAlphaTestNodes.json`, `AegisPrivateTestNode.vless` and
