@@ -12,6 +12,18 @@ if [[ "$ARCH" != arm64 ]]; then
   printf 'This release runner/build supports arm64 only.\n' >&2
   exit 2
 fi
+build_args=()
+case "${3:-}" in
+  "") ;;
+  --ad-hoc-cd)
+    if [[ "${MACOS_SIGNING_MODE:-ad-hoc}" != ad-hoc || -z "${CHROMIUM_ROOT:-}" || -z "${DEPOT_TOOLS_DIR:-}" ]]; then
+      printf 'Ad-hoc CD requires ad-hoc signing and explicit source and depot_tools roots.\n' >&2
+      exit 2
+    fi
+    build_args=(--ad-hoc-dmg)
+    ;;
+  *) printf 'Unknown macOS rebuild option.\n' >&2; exit 2 ;;
+esac
 ARGS_FILE="$ROOT/apps/browser/args/aegis-release.gn"
 
 is_chromium_src() {
@@ -129,11 +141,16 @@ fi
 SRC="$(cd "$SRC" && pwd -P)"
 printf 'Using Chromium src %s\n' "$SRC"
 
-DEPOT="$(find_depot_tools "$SRC" || true)"
-if [[ -z "$DEPOT" ]]; then
+if [[ "${3:-}" == --ad-hoc-cd ]]; then
+  DEPOT="$DEPOT_TOOLS_DIR"
+else
+  DEPOT="$(find_depot_tools "$SRC" || true)"
+fi
+if [[ -z "$DEPOT" || ! -x "$DEPOT/autoninja" ]]; then
   printf 'depot_tools not found. Cannot run gn or autoninja.\n' >&2
   exit 3
 fi
+DEPOT="$(cd "$DEPOT" && pwd -P)"
 export PATH="$DEPOT:$PATH"
 export DEPOT_TOOLS_UPDATE=0
 command -v gn >/dev/null
@@ -160,4 +177,4 @@ export DEPOT_TOOLS_DIR="$DEPOT"
 export AEGIS_MACOS_PACKAGE_AFTER_BUILD=1
 export MACOS_VERSION="$VERSION"
 export MACOS_ARCH="$ARCH"
-exec bash "$ROOT/apps/browser/scripts/build-release.sh"
+exec bash "$ROOT/apps/browser/scripts/build-release.sh" ${build_args[@]+"${build_args[@]}"}

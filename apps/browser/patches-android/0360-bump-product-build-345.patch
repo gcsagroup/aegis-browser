@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 27 Nov 2026 03:50:00 +0800
+Subject: [PATCH] build(browser): advance product build to 345
+
+---
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index c46066b6c012d965f5e38ed266d3f66c21676717..4a964f5dc610017dab42ef68329826d125a61693 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "7.5.0.344";
+-inline constexpr char kProductVersionLabel[] = "Ver 7.5 (344)";
++inline constexpr char kProductVersion[] = "7.5.0.345";
++inline constexpr char kProductVersionLabel[] = "Ver 7.5 (345)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

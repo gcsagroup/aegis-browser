@@ -3,6 +3,17 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
+case "${1:-}" in
+  "") ;;
+  --ad-hoc-dmg)
+    if [[ "${AEGIS_MACOS_PACKAGE_AFTER_BUILD:-0}" != 1 || "${MACOS_SIGNING_MODE:-ad-hoc}" != ad-hoc ]]; then
+      printf 'The ad-hoc build output must be packaged by the ad-hoc DMG path.\n' >&2
+      exit 2
+    fi
+    ;;
+  *) printf 'Unknown release build option.\n' >&2; exit 2 ;;
+esac
+
 ensure_depot_tools_on_path
 detect_and_export_proxy >/dev/null 2>&1 || true
 
@@ -132,8 +143,15 @@ if [[ -e "$LEGACY_APP" || -L "$LEGACY_APP" ]]; then
   exit 1
 fi
 
+gn_command=gn
+ninja_command=autoninja
+if [[ "${1:-}" == --ad-hoc-dmg ]]; then
+  gn_command="$SRC/buildtools/mac/gn"
+  ninja_command="$DEPOT_TOOLS_DIR/autoninja"
+fi
+
 echo "Generating $OUT with aegis-release.gn (is_component_build=false)…"
-gn gen "$OUT" --args="$(cat "$ARGS_FILE")"
+"$gn_command" gen "$OUT" --args="$(cat "$ARGS_FILE")"
 
 identity_begin=(
   --phase begin
@@ -149,11 +167,11 @@ echo "Freezing build inputs before compilation…"
 node "$ROOT_DIR/scripts/write-build-identity.mjs" "${identity_begin[@]}"
 
 echo "Building chrome at $OUT (this can take a long time)…"
-autoninja -C "$OUT" chrome
+"$ninja_command" -C "$OUT" chrome
 
 # 固定证书签名会修改 App 内的 Mach-O 字节，必须发生在身份清单
 # finalize 之前。启动流程不得再对已绑定产物做任何签名或修补。
-if [[ "$(uname -s)" == Darwin ]]; then
+if [[ "$(uname -s)" == Darwin && "${1:-}" != --ad-hoc-dmg ]]; then
   bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$APP" "$OUT"
 fi
 
