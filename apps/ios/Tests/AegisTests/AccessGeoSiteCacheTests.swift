@@ -244,6 +244,104 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertEqual(upgraded.runtimeView().overseas.match(URL(string: "https://www.google.com")!), .managed)
     }
 
+    func testConfirmingNewOverseasBundleDiscardsOlderDomesticProposal() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: AccessGeoSiteCatalogue.bundled.publishedAt))
+        fixture.clock.setWall(published.addingTimeInterval(-2 * 86_400))
+        let old = fixture.cache()
+        await old.restore(migrating: smartAll)
+        let database = combined(debian: bundled(.debian),
+            douban: bundled(.douban) + [Vector.rule(2, "new-coverage.example.com")], meituan: bundled(.meituan))
+        let domestic = try Self.candidate(1, database: database, now: fixture.clock.wall)
+        try await old.apply(domestic, using: XCTUnwrap(old.updateContext()))
+        XCTAssertEqual(old.proposal(for: .douban)?.version, domestic.receipt.tag)
+
+        fixture.clock.setWall(published)
+        let upgraded = fixture.cache(useProductBaseline: true)
+        await upgraded.restore()
+        XCTAssertEqual(upgraded.proposal(for: .douban)?.version, domestic.receipt.tag)
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        let confirmation = try await upgraded.overseasConfirmation(for: selection)
+        XCTAssertTrue(confirmation.bundled)
+        try await upgraded.confirmOverseas(confirmation) { true }
+        XCTAssertEqual(upgraded.highWater?.tag, AccessGeoSiteCatalogue.bundled.tag)
+        XCTAssertNil(upgraded.proposal(for: .douban))
+        XCTAssertNil(upgraded.stagedFileSHA256)
+        XCTAssertEqual(upgraded.match(douban), .managed)
+        XCTAssertEqual(upgraded.match(added), .original)
+
+        let reopened = fixture.cache(useProductBaseline: true)
+        await reopened.restore()
+        XCTAssertNil(reopened.proposal(for: .douban))
+        XCTAssertNil(reopened.stagedFileSHA256)
+        XCTAssertEqual(reopened.match(douban), .managed)
+        XCTAssertEqual(reopened.match(added), .original)
+    }
+
+    func testAdoptingNewOverseasBundleDiscardsOlderDomesticProposal() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: AccessGeoSiteCatalogue.bundled.publishedAt))
+        fixture.clock.setWall(published.addingTimeInterval(-2 * 86_400))
+        let old = fixture.cache()
+        await old.restore(migrating: smartAll)
+        try old.requestOverseasPreview()
+        let baseline = combined(debian: bundled(.debian), douban: bundled(.douban), meituan: bundled(.meituan))
+        let overseas = try Self.overseas(1, positive: ["google.com"], excluding: [],
+                                         now: fixture.clock.wall, domestic: baseline)
+        try await old.apply(overseas, using: XCTUnwrap(old.updateContext()))
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        try await old.confirmOverseas(old.overseasConfirmation(for: selection)) { true }
+        try old.disableOverseas()
+
+        fixture.clock.advance(by: 3_600)
+        let database = combined(debian: bundled(.debian),
+            douban: bundled(.douban) + [Vector.rule(2, "new-coverage.example.com")], meituan: bundled(.meituan))
+        let domestic = try Self.candidate(2, database: database, now: fixture.clock.wall)
+        try await old.apply(domestic, using: XCTUnwrap(old.updateContext()))
+        XCTAssertEqual(old.proposal(for: .douban)?.version, domestic.receipt.tag)
+        // The previous app supplied its own bundled receipt.
+        let record = try XCTUnwrap(fixture.storage.readLedger())
+        var ledger = try XCTUnwrap(JSONSerialization.jsonObject(with: record) as? [String: Any])
+        ledger["overseasApprovedFromBundle"] = true
+        try fixture.storage.writeLedger(JSONSerialization.data(withJSONObject: ledger))
+
+        fixture.clock.setWall(published)
+        for _ in 0..<2 {
+            let upgraded = fixture.cache(useProductBaseline: true)
+            await upgraded.restore()
+            XCTAssertEqual(upgraded.highWater?.tag, AccessGeoSiteCatalogue.bundled.tag)
+            XCTAssertNil(upgraded.proposal(for: .douban))
+            XCTAssertNil(upgraded.stagedFileSHA256)
+            XCTAssertEqual(upgraded.match(douban), .managed)
+            XCTAssertEqual(upgraded.match(added), .original)
+        }
+    }
+
+    func testAgedBundledOverseasApprovalStaysRoutedWhileApplyingUnchangedRules() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: AccessGeoSiteCatalogue.bundled.publishedAt))
+        fixture.clock.setWall(published.addingTimeInterval(30 * 86_400))
+        let cache = fixture.cache(useProductBaseline: true)
+        await cache.restore()
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: selection)) { true }
+        let retained = URL(string: "https://www.google.com")!
+        XCTAssertEqual(cache.runtimeView().overseas.match(retained), .managed)
+        var emittedViews = 0
+        cache.onChange = { view in
+            emittedViews += 1
+            XCTAssertEqual(view.overseas.match(retained), .managed)
+        }
+
+        let successor = try Self.overseas(1, positive: ["google.com"], excluding: [], now: fixture.clock.wall)
+        try await cache.apply(successor, using: XCTUnwrap(cache.updateContext()))
+        XCTAssertGreaterThan(emittedViews, 0)
+        XCTAssertEqual(cache.runtimeView().overseas.match(retained), .managed)
+    }
+
     func testDownloadedRulesMatchingBundleKeepTheirOnlineDeadline() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
