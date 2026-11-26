@@ -254,25 +254,48 @@
         }
       }
     },
-    "请输入一条 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享链接。": {
+    "此 VMess 节点的加密方式不受支持。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请输入一条 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享链接。"
+            "value": "此 VMess 节点的加密方式不受支持。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter one VLESS share link using REALITY/Vision or WebSocket/TLS."
+            "value": "This VMess node uses an unsupported cipher."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請輸入一條 REALITY/Vision 或 WebSocket/TLS 的 VLESS 分享連結。"
+            "value": "此 VMess 節點使用不支援的加密方式。"
+          }
+        }
+      }
+    },
+    "请输入一条支持的 VLESS、VMess、Trojan 或 Hysteria2 分享链接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入一条支持的 VLESS、VMess、Trojan 或 Hysteria2 分享链接。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter one supported VLESS, VMess, Trojan, or Hysteria2 share link."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請輸入一條支援的 VLESS、VMess、Trojan 或 Hysteria2 分享連結。"
           }
         }
       }

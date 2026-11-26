@@ -2,6 +2,7 @@ import Foundation
 
 /// Failures while importing a local V2Ray / Xray client config for Access tests.
 public enum AccessLocalV2RayConfigError: Error, Equatable, Sendable {
+    case unsupportedVMessCipher
     case pathNotSet
     case fileNotFound(String)
     case unreadableFile(String)

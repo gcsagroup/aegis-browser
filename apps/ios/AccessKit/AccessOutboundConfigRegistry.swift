@@ -112,7 +112,97 @@ enum AccessOutboundConfigRegistry {
                 return .init(credentials: params.diagnosticSecrets)
             }
         ),
+        .vmessWsTls: vmessEntry(network: "ws", streamKey: "wsSettings"),
+        .vmessHTTPUpgradeTLS: vmessEntry(network: "httpupgrade", streamKey: "httpupgradeSettings"),
+        .trojanRawTLS: additionalTLS(
+            tag: "internal_trojan_tcp_tls", protocolName: "trojan", network: "tcp", alpn: "http/1.1",
+            settings: .object(endpointRules.merging(["password": .string]) { _, new in new })
+        ) { node in
+            guard case .trojan(let password) = node.credentials else { throw invalidProfile }
+            return (endpointSettings(node).merging(["password": password]) { _, new in new }, [:])
+        },
+        .hysteria2: additionalTLS(
+            tag: "internal_hysteria2", protocolName: "hysteria", network: "hysteria", alpn: "h3",
+            settings: .object(endpointRules.merging(["version": .integer(2...2)]) { _, new in new }),
+            stream: ["hysteriaSettings": .object(["version": .integer(2...2), "auth": .string])],
+            optionalStream: ["finalmask": .object(["quicParams": .object(["congestion": .literal("brutal")],
+                optional: ["brutalUp": .bandwidth, "brutalDown": .bandwidth])])],
+            allowsFingerprint: false
+        ) { node in
+            guard case .hysteria2(let password) = node.credentials,
+                  case .hysteria(let up, let down) = node.transport else { throw invalidProfile }
+            var stream: [String: Any] = ["hysteriaSettings": ["version": 2, "auth": password]]
+            if up > 0 || down > 0 {
+                var quic = ["congestion": "brutal"]
+                if up > 0 { quic["brutalUp"] = "\(up)mbps" }
+                if down > 0 { quic["brutalDown"] = "\(down)mbps" }
+                stream["finalmask"] = ["quicParams": quic]
+            }
+            return (endpointSettings(node).merging(["version": 2]) { _, new in new }, stream)
+        },
     ]
+
+    private static let endpointRules: [String: Rule] = ["address": .string, "port": .integer(1...65_535)]
+
+    private static func endpointSettings(_ node: AccessAdditionalTLSParameters) -> [String: Any] {
+        ["address": node.endpoint.address, "port": Int(node.endpoint.port)]
+    }
+
+    private static func vmessEntry(network: String, streamKey: String) -> Entry {
+        additionalTLS(
+            tag: "internal_vmess_\(network)_tls", protocolName: "vmess", network: network, alpn: "http/1.1",
+            settings: .object(endpointRules.merging(["id": .string,
+                                                    "security": .oneOf(["auto", "aes-128-gcm", "chacha20-poly1305"])]) { _, new in new }),
+            stream: [streamKey: .object(["host": .string, "path": .string])]
+        ) { node in
+            guard case .vmess(let id, let cipher) = node.credentials else { throw invalidProfile }
+            let path: String
+            let host: String
+            switch node.transport {
+            case .ws(let target, let authority), .httpupgrade(let target, let authority):
+                path = target
+                host = authority
+            default:
+                throw invalidProfile
+            }
+            let settings = endpointSettings(node).merging(["id": id, "security": cipher]) { _, new in new }
+            return (settings, [streamKey: ["host": host, "path": path]])
+        }
+    }
+
+    private static func additionalTLS(
+        tag: String, protocolName: String, network: String, alpn: String, settings: Rule,
+        stream: [String: Rule] = [:], optionalStream: [String: Rule] = [:], allowsFingerprint: Bool = true,
+        configuration: @escaping @Sendable (AccessAdditionalTLSParameters) throws -> ([String: Any], [String: Any])
+    ) -> Entry {
+        let base: [String: Rule] = [
+            "network": .literal(network), "security": .literal("tls"),
+            "tlsSettings": .object(["serverName": .string, "alpn": .single(.literal(alpn)), "useSystemCA": .trueBoolean],
+                                   optional: allowsFingerprint ? ["fingerprint": .string] : [:]),
+        ]
+        return Entry(outbound: .object([
+            "tag": .literal(tag), "protocol": .literal(protocolName), "settings": settings,
+            "streamSettings": .object(base.merging(stream) { _, new in new }, optional: optionalStream),
+        ]), generate: { node in
+            guard case .additionalTLS(let parameters) = node else { throw invalidProfile }
+            let (settings, extra) = try configuration(parameters)
+            var tls = verifiedTLSSettings(serverName: parameters.serverName, fingerprint: parameters.fingerprint)
+            tls["alpn"] = [alpn]
+            let stream: [String: Any] = ["network": network, "security": "tls", "tlsSettings": tls]
+            return [
+                "tag": tag, "protocol": protocolName, "settings": settings,
+                "streamSettings": stream.merging(extra) { _, new in new },
+            ]
+        }, diagnosticSecrets: { node in
+            guard case .additionalTLS(let parameters) = node else { throw invalidProfile }
+            let values: [String]
+            switch parameters.transport {
+            case .ws(let path, _), .httpupgrade(let path, _): values = querySecrets(in: path)
+            default: values = []
+            }
+            return .init(credentials: [parameters.secret], queryValues: values)
+        })
+    }
 
     private static let invalidProfile = AccessRealityVisionOutboundConfigError.fieldNotCanonical("profile")
 
@@ -219,6 +309,8 @@ enum AccessOutboundConfigRegistry {
         case emptyArray
         case string
         case literal(String)
+        case oneOf(Set<String>)
+        case bandwidth
         case trueBoolean
         case integer(ClosedRange<Int64>)
 
@@ -243,6 +335,12 @@ enum AccessOutboundConfigRegistry {
                 guard let array = value as? [Any], array.isEmpty else { throw invalid }
             case .string:
                 guard value is String else { throw invalid }
+            case .oneOf(let allowed):
+                guard let string = value as? String, allowed.contains(string) else { throw invalid }
+            case .bandwidth:
+                guard let string = value as? String, string.hasSuffix("mbps"),
+                      let number = Int(string.dropLast(4)), (1...100_000).contains(number),
+                      string == "\(number)mbps" else { throw invalid }
             case .literal(let expected):
                 guard value as? String == expected else { throw invalid }
             case .trueBoolean:
