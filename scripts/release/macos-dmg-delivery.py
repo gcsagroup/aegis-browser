@@ -306,13 +306,14 @@ def create_dmg_tag_release(api, plan_value, dmg_path):
     require(digest == expected['sha256'], 'DMG release asset digest differs')
     ref_path = prefix + '/git/ref/tags/' + encoded
     ref = _read_optional(api, ref_path)
+    release = _find_candidate_release(api, prefix, tag)
     spec = {'tag': tag, 'message': plan_value['message'], 'object': plan_value['target'], 'type': 'commit'}
     if ref is None:
+        require(release is None, 'Existing DMG release has no candidate tag')
         tag_sha = api(prefix + '/git/tags', method='POST', body=spec).get('sha')
         require(re.fullmatch(r'[0-9a-f]{40}', str(tag_sha or '')) is not None,
                 'DMG tag object is unknown; reconcile without retrying')
         api(prefix + '/git/refs', method='POST', body={'ref': 'refs/tags/' + tag, 'sha': tag_sha})
-        release = None
     else:
         obj = ref.get('object') or {}
         tag_sha = obj.get('sha')
@@ -323,7 +324,6 @@ def create_dmg_tag_release(api, plan_value, dmg_path):
                 original.get('object', {}).get('type') == 'commit' and
                 original.get('object', {}).get('sha') == spec['object'],
                 'Existing DMG tag differs from the sealed package')
-        release = _find_candidate_release(api, prefix, tag)
 
     body = plan_value['message']
     if payload['packageKind'] == 'ad-hoc':
@@ -357,14 +357,26 @@ def create_dmg_tag_release(api, plan_value, dmg_path):
     require(asset_matches(asset), 'DMG candidate asset differs')
     asset_id = asset['id']
 
+    def verify_publication_target(snapshot, draft):
+        assets = snapshot.get('assets')
+        require(snapshot.get('id') == release_id and snapshot.get('tag_name') == tag and
+                snapshot.get('prerelease') is True and snapshot.get('draft') is draft and
+                snapshot.get('body') == body and isinstance(assets, list) and len(assets) == 1 and
+                asset_matches(assets[0]) and assets[0]['id'] == asset_id,
+                'DMG release or asset changed; reconcile without repeating the write')
+        current_ref = api(ref_path).get('object')
+        require(isinstance(current_ref, dict) and current_ref.get('type') == 'tag' and
+                current_ref.get('sha') == tag_sha,
+                'DMG candidate tag changed; reconcile without repeating the write')
+
     if release['draft']:
-        public = api(prefix + f'/releases/{release_id}', method='PATCH',
+        release_path = prefix + f'/releases/{release_id}'
+        verify_publication_target(api(release_path), True)
+        public = api(release_path, method='PATCH',
                      body={'draft': False, 'prerelease': True, 'make_latest': 'false'})
-        assets = public.get('assets') if isinstance(public, dict) else None
-        require(isinstance(assets, list) and len(assets) == 1 and asset_matches(assets[0]) and
-                assets[0].get('id') == asset_id and public.get('id') == release_id and
-                public.get('tag_name') == tag and public.get('prerelease') is True and public.get('draft') is False,
-                'Published DMG prerelease differs; reconcile without repeating the write')
+        verify_publication_target(public, False)
+    else:
+        verify_publication_target(release, False)
     return {'tag': tag, 'tagObject': tag_sha, 'releaseId': release_id, 'prerelease': True,
             'assetId': asset_id, 'repository': repository}
 

@@ -150,6 +150,7 @@ if [[ -z "$DEPOT" || ! -x "$DEPOT/autoninja" ]]; then
   printf 'depot_tools not found. Cannot run gn or autoninja.\n' >&2
   exit 3
 fi
+DEPOT="$(cd "$DEPOT" && pwd -P)"
 export PATH="$DEPOT:$PATH"
 export DEPOT_TOOLS_UPDATE=0
 command -v gn >/dev/null

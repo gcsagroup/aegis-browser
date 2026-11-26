@@ -175,9 +175,20 @@ class TagTests(unittest.TestCase):
         planned, dmg, digest = self.artifact()
         calls = []
 
+        def asset():
+            return {'id': 11, 'name': dmg.name, 'state': 'uploaded',
+                    'digest': 'sha256:' + digest, 'size': dmg.stat().st_size}
+
         def api(path, method='GET', body=None, data=None, content_type=None, content_length=None):
             calls.append((method, path, body, data, content_type))
             if method == 'GET':
+                if '/git/ref/tags/' in path and any(call[1].endswith('/git/refs') for call in calls):
+                    return {'object': {'type': 'tag', 'sha': 'c' * 40}}
+                if '/releases?' in path:
+                    return []
+                if path.endswith('/releases/9'):
+                    return {'id': 9, 'tag_name': planned['tag'], 'draft': True, 'prerelease': True,
+                            'body': planned['message'], 'assets': [asset()]}
                 raise delivery.DeliveryStatus(404)
             if path.endswith('/git/tags'):
                 return {'sha': 'c' * 40}
@@ -191,14 +202,12 @@ class TagTests(unittest.TestCase):
                 self.assertEqual(content_length, len(data))
                 self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
                 self.assertEqual(content_type, 'application/octet-stream')
-                return {'id': 11, 'name': dmg.name, 'state': 'uploaded',
-                        'digest': 'sha256:' + digest, 'size': len(data)}
+                return asset()
             if method == 'PATCH':
                 self.assertEqual(body, {'draft': False, 'prerelease': True, 'make_latest': 'false'})
                 self.assertTrue(any(call[1].startswith('https://uploads.github.com/') for call in calls))
                 return {'id': 9, 'tag_name': planned['tag'], 'draft': False, 'prerelease': True,
-                        'assets': [{'id': 11, 'name': dmg.name, 'state': 'uploaded',
-                                    'digest': 'sha256:' + digest, 'size': dmg.stat().st_size}]}
+                        'body': planned['message'], 'assets': [asset()]}
             return {}
 
         created = delivery.create_dmg_tag_release(api, planned, dmg)
