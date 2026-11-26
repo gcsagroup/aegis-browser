@@ -13,12 +13,12 @@ final class AccessGeoSiteSelectionTests: XCTestCase {
 
     func testBundledCatalogueContainsTheCompleteOfficialGroups() throws {
         let catalogue = AccessGeoSiteCatalogue.bundled
-        XCTAssertEqual(catalogue.tag, "20261120235103")
-        XCTAssertEqual(catalogue.publishedAt, "2026-11-20T23:52:15Z")
-        XCTAssertEqual(catalogue.rawSHA256, "6fb761384d0141a9bd7dc3c18caf74b70516018ca91e3c36af11afefb543dcf9")
+        XCTAssertEqual(catalogue.tag, "20261126014317")
+        XCTAssertEqual(catalogue.publishedAt, "2026-11-26T01:44:48Z")
+        XCTAssertEqual(catalogue.rawSHA256, "35f58454ed79be85285a333716e3016727d536ef872c53e13c60e411d43b7dd7")
         XCTAssertEqual(Set(catalogue.groups.keys), Set(AccessGeoSiteCategory.allCases))
         let expected: [(AccessGeoSiteCategory, Int, String)] = [
-            (.debian, 2, "d865d67c829d0f13bf508e152ef402d5d9634227ed12a8b49434d231baf5a643"),
+            (.debian, 3, "06c514bb68567fdf422969927719a7e6c19442509cb2c69eb43cb02efbc83aeb"),
             (.douban, 3, "62cfcbf5e006744783206139a2cbb6a3dffb05dbc366f1784a193e887e038619"),
             (.meituan, 19, "7f23061fb1a46f4150077aa56c369188cfda5bb49bd99649264c5bfb7bf8efa9")
         ]
@@ -32,7 +32,7 @@ final class AccessGeoSiteSelectionTests: XCTestCase {
             XCTAssertEqual(actual, digest, category.rawValue)
             for rule in group.rules {
                 XCTAssertEqual(rule.kind, .domain)
-                XCTAssertEqual(RegisteredDomain.of(rule.host), rule.host)
+                XCTAssertTrue(RegisteredDomain.allowsGeoSiteHost(rule.host, includingDescendants: true))
                 let member = try XCTUnwrap(URL(string: "https://sub.\(rule.host)/"))
                 XCTAssertTrue(policy.matches(member, categories: [category]))
                 XCTAssertFalse(policy.matches(member, categories: Set(AccessGeoSiteCategory.allCases).subtracting([category])))

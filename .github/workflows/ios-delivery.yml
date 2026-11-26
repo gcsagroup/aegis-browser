@@ -99,6 +99,8 @@ env:
   DELIVERY_INPUTS: ${{ inputs.delivery_inputs || toJSON(inputs) }}
   AEGIS_IOS_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_RELEASE_ENABLED }}
   AEGIS_IOS_DELIVERY_BOT: ${{ vars.AEGIS_IOS_DELIVERY_BOT }}
+  AEGIS_GEOSITE_POLICY_URL: ${{ vars.AEGIS_GEOSITE_POLICY_URL }}
+  AEGIS_GEOSITE_POLICY_PUBLIC_KEY: ${{ vars.AEGIS_GEOSITE_POLICY_PUBLIC_KEY }}
   FASTLANE_SKIP_UPDATE_CHECK: "1"
   FASTLANE_HIDE_GITHUB_ISSUES: "1"
   FASTLANE_OPT_OUT_USAGE: "1"
@@ -143,6 +145,11 @@ jobs:
       - id: plan
         name: Normalize exact package or existing-state route
         run: python3 scripts/release/ios-delivery-plan.py
+      - name: Verify bundled GeoSite release
+        if: ${{ steps.plan.outputs.operation == 'package' || steps.plan.outputs.operation == 'package-upload' }}
+        run: |
+          gh api repos/XTLS/Xray-rules-dat/releases/latest > "$RUNNER_TEMP/aegis-geosite-upstream.json"
+          python3 -B scripts/release/verify-geosite-release.py --latest "$RUNNER_TEMP/aegis-geosite-upstream.json"
       - id: shared-runner
         name: Require a shared iOS runner label that excludes the private Alpha runner
         # Status, receipt-free Wait and Release Wait run only on ubuntu-24.04.

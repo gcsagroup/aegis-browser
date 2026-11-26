@@ -90,6 +90,12 @@ struct AccessGeoSiteUpdateTransport: Sendable {
         return .candidate(candidate, etag: Self.validETag(metadata.etag))
     }
 
+    func loadPolicy(at url: URL, limit: Int) async throws -> Data {
+        let response = try await get(url, limit: limit)
+        guard response.status == 200 else { throw Failure.status(response.status) }
+        return response.bytes
+    }
+
     static func validETag(_ value: String?) -> String? {
         guard let value, value.utf8.count <= 256,
               !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return nil }

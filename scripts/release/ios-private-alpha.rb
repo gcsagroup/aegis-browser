@@ -58,7 +58,7 @@ module AegisPrivateAlpha
         "AEGIS_PRIVATE_ALPHA_NODES_FILE=#{File.join(inputs, 'AegisAlphaTestNodes.json')}",
         "AEGIS_PRIVATE_TEST_NODE_FILE=#{File.join(inputs, 'AegisPrivateTestNode.vless')}",
         "AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE=#{File.join(inputs, 'AegisPrivateTestSubscription.json')}"
-      ].shelljoin
+      ].concat(geosite_policy_xcode_arguments).shelljoin
       @fastlane.build_app(project: project, scheme: 'Aegis-Release', configuration: 'Release', clean: true,
                           destination: 'generic/platform=iOS', output_directory: work, output_name: name,
                           archive_path: File.join(work, 'Aegis.xcarchive'), derived_data_path: File.join(work, 'DerivedData'),
@@ -67,6 +67,7 @@ module AegisPrivateAlpha
                           export_options: { method: 'app-store-connect', teamID: team, signingStyle: 'manual',
                                             provisioningProfiles: profiles, manageAppVersionAndBuildNumber: false,
                                             testFlightInternalTestingOnly: true })
+      verify_bundled_geosite(work)
       ipa = File.join(request.directory, name)
       File.rename(AegisRelease.file!(File.join(work, name)), ipa)
       run('python3', firebase, 'verify-ipa', *firebase_args, '--artifact', ipa)

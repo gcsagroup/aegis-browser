@@ -97,10 +97,10 @@ def render(platform, root=ROOT):
                         "Downloaded model weights have separate notices and are not covered by this inventory.\n")
     elif platform == "ios":
         include(
-            "XTLS/Xray-rules-dat 20261120235103 — GeoSite — MIT",
+            "XTLS/Xray-rules-dat 20261126014317 — GeoSite — MIT",
             f"{ACCESS}/v2fly-domain-list-community.txt",
-            "Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261120235103\n"
-            "DEBIAN, DOUBAN and MEITUAN are unmodified groups inherited from V2Fly domain-list-community.\n"
+            "Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261126014317\n"
+            "The unmodified standard geosite.dat is shipped in the iOS app. It provides the domestic and overseas rule inputs.\n"
             "Source: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/README.md\n"
             "Inherited license: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited\n\n",
         )

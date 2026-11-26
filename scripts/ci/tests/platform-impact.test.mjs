@@ -465,6 +465,7 @@ test('paths select platforms and commit types select stage depth', () => {
       'scripts/release/hosted-signing.py', 'scripts/release/test_hosted_signing.py',
       'scripts/release/verify-ipa.py', 'scripts/release/test_verify_ipa.py',
       'scripts/release/test_verify_ios_dsyms.py', 'scripts/release/test_verify_signed_ios.py',
+      'scripts/release/verify-geosite-release.py', 'scripts/release/verify-bundled-geosite.swift',
       'apps/ios/scripts/run-simulator-tests.sh', 'scripts/ci/tests/ios-release.test.mjs',
       'scripts/release/fixtures/safari-icon-xcode.png', '.github/ios-public-release-tag-ruleset.json',
       'scripts/release/cloud-archive.py', 'scripts/release/test_cloud_archive.py',

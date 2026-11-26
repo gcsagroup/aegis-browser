@@ -1,5 +1,6 @@
 import AccessKit
 import BrowserKit
+import CryptoKit
 import Foundation
 import os
 import Security
@@ -15,6 +16,173 @@ final class AccessGeoSiteCacheTests: XCTestCase {
     private let added = URL(string: "https://sub.new-coverage.example.com/")!
     private let outside = URL(string: "https://example.net/")!
     private let smartAll = Cache.Selection(mode: .smart, categories: [.debian, .douban, .meituan])
+
+    func testLegacyDefaultsWithoutLedgerDoNotAuthorizeNewDebianHost() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let suite = "aegis.geosite.migration." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("smart", forKey: "browser.websiteAcceleration.mode")
+        defaults.set(["DEBIAN"], forKey: "browser.websiteAcceleration.categories")
+
+        let cache = fixture.cache()
+        let coordinator = AccessHostStoreCoordinator(channel: .dev, locationPreferences: defaults, geoSiteCache: cache)
+        for _ in 0..<100 where cache.status == .loading { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(coordinator.websiteAccelerationMode, .smart)
+        XCTAssertEqual(cache.match(debian), .managed)
+        XCTAssertEqual(cache.match(URL(string: "https://debian.map.fastlydns.net")!), .original)
+
+        let reopened = fixture.cache()
+        await reopened.restore()
+        XCTAssertEqual(reopened.match(URL(string: "https://debian.map.fastlydns.net")!), .original)
+    }
+
+    func testBundledPreviewCannotValidateDomesticOnlyETagForFirstOverseasFetch() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: AccessGeoSiteCatalogue.bundled.publishedAt))
+        let checked = published.addingTimeInterval(86_400)
+        fixture.clock.setWall(checked)
+        let cache = fixture.cache(useProductBaseline: true)
+        await cache.restore(migrating: smartAll)
+        let database = combined(debian: bundled(.debian), douban: bundled(.douban), meituan: bundled(.meituan))
+        let candidate = try Self.candidate(1, database: database, now: checked)
+        try await cache.apply(candidate, using: XCTUnwrap(cache.updateContext()),
+                              refreshed: .init(etag: "\"domestic\"", checkedAt: checked))
+        let domestic = await cache.conditionalReceipt(using: try XCTUnwrap(cache.updateContext()))
+        XCTAssertEqual(domestic?.etag, "\"domestic\"")
+        XCTAssertEqual(cache.overseasPreview?.bundled, true)
+        try cache.requestOverseasPreview()
+        XCTAssertNil(cache.refreshState.nextAttempt)
+        let overseas = await cache.conditionalReceipt(using: try XCTUnwrap(cache.updateContext()))
+        XCTAssertNil(overseas)
+    }
+
+    func testOldBundledConsentDoesNotIncludeNewDebianHost() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        let route = URL(string: "https://debian.map.fastlydns.net")!
+        XCTAssertEqual(cache.match(route), .managed)
+        let record = try XCTUnwrap(fixture.storage.readLedger())
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: record) as? [String: Any])
+        legacy.removeValue(forKey: "bundledConsent")
+        try fixture.storage.writeLedger(JSONSerialization.data(withJSONObject: legacy))
+        let recovered = fixture.cache()
+        await recovered.restore()
+        XCTAssertEqual(recovered.selection, smartAll)
+        XCTAssertEqual(recovered.match(route), .original)
+        XCTAssertEqual(recovered.match(debian), .managed)
+    }
+
+    func testChangingSuccessfulRefreshIntervalRecalculatesDeadlineWithoutResettingBackoff() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        let now = fixture.clock.wall
+        let candidate = try Self.candidate(1, database: Vector.selectedProjection)
+        try await cache.apply(candidate, using: XCTUnwrap(cache.updateContext()),
+                              refreshed: .init(lastRequest: now, checkedAt: now))
+        XCTAssertEqual(cache.refreshState.nextAttempt, now.addingTimeInterval(3 * 86_400))
+        try cache.setRefreshInterval(days: 7)
+        XCTAssertEqual(cache.refreshState.nextAttempt, candidate.expiresAt.addingTimeInterval(-86_400))
+        try cache.setRefreshInterval(days: 1)
+        XCTAssertEqual(cache.refreshState.nextAttempt, now.addingTimeInterval(86_400))
+        let retry = now.addingTimeInterval(300)
+        try cache.setRefreshState(.init(failureCount: 2, nextAttempt: retry), using: XCTUnwrap(cache.updateContext()))
+        try cache.setRefreshInterval(days: 7)
+        XCTAssertEqual(cache.refreshState.nextAttempt, retry)
+    }
+
+    func testOldOverseasWithdrawalRecoversWithNewApplicationBaseline() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        try cache.requestOverseasPreview()
+        let initial = try Self.overseas(1, positive: ["google.com"], excluding: [])
+        try await cache.apply(initial, using: XCTUnwrap(cache.updateContext()))
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: selection)) { true }
+        let withdrawal = try Self.overseas(2, positive: ["google.com"], excluding: ["gemini.google.com"])
+        try await cache.apply(withdrawal, using: XCTUnwrap(cache.updateContext()))
+        fixture.clock.advance(by: 8 * 86_400)
+        let cold = fixture.cache(useProductBaseline: true)
+        await cold.restore()
+        let state = cold.runtimeView().overseas
+        XCTAssertEqual(cold.status, .ready)
+        XCTAssertEqual(cold.highWater, withdrawal.receipt)
+        XCTAssertEqual(state.selection, selection)
+        XCTAssertTrue(state.usingBundledRules)
+        XCTAssertEqual(state.match(URL(string: "https://gemini.google.com")!), .original)
+        XCTAssertEqual(state.match(URL(string: "https://www.google.com")!), .managed)
+    }
+
+    func testBundledOverseasApprovalPersistsOfflineAndRemotePauseNeedsSignedRelease() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        fixture.clock.advance(by: 30 * 86_400)
+        let cache = fixture.cache(useProductBaseline: true)
+        await cache.restore()
+        let target = URL(string: "https://www.google.com")!
+        XCTAssertEqual(cache.runtimeView().overseas.match(target), .original)
+        XCTAssertEqual(cache.overseasPreview?.bundled, true)
+        let selection = AccessOverseasSelection(enabled: true, mode: .all)
+        let confirmation = try await cache.overseasConfirmation(for: selection)
+        XCTAssertTrue(confirmation.bundled)
+        try await cache.confirmOverseas(confirmation) { true }
+        XCTAssertEqual(cache.runtimeView().overseas.match(target), .managed)
+        XCTAssertNotNil(cache.updateContext(), "Overseas refresh applies in domestic manual mode")
+        XCTAssertEqual(cache.view.refreshDays, 3)
+        try cache.setRefreshInterval(days: 7)
+
+        let key = Curve25519.Signing.PrivateKey()
+        func signedPolicy(version: Int, paused: Bool, corrupt: Bool = false) throws -> AccessGeoSiteRemotePolicy {
+            let issuedAt = fixture.clock.wall.timeIntervalSince1970
+            let payload = try JSONSerialization.data(withJSONObject: [
+                "schema": 1, "version": version, "issuedAt": issuedAt, "expiresAt": issuedAt + 3600,
+                "defaultRefreshDays": 1, "overseasPaused": paused, "blockedTags": []
+            ], options: .sortedKeys)
+            let signature = try key.signature(for: payload)
+            let envelope = try JSONSerialization.data(withJSONObject: [
+                "payload": payload.base64EncodedString(),
+                "signature": (corrupt ? Data(repeating: 0, count: 64) : signature).base64EncodedString()
+            ])
+            return try AccessGeoSiteRemotePolicy.verify(envelope, key: key.publicKey, now: fixture.clock.wall)
+        }
+        try cache.acceptRemotePolicy(signedPolicy(version: 2, paused: true))
+        XCTAssertThrowsError(try signedPolicy(version: 3, paused: false, corrupt: true))
+        fixture.clock.advance(by: 7_200)
+        let reopened = fixture.cache(useProductBaseline: true)
+        await reopened.restore()
+        XCTAssertEqual(reopened.view.refreshDays, 7)
+        XCTAssertEqual(reopened.view.overseas.selection, selection)
+        XCTAssertTrue(reopened.view.overseas.remotelyPaused)
+        XCTAssertEqual(reopened.runtimeView().overseas.match(target), .original)
+        XCTAssertThrowsError(try reopened.acceptRemotePolicy(signedPolicy(version: 1, paused: false)))
+        try reopened.acceptRemotePolicy(signedPolicy(version: 3, paused: false))
+        XCTAssertEqual(reopened.runtimeView().overseas.match(target), .managed)
+    }
+
+    func testExpiryRetainsOnlyApprovedIntersectionWithOfflineRules() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let cache = fixture.cache()
+        await cache.restore(migrating: smartAll)
+        let candidate = try Self.candidate(1, database: combined(
+            debian: [Vector.rule(3, "debian.org")], douban: bundled(.douban), meituan: []))
+        try await cache.apply(candidate, using: XCTUnwrap(cache.updateContext()))
+        fixture.clock.advance(by: 8 * 86_400)
+        let cold = fixture.cache()
+        await cold.restore()
+        XCTAssertEqual(cold.match(URL(string: "https://debian.org")!), .managed)
+        XCTAssertEqual(cold.match(debian), .original)
+        XCTAssertEqual(cold.match(URL(string: "https://dotdeb.org")!), .original)
+        XCTAssertEqual(cold.match(URL(string: "https://meituan.com")!), .original)
+    }
 
     func testRejectedOverseasRulesPublishDomesticUpdateAndSuppressConditionalRefresh() async throws {
         let fixture = Fixture()
@@ -216,7 +384,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertNil(first.updateContext())
     }
 
-    func testExpiryAndClockRollbackPersistWithoutRevivingOfflineBaseline() async throws {
+    func testExpiryAndClockRollbackPersistWithApprovedOfflineBaseline() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }
         let first = fixture.cache()
@@ -230,7 +398,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertNil(first.updateContext())
         fixture.clock.setWall(Vector.now)
         fixture.clock.advance(by: 7 * 86_400 + 1)
-        XCTAssertEqual(first.match(debian), .indeterminate)
+        XCTAssertEqual(first.match(debian), .managed)
         try first.checkpointClock()
         fixture.clock.setWall(Vector.now)
         let reboot = fixture.cache()
@@ -241,7 +409,7 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertEqual(reboot.match(debian), .indeterminate)
         fixture.clock.setWall(Vector.now.addingTimeInterval(7 * 86_400 + 2))
         try reboot.checkpointClock()
-        XCTAssertEqual(reboot.match(debian), .indeterminate)
+        XCTAssertEqual(reboot.match(debian), .managed)
         XCTAssertEqual(reboot.match(outside), .original)
     }
 
@@ -1072,8 +1240,9 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         }
 
         @MainActor
-        func cache() -> Cache {
-            Cache(storage: storage, time: .init(wall: { self.clock.wall }, uptime: { self.clock.uptime }))
+        func cache(useProductBaseline: Bool = false) -> Cache {
+            Cache(storage: storage, time: .init(wall: { self.clock.wall }, uptime: { self.clock.uptime }),
+                  useProductBaseline: useProductBaseline)
         }
 
         func clean() {

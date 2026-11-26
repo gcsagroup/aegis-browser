@@ -1,7 +1,11 @@
 {
   "DEBIAN": {
-    "count": 2,
+    "count": 3,
     "rules": [
+      [
+        "domain",
+        "debian.map.fastlydns.net"
+      ],
       [
         "domain",
         "debian.org"
@@ -11,7 +15,7 @@
         "dotdeb.org"
       ]
     ],
-    "sha256": "d865d67c829d0f13bf508e152ef402d5d9634227ed12a8b49434d231baf5a643"
+    "sha256": "06c514bb68567fdf422969927719a7e6c19442509cb2c69eb43cb02efbc83aeb"
   },
   "DOUBAN": {
     "count": 3,
