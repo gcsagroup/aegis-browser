@@ -95,6 +95,29 @@ not put their values in a dispatch field, variable, repo file, or receipt:
   anchored node's SHA-256 and the live quota check must confirm the configured
   identity, active allowance and remaining traffic.
 
+#### Where the two lists live
+
+The domestic and overseas GeoSite resources in Git describe which sites are
+eligible for a route. They are public policy data. The private Alpha's VLESS
+list contains credentials that authorize traffic on the operator's relay.
+The upstream signing environment owns that list. A GeoSite policy refresh
+can change site matching. Rotating relay credentials requires a new internal
+Alpha build.
+
+The private signing job materializes the validated list and subscription in
+the signed app. Anyone holding that IPA can extract its resources. Limit the
+build to internal testers and use a revocable test account with a bounded
+allowance. The app stores the selected ordinal and catalogue fingerprint in
+preferences. A catalogue change resets selection to its first entry, so keep
+the order stable when refreshing an existing list.
+
+When rotating the test account, prepare the list, anchor and quota descriptor
+together. Confirm the live subscription advertises every intended route and
+has remaining traffic. Set the three environment secrets between delivery
+runs and validate the signed package before distribution. To revoke a
+distributed credential, disable it at the subscription service and relay.
+Changing an Actions secret affects subsequent builds.
+
 For the four-node Alpha delivery, the authenticated subscription response must
 advertise all four nodes with matching parsed node parameters. Serve the list
 as plain text or base64 from the same HTTPS origin and path as the signed
