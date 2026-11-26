@@ -505,6 +505,15 @@ final class AccessGeoSiteCache {
         var overseasRecoveryHeld = false
         var bundledOverseasSealPending = false
         var overseasInterruptedBeforeAdmission = false
+
+        mutating func advanceHighWater(toBundledReceipt receipt: AccessGeoSiteAdmission.Receipt) {
+            guard ledger.highWater.map({ $0.tag < receipt.tag }) != false else { return }
+            ledger.highWater = receipt
+            ledger.refresh.etag = nil
+            // Domestic staged groups are attributed to the high-water receipt.
+            staged.removeAll()
+            ledger.stagedFile = nil
+        }
     }
 
     /// A verified withdrawal closes the old approval even if the batch is
@@ -861,9 +870,8 @@ final class AccessGeoSiteCache {
         guard whileValid() else { throw Failure.stale }
         // Refresh diagnostics can change during the write without changing scope.
         var next = try verifiedOverseasConfirmation(confirmation)
-        if confirmation.bundled, next.ledger.highWater.map({ $0.tag < approved.receipt.tag }) != false {
-            next.ledger.highWater = approved.receipt
-            next.ledger.refresh.etag = nil
+        if confirmation.bundled {
+            next.advanceHighWater(toBundledReceipt: approved.receipt)
         }
         next.overseasActive = approved
         next.ledger.overseasActive = reference
@@ -979,7 +987,9 @@ final class AccessGeoSiteCache {
         }
         if capturesOverseas, !committedReplay {
             let ceiling: OverseasView.Ceiling?
-            if let catalogue = candidate.overseas, let scope = Self.retainedOverseasScope(next, for: candidate.receipt, now: clock.date) {
+            if let catalogue = candidate.overseas,
+               let scope = Self.retainedOverseasScope(next, for: candidate.receipt, now: clock.date,
+                                                      bundledReceipt: bundledOverseas?.receipt) {
                 ceiling = OverseasView.Ceiling(receipt: candidate.receipt, scope: scope, catalogue: catalogue)
             } else {
                 ceiling = nil
@@ -1072,10 +1082,13 @@ final class AccessGeoSiteCache {
     }
 
     private nonisolated static func retainedOverseasScope(_ prior: Snapshot, for receipt: AccessGeoSiteAdmission.Receipt,
-                                                          now: Date? = nil) -> AccessOverseasCatalogue.Scope? {
+                                                          now: Date? = nil,
+                                                          bundledReceipt: AccessGeoSiteAdmission.Receipt? = nil)
+        -> AccessOverseasCatalogue.Scope? {
         guard let selection = prior.ledger.overseasSelection, selection.enabled,
-              let active = prior.overseasActive, now.map({ active.expiresAt > $0 }) != false,
-              !prior.overseasRecoveryHeld else { return nil }
+              let active = prior.overseasActive, !prior.overseasRecoveryHeld else { return nil }
+        let usesCurrentBundle = prior.ledger.overseasApprovedFromBundle == true && active.receipt == bundledReceipt
+        guard usesCurrentBundle || now.map({ active.expiresAt > $0 }) != false else { return nil }
         if let hold = prior.overseasWithdrawal,
            hold.requiresFreshApproval || hold.firstReceipt != receipt || hold.receipt != receipt { return nil }
         return selection.scope
@@ -1568,10 +1581,7 @@ final class AccessGeoSiteCache {
         var next = snapshot
         next.overseasActive = retained
         next.ledger.overseasActive = try retained.seal(owner: next.ledger.owner, storage: storage)
-        if next.ledger.highWater.map({ $0.tag < bundled.receipt.tag }) != false {
-            next.ledger.highWater = bundled.receipt
-            next.ledger.refresh.etag = nil
-        }
+        next.advanceHighWater(toBundledReceipt: bundled.receipt)
         let expanded = try bundled.approving(selection).policy.expansion(over: retained.policy)
         next.ledger.overseasExpansionPending = next.ledger.overseasExpansionPending == true
             || !expanded.rules.isEmpty || !expanded.removedExclusions.isEmpty
