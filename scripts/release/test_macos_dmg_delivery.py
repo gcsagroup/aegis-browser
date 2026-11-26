@@ -62,7 +62,8 @@ def write_package(root, version='0.8.0', package_kind='ad-hoc', body=b'arm64-dmg
 
 class PlanTests(unittest.TestCase):
     def test_plan_admits_one_arm64_dmg_and_aliases_unsigned(self):
-        planned = delivery.plan(environment(), inputs(version='7.5.0', build='345',
+        version, build = delivery.desktop_product_version().rsplit('.', 1)
+        planned = delivery.plan(environment(), inputs(version=version, build=build,
                                                       package_kind='unsigned-dmg', signing_mode='none', tag_release='yes'))
         self.assertEqual(planned['package_kind'], 'ad-hoc')
         self.assertEqual(planned['signing_mode'], 'ad-hoc')
@@ -72,8 +73,11 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(json.loads(planned['runner']), ['self-hosted', 'macOS', 'ARM64', 'aegis-ios-fork-migration'])
 
     def test_upstream_ad_hoc_version_and_build_must_match_the_product_source(self):
+        version, build = delivery.desktop_product_version().rsplit('.', 1)
         with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
-            delivery.plan(environment(), inputs(version='7.5.0', build='344'))
+            delivery.plan(environment(), inputs(version=version, build=str(int(build) + 1)))
+        with self.assertRaisesRegex(delivery.DeliveryError, 'ad-hoc only'):
+            delivery.plan(environment(), inputs(package_kind='notarized', signing_mode='notarized'))
 
     def test_fork_admits_the_full_matrix_before_upstream_promotion(self):
         planned = delivery.plan(environment(GITHUB_REPOSITORY='quinn521/aegis-browser'), inputs(package_kind='host-signed', signing_mode='host-signed'))
@@ -84,7 +88,7 @@ class PlanTests(unittest.TestCase):
                                        repository='quinn521/aegis-browser')
 
     def test_macos_runner_label_wins_and_the_gate_must_be_exactly_true(self):
-        planned = delivery.plan(environment(AEGIS_MACOS_RUNNER_LABEL='aegis-mac-1'), inputs(package_kind='notarized', signing_mode='notarized'))
+        planned = delivery.plan(environment(AEGIS_MACOS_RUNNER_LABEL='aegis-mac-1', GITHUB_REPOSITORY=delivery.FORK), inputs(package_kind='notarized', signing_mode='notarized'))
         self.assertIn('aegis-mac-1', planned['runner'])
         with self.assertRaises(delivery.DeliveryError):
             delivery.plan(environment(AEGIS_MACOS_DELIVERY_ENABLED='yes'), inputs())
@@ -180,6 +184,7 @@ class TagTests(unittest.TestCase):
             if path.endswith('/releases'):
                 self.assertTrue(body['draft'])
                 return {'id': 9, 'tag_name': planned['tag'], 'prerelease': True, 'draft': True,
+                        'body': body['body'], 'assets': [],
                         'upload_url': 'https://uploads.github.com/repos/' + REPOSITORY + '/releases/9/assets{?name,label}'}
             if path.startswith('https://uploads.github.com/'):
                 data = data.read()
@@ -208,6 +213,29 @@ class TagTests(unittest.TestCase):
         with self.assertRaises(delivery.DeliveryError):
             delivery.create_dmg_tag_release(present, planned, dmg)
         self.assertEqual([method for method, *_rest in calls if method == 'POST'], ['POST', 'POST', 'POST', 'POST'])
+
+    def test_same_published_candidate_is_reconciled_without_writes(self):
+        planned, dmg, digest = self.artifact()
+        tag_object = 'c' * 40
+        asset = {'id': 11, 'name': dmg.name, 'state': 'uploaded',
+                 'digest': 'sha256:' + digest, 'size': dmg.stat().st_size}
+
+        def api(path, method='GET', **kwargs):
+            self.assertEqual(method, 'GET')
+            if '/git/ref/tags/' in path:
+                return {'object': {'type': 'tag', 'sha': tag_object}}
+            if path.endswith('/git/tags/' + tag_object):
+                return {'tag': planned['tag'], 'message': planned['message'],
+                        'object': {'type': 'commit', 'sha': SHA}}
+            if '/releases/tags/' in path:
+                return {'id': 9, 'tag_name': planned['tag'], 'draft': False,
+                        'prerelease': True, 'body': planned['message'], 'assets': [asset]}
+            self.fail(f'Unexpected request {path}')
+
+        self.assertEqual(delivery.create_dmg_tag_release(api, planned, dmg)['assetId'], 11)
+        asset['size'] += 1
+        with self.assertRaisesRegex(delivery.DeliveryError, 'asset differs'):
+            delivery.create_dmg_tag_release(api, planned, dmg)
 
     def test_promote_accepts_only_an_approved_notarized_candidate(self):
         planned, _dmg, digest = self.artifact()

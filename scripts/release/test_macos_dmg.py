@@ -468,7 +468,7 @@ class BuildLifecycleLockTests(unittest.TestCase):
             depot = root / 'depot_tools'
             src = root / 'chromium/src'
             for path in (browser / 'scripts', browser / 'args', release, depot,
-                         src / 'chrome', src / 'build'):
+                         src / 'chrome', src / 'build', src / 'buildtools/mac'):
                 path.mkdir(parents=True, exist_ok=True)
             for relative in ('apps/browser/scripts/build-release.sh',
                              'scripts/release/macos-rebuild-dmg.sh'):
@@ -517,6 +517,7 @@ exit "$FAKE_PACKAGE_STATUS"
             for path, content in scripts.items():
                 path.write_text(content)
                 path.chmod(0o700)
+            (src / 'buildtools/mac/gn').symlink_to(depot / 'gn')
             out = src / 'out/AegisRelease'
             log = root / 'phases'
             # Run the copied scripts with fixture tools and system utilities,

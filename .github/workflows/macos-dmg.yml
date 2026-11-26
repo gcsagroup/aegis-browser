@@ -124,11 +124,13 @@ jobs:
         run: printf 'MACOS_OUTPUT_DIR=%s/macos-dmg\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Rebuild and seal the ad-hoc arm64 DMG
         env:
-          CHROMIUM_ROOT: ${{ vars.AEGIS_MACOS_CHROMIUM_ROOT }}
-          DEPOT_TOOLS_DIR: ${{ vars.AEGIS_MACOS_DEPOT_TOOLS_DIR }}
+          MACOS_CD_CHROMIUM_ROOT: ${{ vars.AEGIS_MACOS_CHROMIUM_ROOT }}
+          MACOS_CD_DEPOT_TOOLS_DIR: ${{ vars.AEGIS_MACOS_DEPOT_TOOLS_DIR }}
         run: |
           build_options=()
           if [[ "$GITHUB_REPOSITORY" == gcsagroup/aegis-browser ]]; then
+            export CHROMIUM_ROOT="$MACOS_CD_CHROMIUM_ROOT"
+            export DEPOT_TOOLS_DIR="$MACOS_CD_DEPOT_TOOLS_DIR"
             build_options=(--ad-hoc-cd)
           fi
           bash scripts/release/macos-rebuild-dmg.sh "${{ needs.admission.outputs.version }}" arm64 "${build_options[@]}"

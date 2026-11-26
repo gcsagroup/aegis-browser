@@ -71,6 +71,15 @@ def runner_label(environment):
     raise DeliveryError('Set AEGIS_MACOS_RUNNER_LABEL or keep the existing self-hosted AEGIS_IOS_RUNNER_LABEL')
 
 
+def desktop_product_version():
+    header = (Path(__file__).resolve().parents[2] /
+              'apps/browser/overlay/chrome/browser/ui/webui/help/aegis_github_update.h')
+    match = re.search(r'kProductVersion\[\] = "([0-9]+(?:\.[0-9]+){3})";',
+                      header.read_text(encoding='utf-8'))
+    require(match is not None, 'Missing desktop product version')
+    return match[1]
+
+
 def plan(environment, inputs):
     require(environment.get('AEGIS_MACOS_DELIVERY_ENABLED') == 'true',
             'macOS DMG delivery is disabled until AEGIS_MACOS_DELIVERY_ENABLED=true')
@@ -93,12 +102,9 @@ def plan(environment, inputs):
     require(signing_mode == package_kind, 'DMG signing mode must match the package kind')
     approved = inputs.get('approved_source_sha', '')
     require(approved == sha, 'Package delivery requires the approved source SHA')
-    if repository == UPSTREAM and package_kind == 'ad-hoc':
-        header = (Path(__file__).resolve().parents[2] /
-                  'apps/browser/overlay/chrome/browser/ui/webui/help/aegis_github_update.h')
-        match = re.search(r'kProductVersion\[\] = "([0-9]+(?:\.[0-9]+){3})";',
-                          header.read_text(encoding='utf-8'))
-        require(match is not None and match[1] == f'{version}.{build}',
+    if repository == UPSTREAM:
+        require(package_kind == 'ad-hoc', 'Upstream DMG delivery currently accepts ad-hoc only')
+        require(desktop_product_version() == f'{version}.{build}',
                 'Ad-hoc version and build must match the committed desktop product version')
     tag_release = inputs.get('tag_release') or 'no'
     bot_callback = inputs.get('bot_callback') or 'yes'
@@ -260,14 +266,28 @@ def github_request(path, token, method='GET', body=None, data=None, content_type
         raise DeliveryStatus(error.code) from None
 
 
-def _absent(api, path):
+def _read_optional(api, path):
     try:
-        api(path)
+        return api(path)
     except DeliveryStatus as error:
         if error.status != 404:
             raise
-    else:
-        raise DeliveryError('DMG tag already exists; reconcile instead of replacing it')
+        return None
+
+
+def _find_candidate_release(api, prefix, tag):
+    release = _read_optional(api, prefix + '/releases/tags/' + urllib.parse.quote(tag, safe=''))
+    if release is not None:
+        return release
+    drafts = []
+    for page in range(1, 21):
+        rows = api(prefix + f'/releases?per_page=100&page={page}')
+        require(isinstance(rows, list) and len(rows) <= 100, 'Incomplete DMG release inventory')
+        drafts.extend(row for row in rows if row.get('tag_name') == tag)
+        if len(rows) < 100:
+            require(len(drafts) <= 1, 'Multiple releases exist for this DMG candidate')
+            return drafts[0] if drafts else None
+    raise DeliveryError('Incomplete DMG release inventory')
 
 
 def create_dmg_tag_release(api, plan_value, dmg_path):
@@ -284,52 +304,67 @@ def create_dmg_tag_release(api, plan_value, dmg_path):
     require(0 < size < 2 * 1024 ** 3, 'DMG release asset size is out of bounds')
     digest = _sha256(path)
     require(digest == expected['sha256'], 'DMG release asset digest differs')
-    with path.open('rb') as data:
-        _absent(api, prefix + '/git/ref/tags/' + encoded)
-        created = api(prefix + '/git/tags', method='POST', body={
-            'tag': tag,
-            'message': plan_value['message'],
-            'object': plan_value['target'],
-            'type': 'commit',
-        })
-        tag_sha = created.get('sha') if isinstance(created, dict) else None
+    ref_path = prefix + '/git/ref/tags/' + encoded
+    ref = _read_optional(api, ref_path)
+    spec = {'tag': tag, 'message': plan_value['message'], 'object': plan_value['target'], 'type': 'commit'}
+    if ref is None:
+        tag_sha = api(prefix + '/git/tags', method='POST', body=spec).get('sha')
         require(re.fullmatch(r'[0-9a-f]{40}', str(tag_sha or '')) is not None,
                 'DMG tag object is unknown; reconcile without retrying')
         api(prefix + '/git/refs', method='POST', body={'ref': 'refs/tags/' + tag, 'sha': tag_sha})
-        body = plan_value['message']
-        if payload['packageKind'] == 'ad-hoc':
-            body = 'Apple Silicon (arm64). Ad-hoc signature. Apple notarization pending.\n\n' + body
+        release = None
+    else:
+        obj = ref.get('object') or {}
+        tag_sha = obj.get('sha')
+        require(obj.get('type') == 'tag' and re.fullmatch(r'[0-9a-f]{40}', str(tag_sha or '')) is not None,
+                'Existing DMG tag is not the sealed annotated tag')
+        original = api(prefix + '/git/tags/' + tag_sha)
+        require(original.get('tag') == tag and original.get('message') == spec['message'] and
+                original.get('object', {}).get('type') == 'commit' and
+                original.get('object', {}).get('sha') == spec['object'],
+                'Existing DMG tag differs from the sealed package')
+        release = _find_candidate_release(api, prefix, tag)
+
+    body = plan_value['message']
+    if payload['packageKind'] == 'ad-hoc':
+        body = 'Apple Silicon (arm64). Ad-hoc signature. Unnotarized.\n\n' + body
+    if release is None:
         release = api(prefix + '/releases', method='POST', body={
-            'tag_name': tag,
-            'target_commitish': plan_value['target'],
-            'name': plan_value['name'],
-            'body': body,
-            'draft': True,
-            'prerelease': True,
-            'make_latest': 'false',
-            'generate_release_notes': False,
+            'tag_name': tag, 'target_commitish': spec['object'], 'name': plan_value['name'], 'body': body,
+            'draft': True, 'prerelease': True, 'make_latest': 'false', 'generate_release_notes': False,
         })
-        release_id = release.get('id') if isinstance(release, dict) else None
-        require(type(release_id) is int and release_id > 0 and release.get('tag_name') == tag and
-                release.get('prerelease') is True and release.get('draft') is True,
-                'DMG draft identity differs')
-        upload = 'https://uploads.github.com' + prefix + f'/releases/{release_id}/assets'
-        require(str(release.get('upload_url') or '').startswith(upload + '{'), 'DMG upload URL differs')
-        asset = api(upload + '?name=' + urllib.parse.quote(path.name), method='POST', data=data,
-                    content_type='application/octet-stream', content_length=size)
+    release_id = release.get('id')
+    require(type(release_id) is int and release_id > 0 and release.get('tag_name') == tag and
+            release.get('prerelease') is True and type(release.get('draft')) is bool and release.get('body') == body,
+            'DMG candidate release identity differs')
+
     def asset_matches(item):
-        return (isinstance(item, dict) and item.get('name') == path.name and item.get('state') == 'uploaded' and
+        return (isinstance(item, dict) and type(item.get('id')) is int and item['id'] > 0 and
+                item.get('name') == path.name and item.get('state') == 'uploaded' and
                 item.get('size') == size and item.get('digest') == 'sha256:' + digest)
 
-    asset_id = asset.get('id') if isinstance(asset, dict) else None
-    require(type(asset_id) is int and asset_id > 0 and asset_matches(asset), 'Uploaded DMG asset differs')
-    public = api(prefix + f'/releases/{release_id}', method='PATCH',
-                 body={'draft': False, 'prerelease': True, 'make_latest': 'false'})
-    assets = public.get('assets') if isinstance(public, dict) else None
-    require(isinstance(assets, list) and len(assets) == 1 and asset_matches(assets[0]) and
-            assets[0].get('id') == asset_id and public.get('id') == release_id and
-            public.get('tag_name') == tag and public.get('prerelease') is True and public.get('draft') is False,
-            'Published DMG prerelease differs; reconcile without repeating the write')
+    assets = release.get('assets')
+    require(isinstance(assets, list) and len(assets) <= 1, 'DMG candidate asset inventory differs')
+    if assets:
+        asset = assets[0]
+    else:
+        require(release['draft'], 'Public DMG candidate is missing its asset')
+        upload = 'https://uploads.github.com' + prefix + f'/releases/{release_id}/assets'
+        require(str(release.get('upload_url') or '').startswith(upload + '{'), 'DMG upload URL differs')
+        with path.open('rb') as data:
+            asset = api(upload + '?name=' + urllib.parse.quote(path.name), method='POST', data=data,
+                        content_type='application/octet-stream', content_length=size)
+    require(asset_matches(asset), 'DMG candidate asset differs')
+    asset_id = asset['id']
+
+    if release['draft']:
+        public = api(prefix + f'/releases/{release_id}', method='PATCH',
+                     body={'draft': False, 'prerelease': True, 'make_latest': 'false'})
+        assets = public.get('assets') if isinstance(public, dict) else None
+        require(isinstance(assets, list) and len(assets) == 1 and asset_matches(assets[0]) and
+                assets[0].get('id') == asset_id and public.get('id') == release_id and
+                public.get('tag_name') == tag and public.get('prerelease') is True and public.get('draft') is False,
+                'Published DMG prerelease differs; reconcile without repeating the write')
     return {'tag': tag, 'tagObject': tag_sha, 'releaseId': release_id, 'prerelease': True,
             'assetId': asset_id, 'repository': repository}
 

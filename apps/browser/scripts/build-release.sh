@@ -143,8 +143,15 @@ if [[ -e "$LEGACY_APP" || -L "$LEGACY_APP" ]]; then
   exit 1
 fi
 
+gn_command=gn
+ninja_command=autoninja
+if [[ "${1:-}" == --ad-hoc-dmg ]]; then
+  gn_command="$SRC/buildtools/mac/gn"
+  ninja_command="$DEPOT_TOOLS_DIR/autoninja"
+fi
+
 echo "Generating $OUT with aegis-release.gn (is_component_build=false)…"
-gn gen "$OUT" --args="$(cat "$ARGS_FILE")"
+"$gn_command" gen "$OUT" --args="$(cat "$ARGS_FILE")"
 
 identity_begin=(
   --phase begin
@@ -160,7 +167,7 @@ echo "Freezing build inputs before compilation…"
 node "$ROOT_DIR/scripts/write-build-identity.mjs" "${identity_begin[@]}"
 
 echo "Building chrome at $OUT (this can take a long time)…"
-autoninja -C "$OUT" chrome
+"$ninja_command" -C "$OUT" chrome
 
 # 固定证书签名会修改 App 内的 Mach-O 字节，必须发生在身份清单
 # finalize 之前。启动流程不得再对已绑定产物做任何签名或修补。
