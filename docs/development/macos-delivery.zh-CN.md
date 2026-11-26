@@ -61,12 +61,14 @@ CLI 和自动化校验均使用上述命令直接启动。代码复用可按普�
 
 仓库变量 `AEGIS_MACOS_DELIVERY_ENABLED` 必须正好是 `true`。控制器接受 fork 或上游的当前 `main`、第一次运行，发起人必须是该仓库管理员。Delivery Bot 不能自己启动这个控制器。
 
-在 **Actions → macOS Delivery · Bot** 填写版本和 build，例如 `0.8.0` 和 `800001`。
+在 **Actions → macOS Delivery · Bot** 填写版本和 build。上游 ad-hoc 路径使用桌面产品版本的前三段，并将末段传为 build。例如，`7.5.0.345` 对应 `7.5.0` 和 `345`。
+
+上游 ad-hoc 作业使用 `AEGIS_MACOS_CHROMIUM_ROOT` 和 `AEGIS_MACOS_DEPOT_TOOLS_DIR` 指向构建机上准备好的 Mac 源码与工具。构建身份在源码 App 上完成，ad-hoc 签名在 DMG 的 staging 副本上执行。
 
 | 操作 | 行为 |
 | --- | --- |
 | Package | 打一张 DMG。`ad-hoc`、`host-signed`、`notarized` 三种；`unsigned-dmg` 记成 `ad-hoc`，`none` 也记成 `ad-hoc`。签名方式必须和包种类一致。fork 上先把这三种都跑通 |
-| Tag release | 同样打包，再由子运行发布预发布 tag `candidate/macos/<version>-<kind>.<build>`。不是 Latest。fork 上可先发候选 |
+| Tag release | 构建并封存一份 DMG，上传和核对资产后以 `candidate/macos/<version>-<kind>.<build>` 公开为 prerelease。Latest 保持原值 |
 | Promote | **仅上游**。仓库管理员在 Environment `aegis-macos-dmg-stable` 批准后，把一张 **notarized** 候选升成稳定 tag `v<version>`。fork 上不开放 |
 | Complete | 只给 Bot 回写收据。人不要选 |
 

@@ -62,13 +62,18 @@ def write_package(root, version='0.8.0', package_kind='ad-hoc', body=b'arm64-dmg
 
 class PlanTests(unittest.TestCase):
     def test_plan_admits_one_arm64_dmg_and_aliases_unsigned(self):
-        planned = delivery.plan(environment(), inputs(package_kind='unsigned-dmg', signing_mode='none', tag_release='yes'))
+        planned = delivery.plan(environment(), inputs(version='7.5.0', build='345',
+                                                      package_kind='unsigned-dmg', signing_mode='none', tag_release='yes'))
         self.assertEqual(planned['package_kind'], 'ad-hoc')
         self.assertEqual(planned['signing_mode'], 'ad-hoc')
         self.assertEqual(planned['upload'], 'false')
         self.assertEqual(planned['tag_release'], 'true')
         self.assertEqual(planned['architectures'], 'arm64')
         self.assertEqual(json.loads(planned['runner']), ['self-hosted', 'macOS', 'ARM64', 'aegis-ios-fork-migration'])
+
+    def test_upstream_ad_hoc_version_and_build_must_match_the_product_source(self):
+        with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+            delivery.plan(environment(), inputs(version='7.5.0', build='344'))
 
     def test_fork_admits_the_full_matrix_before_upstream_promotion(self):
         planned = delivery.plan(environment(GITHUB_REPOSITORY='quinn521/aegis-browser'), inputs(package_kind='host-signed', signing_mode='host-signed'))
@@ -166,19 +171,29 @@ class TagTests(unittest.TestCase):
         planned, dmg, digest = self.artifact()
         calls = []
 
-        def api(path, method='GET', body=None, data=None, content_type=None):
+        def api(path, method='GET', body=None, data=None, content_type=None, content_length=None):
             calls.append((method, path, body, data, content_type))
             if method == 'GET':
                 raise delivery.DeliveryStatus(404)
             if path.endswith('/git/tags'):
                 return {'sha': 'c' * 40}
             if path.endswith('/releases'):
-                return {'id': 9, 'prerelease': True, 'draft': False,
+                self.assertTrue(body['draft'])
+                return {'id': 9, 'tag_name': planned['tag'], 'prerelease': True, 'draft': True,
                         'upload_url': 'https://uploads.github.com/repos/' + REPOSITORY + '/releases/9/assets{?name,label}'}
             if path.startswith('https://uploads.github.com/'):
+                data = data.read()
+                self.assertEqual(content_length, len(data))
                 self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
                 self.assertEqual(content_type, 'application/octet-stream')
-                return {'id': 11, 'name': dmg.name, 'state': 'uploaded'}
+                return {'id': 11, 'name': dmg.name, 'state': 'uploaded',
+                        'digest': 'sha256:' + digest, 'size': len(data)}
+            if method == 'PATCH':
+                self.assertEqual(body, {'draft': False, 'prerelease': True, 'make_latest': 'false'})
+                self.assertTrue(any(call[1].startswith('https://uploads.github.com/') for call in calls))
+                return {'id': 9, 'tag_name': planned['tag'], 'draft': False, 'prerelease': True,
+                        'assets': [{'id': 11, 'name': dmg.name, 'state': 'uploaded',
+                                    'digest': 'sha256:' + digest, 'size': dmg.stat().st_size}]}
             return {}
 
         created = delivery.create_dmg_tag_release(api, planned, dmg)
