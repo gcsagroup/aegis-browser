@@ -177,12 +177,14 @@ def _full(inputs):
     require(pinned['upload_run_id'], 'Track changes require a receipt for a successful Play upload')
     if operation == 'distribute':
         track = advanced.get('track', '')
-        require(set(advanced) == {'track', 'userFraction'} and _track_allowed(profile, track) and track != 'production',
+        require(set(advanced) in ({'track'}, {'track', 'userFraction'})
+                and _track_allowed(profile, track) and track != 'production',
                 'Distribution requires its own track below production')
+        user_fraction = fraction(advanced['userFraction']) if 'userFraction' in advanced else ''
         values.update(pinned)
         values.update(operation='distribute', destination='play-' + track, track=track,
-                      user_fraction=fraction(advanced['userFraction']), stage_input=json.dumps(
-                          {'track': track, 'userFraction': advanced['userFraction']}, separators=(',', ':'), sort_keys=True))
+                      user_fraction=user_fraction, stage_input=json.dumps(
+                          advanced, separators=(',', ':'), sort_keys=True))
         return values
     require(operation == 'submit', 'Unsupported Android delivery stage')
     require(profile == 'release' and advanced == {'track': 'production'},

@@ -307,6 +307,7 @@ def play_stage(plan, package_dir, client, store):
         upload_run_id = int(os.environ['GITHUB_RUN_ID'])
         require_absent(version, build, store, ('upload-start', 'upload-result'))
         intent = play.draft_intent(version, build, plan['profile'], origin['manifestSha256'], plan['track'])
+        client.check_test_track(code, plan['track'], authorize_write=authorize_write)
         store.create('upload-start', key, intent, authorize_create=authorize_write)
         result = client.upload_draft(Path(package_dir) / archive.asset_names(version, build)[0], code, plan['track'],
                                      authorize_write=authorize_write)
@@ -322,7 +323,8 @@ def play_stage(plan, package_dir, client, store):
     release.verify_play_upload(plan, origin, store.read('upload-start', key), terminal,
                                release.load_upload_run(terminal))
     if plan['operation'] == 'distribute':
-        return client.update_track(code, plan['track'], 'inProgress', plan['user_fraction'],
+        status = 'inProgress' if plan['user_fraction'] else 'completed'
+        return client.update_track(code, plan['track'], status, plan['user_fraction'],
                                    authorize_write=authorize_write)
     return client.update_track(code, 'production', 'completed', '', authorize_write=authorize_write)
 
