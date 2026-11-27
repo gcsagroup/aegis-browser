@@ -102,7 +102,7 @@ class Play:
                     'processingState': 'NOT_FOUND', 'uploadState': 'NOT_FOUND'}
         return interpret_generated_apks(json.loads(payload.decode()), version_code)
 
-    def _test_track_codes(self, edits, edit_id, track, version_code):
+    def _test_track_codes(self, edits, edit_id, track, version_code, *, pending_codes=None):
         status, payload = self._request('GET', f'{edits}/{edit_id}/tracks/{track}', ok=(200, 404))
         if status == 404:
             return []
@@ -118,7 +118,8 @@ class Play:
                     'Invalid Play test track version codes')
             state = release.get('status')
             require(state in {'draft', 'completed', 'inProgress', 'halted'}, 'Invalid Play test release status')
-            require(state == 'completed' or all(code == str(version_code) for code in release['versionCodes']),
+            require(state == 'completed' or (pending_codes is not None
+                    and set(release['versionCodes']) == set(pending_codes)),
                     'Play test track has another pending rollout; reconcile it before writing')
             codes.update(release['versionCodes'])
         return sorted(codes, key=int)
@@ -154,9 +155,10 @@ class Play:
         self._write(authorize_write, 'PUT', f'{edits}/{edit_id}/tracks/{track}', body, {'Content-Type': 'application/json'})
         self._write(authorize_write, 'POST', f'{edits}/{edit_id}:commit', b'')
         return {'editId': edit_id, 'packageName': APPLICATION_ID, 'releaseStatus': 'draft',
-                'status': 'uploaded_draft', 'track': track, 'versionCode': version_code}
+                'status': 'uploaded_draft', 'track': track, 'versionCode': version_code,
+                'retainedVersionCodes': release['versionCodes']}
 
-    def update_track(self, version_code, track, status, user_fraction='', *, authorize_write):
+    def update_track(self, version_code, track, status, user_fraction='', *, authorize_write, pending_codes=None):
         require(track in TRACKS and status in {'inProgress', 'completed'}, 'Unsupported Play track update')
         require(self.status(version_code)['processingState'] == 'VALID', 'Play has not finished this versionCode')
         require(status != 'completed' or user_fraction == '',
@@ -174,7 +176,7 @@ class Play:
         edit_id = json.loads(payload.decode()).get('id')
         require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
         if track != 'production':
-            retained_codes = self._test_track_codes(edits, edit_id, track, version_code)
+            retained_codes = self._test_track_codes(edits, edit_id, track, version_code, pending_codes=pending_codes)
             updated = json.loads(body)
             updated['releases'][0]['versionCodes'] = sorted(set(retained_codes + [str(version_code)]), key=int)
             body = canonical(updated).encode()

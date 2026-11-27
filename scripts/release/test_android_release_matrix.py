@@ -396,7 +396,7 @@ class DeliveryCommandMatrix(unittest.TestCase):
                     return {'status': 'uploaded_draft', 'packageName': archive.APPLICATION_ID,
                             'track': track, 'releaseStatus': 'draft', 'versionCode': code}
 
-                def update_track(self, code, track, state, fraction, *, authorize_write):
+                def update_track(self, code, track, state, fraction, *, authorize_write, pending_codes=None):
                     authorize_write()
                     calls.append(('track', track, state, fraction))
                     return {'status': state, 'track': track}

@@ -150,6 +150,40 @@ class PlayTests(unittest.TestCase):
             play.Play(transport, 'token').check_test_track(CODE, 'internal', authorize_write=authorize_fixture)
         self.assertEqual(requests, ['POST', 'GET'])
 
+    def test_upload_then_distribute_retains_completed_codes(self):
+        track = {'track': 'internal', 'releases': [{'status': 'completed', 'versionCodes': ['99']}]}
+        uploaded = False
+        def transport(method, url, body, headers):
+            nonlocal track, uploaded
+            if url.endswith(f'/generatedApks/{CODE}'):
+                if not uploaded:
+                    return 404, {}, b'{}'
+                return 200, {}, json.dumps({'generatedApks': [{'generatedUniversalApk': {'downloadId': 'u'}}]}).encode()
+            if url.endswith('/edits'):
+                return 200, {}, b'{"id":"edit-1"}'
+            if method == 'GET' and '/tracks/' in url:
+                return 200, {}, json.dumps(track).encode()
+            if '/bundles?' in url:
+                uploaded = True
+                return 200, {}, json.dumps({'versionCode': CODE}).encode()
+            if method == 'PUT':
+                track = json.loads(body)
+            return 200, {}, b'{}'
+        client = play.Play(transport, 'token')
+        client.check_test_track(CODE, 'internal', authorize_write=authorize_fixture)
+        client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
+        self.assertEqual(track['releases'][0]['versionCodes'], ['99', str(CODE)])
+        track['releases'][0]['versionCodes'].append('98')
+        with self.assertRaisesRegex(ValueError, 'another pending rollout'):
+            client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
+                                pending_codes=['99', str(CODE)])
+        track['releases'][0]['versionCodes'].remove('98')
+        client.update_track(CODE, 'internal', 'inProgress', '0.1', authorize_write=authorize_fixture,
+                            pending_codes=['99', str(CODE)])
+        client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
+                            pending_codes=['99', str(CODE)])
+        self.assertEqual(track['releases'], [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}])
+
     def test_main_change_during_play_edit_blocks_remaining_writes(self):
         for action in ('upload', 'production'):
             with self.subTest(action=action):

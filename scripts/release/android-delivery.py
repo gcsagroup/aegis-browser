@@ -324,8 +324,16 @@ def play_stage(plan, package_dir, client, store):
                                release.load_upload_run(terminal))
     if plan['operation'] == 'distribute':
         status = 'inProgress' if plan['user_fraction'] else 'completed'
+        upload_result = terminal['result']
+        pending_codes = upload_result.get('retainedVersionCodes', [str(code)])
+        require(isinstance(pending_codes, list) and pending_codes and str(code) in pending_codes
+                and all(isinstance(item, str) and receipt.CODE.fullmatch(item)
+                        and int(item) <= receipt.MAX_CODE for item in pending_codes),
+                'Recorded Play test track version codes are invalid')
+        if upload_result['track'] != plan['track']:
+            pending_codes = [str(code)]
         return client.update_track(code, plan['track'], status, plan['user_fraction'],
-                                   authorize_write=authorize_write)
+                                   authorize_write=authorize_write, pending_codes=pending_codes)
     return client.update_track(code, 'production', 'completed', '', authorize_write=authorize_write)
 
 
