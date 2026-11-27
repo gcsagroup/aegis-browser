@@ -29,6 +29,9 @@ TAG_SCHEMA = 'aegis-macos-dmg-v1'
 MANIFEST_SCHEMA = 'aegis-macos-delivery-v1'
 VERSION = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
 BUILD = re.compile(r'[1-9][0-9]*')
+# Candidate delivery versions can identify test packages built from a specific
+# committed desktop version.
+UPSTREAM_AD_HOC_TEST_VERSIONS = {('0.8.0', '1'): '7.5.0.345'}
 INPUT_KEYS = (
     'operation', 'version', 'build', 'package_kind', 'signing_mode',
     'approved_source_sha', 'tag_release', 'bot_callback',
@@ -80,6 +83,12 @@ def desktop_product_version():
     return match[1]
 
 
+def test_candidate_product_version(repository, package_kind, version, build):
+    if repository == UPSTREAM and package_kind == 'ad-hoc':
+        return UPSTREAM_AD_HOC_TEST_VERSIONS.get((version, build))
+    return None
+
+
 def plan(environment, inputs):
     require(environment.get('AEGIS_MACOS_DELIVERY_ENABLED') == 'true',
             'macOS DMG delivery is disabled until AEGIS_MACOS_DELIVERY_ENABLED=true')
@@ -104,8 +113,9 @@ def plan(environment, inputs):
     require(approved == sha, 'Package delivery requires the approved source SHA')
     if repository == UPSTREAM:
         require(package_kind == 'ad-hoc', 'Upstream DMG delivery currently accepts ad-hoc only')
-        require(desktop_product_version() == f'{version}.{build}',
-                'Ad-hoc version and build must match the committed desktop product version')
+        test_product = test_candidate_product_version(repository, package_kind, version, build)
+        require(desktop_product_version() == (test_product or f'{version}.{build}'),
+                'Ad-hoc coordinate must match its committed desktop product version')
     tag_release = inputs.get('tag_release') or 'no'
     bot_callback = inputs.get('bot_callback') or 'yes'
     require(tag_release in {'yes', 'no'} and bot_callback in {'yes', 'no'}, 'DMG tag and bot callback must be yes or no')
@@ -186,6 +196,11 @@ def seal(directory, package_kind, version, build, source_sha, repository):
             'sizeBytes': path.stat().st_size,
         }],
     }
+    test_product = test_candidate_product_version(repository, package_kind, version, build)
+    if test_product is not None:
+        require(desktop_product_version() == test_product,
+                'Test candidate desktop product version differs')
+        manifest['desktopProductVersion'] = test_product
     target = directory / 'macos-delivery-manifest.json'
     require(not target.exists() and not target.is_symlink(), 'Refusing to replace a delivery manifest')
     target.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
@@ -227,6 +242,11 @@ def plan_dmg_tag(manifest, manifest_digest, source_sha):
         'manifestSha256': manifest_digest,
         'artifacts': [{'architecture': 'arm64', 'filename': filename, 'sha256': digest}],
     }
+    test_product = test_candidate_product_version(repository, package_kind, version, build)
+    if test_product is not None:
+        require(manifest.get('desktopProductVersion') == test_product,
+                'Sealed test candidate desktop product version differs')
+        payload['desktopProductVersion'] = test_product
     message = TAG_SCHEMA + '\n' + json.dumps(payload, sort_keys=True, separators=(',', ':'))
     return {
         'tag': tag,
@@ -327,7 +347,11 @@ def create_dmg_tag_release(api, plan_value, dmg_path):
 
     body = plan_value['message']
     if payload['packageKind'] == 'ad-hoc':
-        body = 'Apple Silicon (arm64). Ad-hoc signature. Unnotarized.\n\n' + body
+        note = 'Apple Silicon (arm64). Ad-hoc signature. Unnotarized.'
+        if 'desktopProductVersion' in payload:
+            note += (f'\n\nTest DMG {payload["version"]} (build {payload["build"]}). '
+                     f'Embedded desktop product version {payload["desktopProductVersion"]}.')
+        body = note + '\n\n' + body
     if release is None:
         release = api(prefix + '/releases', method='POST', body={
             'tag_name': tag, 'target_commitish': spec['object'], 'name': plan_value['name'], 'body': body,

@@ -79,6 +79,16 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(delivery.DeliveryError, 'ad-hoc only'):
             delivery.plan(environment(), inputs(package_kind='notarized', signing_mode='notarized'))
 
+    def test_upstream_test_candidate_is_bound_to_its_desktop_product_version(self):
+        with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.345'):
+            planned = delivery.plan(environment(), inputs(build='1', tag_release='yes'))
+            self.assertEqual((planned['version'], planned['build'], planned['tag_release']), ('0.8.0', '1', 'true'))
+            with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                delivery.plan(environment(), inputs(build='2', tag_release='yes'))
+        with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.346'):
+            with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                delivery.plan(environment(), inputs(build='1', tag_release='yes'))
+
     def test_fork_admits_the_full_matrix_before_upstream_promotion(self):
         planned = delivery.plan(environment(GITHUB_REPOSITORY='quinn521/aegis-browser'), inputs(package_kind='host-signed', signing_mode='host-signed'))
         self.assertEqual(planned['repository'], 'quinn521/aegis-browser')
@@ -101,6 +111,24 @@ class PlanTests(unittest.TestCase):
 
 
 class SealTests(unittest.TestCase):
+    def test_upstream_test_candidate_seals_and_tags_the_product_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'package'
+            write_package(root)
+            with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.346'):
+                with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                    delivery.seal(root, 'ad-hoc', '0.8.0', '1', SHA, REPOSITORY)
+            with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.345'):
+                manifest = delivery.seal(root, 'ad-hoc', '0.8.0', '1', SHA, REPOSITORY)
+            self.assertEqual(manifest['desktopProductVersion'], '7.5.0.345')
+            digest = hashlib.sha256((root / 'macos-delivery-manifest.json').read_bytes()).hexdigest()
+            planned = delivery.plan_dmg_tag(manifest, digest, SHA)
+            self.assertEqual(planned['tag'], 'candidate/macos/0.8.0-ad-hoc.1')
+            payload = json.loads(planned['message'].split('\n', 1)[1])
+            self.assertEqual(payload['desktopProductVersion'], '7.5.0.345')
+            with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                delivery.plan_dmg_tag(dict(manifest, desktopProductVersion='7.5.0.346'), digest, SHA)
+
     def test_seal_rejects_wrong_source_and_missing_distribution_signing(self):
         for changes in ({'sourceSha': 'b' * 40}, {'packagingSourceSha': 'b' * 40}, {'notarizationSigning': False}):
             with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
