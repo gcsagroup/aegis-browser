@@ -100,9 +100,9 @@ def render(platform, root=ROOT):
             "GeoSite standard data — sources and licenses",
             "scripts/licenses/geosite/xtls-gpl-3.0.txt",
             "The unmodified standard geosite.dat is shipped in the iOS app. It provides the domestic and overseas rule inputs.\n"
-            "Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261126014317\n"
+            "Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261127013728\n"
             "Encoding, conversion scripts, and input inventory: "
-            "https://github.com/XTLS/Xray-rules-dat/tree/d74acca73490cb57a937674ce8a8709d2a3021ba\n"
+            "https://github.com/XTLS/Xray-rules-dat/tree/71449413dd268821143695c5bf3720545f392e63\n"
             "The GeoSite tools have their own MIT terms. The data comes from the following sources.\n"
             "V2Fly Domain List Community — MIT — https://github.com/v2fly/domain-list-community\n"
             "GFWList data — LGPL-2.1 — https://github.com/gfwlist/gfwlist/blob/master/list.txt\n"
@@ -112,11 +112,11 @@ def render(platform, root=ROOT):
             "Iran sanctioned domains — https://github.com/armanlife/iran-sanctioned-domains\n"
             "RunetFreedom domains — https://github.com/runetfreedom/russia-domains-list\n"
             "Antifilter.Download community list — https://community.antifilter.download/list/domains.lst\n\n"
-            "XTLS project license — GPL-3.0 — https://github.com/XTLS/Xray-rules-dat/blob/20261126014317/LICENSE\n\n",
+            "XTLS project license — GPL-3.0 — https://github.com/XTLS/Xray-rules-dat/blob/20261127013728/LICENSE\n\n",
         )
         include("V2Fly Domain List Community and inherited GeoSite tools — MIT",
                 f"{ACCESS}/v2fly-domain-list-community.txt",
-                "Inherited license: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited\n\n")
+                "Inherited license: https://github.com/XTLS/Xray-rules-dat/blob/71449413dd268821143695c5bf3720545f392e63/LICENSE-inherited\n\n")
         include("GFWList data — LGPL-2.1", "scripts/licenses/geosite/gfwlist-lgpl-2.1.txt",
                 "Source project: https://github.com/gfwlist/gfwlist\n"
                 "The encoding and conversion scripts are available in the XTLS source linked above.\n\n")
