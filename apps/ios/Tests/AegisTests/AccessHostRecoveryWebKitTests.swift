@@ -4566,16 +4566,70 @@ extension AccessHostRecoveryWebKitTests {
 }
 
 extension AccessHostRecoveryWebKitTests {
+    func testDirectedSearchClicksTheRenderedRepositoryAnchor() async throws {
+        let view = WKWebView()
+        let window = show(view)
+        defer { window.isHidden = true }
+        let page = try XCTUnwrap(URL(string: "https://www.google.com.hk/search?q=fixture"))
+        view.loadHTMLString("""
+        <input name="q" value="fixture"><main id="rso">
+          <a hidden href="https://github.com/quinn521/aegis-browser">Hidden</a>
+          <a href="/goto?url=opaque-1">https://github.com.example.org<div role="heading">aegis-browser - gcsagroup</div></a>
+          <a href="/goto?url=opaque-2">https://github.com<div role="heading">aegis-browser/docs - gcsagroup</div></a>
+          <a href="/goto?url=opaque-3"><div role="heading">aegis-browser - gcsagroup</div></a>
+          <a href="/goto?url=https%3A%2F%2Fuser%40github.com">https://github.com<div role="heading">aegis-browser - gcsagroup</div></a>
+          <a id="root" target="_blank" href="/goto?url=opaque-4">GitHub<br>https://github.com<div role="heading">aegis-browser - gcsagroup</div></a>
+          <a href="/url?q=https%3A%2F%2Fexample.org%2Farticle">A result</a>
+          <a href="https://example.org/article">Same result</a>
+        </main><script>
+        document.addEventListener('click', e => { e.preventDefault(); window.clicked = e.target.closest('a').id; });
+        </script>
+        """, baseURL: page)
+        try await waitUntil { view.url == page && !view.isLoading }
+        let content = try await view.callAsyncJavaScript(DirectedWebKitObserver.searchSnapshot,
+            arguments: ["expectedQuery": "fixture"], contentWorld: .page) as? [String: Any]
+        XCTAssertEqual(content?["visibleExternalLinks"] as? Int, 4)
+        XCTAssertEqual(content?["queryPreserved"] as? Bool, true)
+        let root = "https://github.com/gcsagroup/aegis-browser"
+        for href in ["/goto?url=opaque-4", "/url?q=" + root, root] {
+            _ = try await view.callAsyncJavaScript("document.querySelector('#root').href = href; window.clicked = null;",
+                                                   arguments: ["href": href], contentWorld: .page)
+            let clicked = try await view.callAsyncJavaScript(DirectedWebKitObserver.clickSearchResult,
+                arguments: [:], contentWorld: .page) as? [String: String]
+            let anchor = try await view.evaluateJavaScript("window.clicked") as? String
+            XCTAssertEqual(clicked?["repository"], root)
+            XCTAssertEqual(anchor, "root")
+        }
+        _ = try await view.evaluateJavaScript("document.querySelector('#root').remove()")
+        let remaining = try await view.callAsyncJavaScript(DirectedWebKitObserver.clickSearchResult,
+            arguments: [:], contentWorld: .page) as? [String: String]
+        XCTAssertNil(remaining)
+        _ = try await view.evaluateJavaScript("""
+            document.querySelector('#rso').insertAdjacentHTML('beforeend',
+              '<a id="file" href="/goto?url=opaque-5">https://github.com<div role="heading">aegis-browser/README.md at main</div></a>')
+            """)
+        let fallback = try await view.callAsyncJavaScript(DirectedWebKitObserver.clickSearchResult,
+            arguments: [:], contentWorld: .page) as? [String: String]
+        XCTAssertEqual(fallback?["repository"], root)
+        XCTAssertEqual(fallback?["kind"], "repository-page")
+        XCTAssertTrue(DirectedWebKitObserver.matchesRepositoryLanding(root + "/blob/main/README.md",
+                                                                     repository: root, kind: "repository-page"))
+        XCTAssertFalse(DirectedWebKitObserver.matchesRepositoryLanding(root + "-other/blob/main/README.md",
+                                                                      repository: root, kind: "repository-page"))
+    }
+
     func testPhoneDirectedGoogleWebKit() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["AEGIS_DIRECTED_PROBE"] == "1" else { throw XCTSkip("Directed device probe") }
-        let uri = try XCTUnwrap(environment["AEGIS_BLOCKED_CN_NODE_URI"])
-        let node: AccessInternalTestNode
-        do { node = try AccessInternalTestNode.parseSingleShareURI(uri) }
-        catch { XCTFail("Could not import directed test node"); return }
-        let channel = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "AegisAccessReleaseChannel") as? String)
-        XCTAssertEqual(channel, "alpha")
-        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "AegisAccessInternalOptions") as? String, "NO")
+        let node = try DirectedProbeNode.load(environment)
+        let channelName = Bundle.main.object(forInfoDictionaryKey: "AegisAccessReleaseChannel") as? String
+        let channel = try XCTUnwrap(channelName.flatMap(AccessReleaseChannel.init(rawValue:)))
+        guard channel == .alpha || (channel == .dev && environment[DirectedProbeNode.bundledEnvironmentKey] == "1") else {
+            return XCTFail("Directed WebKit requires Alpha or a bundled Dev test node")
+        }
+        if channel == .alpha {
+            XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "AegisAccessInternalOptions") as? String, "NO")
+        }
         let ats = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any])
         XCTAssertEqual(ats["NSAllowsArbitraryLoadsInWebContent"] as? Bool, true)
 
@@ -4592,7 +4646,7 @@ extension AccessHostRecoveryWebKitTests {
                 else { finish() }
             }, transport: .http
         )
-        let coordinator = AccessHostStoreCoordinator(publisher: publisher, channel: .alpha, alphaWebsiteAcceleration: true,
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, channel: channel, alphaWebsiteAcceleration: true,
                                                       geoSiteCache: geoSite)
         owner = coordinator
         let suite = "directed-search-" + UUID().uuidString
@@ -4614,17 +4668,43 @@ extension AccessHostRecoveryWebKitTests {
 
         let assetsOnly = environment["AEGIS_DIRECTED_ASSETS_ONLY"] == "1"
         let searchOnly = environment["AEGIS_DIRECTED_SEARCH_ONLY"] == "1"
-        let scenarios: [(String, AccessOverseasSelection, [String])] = searchOnly ? [
-            ("all", .init(enabled: true, mode: .all), ["https://www.google.com.hk/search?q=Aegis+Browser"]),
+        let generalQuery = "Aegis Browser"
+        let repositoryQuery = "Aegis Browser site:github.com/gcsagroup/aegis-browser"
+        var google = preferenceValues
+        google.searchEngine = .google
+        var hongKong = preferenceValues
+        hongKong.searchEngine = .custom
+        hongKong.customSearch = "https://www.google.com.hk/search?q={searchTerms}"
+        enum Entry: String {
+            case homepage = "configured-google-homepage"
+            case direct = "hk-search-url"
+            case google = "google-address-bar"
+            case custom = "custom-hk-address-bar"
+        }
+        var homepage = preferenceValues
+        homepage.homepage = "https://www.google.com/"
+        try preferences.save(homepage)
+        let hkHomepage = "https://www.google.com.hk/"
+        let hkSearch = "https://www.google.com.hk/search"
+        typealias Target = (address: String, entry: Entry?)
+        func controls(_ addresses: [String]) -> [Target] { addresses.map { ($0, nil) } }
+        let searchTargets: [Target] = [
+            (preferences.homeURL.absoluteString, .homepage),
+            (try XCTUnwrap(BrowserPreferences.searchURL(generalQuery, values: hongKong)).absoluteString, .direct),
+            (try XCTUnwrap(BrowserPreferences.searchURL(generalQuery, values: google)).absoluteString, .google),
+            (try XCTUnwrap(BrowserPreferences.searchURL(repositoryQuery, values: hongKong)).absoluteString, .custom),
+        ]
+        let scenarios: [(String, AccessOverseasSelection, [Target])] = searchOnly ? [
+            ("all", .init(enabled: true, mode: .all), searchTargets),
         ] : assetsOnly ? [
             ("categories", .init(enabled: true, categories: [.web, .development]),
-             ["https://github.com/octocat/Hello-World"]),
-            ("all", .init(enabled: true, mode: .all), ["https://www.google.com.hk/"]),
+             controls(["https://github.com/octocat/Hello-World"])),
+            ("all", .init(enabled: true, mode: .all), controls([hkHomepage])),
         ] : [
             ("categories", .init(enabled: true, categories: [.web, .development]),
-             ["https://www.google.com/", "https://github.com/octocat/Hello-World"]),
+             controls(["https://www.google.com/", "https://github.com/octocat/Hello-World"])),
             ("all", .init(enabled: true, mode: .all),
-             ["https://www.google.com/", "https://google.com/", "https://www.google.com.hk/"]),
+             controls(["https://www.google.com/", "https://google.com/", hkHomepage])),
         ]
         let cache = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
         let run = try XCTUnwrap(environment["AEGIS_DIRECTED_RUN"].flatMap(UUID.init(uuidString:)))
@@ -4633,12 +4713,21 @@ extension AccessHostRecoveryWebKitTests {
         for (mode, selection, targets) in scenarios {
             let approval = try await coordinator.overseasConfirmation(selection, for: browser)
             try await coordinator.confirmOverseas(approval, for: browser) { true }
-            for address in targets {
+            for (address, entry) in targets {
                 let url = try XCTUnwrap(URL(string: address))
                 let observer = DirectedWebKitObserver(tab: tab)
                 observer.observe(tab.webView)
                 NSLog("AEGIS-DIRECTED-PAGE %@ %@ begin", mode, url.host ?? "?")
-                tab.loadFromAddressBar(url)
+                let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
+                switch entry {
+                case .homepage:
+                    tab.load(preferences.homeURL)
+                case .google, .custom:
+                    try preferences.save(entry == .google ? google : hongKong)
+                    browser.navigate(address: try XCTUnwrap(query))
+                case .direct, nil:
+                    tab.loadFromAddressBar(url)
+                }
                 let deadline = Date().addingTimeInterval(28)
                 var settledAt: Date?
                 while Date() < deadline {
@@ -4659,7 +4748,8 @@ extension AccessHostRecoveryWebKitTests {
                 let stillLoading = tab.isLoading
                 var document: [String: Any] = [:]
                 if observer.finishedPublicPage,
-                   let value = try? await view.evaluateJavaScript(DirectedWebKitObserver.resourceSnapshot) as? [String: Any] {
+                   let value = try? await view.callAsyncJavaScript(DirectedWebKitObserver.resourceSnapshot,
+                       arguments: ["expectedQuery": query ?? "Aegis Browser"], contentWorld: .page) as? [String: Any] {
                     document = value
                     if assetsOnly {
                         let host = url.host == "github.com" ? "github.githubassets.com" : "www.gstatic.com"
@@ -4669,32 +4759,42 @@ extension AccessHostRecoveryWebKitTests {
                         }
                     }
                 }
-                var clickedDestination: String?
+                var clickedLink: [String: String]?
                 var committedDestination: String?
+                var clickEvents: [[String: Any]] = []
                 let searchContent = document["searchContent"] as? [String: Any]
                 let visibleResults = searchContent?["visibleExternalLinks"] as? Int ?? 0
-                let searchResponse = observer.events.contains { event in
-                    guard event["event"] as? String == "response",
-                          event["url"] as? String == "https://www.google.com.hk/search",
-                          let status = event["status"] as? Int,
-                          let proxies = event["proxyCount"] as? Int else { return false }
-                    return (200..<300).contains(status) && proxies > 0
-                }
-                let searchPageReady = !stillLoading && searchResponse
+                let landedOnSearch = committed.map { landing in
+                    landing == hkSearch
+                        && DirectedWebKitObserver.finishedSuccessfulNavigation(to: landing, events: observer.events, requireProxy: true)
+                } ?? false
+                let searchPageReady = !stillLoading && landedOnSearch && committed == displayURL
                     && searchContent?["queryPreserved"] as? Bool == true
                     && searchContent?["visibleSearchField"] as? Bool == true
                 let visitsBeforeClick = Set(history.history.map(\.id))
-                if searchOnly, searchPageReady, visibleResults > 0,
-                   let clicked = try? await view.callAsyncJavaScript(DirectedWebKitObserver.clickSearchResult,
-                       arguments: [:], contentWorld: .page) as? String {
-                    clickedDestination = clicked
-                    let clickDeadline = Date().addingTimeInterval(12)
+                let clickStart = observer.events.count
+                if entry == .custom, searchPageReady, visibleResults > 0,
+                   let link = try? await view.callAsyncJavaScript(DirectedWebKitObserver.clickSearchResult,
+                       arguments: [:], contentWorld: .page) as? [String: String],
+                   let expected = link["repository"] {
+                    clickedLink = link
+                    var childObserver: DirectedWebKitObserver?
+                    let clickDeadline = Date().addingTimeInterval(25)
                     while Date() < clickDeadline {
-                        if let destination = browser.activeTab, !destination.isLoading,
-                           destination.loadingError == nil,
-                           DirectedWebKitObserver.safe(destination.liveCommittedDocumentURL) == clicked,
-                           history.history.contains(where: { $0.url == clicked && !visitsBeforeClick.contains($0.id) }) {
-                            committedDestination = clicked
+                        guard let destination = browser.activeTab else { break }
+                        if destination !== tab && childObserver?.tab !== destination {
+                            childObserver = DirectedWebKitObserver(tab: destination)
+                        }
+                        let activeObserver = destination === tab ? observer : childObserver
+                        activeObserver?.observe(destination.webView)
+                        attach(destination.webView, to: window)
+                        clickEvents = destination === tab ? Array(observer.events.dropFirst(clickStart)) : childObserver?.events ?? []
+                        let finalURL = DirectedWebKitObserver.safe(destination.liveCommittedDocumentURL)
+                        if let finalURL, DirectedWebKitObserver.matchesRepositoryLanding(finalURL, repository: expected, kind: link["kind"]),
+                           !destination.isLoading, destination.loadingError == nil,
+                           DirectedWebKitObserver.finishedSuccessfulNavigation(to: finalURL, events: clickEvents, requireProxy: true),
+                           history.history.contains(where: { $0.url == finalURL && !visitsBeforeClick.contains($0.id) }) {
+                            committedDestination = finalURL
                             break
                         }
                         try await Task.sleep(for: .milliseconds(50))
@@ -4707,23 +4807,33 @@ extension AccessHostRecoveryWebKitTests {
                     "storeProxyCount": proxyCount,
                     "overseasGrant": String(describing: snapshot.overseasGrant),
                     "stillLoading": stillLoading,
-                    "searchClickTarget": (clickedDestination as Any?) ?? NSNull(),
+                    "searchEntry": (entry?.rawValue as Any?) ?? NSNull(),
+                    "searchClickLink": (clickedLink as Any?) ?? NSNull(),
+                    "searchClickTarget": (clickedLink?["repository"] as Any?) ?? NSNull(),
                     "searchClickCommitted": (committedDestination as Any?) ?? NSNull(),
+                    "searchClickEvents": clickEvents,
                 ])
                 let bytes = try JSONSerialization.data(withJSONObject: observations, options: [.sortedKeys])
                 try bytes.write(to: output, options: .atomic)
                 NSLog("AEGIS-DIRECTED-PAGE %@ %@ end", mode, url.host ?? "?")
-                if searchOnly {
+                if entry == .homepage {
+                    XCTAssertEqual(committed, hkHomepage)
+                    XCTAssertFalse(stillLoading)
+                    XCTAssertTrue(DirectedWebKitObserver.finishedSuccessfulNavigation(to: hkHomepage, events: observer.events, requireProxy: true))
+                } else if entry != nil {
+                    XCTAssertEqual(url.host, "www.google.com.hk")
+                    XCTAssertFalse(observer.events.contains { ($0["url"] as? String)?.hasPrefix("https://www.google.cn/") == true })
                     XCTAssertTrue(searchPageReady, "Search must finish over the selected proxy and preserve the query")
                     XCTAssertGreaterThan(visibleResults, 0, "Search must show visible external results")
-                    if searchPageReady && visibleResults > 0 {
-                        XCTAssertNotNil(committedDestination, "A visible Aegis repository result must open")
+                    if entry == .custom, searchPageReady && visibleResults > 0 {
+                        XCTAssertNotNil(clickedLink, "The scoped search must contain a visible Aegis repository result")
+                        XCTAssertNotNil(committedDestination, "The clicked repository must return 2xx and finish navigating")
                     }
                 }
                 if tab.isLoading { view.stopLoading() }
             }
         }
-        XCTAssertEqual(observations.count, searchOnly ? 1 : (assetsOnly ? 2 : 5))
+        XCTAssertEqual(observations.count, searchOnly ? searchTargets.count : (assetsOnly ? 2 : 5))
         browser.closeWindow()
         _ = await core.stopAndConfirm()
     }
@@ -4751,6 +4861,21 @@ private final class DirectedWebKitObserver: NSObject, WKNavigationDelegate {
         parts.password = nil
         parts.user = nil
         return parts.string
+    }
+
+    static func finishedSuccessfulNavigation(to url: String, events: [[String: Any]], requireProxy: Bool = false) -> Bool {
+        let trace = events.filter { $0["url"] as? String == url }
+        guard trace.last?["event"] as? String == "finish",
+              let commit = trace.lastIndex(where: { $0["event"] as? String == "commit" }),
+              let response = trace[..<commit].last(where: { $0["event"] as? String == "response" }),
+              let status = response["status"] as? Int, (200..<300).contains(status) else { return false }
+        return !requireProxy || (response["proxyCount"] as? Int ?? 0) > 0
+    }
+
+    static func matchesRepositoryLanding(_ url: String, repository: String, kind: String?) -> Bool {
+        if url == repository { return true }
+        guard kind == "repository-page" else { return false }
+        return ["/blob/", "/tree/"].contains { url.hasPrefix(repository + $0) && url.count > repository.count + $0.count }
     }
 
     private func record(_ event: String, view: WKWebView, url: URL? = nil, detail: [String: Any] = [:]) {
@@ -4845,29 +4970,105 @@ private final class DirectedWebKitObserver: NSObject, WKNavigationDelegate {
     return {event: 'no-script'};
     """
 
-    static let clickSearchResult = """
-    const region = document.querySelector('#search, #rso, #main, main, [role=main]') || document.body;
-    for (const anchor of region.querySelectorAll('a[href]')) {
-      if (!anchor.getClientRects().length || !anchor.textContent.trim()
-          || getComputedStyle(anchor).visibility !== 'visible') continue;
+    private static let searchResultLinks = #"""
+    const visible = el => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(el).visibility === 'visible'
+        && (!el.checkVisibility || el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}));
+    };
+    const webURL = raw => {
       try {
-        const href = new URL(anchor.href, location.href);
-        if (href.origin !== location.origin && href.origin !== 'https://github.com') continue;
-        const destination = href.origin === location.origin && href.pathname === '/url'
-          ? new URL(href.searchParams.get('q') || href.searchParams.get('url') || '') : href;
-        const path = destination.pathname.toLowerCase();
-        if (destination.origin !== 'https://github.com'
-            || !['/gcsagroup/aegis-browser', '/quinn521/aegis-browser'].includes(path)
-            || destination.username || destination.password) continue;
-        setTimeout(() => anchor.click(), 0);
-        return destination.origin + destination.pathname;
-      } catch (_) {}
+        const url = new URL(raw);
+        return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url : null;
+      } catch (_) { return null; }
+    };
+    const resultRegion = document.querySelector('#rso') || document.querySelector('#search');
+    const region = resultRegion || document.querySelector('#main, main, [role=main]') || document.body;
+    const googleSearch = ['https://www.google.com.hk', 'https://www.google.com'].includes(location.origin)
+      && location.pathname === '/search';
+    const results = [];
+    const seen = new Set();
+    for (const anchor of region.querySelectorAll('a[href]')) {
+      const href = webURL(anchor.href);
+      if (!href || !visible(anchor)) continue;
+      const heading = anchor.querySelector('h3, [role=heading]');
+      if (googleSearch && !resultRegion && !heading) continue;
+      const label = anchor.innerText.trim();
+      const title = heading?.innerText.trim() || label;
+      if (!title) continue;
+      let target = href;
+      let fromCitation = false;
+      if (googleSearch && href.origin === location.origin && ['/url', '/goto'].includes(href.pathname)) {
+        const raw = href.searchParams.get('url') || (href.pathname === '/url' && href.searchParams.get('q'));
+        target = webURL(raw);
+        // Mobile /goto can carry an opaque value. Read the displayed source above the result heading.
+        if (!target && raw && href.pathname === '/goto' && !/^(?:[a-z][\w+.-]*:|\/\/)/i.test(raw.trim())
+            && heading && visible(heading)) {
+          const attribution = label.slice(0, label.indexOf(title));
+          target = webURL(attribution.match(/https?:\/\/[^\s›…]+/i)?.[0]);
+          fromCitation = true;
+        }
+      }
+      if (!target || /(^|\.)google\.(com|com\.hk|cn)$/.test(target.hostname)
+          || /(^|\.)(gstatic|googleusercontent)\.com$/.test(target.hostname)) continue;
+      const key = fromCitation ? target.origin + ' ' + title : target.href;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      let repository = null;
+      let kind = null;
+      if (target.origin === 'https://github.com') {
+        const lowerTitle = title.toLowerCase();
+        const destinationPath = target.pathname.toLowerCase();
+        for (const owner of ['gcsagroup', 'quinn521']) {
+          const path = '/' + owner + '/aegis-browser';
+          const namedRoot = [owner + '/aegis-browser', 'aegis-browser - ' + owner].includes(lowerTitle);
+          const namedPage = /^aegis-browser\/.+ at \S+/.test(lowerTitle)
+            && (lowerTitle.endsWith(' - ' + owner) || (owner === 'gcsagroup' && !lowerTitle.includes(' - ')));
+          const linkedPage = ['/blob/', '/tree/'].some(prefix => destinationPath.startsWith(path + prefix));
+          if (fromCitation ? namedRoot : destinationPath === path) {
+            repository = target.origin + (fromCitation ? path : target.pathname);
+            kind = 'repository-root';
+            break;
+          }
+          if (fromCitation ? namedPage : linkedPage) {
+            repository = target.origin + path;
+            kind = 'repository-page';
+            break;
+          }
+        }
+      }
+      results.push({anchor, title, host: target.hostname, link: href.origin + href.pathname, repository, kind});
     }
-    return null;
+    """#
+
+    static let clickSearchResult = searchResultLinks + """
+
+    const result = results.find(r => r.kind === 'repository-root') || results.find(r => r.kind === 'repository-page');
+    if (!result) return null;
+    const {anchor, title, link, repository, kind} = result;
+    anchor.scrollIntoView({block: 'center'});
+    anchor.click();
+    return {title, link, repository, kind};
+    """
+
+    static let searchSnapshot = searchResultLinks + """
+
+    const query = new URL(location.href).searchParams.get('q');
+    return {
+      query: query === expectedQuery ? query : null,
+      queryPreserved: query === expectedQuery,
+      visibleSearchField: Array.from(document.querySelectorAll('[name=q]')).some(el => el.value === query && visible(el)),
+      titleContainsQuery: !!(query && document.title.toLowerCase().includes(query.toLowerCase())),
+      visibleExternalLinks: results.length,
+      visibleResults: googleSearch ? results.slice(0, 12).map(r => ({host: r.host, title: r.title.slice(0, 160)})) : [],
+      legacyHeadings: document.querySelectorAll('#search a h3, #rso a h3').length,
+      hasVerificationForm: !!document.querySelector('form[action*="/sorry"], iframe[src*="recaptcha"]'),
+      hasConsentForm: !!document.querySelector('form[action*="consent.google."]')
+    };
     """
 
     static let resourceSnapshot = """
-    (() => {
+    return (() => {
       const clean = raw => {
         try {
           if (!raw) return '';
@@ -4877,33 +5078,7 @@ private final class DirectedWebKitObserver: NSObject, WKNavigationDelegate {
       };
       return {
         url: clean(location.href), ready: document.readyState,
-        searchContent: (() => {
-          const query = new URL(location.href).searchParams.get('q');
-          const region = document.querySelector('#search, #rso, #main, main, [role=main]') || document.body;
-          const isExternal = raw => {
-            try {
-              const u = new URL(raw, location.href);
-              const target = u.origin === location.origin && u.pathname === '/url'
-                ? new URL(u.searchParams.get('q') || u.searchParams.get('url') || '') : u;
-              return ['http:', 'https:'].includes(target.protocol)
-                && !/(^|\\.)google\\.(com|com\\.hk|cn)$/.test(target.hostname)
-                && !/(^|\\.)(gstatic|googleusercontent)\\.com$/.test(target.hostname);
-            } catch (_) { return false; }
-          };
-          const outbound = new Set(Array.from(region.querySelectorAll('a[href]'))
-            .filter(a => a.getClientRects().length > 0 && a.textContent.trim().length > 2 && isExternal(a.href))
-            .map(a => a.href));
-          return {
-            queryPreserved: query === 'Aegis Browser',
-            visibleSearchField: Array.from(document.querySelectorAll('[name=q]'))
-              .some(x => x.value === query && x.getClientRects().length > 0),
-            titleContainsQuery: !!(query && document.title.toLowerCase().includes(query.toLowerCase())),
-            visibleExternalLinks: outbound.size,
-            legacyHeadings: document.querySelectorAll('#search a h3, #rso a h3').length,
-            hasVerificationForm: !!document.querySelector('form[action*="/sorry"], iframe[src*="recaptcha"]'),
-            hasConsentForm: !!document.querySelector('form[action*="consent.google."]')
-          };
-        })(),
+        searchContent: (() => { \(searchSnapshot) })(),
         imagesLoaded: Array.from(document.images).filter(i => i.complete && i.naturalWidth > 0)
            .map(i => clean(i.currentSrc || i.src)).filter(Boolean).slice(0, 100),
         events: window.__aegisDirected || [],

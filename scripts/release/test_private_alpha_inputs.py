@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import plistlib
 import stat
 import subprocess
 import sys
@@ -88,16 +89,18 @@ class PrivateAlphaInputsTests(unittest.TestCase):
         source.write_bytes(json.dumps(LIST, ensure_ascii=False).encode())
         source.chmod(0o600)
         target = self.root / NODES
-        result = self.hook('alpha', source, target)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(target.read_bytes()), LIST)
+        for channel in ('dev', 'alpha'):
+            result = self.hook(channel, source, target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(target.read_bytes()), LIST)
         for channel in ('alpha', 'dev', 'beta', 'release'):
             target.write_text('stale')
             self.assertEqual(self.hook(channel, '/dev/null', target).returncode, 0)
             self.assertFalse(target.exists())
-        target.write_text('stale')
-        self.assertNotEqual(self.hook('beta', source, target).returncode, 0)
-        self.assertFalse(target.exists())
+        for channel in ('beta', 'release'):
+            target.write_text('stale')
+            self.assertNotEqual(self.hook(channel, source, target).returncode, 0)
+            self.assertFalse(target.exists())
 
     def test_stage_admits_mixed_tls_routes_and_rejects_cross_account_password(self):
         def vmess(network, cipher='auto'):
@@ -152,7 +155,7 @@ class PrivateAlphaInputsTests(unittest.TestCase):
             with self.subTest(case=type(nodes).__name__, count=len(nodes)):
                 source.write_text(json.dumps(nodes))
                 result = self.hook('alpha', source, target)
-                self.assertIn('private Alpha', result.stderr)
+                self.assertIn('Cannot package the private node list', result.stderr)
                 self.assertNotIn(UID, result.stderr + result.stdout)
                 self.assertFalse(target.exists())
         source.write_text(json.dumps(LIST))
@@ -499,3 +502,71 @@ class PrivateAlphaInputsTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 alpha.main()
             upload.assert_not_called()
+
+
+class PairedProbeReceiptRecoveryTests(unittest.TestCase):
+    def test_receipts_use_the_selected_bundled_host_container(self):
+        probe = RELEASE.parents[1] / 'apps/ios/scripts/paired-probe/run-targeted.py'
+        cases = [
+            ('dev', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit'),
+            ('alpha', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-alpha-node', '--search-only', 'webkit'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-test-node', '--tls-only', 'tls'),
+            ('dev', 'com.gcsa.aegis', None, '--search-only', 'webkit'),
+        ]
+        for channel, bundle_id, flag, mode, result_name in cases:
+            with self.subTest(channel=channel, bundle_id=bundle_id, flag=flag, mode=mode), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                products = root / 'products'
+                app = products / 'Aegis.app'
+                app.mkdir(parents=True)
+                (app / 'Info.plist').write_bytes(plistlib.dumps({
+                    'AegisAccessReleaseChannel': channel,
+                    'AegisReleaseProfile': channel,
+                    'CFBundleIdentifier': bundle_id,
+                }))
+                (app / NODES).write_text(json.dumps([LIST[2]]))
+                template = products / 'Aegis.xctestrun'
+                template.write_bytes(plistlib.dumps({'AegisTests': {'TestHostPath': '__TESTROOT__/Aegis.app'}}))
+                node_file = root / 'node.txt'
+                node_file.write_text(LIST[2] + '\n')
+
+                bin_dir = root / 'bin'
+                bin_dir.mkdir()
+                xcodebuild = bin_dir / 'xcodebuild'
+                xcodebuild.write_text('#!/bin/sh\nexit 0\n')
+                xcodebuild.chmod(0o755)
+                xcrun = bin_dir / 'xcrun'
+                xcrun.write_text('''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+
+arguments = sys.argv[1:]
+if not arguments or arguments[0] != 'devicectl':
+    raise SystemExit(1)
+bundle_id = arguments[arguments.index('--domain-identifier') + 1]
+Path(os.environ['PROBE_COPY_RECORD']).write_text(bundle_id)
+if bundle_id != os.environ['PROBE_EXPECTED_BUNDLE_ID']:
+    raise SystemExit(1)
+Path(arguments[arguments.index('--destination') + 1]).write_text('[]')
+''')
+                xcrun.chmod(0o755)
+                copy_record = root / 'copy-record'
+                env = {
+                    'PATH': os.pathsep.join((str(bin_dir), str(Path(sys.executable).parent), os.defpath)),
+                    'HOME': str(root),
+                    'AEGIS_PROBE_OUTPUT': str(root / 'output'),
+                    'AEGIS_PROBE_XCTESTRUN': str(template),
+                    'AEGIS_PROBE_DEVICE': 'fixture-device',
+                    'AEGIS_PROBE_NODE_FILE': str(node_file),
+                    'PROBE_COPY_RECORD': str(copy_record),
+                    'PROBE_EXPECTED_BUNDLE_ID': bundle_id,
+                }
+                arguments = [sys.executable, '-B', str(probe), mode]
+                if flag:
+                    arguments.append(flag)
+                result = subprocess.run(arguments, env=env, capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(copy_record.read_text(), bundle_id)
+                self.assertEqual(json.loads(result.stdout)[result_name], 0)

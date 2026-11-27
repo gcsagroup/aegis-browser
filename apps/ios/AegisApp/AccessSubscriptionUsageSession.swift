@@ -209,8 +209,14 @@ final class AccessSubscriptionUsageSession: ObservableObject {
     static func product(bundle: Bundle = .main, usesAlphaNodes: Bool = false,
                         alphaRoutes: [AccessInternalTestNode] = []) -> AccessSubscriptionUsageSession {
         let channel = bundle.object(forInfoDictionaryKey: "AegisAccessReleaseChannel") as? String
-        guard ["dev", "alpha", "beta"].contains(channel ?? ""),
-              let path = AccessLocalV2RayConfigLoader.productPath(bundle: bundle) else {
+        guard ["dev", "alpha", "beta"].contains(channel ?? "") else {
+            return .init(isSelected: false, configuration: nil)
+        }
+        // A bundled list and its quota must use the same signed anchor, including on Dev.
+        let anchor = usesAlphaNodes
+            ? bundle.url(forResource: "AegisPrivateTestNode", withExtension: "vless")?.path
+            : AccessLocalV2RayConfigLoader.productPath(bundle: bundle)
+        guard let path = anchor else {
             return .init(isSelected: false, configuration: nil)
         }
         let config: AccessSubscriptionConfiguration?
