@@ -12,6 +12,8 @@ import tempfile
 from uuid import uuid4
 from urllib.parse import parse_qs,urlsplit
 
+from certificate_san import dns_subject_alternative_names
+
 
 def bundled_test_uri(app, info):
     """Read only for output redaction. XCTest reads the signed resource itself."""
@@ -133,21 +135,14 @@ def extract_dns_sans(value):
         if not trust:
             continue
         certificate = trust.pop("leafDER", None)
-        if certificate:
-            parsed = subprocess.run(
-                ["/usr/bin/openssl", "x509", "-inform", "DER", "-noout", "-text"],
-                input=base64.b64decode(certificate, validate=True), capture_output=True, timeout=5,
-            )
-            san = re.search(
-                rb"(?m)^([ \t]+)X509v3 Subject Alternative Name:[ \t]*(?:critical)?[ \t]*\n\1[ \t]+([^\r\n]+)",
-                parsed.stdout if parsed.returncode == 0 else b"",
-            )
-            names = san.group(2).split(b", ") if san else []
-            trust["dnsSANs"] = [
-                name[4:].decode("ascii") for name in names
-                if re.fullmatch(rb"DNS:(?:\*\.)?[A-Za-z0-9.-]+", name)
-            ]
-            trust["certificateParsed"] = parsed.returncode == 0
+        if certificate is not None:
+            try:
+                trust["dnsSANs"] = dns_subject_alternative_names(base64.b64decode(certificate, validate=True))
+            except (TypeError, ValueError):
+                trust["dnsSANs"] = []
+                trust["certificateParsed"] = False
+            else:
+                trust["certificateParsed"] = True
 
 
 with tempfile.TemporaryDirectory(prefix="aegis-directed-private-") as temp_dir:

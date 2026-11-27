@@ -522,9 +522,8 @@ launch = subprocess.Popen
 
 def launch_fixture(command, *args, **kwargs):
     executable = command[0]
-    assert executable in ("/usr/bin/xcodebuild", "/usr/bin/xcrun", "/usr/bin/openssl"), command
-    if executable == "/usr/bin/openssl":
-        return launch(command, *args, **kwargs)
+    if executable not in ("/usr/bin/xcodebuild", "/usr/bin/xcrun"):
+        raise AssertionError(command)
     return launch([str(fixture_tools / Path(executable).name), *command[1:]], *args, **kwargs)
 
 sys.argv = sys.argv[1:]
@@ -564,18 +563,23 @@ with patch.object(subprocess, "Popen", side_effect=launch_fixture):
                 node_file.write_text(LIST[2] + '\n')
 
                 certificate = root / 'leaf.der'
+                no_san_certificate = root / 'no-san.der'
                 if source == 'comparison':
                     config = root / 'fixture.cnf'
-                    config.write_text(
-                        '[req]\nprompt = no\ndistinguished_name = dn\nx509_extensions = ext\n'
+                    certificate_config = (
+                        '[req]\nprompt = no\ndistinguished_name = dn\n{x509_extensions}'
                         '[dn]\nCN = DNS:unrelated.example\n'
-                        '[ext]\nsubjectAltName = DNS:fixture.example,DNS:*.fixture.example,IP:192.0.2.1\n'
+                        '[ext]\nsubjectAltName = @san\n'
+                        '[san]\nDNS.1 = fixture.example\nDNS.2 = *.fixture.example\nIP.1 = 192.0.2.1\n'
+                        'URI.1 = "https://fixture.example/, DNS:unrelated.example"\n'
                     )
-                    subprocess.run(
-                        ['/usr/bin/openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
-                         '-config', str(config), '-outform', 'DER', '-out', str(certificate), '-keyout', os.devnull],
-                        check=True, capture_output=True, timeout=10,
-                    )
+                    for cert_path, extensions in ((certificate, 'x509_extensions = ext\n'), (no_san_certificate, '')):
+                        config.write_text(certificate_config.format(x509_extensions=extensions))
+                        subprocess.run(
+                            ['/usr/bin/openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                             '-config', str(config), '-outform', 'DER', '-out', str(cert_path), '-keyout', os.devnull],
+                            check=True, capture_output=True, timeout=10,
+                        )
 
                 bin_dir = root / 'bin'
                 bin_dir.mkdir()
@@ -604,8 +608,15 @@ if bundle_id != os.environ['PROBE_EXPECTED_BUNDLE_ID']:
 payload = []
 if os.environ.get('PROBE_COMPARISON'):
     certificate = Path(os.environ['PROBE_CERTIFICATE']).read_bytes()
-    trust = {"leafDER": base64.b64encode(certificate).decode("ascii")}
-    payload = {"samples": [{"proxy": {"serverTrust": trust}}], "preflight": {}}
+    no_san = Path(os.environ['PROBE_NO_SAN_CERTIFICATE']).read_bytes()
+    malformed = certificate.replace(b"\\x82\\x0ffixture.example", b"\\x82\\xfffixture.example", 1)
+    if malformed == certificate:
+        raise AssertionError("Expected a dNSName to corrupt")
+    samples = []
+    for leaf in (certificate, no_san, malformed):
+        trust = {"leafDER": base64.b64encode(leaf).decode("ascii")}
+        samples.append({"proxy": {"serverTrust": trust}})
+    payload = {"samples": samples, "preflight": {}}
 Path(arguments[arguments.index('--destination') + 1]).write_text(json.dumps(payload))
 ''')
                 xcrun.chmod(0o755)
@@ -635,7 +646,7 @@ Path(arguments[arguments.index('--destination') + 1]).write_text(json.dumps(payl
                         (output / comparison_run).mkdir()
                     env.update(AEGIS_COMPARISON_NODE_FILE=str(node_file), AEGIS_COMPARISON_RUN=comparison_run,
                                AEGIS_COMPARISON_PROXY_COUNTRY='US', PROBE_COMPARISON='1',
-                               PROBE_CERTIFICATE=str(certificate))
+                               PROBE_CERTIFICATE=str(certificate), PROBE_NO_SAN_CERTIFICATE=str(no_san_certificate))
                 if source == 'invalid-device':
                     env['AEGIS_PROBE_DEVICE'] = 'fixture-device,platform=iOS Simulator'
                 probe = probes / ('run-device.py' if source in {'paired', 'invalid-device'} else 'run-targeted.py')
@@ -664,11 +675,12 @@ Path(arguments[arguments.index('--destination') + 1]).write_text(json.dumps(payl
                 if source == 'paired':
                     self.assertEqual(set(summary['recoveredCounts'].values()), {0})
                 elif source == 'comparison':
-                    self.assertEqual(summary[result_name], 1)
+                    self.assertEqual(summary[result_name], 3)
                     receipt = json.loads((output / comparison_run / 'tls.json').read_text())
-                    self.assertEqual(receipt['samples'][0]['proxy']['serverTrust'], {
-                        'dnsSANs': ['fixture.example', '*.fixture.example'],
-                        'certificateParsed': True,
-                    })
+                    self.assertEqual([sample['proxy']['serverTrust'] for sample in receipt['samples']], [
+                        {'dnsSANs': ['fixture.example', '*.fixture.example'], 'certificateParsed': True},
+                        {'dnsSANs': [], 'certificateParsed': True},
+                        {'dnsSANs': [], 'certificateParsed': False},
+                    ])
                 else:
                     self.assertEqual(summary[result_name], 0)
