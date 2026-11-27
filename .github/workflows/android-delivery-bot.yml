@@ -10,11 +10,11 @@ on:
         default: Status
       version:
         type: string
-        description: Product version, for example 7.2.0.339
+        description: Product version, for example 0.8.0
         required: true
       build:
         type: string
-        description: Exact versionCode, for example 2007000339
+        description: Exact versionCode, for example 1
         required: true
       product:
         type: choice

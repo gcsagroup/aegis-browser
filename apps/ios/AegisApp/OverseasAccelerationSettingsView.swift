@@ -25,11 +25,12 @@ struct OverseasAccelerationSettingsView: View {
                 let state = hostStores.overseasSettings
                 Section {
                     if state.selection.enabled {
-                        Text(state.ready ? "已启用" : "连接暂不可用")
+                        Text(state.remotelyPaused ? "海外加速已暂停。" : (state.ready ? "已启用" : "连接暂不可用"))
                         if state.ready, state.ceiling == nil,
                            let policy = state.pendingPolicy ?? state.policy, let tag = state.pendingTag ?? state.activeTag {
                             NavigationLink("当前保护范围") {
-                                OverseasScopeDetails(version: tag, policy: policy)
+                                OverseasScopeDetails(version: state.bundledTag ?? tag, policy: policy,
+                                                     bundled: state.usingBundledRules)
                                     .localizedNavigationTitle("当前保护范围")
                             }
                         }
@@ -40,27 +41,16 @@ struct OverseasAccelerationSettingsView: View {
                             .accessibilityIdentifier("overseas-disabled")
                     }
                     if state.awaitingExpansion { Text("等待确认") }
+                    if state.usingBundledRules { Text("已使用内置规则。") }
                     if state.unsaved { Text("设置未保存，请重试。") }
                 } footer: {
                     Text("按网站主机选择连接。页面内资源可能共用该连接。本站选择优先。")
                 }
                 if let preview = hostStores.overseasPreview {
                     selectionControls(preview)
-                } else {
-                    Section {
-                        Button("获取官方规则", action: requestRules)
-                            .disabled(!hostStores.canFetchOverseasPreview)
-                            .accessibilityIdentifier("overseas-fetch-rules")
-                        if isWaitingForRules {
-                            Text(state.refreshFailed ? "下载失败" : "正在更新规则…")
-                        }
-                        if state.previewRequested && !state.selection.enabled {
-                            Button("取消") {
-                                hostStores.cancelOverseasPreview(for: tab)
-                                isWaitingForRules = false
-                            }
-                        }
-                    }
+                    if preview.bundled { onlineRulesSection(state) }
+                } else if !state.remotelyPaused {
+                    onlineRulesSection(state)
                 }
                 if let message { Section { Text(message).foregroundStyle(.secondary) } }
                 if !hostStores.offersLocationService { Section { Text("加速服务未配置。") } }
@@ -83,6 +73,7 @@ struct OverseasAccelerationSettingsView: View {
             let offer = confirmation.offer
             NavigationStack {
                 OverseasScopeDetails(version: offer.release, policy: offer.policy,
+                                     bundled: offer.bundled,
                                      addedRules: offer.newRules, removedExclusions: offer.removedExclusions)
                     .localizedNavigationTitle(offer.selection.mode == .all ? "全部名单" : "分类范围")
                     .toolbar {
@@ -99,8 +90,26 @@ struct OverseasAccelerationSettingsView: View {
         }
     }
 
+    private func onlineRulesSection(_ state: AccessGeoSiteCache.OverseasView) -> some View {
+        Section {
+            Button("获取官方规则", action: requestRules)
+                .disabled(!hostStores.canFetchOverseasPreview || state.previewRequested)
+                .accessibilityIdentifier("overseas-fetch-rules")
+            if isWaitingForRules {
+                Text(state.refreshFailed ? "下载失败" : "正在更新规则…")
+            }
+            if state.previewRequested && !state.selection.enabled {
+                Button("取消") {
+                    hostStores.cancelOverseasPreview(for: tab)
+                    isWaitingForRules = false
+                }
+            }
+        }
+    }
+
     private func selectionControls(_ preview: AccessGeoSiteCache.OverseasPreview) -> some View {
         Section {
+            if preview.bundled { Text("内置规则") }
             Picker("加速范围", selection: $mode) {
                 Text("按分类").tag(AccessOverseasSelection.Mode.categories)
                 Text("全部名单").tag(AccessOverseasSelection.Mode.all)
@@ -114,6 +123,7 @@ struct OverseasAccelerationSettingsView: View {
             }
             NavigationLink {
                 OverseasScopeDetails(version: preview.release, policy: preview.fullPolicy,
+                                     bundled: preview.bundled,
                                      counts: preview.catalogue.counts, projections: preview.catalogue.hosts,
                                      unused: preview.catalogue.unusedRules)
                     .localizedNavigationTitle("全部名单")
@@ -206,6 +216,7 @@ struct OverseasAccelerationSettingsView: View {
 private struct OverseasScopeDetails: View {
     let version: String
     let policy: AccessOverseasCatalogue.Policy
+    var bundled = false
     var counts: AccessOverseasCatalogue.Counts?
     var projections: [AccessOverseasCategory: Set<String>] = [:]
     var unused: [AccessOverseasCatalogue.UnusedRule] = []
@@ -217,6 +228,7 @@ private struct OverseasScopeDetails: View {
         List {
             Section {
                 LabeledContent("版本", value: version)
+                if bundled { Text("内置规则") }
                 if let counts {
                     LabeledContent("来源规则", value: counts.source.formatted())
                     LabeledContent("通过主机校验", value: counts.admitted.formatted())

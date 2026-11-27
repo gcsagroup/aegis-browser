@@ -27,6 +27,9 @@ function fixture({admins = [admin(original)], trigger = original, runChanges = {
 
 test('a current Admin can admit Android delivery on main', async () => {
   const {requireAndroidAdministrator, validAndroidCoordinate} = await load();
+  assert.equal(validAndroidCoordinate('0.8.0', '1'), true);
+  assert.equal(validAndroidCoordinate('0.8.0', '2007000345'), true);
+  assert.equal(validAndroidCoordinate('0.08.0', '1'), false);
   assert.equal(validAndroidCoordinate('7.2.0.339', '2007000339'), true);
   assert.equal(validAndroidCoordinate('6.1.0.266', '2006000266'), true);
   assert.equal(validAndroidCoordinate('7.2.0.339', '2007000340'), false);

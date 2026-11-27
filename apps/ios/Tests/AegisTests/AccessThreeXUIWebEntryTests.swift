@@ -40,6 +40,40 @@ final class AccessThreeXUIWebEntryTests: XCTestCase {
         XCTAssertNil(invalid.selectedIndex)
     }
 
+    func testMixedAlphaCatalogueAuthorizesOnlyTheSubscriptionPublishedRoute() async throws {
+        let (defaults, suite) = try isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let trojan = "trojan://\(userID)@first.example:443?sni=first.example"
+        let vmessJSON = try JSONEncoder().encode(["id": userID, "add": "second.example", "port": "443",
+                                                   "net": "ws", "tls": "tls", "scy": "auto"])
+        let vmess = "vmess://" + vmessJSON.base64EncodedString()
+        let hysteria = "hysteria2://\(userID)@third.example:443?sni=third.example&alpn=h3"
+        let data = try JSONEncoder().encode([trojan, vmess, hysteria])
+        let catalogue = alphaCatalogue(data: data, defaults: defaults)
+        XCTAssertEqual(catalogue.entries.map(\.protocolName), [
+            "Trojan / TCP / TLS", "VMess / WS / TLS", "Hysteria2 / QUIC / TLS",
+        ])
+        let changedPassword = trojan.replacingOccurrences(of: userID, with: userID.uppercased())
+        let foreign = hysteria.replacingOccurrences(of: userID, with: "550e8400-e29b-41d4-a716-446655440001")
+        let published = Data([changedPassword, vmess, foreign].joined(separator: "\n").utf8)
+        let fixture = ThreeXUIEntryFixture(userID: userID)
+        let usage = AccessSubscriptionUsageSession(
+            isSelected: true, configuration: configuration(), managesConnections: true,
+            nodeUserID: userID, fetchAlphaNodes: { _, id in
+                try AccessSubscriptionClient.parseAlphaNodes(published, userID: id)
+            }, alphaRoutes: catalogue.routes, fetch: { config in try await fixture.usage(config) }
+        )
+        usage.setActive(true)
+        defer { usage.setActive(false) }
+        await usage.refresh()?.value
+        XCTAssertEqual(usage.availableAlphaRouteIDs, [1])
+        XCTAssertFalse(usage.isAlphaRouteSelectable(0))
+        XCTAssertTrue(usage.isAlphaRouteSelectable(1))
+        XCTAssertFalse(usage.isAlphaRouteSelectable(2))
+        try await usage.authorizeAlphaNode(catalogue.routes[1])
+        XCTAssertTrue(usage.permitsExistingConnection)
+    }
+
     func testAlphaCatalogueRejectsDuplicateParsedRoutes() throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

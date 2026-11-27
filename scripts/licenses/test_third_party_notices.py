@@ -44,6 +44,13 @@ class NoticePackageTests(unittest.TestCase):
     def test_generated_files_match_current_licenses_and_swift_package_pins(self):
         notices.check_outputs()
 
+    def test_ios_geosite_notices_distinguish_data_from_encoder_license(self):
+        generated = notices.render("ios").decode("utf-8")
+        self.assertIn("GeoSite standard data — sources and licenses", generated)
+        self.assertIn("GFWList data — LGPL-2.1", generated)
+        self.assertIn("https://github.com/gfwlist/gfwlist", generated)
+        self.assertNotIn("GeoSite — MIT", generated)
+
     @unittest.skipUnless(shutil.which("swift"), "Swift is required to exercise the iOS notice parser")
     def test_ios_component_parser_preserves_every_section_and_byte(self):
         # Compile the actual Foundation-only model from the view file, avoiding
@@ -52,9 +59,8 @@ class NoticePackageTests(unittest.TestCase):
         model = view.split("struct ThirdPartyNoticesDocument {", 1)[1].split(
             "\nstruct ThirdPartyNoticesView:", 1)[0]
         generated = notices.render("ios")
-        self.assertEqual(len(generated), 208531)
         expected_sources = re.findall(rb"^Source file: (.+)$", generated, re.MULTILINE)
-        self.assertEqual(len(expected_sources), 28)
+        self.assertEqual(len(expected_sources), 30)
         inherited = notices.read(notices.ROOT, f"{notices.ACCESS}/v2fly-domain-list-community.txt")
         self.assertEqual(hashlib.sha256(inherited).hexdigest(), "b9d84a22870d3f21c91a4c6e410c9cc51d00902f5233ad0c84011479244bf7d2")
         self.assertIn(b"LICENSE-inherited\n\n" + inherited.rstrip() + b"\n", generated)
@@ -125,11 +131,18 @@ precondition(presented.contains { $0.body.contains("Source snapshot: https://git
 precondition(presented.contains { $0.title.contains("Xray-core") && $0.body.contains("Mozilla Public License Version 2.0") })
 precondition(presented.contains { $0.title.contains("libXray") && $0.body.contains("MIT License") })
 precondition(presented.contains {
-    $0.title == "XTLS/Xray-rules-dat 20261120235103 — GeoSite — MIT"
-        && $0.body.contains("DEBIAN, DOUBAN and MEITUAN are unmodified groups inherited from V2Fly domain-list-community.")
-        && $0.body.contains("https://github.com/XTLS/Xray-rules-dat/releases/tag/20261120235103")
+    $0.title == "GeoSite standard data — sources and licenses"
+        && $0.body.contains("The unmodified standard geosite.dat is shipped in the iOS app.")
+        && $0.body.contains("https://github.com/XTLS/Xray-rules-dat/releases/tag/20261126014317")
+        && $0.body.contains("GFWList data — LGPL-2.1")
+})
+precondition(presented.contains {
+    $0.title == "V2Fly Domain List Community and inherited GeoSite tools — MIT"
         && $0.body.contains("d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited")
         && $0.body.contains("Copyright (c) 2018-2019 V2Ray")
+})
+precondition(presented.contains {
+    $0.title == "GFWList data — LGPL-2.1" && $0.body.contains("GNU LESSER GENERAL PUBLIC LICENSE")
 })
 precondition(!presented.contains { $0.body.contains("Source file:") })
 

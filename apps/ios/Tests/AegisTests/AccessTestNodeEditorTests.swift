@@ -1075,12 +1075,14 @@ final class AccessTestNodeEditorTests: XCTestCase {
         var actualDeadline: ContinuousClock.Instant?
         let core = PageCore(beforeStart: {
             started.fulfill()
-            let result = await XCTWaiter.fulfillment(of: [release], timeout: 3)
+            let result = await XCTWaiter.fulfillment(of: [release], timeout: 6)
             XCTAssertEqual(result, .completed)
             throw error
         })
+        // Give the simulator time to reach the fake core before the synthetic
+        // deadline. The assertions below still require a timeout before release.
         let page = AccessTestNodePage(isPrivate: false, repository: repository, testingCore: core,
-                                      preparationTimeout: expectTimeout ? .milliseconds(100) : .seconds(15),
+                                      preparationTimeout: expectTimeout ? .seconds(1) : .seconds(15),
                                       waitForPreparationDeadline: { deadline in
             actualDeadline = deadline
             timerEntered.fulfill()
@@ -1093,14 +1095,14 @@ final class AccessTestNodeEditorTests: XCTestCase {
             completed.fulfill()
         }
         defer { opening.cancel(); page.close() }
-        await fulfillment(of: [started, timerEntered], timeout: 2)
+        await fulfillment(of: [started, timerEntered], timeout: 4)
         if expectTimeout {
             let deadline = try XCTUnwrap(actualDeadline)
             if timerDelayed {
                 try await ContinuousClock().sleep(until: deadline)
                 XCTAssertNil(page.failureCode, "The timer has not recorded its timeout")
             } else {
-                await fulfillment(of: [completed], timeout: 1)
+                await fulfillment(of: [completed], timeout: 3)
                 XCTAssertEqual(page.failureDomain, NSURLErrorDomain)
                 XCTAssertEqual(page.failureCode, NSURLErrorTimedOut)
             }

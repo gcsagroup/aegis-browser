@@ -38,6 +38,9 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     private let geoSiteTransport: AccessGeoSiteUpdateTransport?
     private var geoSiteForegroundWindows: [UUID: UUID] = [:]
     private var geoSiteRefresh: (context: AccessGeoSiteCache.Context, task: Task<Void, Never>)?
+    private var geoSiteRemoteTask: Task<Void, Never>?
+    private var geoSiteRemoteRetryAfter: Date?
+    private let geoSiteRemoteSource: AccessGeoSiteRemoteSource?
     private static let geoSiteRetry: [TimeInterval] = [60, 300, 1_800, 21_600]
     @Published private(set) var websiteAccelerationMode: AccessWebsiteAccelerationMode = .manual
     @Published private(set) var overseasAccelerationEnabled = false
@@ -102,6 +105,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         websiteRoutePolicy: AccessWebsiteRoutePolicy = AccessWebsiteRoutePolicy(),
         geoSiteCache: AccessGeoSiteCache? = nil,
         geoSiteTransport: AccessGeoSiteUpdateTransport? = nil,
+        geoSiteRemoteSource: AccessGeoSiteRemoteSource? = nil,
         registry: AccessHostDataStoreRegistry = AccessHostDataStoreRegistry(),
         overseasRules: AccessOverseasRuleList? = nil
     ) {
@@ -116,6 +120,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         self.websiteRoutePolicy = websiteRoutePolicy
         self.geoSiteCache = self.supportsWebsiteAcceleration ? geoSiteCache : nil
         self.geoSiteTransport = self.geoSiteCache == nil ? nil : geoSiteTransport
+        self.geoSiteRemoteSource = self.geoSiteCache == nil ? nil : geoSiteRemoteSource
         geoSiteView = self.geoSiteCache?.view
         if self.supportsWebsiteAcceleration, self.geoSiteCache == nil {
             if let stored = locationPreferences?.data(forKey: Self.overseasListKey) {
@@ -169,8 +174,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         }
         if let cache = self.geoSiteCache {
             cache.onChange = { [weak self] view in self?.applyGeoSiteView(view) }
-            let migration = AccessGeoSiteCache.Selection(mode: websiteAccelerationMode, categories: selectedWebsiteCategories)
-            geoSiteRestoreTask = Task { await cache.restore(migrating: migration) }
+            restoreGeoSiteCache(cache)
         }
     }
 
@@ -179,6 +183,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         sweepTask?.cancel()
         geoSiteRestoreTask?.cancel()
         geoSiteRefresh?.task.cancel()
+        geoSiteRemoteTask?.cancel()
         timeoutTasks.values.forEach { $0.cancel() }
         probeTasks.values.forEach { $0.cancel() }
     }
@@ -209,6 +214,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             checkpointGeoSiteClock()
         } else {
             geoSiteForegroundWindows[window] = nil
+            if geoSiteForegroundWindows.isEmpty { geoSiteRemoteTask?.cancel() }
             if let geoSiteTransport { reconcileGeoSiteRefresh(using: geoSiteTransport) }
         }
     }
@@ -241,6 +247,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         let prior = cache.refreshState
         var attempting = prior
         attempting.lastRequest = now
+        attempting.checkedAt = nil
         attempting.nextAttempt = now.addingTimeInterval(Self.geoSiteRetry[min(prior.failureCount, 3)])
         do { try cache.setRefreshState(attempting, using: context) }
         catch { return }
@@ -254,8 +261,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                                                   includeOverseas: cache.wantsOverseasRules) { admitted in
                 try? await cache.apply(admitted, using: context) { false }
             }
-            var refreshed = AccessGeoSiteCache.RefreshState(nextAttempt: cache.effectiveTime.addingTimeInterval(86_400),
-                                                            lastRequest: now)
+            var refreshed = AccessGeoSiteCache.RefreshState(lastRequest: now, checkedAt: cache.effectiveTime)
             switch result {
             case .candidate(let candidate, let etag):
                 refreshed.etag = etag
@@ -283,12 +289,41 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
 
     func checkpointGeoSiteClock() {
         if let cache = geoSiteCache, cache.status == .unavailable, cache.selection == nil {
-            let migration = AccessGeoSiteCache.Selection(mode: websiteAccelerationMode, categories: selectedWebsiteCategories)
-            geoSiteRestoreTask = Task { await cache.restore(migrating: migration) }
+            restoreGeoSiteCache(cache)
         } else {
             try? geoSiteCache?.checkpointClock()
         }
         if let geoSiteTransport { reconcileGeoSiteRefresh(using: geoSiteTransport) }
+        reconcileGeoSiteRemotePolicy()
+    }
+
+    private func restoreGeoSiteCache(_ cache: AccessGeoSiteCache) {
+        let migration = AccessGeoSiteCache.Selection(mode: websiteAccelerationMode, categories: selectedWebsiteCategories)
+        let hasLegacySettings = locationPreferences?.object(forKey: Self.accelerationModeKey) != nil
+            || locationPreferences?.object(forKey: Self.accelerationCategoriesKey) != nil
+        geoSiteRestoreTask = Task { await cache.restore(migrating: migration, usesLegacyBundledConsent: hasLegacySettings) }
+    }
+
+    private func reconcileGeoSiteRemotePolicy() {
+        guard let source = geoSiteRemoteSource, let cache = geoSiteCache, geoSiteRemoteTask == nil,
+              !geoSiteForegroundWindows.isEmpty, cache.allowsRemotePolicyRefresh else { return }
+        let now = cache.effectiveTime
+        guard geoSiteRemoteRetryAfter.map({ $0 <= now }) != false,
+              cache.remoteCheckedAt.map({ now.timeIntervalSince($0) >= AccessGeoSiteRemotePolicy.checkInterval }) != false
+        else { return }
+        geoSiteRemoteTask = Task { @MainActor [weak self, weak cache] in
+            guard let self, let cache else { return }
+            defer { self.geoSiteRemoteTask = nil }
+            do {
+                let policy = try await source.load(now: now)
+                try Task.checkCancellation()
+                guard !self.geoSiteForegroundWindows.isEmpty, cache.allowsRemotePolicyRefresh else { return }
+                try cache.acceptRemotePolicy(policy)
+                self.geoSiteRemoteRetryAfter = nil
+            } catch {
+                if !Task.isCancelled { self.geoSiteRemoteRetryAfter = cache.effectiveTime.addingTimeInterval(300) }
+            }
+        }
     }
 
     private func applyGeoSiteView(_ view: AccessGeoSiteCache.View) {
@@ -319,6 +354,13 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     }
 
     var overseasSettings: AccessGeoSiteCache.OverseasView { geoSiteView?.overseas ?? .init() }
+    var geoSiteRefreshDays: Int { geoSiteView?.refreshDays ?? 3 }
+
+    func setGeoSiteRefreshDays(_ days: Int, for tab: BrowserTab) throws {
+        guard offersWebsiteAcceleration(for: tab), let geoSiteCache else { throw AccessGeoSiteCache.Failure.ineligible }
+        try geoSiteCache.setRefreshInterval(days: days)
+        if let geoSiteTransport { reconcileGeoSiteRefresh(using: geoSiteTransport) }
+    }
     var overseasPreview: AccessGeoSiteCache.OverseasPreview? { geoSiteCache?.overseasPreview }
     var canFetchOverseasPreview: Bool { geoSiteTransport != nil && geoSiteStatus == .ready }
 

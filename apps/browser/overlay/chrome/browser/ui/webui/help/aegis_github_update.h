@@ -21,8 +21,8 @@ class SimpleURLLoader;
 
 namespace aegis {
 // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
-inline constexpr char kProductVersion[] = "7.5.0.344";
-inline constexpr char kProductVersionLabel[] = "Ver 7.5 (344)";
+inline constexpr char kProductVersion[] = "7.5.0.345";
+inline constexpr char kProductVersionLabel[] = "Ver 7.5 (345)";
 inline constexpr char kReleaseAPI[] =
     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
 inline constexpr char kReleasePage[] =

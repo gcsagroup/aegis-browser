@@ -443,7 +443,7 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.equal(uninstall.windows, true);
     assert.equal(uninstall.ios, false);
     assert.equal(uninstall.integrate, true);
-    for (const file of ['apps/browser/ci-pins/android.json', 'apps/browser/args/aegis-android.gn']) {
+    for (const file of ['apps/browser/ci-pins/android.json', 'apps/browser/args/aegis-android.gn', 'apps/browser/args/android-delivery-version.json']) {
       assert.equal(pr(() => save(file, 'updated'), 'chore: change Android build input').android, true, file);
     }
     const releaseHelper = pr(() => save('fastlane/lib/ios_status.rb', 'changed'), 'docs: tidy iOS release');
@@ -465,6 +465,7 @@ test('paths select platforms and commit types select stage depth', () => {
       'scripts/release/hosted-signing.py', 'scripts/release/test_hosted_signing.py',
       'scripts/release/verify-ipa.py', 'scripts/release/test_verify_ipa.py',
       'scripts/release/test_verify_ios_dsyms.py', 'scripts/release/test_verify_signed_ios.py',
+      'scripts/release/verify-geosite-release.py', 'scripts/release/verify-bundled-geosite.swift',
       'apps/ios/scripts/run-simulator-tests.sh', 'scripts/ci/tests/ios-release.test.mjs',
       'scripts/release/fixtures/safari-icon-xcode.png', '.github/ios-public-release-tag-ruleset.json',
       'scripts/release/cloud-archive.py', 'scripts/release/test_cloud_archive.py',

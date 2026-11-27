@@ -528,7 +528,8 @@ final class SettingsLayoutUITests: XCTestCase {
 
     func testWebsiteAccelerationModesInDevSettings() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = ["--ui-testing", "--ui-testing-settings", "--ui-testing-geosite-cache",
+                               "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = ""
         app.launch()
         defer { app.terminate() }
@@ -543,6 +544,15 @@ final class SettingsLayoutUITests: XCTestCase {
         let website = app.descendants(matching: .any)["website-acceleration-section"]
         XCTAssertTrue(website.waitForExistence(timeout: 5))
         XCTAssertEqual(website.label, "访问中国大陆网站")
+        let interval = app.buttons["geosite-refresh-interval"]
+        XCTAssertTrue(reveal(interval, app))
+        XCTAssertEqual(interval.value as? String, "每 3 天")
+        interval.tap()
+        XCTAssertTrue(app.buttons["每天"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["每 3 天"].exists)
+        XCTAssertTrue(app.buttons["每 7 天"].exists)
+        app.buttons["每 7 天"].tap()
+        XCTAssertEqual(interval.value as? String, "每 7 天")
         XCTAssertFalse(app.staticTexts["位置加速"].exists)
 
         let manual = app.buttons["website-acceleration-manual"]
@@ -592,12 +602,15 @@ final class SettingsLayoutUITests: XCTestCase {
 
         app.terminate()
         app.launchArguments.append("--ui-testing-preferences-keep")
+        app.launchArguments.append("--ui-testing-geosite-cache-keep")
         app.launch()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
         XCTAssertTrue(reveal(entry, app))
         entry.tap()
         XCTAssertTrue(smart.waitForExistence(timeout: 5))
         XCTAssertTrue(smart.isSelected)
+        XCTAssertTrue(reveal(interval, app))
+        XCTAssertEqual(interval.value as? String, "每 7 天")
         XCTAssertFalse(manual.isSelected)
         XCTAssertEqual(smartHint.count, 1)
         XCTAssertFalse(manualHint.firstMatch.exists)
@@ -700,7 +713,8 @@ final class SettingsLayoutUITests: XCTestCase {
             openSettings(app, title: language == "en" ? "Settings" : "设置")
         }
         let entry = app.buttons["third-party-notices-link"]
-        XCTAssertTrue(reveal(entry, app))
+        // Reaching About in the iPad settings sheet can take more drags at maximum Dynamic Type.
+        XCTAssertTrue(reveal(entry, app, maxDrags: largeText ? 32 : 14))
         entry.tap()
         let title = language == "en" ? "Open Source Licenses & Acknowledgements" : "开源许可与鸣谢"
         assertNoticesContent(app, title: title, name: "许可正文-\(language)-\(largeText ? "最大字体" : "普通字体")")
@@ -1105,9 +1119,9 @@ final class SettingsLayoutUITests: XCTestCase {
     }
 
     private func reveal(_ element: XCUIElement, _ app: XCUIApplication, scrollDown: Bool? = nil,
-                        dragOffsetX: CGFloat = 0.96) -> Bool {
+                        dragOffsetX: CGFloat = 0.96, maxDrags: Int = 14) -> Bool {
         _ = element.waitForExistence(timeout: 3)
-        for _ in 0..<14 {
+        for drag in 0...maxDrags {
             // iPad 可同时保留背景表单和前台编辑器，优先选目标所属的列表。
             let lists = app.collectionViews.allElementsBoundByIndex
             let containing = element.exists && !element.identifier.isEmpty
@@ -1127,6 +1141,7 @@ final class SettingsLayoutUITests: XCTestCase {
                     if frame.minY >= top - 1, frame.maxY <= bottom + 1 { return true }
                 } else if frame.midY >= top, frame.midY <= bottom { return true }
             }
+            guard drag < maxDrags else { break }
             let down = scrollDown ?? (!frame.isNull && !frame.isEmpty && frame.minY < top)
             let height = max(1, bottom - top)
             var distance = height * 0.4

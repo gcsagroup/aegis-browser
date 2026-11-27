@@ -214,6 +214,8 @@ const iosReleaseContracts = new Set([
   'scripts/release/verify-ios-dsyms.py',
   'scripts/release/test_verify_ios_dsyms.py',
   'scripts/release/test_verify_signed_ios.py',
+  'scripts/release/verify-geosite-release.py',
+  'scripts/release/verify-bundled-geosite.swift',
 ]);
 // Match the top-level Ruby tests discovered by ios-release-validation.yml.
 const iosFastlaneTest = /^fastlane\/tests\/(?!\.)[^/]*_test\.rb$/u;
@@ -242,6 +244,7 @@ const needsIosCompile = path => sharedIosProductInput(path)
 const selectsAndroid = path => path.startsWith('apps/browser/patches-android/')
   || path === 'apps/browser/ci-pins/android.json'
   || path === 'apps/browser/args/aegis-android.gn'
+  || path === 'apps/browser/args/android-delivery-version.json'
   || path === 'scripts/ci/check-android-platform-inputs.py'
   || path === 'scripts/ci/release-preflight.mjs'
   || path === '.github/android-public-release-tag-ruleset.json'

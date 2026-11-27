@@ -97,13 +97,29 @@ def render(platform, root=ROOT):
                         "Downloaded model weights have separate notices and are not covered by this inventory.\n")
     elif platform == "ios":
         include(
-            "XTLS/Xray-rules-dat 20261120235103 — GeoSite — MIT",
-            f"{ACCESS}/v2fly-domain-list-community.txt",
-            "Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261120235103\n"
-            "DEBIAN, DOUBAN and MEITUAN are unmodified groups inherited from V2Fly domain-list-community.\n"
-            "Source: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/README.md\n"
-            "Inherited license: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited\n\n",
+            "GeoSite standard data — sources and licenses",
+            "scripts/licenses/geosite/xtls-gpl-3.0.txt",
+            "The unmodified standard geosite.dat is shipped in the iOS app. It provides the domestic and overseas rule inputs.\n"
+            "Distribution: https://github.com/XTLS/Xray-rules-dat/releases/tag/20261126014317\n"
+            "Encoding, conversion scripts, and input inventory: "
+            "https://github.com/XTLS/Xray-rules-dat/tree/d74acca73490cb57a937674ce8a8709d2a3021ba\n"
+            "The GeoSite tools have their own MIT terms. The data comes from the following sources.\n"
+            "V2Fly Domain List Community — MIT — https://github.com/v2fly/domain-list-community\n"
+            "GFWList data — LGPL-2.1 — https://github.com/gfwlist/gfwlist/blob/master/list.txt\n"
+            "Iran-v2ray-rules — GPL-3.0 — https://github.com/Chocolate4U/Iran-v2ray-rules\n"
+            "DynX-AntiBan-Domains — MIT — https://github.com/MrDevAnony/DynX-AntiBan-Domains\n"
+            "Re:filter lists — https://github.com/1andrevich/Re-filter-lists\n"
+            "Iran sanctioned domains — https://github.com/armanlife/iran-sanctioned-domains\n"
+            "RunetFreedom domains — https://github.com/runetfreedom/russia-domains-list\n"
+            "Antifilter.Download community list — https://community.antifilter.download/list/domains.lst\n\n"
+            "XTLS project license — GPL-3.0 — https://github.com/XTLS/Xray-rules-dat/blob/20261126014317/LICENSE\n\n",
         )
+        include("V2Fly Domain List Community and inherited GeoSite tools — MIT",
+                f"{ACCESS}/v2fly-domain-list-community.txt",
+                "Inherited license: https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited\n\n")
+        include("GFWList data — LGPL-2.1", "scripts/licenses/geosite/gfwlist-lgpl-2.1.txt",
+                "Source project: https://github.com/gfwlist/gfwlist\n"
+                "The encoding and conversion scripts are available in the XTLS source linked above.\n\n")
         include("EasyList and EasyPrivacy — The EasyList authors", f"{RULES}/FILTER-LICENSE.txt")
         include("NoCoin — Hosh — https://github.com/hoshsadiq/adblock-nocoin-list", f"{RULES}/nocoin-LICENSE.txt")
         include("Phishing Block List — The Block List Project", f"{RULES}/phishing-LICENSE.txt")

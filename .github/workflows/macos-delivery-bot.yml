@@ -98,7 +98,7 @@ jobs:
 
   promote:
     name: promote
-    if: ${{ vars.AEGIS_MACOS_DELIVERY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.operation == 'Promote' }}
+    if: ${{ vars.AEGIS_MACOS_DELIVERY_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.repository == 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && vars.AEGIS_MACOS_STABLE_RELEASE_ENABLED == 'true' && inputs.operation == 'Promote' }}
     runs-on: ubuntu-24.04
     environment: aegis-macos-dmg-stable
     permissions:

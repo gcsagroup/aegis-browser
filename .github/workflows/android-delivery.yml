@@ -19,11 +19,11 @@ on:
           - 发布核对 / Release Wait
         default: 查询状态 / Status
       version:
-        description: "版本 / Version（例如 / e.g. 6.1.0.266）"
+        description: "版本 / Version（例如 / e.g. 0.8.0）"
         type: string
         required: true
       build:
-        description: "版本代码 / Version code（例如 / e.g. 2006000266）"
+        description: "版本代码 / Version code（例如 / e.g. 1）"
         type: string
         required: true
       product:
