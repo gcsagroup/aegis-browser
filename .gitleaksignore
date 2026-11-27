@@ -304,3 +304,9 @@ f609c1cc273e70d6b3793923f30c30f802298941:apps/browser/patches/0486-bundle-offlin
 # apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift (develop 上 #401 squash 提交 1068d42e; full-history 扫描会命中, 内容与 519ef2b9 第 26 行一致)
 # 行 26 SHA-256 dc0d1b8b1a3f233313568c6dbf0be8ac7eb4f06a16a487c99acee6892b779659
 1068d42e3ee11a36eeb8d7d45262b7673f06286f:apps/ios/Tests/AccessKitTests/AccessLocalV2RayConfigTests.swift:generic-api-key:26
+# 历史清单中的 RSA 公钥（DER SubjectPublicKeyInfo）确定内置 Chromium 组件 ID，打包测试验证其公钥类型。
+# 行 6 SHA-256 158ec34dab8c1f7bdd75a1d28118ec666818e23f29d9a23e0d4dee35476e051c
+d0e0bb395dbc34448a5b5e647e853d56ae2c3434:apps/browser/overlay/chrome/browser/resources/aegis_link/manifest.json:generic-api-key:6
+# 同一组件公钥在 Chromium 发行补丁中的副本，已核对内容与清单完全一致。
+# 行 478 SHA-256 ad0c5ff02cea3cabdfa9713b2d6741191c54fd932c1c8135df8c186d7513c2f4
+449862fcd3017d49f6554368fbf7e45273a4adad:apps/browser/patches/0562-aegis-link-desktop-sync.patch:generic-api-key:478
