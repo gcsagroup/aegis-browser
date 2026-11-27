@@ -101,6 +101,7 @@ def normalize(event, ref, inputs, mode='simple', source_sha=None, attempt='1'):
         values = _simple(inputs)
     else:
         values = _full(inputs)
+    receipt.alpha_self_test(values)
     if values['operation'] in {'package', 'package-upload', 'draft'}:
         require(attempt == '1', 'A new Android package cannot be rerun; reconcile the original run before selecting a new versionCode')
     require(all('\n' not in value and '\r' not in value for value in values.values()), 'Invalid multiline workflow output')
@@ -112,6 +113,8 @@ def _simple(inputs):
     profile = canonical(inputs.get('product') or 'alpha', PRODUCTS)
     require(profile != 'auto', 'Choose Alpha, Beta, or Release')
     version, build = inputs.get('version', ''), inputs.get('build', '')
+    if (version, build) == (receipt.ALPHA_SELF_TEST_VERSION_NAME, receipt.ALPHA_SELF_TEST_VERSION_CODE):
+        version = receipt.ALPHA_SELF_TEST_VERSION
     receipt.require_version_code(version, build)
     values = blank()
     if operation in QUERY:

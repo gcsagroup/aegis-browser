@@ -5,11 +5,24 @@ VERSION = re.compile(r'(?:0|[1-9][0-9]{0,9})(?:\.(?:0|[1-9][0-9]{0,9})){3}\Z')
 CODE = re.compile(r'[1-9][0-9]{0,9}\Z')
 PROFILES = {'alpha', 'beta', 'release'}
 MAX_CODE = 2100000000
+ALPHA_SELF_TEST_VERSION_NAME = '0.8.0'
+ALPHA_SELF_TEST_VERSION_CODE = '1'
+ALPHA_SELF_TEST_VERSION = f'{ALPHA_SELF_TEST_VERSION_NAME}.{ALPHA_SELF_TEST_VERSION_CODE}'
 
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def alpha_self_test(plan):
+    if plan.get('version') != ALPHA_SELF_TEST_VERSION:
+        return False
+    require(plan.get('operation') == 'package' and plan.get('profile') == 'alpha'
+            and plan.get('destination') == 'artifacts' and plan.get('build') == ALPHA_SELF_TEST_VERSION_CODE
+            and not plan.get('track') and not plan.get('tag'),
+            'Android Alpha self-test is only available as a package artifact')
+    return True
 
 
 def version_build_number(version):

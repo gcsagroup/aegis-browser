@@ -9,8 +9,8 @@ ARGS_FILE="$ROOT_DIR/args/aegis-android.gn"
 
 bundle_profile=""
 if [[ "$#" -ne 0 ]]; then
-  if [[ "$#" != 2 || "$1" != --app-bundle || ! "$2" =~ ^(alpha|beta|release)$ ]]; then
-    echo "Usage: build-android.sh [--app-bundle alpha|beta|release]" >&2
+  if [[ "$#" != 2 || "$1" != --app-bundle || ! "$2" =~ ^(alpha|alpha-self-test|beta|release)$ ]]; then
+    echo "Usage: build-android.sh [--app-bundle alpha|alpha-self-test|beta|release]" >&2
     exit 2
   fi
   bundle_profile="$2"
@@ -84,7 +84,10 @@ if [[ -n "$bundle_profile" ]]; then
   mkdir "$OUT"
   printf '%s\n%s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > "$OUT/.aegis-producer"
   args="$(cat "$ARGS_FILE")"
-  if [[ "$bundle_profile" == release ]]; then
+  if [[ "$bundle_profile" == alpha-self-test ]]; then
+    args="$(sed -E 's/^android_override_version_name = .*/android_override_version_name = "0.8.0"/;
+      s/^android_override_version_code = .*/android_override_version_code = "1"/' <<< "$args")"
+  elif [[ "$bundle_profile" == release ]]; then
     args="$(sed -E 's/^symbol_level = [0-9]+$/symbol_level = 1/' "$ARGS_FILE")"
     if ! grep -qx 'symbol_level = 1' <<< "$args"; then
       echo "Android Release requires effective native symbol generation." >&2

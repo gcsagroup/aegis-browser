@@ -75,6 +75,30 @@ class PlanMatrix(unittest.TestCase):
                 self.assertFalse(value['tag'])
                 self.assertNotIn('\n', json.dumps(value))
 
+    def test_android_alpha_self_test_is_package_only(self):
+        package = simple('Package', 'Alpha', '0.8.0', '1')
+        self.assertEqual((package['version'], package['build'], package['destination']),
+                         ('0.8.0.1', '1', 'artifacts'))
+        self.assertEqual(full('Package', 'Alpha', '0.8.0.1(1)', '{}'), package)
+        for operation, profile, version in (
+                ('Package', 'Beta', '0.8.0'),
+                ('Package', 'Release', '0.8.0.1'),
+                ('Package and upload', 'Alpha', '0.8.0.1'),
+                ('Status', 'Alpha', '0.8.0.1')):
+            with self.subTest(operation=operation, profile=profile, version=version):
+                with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
+                    simple(operation, profile, version, '1')
+        with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
+            full('Full', 'Alpha', '0.8.0.1(1)', '{"operation":"draft"}')
+        packaged = receipt.encode('alpha', '0.8.0.1', '1', 41, 41, 1, 'ab' * 32)
+        with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
+            full('Upload', 'Auto', packaged, '{}')
+        store = mock.Mock()
+        with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
+            delivery.approved_package({'operation': 'upload', 'version': '0.8.0.1', 'build': '1',
+                                       'profile': 'alpha'}, store)
+        store.read.assert_not_called()
+
     def test_both_released_coordinates_bind_version_code(self):
         for version, build in ((VERSION, BUILD), OLDER):
             with self.subTest(version=version):
@@ -503,13 +527,14 @@ class DeliveryCommandMatrix(unittest.TestCase):
                    'AEGIS_ANDROID_AAB': str(old_bundle)}
             expected_out = chromium.resolve() / 'src/out/AegisAndroidDelivery-41-1'
             commands = []
+            bundle_profile = 'alpha'
             store = mock.Mock()
             store.read.return_value = None
 
             def run(command, **kwargs):
                 commands.append(command)
                 if command[0] == 'bash':
-                    self.assertEqual(command[-2:], ['--app-bundle', 'alpha'])
+                    self.assertEqual(command[-2:], ['--app-bundle', bundle_profile])
                     out = chromium.resolve() / 'src/out' / f"AegisAndroidDelivery-{kwargs['env']['GITHUB_RUN_ID']}-1"
                     self.assertEqual(kwargs['env']['OUT_DIR'], str(out))
                     self.assertFalse(out.exists())
@@ -563,6 +588,21 @@ class DeliveryCommandMatrix(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'no longer current'):
                         delivery.build_and_seal(plan)
                 self.assertEqual([command[0] for command in commands], ['bash', 'jarsigner', 'bash'])
+
+                bundle_profile = 'alpha-self-test'
+                expected_out = chromium.resolve() / 'src/out/AegisAndroidDelivery-43-1'
+                self_test_root = root / 'self-test'
+                self_test_plan = simple('Package', 'Alpha', '0.8.0', '1')
+                check_main.side_effect = None
+                verify_manifest.reset_mock()
+                with (mock.patch.dict('os.environ', {'GITHUB_RUN_ID': '43'}),
+                      mock.patch.object(delivery, 'ROOT', self_test_root)):
+                    sealed = delivery.build_and_seal(self_test_plan)
+                self.assertEqual((sealed['version'], sealed['build'], sealed['profile']), ('0.8.0.1', '1', 'alpha'))
+                self.assertEqual(sealed['origin']['sourceSha'], SHA)
+                verify_manifest.assert_called_once_with(chromium.resolve(), expected_out / 'apks/ChromePublic.aab',
+                                                        '1', version_name='0.8.0')
+                self.assertEqual([command[0] for command in commands[-2:]], ['bash', 'jarsigner'])
 
     def test_only_recorded_producer_output_is_retired(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -646,9 +686,9 @@ class DeliveryCommandMatrix(unittest.TestCase):
             jar.touch()
             aab = chromium / 'app.aab'
 
-            def manifest(package=archive.APPLICATION_ID, code=BUILD, debug='false'):
+            def manifest(package=archive.APPLICATION_ID, code=BUILD, debug='false', name='Ver 7.2 (339)'):
                 return (f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
-                        f'package="{package}" android:versionCode="{code}">'
+                        f'package="{package}" android:versionCode="{code}" android:versionName="{name}">'
                         f'<application android:debuggable="{debug}"/></manifest>').encode()
 
             with mock.patch.object(delivery.subprocess, 'run', return_value=mock.Mock(stdout=manifest())) as run:
@@ -660,6 +700,10 @@ class DeliveryCommandMatrix(unittest.TestCase):
                     run.return_value.stdout = candidate
                     with self.assertRaisesRegex(ValueError, error):
                         delivery.verify_bundle_manifest(chromium, aab, BUILD)
+                run.return_value.stdout = manifest(code='1', name='0.8.0')
+                delivery.verify_bundle_manifest(chromium, aab, '1', version_name='0.8.0')
+                with self.assertRaisesRegex(ValueError, 'versionName'):
+                    delivery.verify_bundle_manifest(chromium, aab, '1', version_name='0.8.1')
 
     def _store(self):
         parent = ArchiveAndRecordMatrix()

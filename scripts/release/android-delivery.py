@@ -39,6 +39,7 @@ def require(condition, message):
 def plan_from_env():
     value = json.loads(os.environ['ANDROID_DELIVERY_PLAN'])
     require(isinstance(value, dict), 'Android delivery plan is invalid')
+    receipt.alpha_self_test(value)
     return value
 
 
@@ -76,7 +77,7 @@ def producer_output(run_id):
     return chromium, output
 
 
-def verify_bundle_manifest(chromium, aab, build):
+def verify_bundle_manifest(chromium, aab, build, *, version_name=None):
     jar = chromium / 'src/third_party/android_build_tools/bundletool/cipd/bundletool.jar'
     require(jar.is_file(), 'The pinned Chromium bundletool is missing')
     output = subprocess.run(['java', '-jar', str(jar), 'dump', 'manifest',
@@ -88,6 +89,9 @@ def verify_bundle_manifest(chromium, aab, build):
     require(manifest.tag == 'manifest' and manifest.get('package') == archive.APPLICATION_ID
             and manifest.get(android + 'versionCode') == build,
             'Generated Android bundle package or versionCode differs from the producer')
+    if version_name is not None:
+        require(manifest.get(android + 'versionName') == version_name,
+                'Generated Android bundle versionName differs from the producer')
     require(application is not None and application.get(android + 'debuggable', 'false') == 'false',
             'Generated App Bundle is debuggable')
 
@@ -113,7 +117,8 @@ def retire_producer_output():
 def build_and_seal(plan):
     identity = source_identity()
     require(identity['sha'] == os.environ['GITHUB_SHA'], 'Android producer checkout differs from workflow source')
-    require((plan['version'], plan['build']) == (identity['version'], identity['build']),
+    self_test = receipt.alpha_self_test(plan)
+    require(self_test or (plan['version'], plan['build']) == (identity['version'], identity['build']),
             'Requested versionCode differs from the committed Android source')
     require(os.environ.get('GITHUB_RUN_ATTEMPT') == '1', 'Package attempt must stay on the first run')
     run_id = int(os.environ['GITHUB_RUN_ID'])
@@ -124,12 +129,16 @@ def build_and_seal(plan):
     release_dir.mkdir(parents=True, exist_ok=True)
     # The unsigned AAB and symbols must come from this run's empty GN output.
     env = {**os.environ, 'CHROMIUM_ROOT': str(chromium), 'OUT_DIR': str(out)}
-    subprocess.run(['bash', str(ROOT / 'apps/browser/scripts/build-android.sh'), '--app-bundle', plan['profile']],
+    bundle_profile = 'alpha-self-test' if self_test else plan['profile']
+    subprocess.run(['bash', str(ROOT / 'apps/browser/scripts/build-android.sh'), '--app-bundle', bundle_profile],
                    cwd=ROOT, env=env, check=True)
     require(source_identity() == identity, 'Android producer source changed during the build')
     unsigned = out / 'apks/ChromePublic.aab'
     archive.assert_aab(unsigned)
-    verify_bundle_manifest(chromium, unsigned, identity['build'])
+    if self_test:
+        verify_bundle_manifest(chromium, unsigned, plan['build'], version_name=receipt.ALPHA_SELF_TEST_VERSION_NAME)
+    else:
+        verify_bundle_manifest(chromium, unsigned, identity['build'])
     with tempfile.TemporaryDirectory(prefix='producer-', dir=release_dir) as temp:
         signed = Path(temp) / 'signed.aab'
         release._assert_current_release_source({'source': {'sha': identity['sha'], 'tree': identity['tree']}})
@@ -151,7 +160,7 @@ def build_and_seal(plan):
 
 def seal_package(plan, identity, aab, symbols, certificate, run_id):
     version, build = plan['version'], plan['build']
-    require((version, build) == (identity['version'], identity['build']),
+    require(receipt.alpha_self_test(plan) or (version, build) == (identity['version'], identity['build']),
             'Requested versionCode differs from the committed Android source')
     aab_name, symbols_name = archive.asset_names(version, build)
     files = {aab_name: aab}
@@ -203,6 +212,7 @@ def record_package(pending, artifact, job_id, store):
 
 
 def approved_package(plan, store):
+    receipt.alpha_self_test(plan)
     operation = plan['operation']
     pinned = operation in {'upload', 'distribute', 'submit'}
     if pinned:
