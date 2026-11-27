@@ -3,15 +3,25 @@ import re
 
 
 def der_items(data):
-    """Yield the one-byte tags and values used by the certificate and SAN envelopes."""
+    """Yield each tag's initial octet and its value, preserving class and form."""
     cursor = 0
     while cursor < len(data):
-        if cursor + 2 > len(data):
-            raise ValueError("Truncated DER header")
-        tag, length = data[cursor:cursor + 2]
-        cursor += 2
+        tag = data[cursor]
+        cursor += 1
+        if tag == 0:
+            raise ValueError("Unexpected end-of-contents tag in DER")
         if tag & 0x1f == 0x1f:
-            raise ValueError("Unexpected DER tag")
+            if cursor == len(data) or data[cursor] < 31 or data[cursor] == 0x80:
+                raise ValueError("Invalid high DER tag")
+            while cursor < len(data) and data[cursor] & 0x80:
+                cursor += 1
+            if cursor == len(data):
+                raise ValueError("Truncated high DER tag")
+            cursor += 1
+        if cursor == len(data):
+            raise ValueError("Truncated DER header")
+        length = data[cursor]
+        cursor += 1
         if length >= 128:
             count = length & 0x7f
             if not 1 <= count <= 4 or cursor + count > len(data) or data[cursor] == 0:
@@ -39,6 +49,21 @@ def validate_oid(value):
         raise ValueError("Invalid object identifier")
 
 
+def validate_der_tree(tag, value):
+    """Check the nested boundaries of constructed values with an open ASN.1 type."""
+    pending = [der_items(memoryview(value))] if tag & 0x20 else []
+    while pending:
+        item = next(pending[-1], None)
+        if item is None:
+            pending.pop()
+        else:
+            child, body = item
+            if child & 0x20:
+                if len(pending) >= 64:
+                    raise ValueError("Excessively nested DER value")
+                pending.append(der_items(body))
+
+
 def validate_directory_name(value):
     for tag, body in sequence(value):
         attributes = list(der_items(body))
@@ -49,6 +74,7 @@ def validate_directory_name(value):
             if attribute_tag != 0x30 or len(fields) != 2 or fields[0][0] != 0x06:
                 raise ValueError("Invalid distinguished name attribute")
             validate_oid(fields[0][1])
+            validate_der_tree(*fields[1])
 
 
 def validate_non_dns_name(tag, value):
@@ -64,9 +90,11 @@ def validate_non_dns_name(tag, value):
         validate_directory_name(value)
     elif tag == 0xa0:  # otherName, a type identifier and an explicitly tagged value.
         fields = list(der_items(value))
-        if [field for field, _ in fields] != [0x06, 0xa0] or len(list(der_items(fields[1][1]))) != 1:
+        if [field for field, _ in fields] != [0x06, 0xa0]:
             raise ValueError("Invalid otherName")
         validate_oid(fields[0][1])
+        item, = der_items(fields[1][1])
+        validate_der_tree(*item)
     elif tag == 0xa5:  # ediPartyName, an optional assigner and a required party name.
         fields = list(der_items(value))
         if [field for field, _ in fields] not in ([0xa1], [0xa0, 0xa1]):
@@ -79,10 +107,8 @@ def validate_non_dns_name(tag, value):
         fields = list(der_items(value))
         if [field for field, _ in fields] not in ([0x30], [0x30, 0x30], [0x30, 0x31], [0x30, 0x30, 0x31]):
             raise ValueError("Invalid x400Address")
-        while fields:
-            field, body = fields.pop()
-            if field & 0x20:
-                fields.extend(der_items(body))
+        for item in fields:
+            validate_der_tree(*item)
     else:
         raise ValueError("Invalid GeneralName tag")
 
