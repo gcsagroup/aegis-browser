@@ -34,6 +34,59 @@ def sequence(data):
     return list(der_items(body))
 
 
+def validate_oid(value):
+    if not value or value[-1] & 0x80 or re.search(rb"(?:^|[\x00-\x7f])\x80", value):
+        raise ValueError("Invalid object identifier")
+
+
+def validate_directory_name(value):
+    for tag, body in sequence(value):
+        attributes = list(der_items(body))
+        if tag != 0x31 or not attributes:
+            raise ValueError("Invalid relative distinguished name")
+        for attribute_tag, attribute in attributes:
+            fields = list(der_items(attribute))
+            if attribute_tag != 0x30 or len(fields) != 2 or fields[0][0] != 0x06:
+                raise ValueError("Invalid distinguished name attribute")
+            validate_oid(fields[0][1])
+
+
+def validate_non_dns_name(tag, value):
+    if tag in (0x81, 0x86):  # rfc822Name or uniformResourceIdentifier.
+        if not value or not value.isascii():
+            raise ValueError("Invalid IA5String in subjectAltName")
+    elif tag == 0x87:
+        if len(value) not in (4, 16):
+            raise ValueError("Invalid IP address in subjectAltName")
+    elif tag == 0x88:
+        validate_oid(value)
+    elif tag == 0xa4:
+        validate_directory_name(value)
+    elif tag == 0xa0:  # otherName, a type identifier and an explicitly tagged value.
+        fields = list(der_items(value))
+        if [field for field, _ in fields] != [0x06, 0xa0] or len(list(der_items(fields[1][1]))) != 1:
+            raise ValueError("Invalid otherName")
+        validate_oid(fields[0][1])
+    elif tag == 0xa5:  # ediPartyName, an optional assigner and a required party name.
+        fields = list(der_items(value))
+        if [field for field, _ in fields] not in ([0xa1], [0xa0, 0xa1]):
+            raise ValueError("Invalid ediPartyName")
+        for _, body in fields:
+            (string_tag, string), = der_items(body)
+            if string_tag not in (0x0c, 0x13, 0x14, 0x1c, 0x1e) or not string:
+                raise ValueError("Invalid ediPartyName string")
+    elif tag == 0xa3:  # x400Address, a constructed ORAddress.
+        fields = list(der_items(value))
+        if [field for field, _ in fields] not in ([0x30], [0x30, 0x30], [0x30, 0x31], [0x30, 0x30, 0x31]):
+            raise ValueError("Invalid x400Address")
+        while fields:
+            field, body = fields.pop()
+            if field & 0x20:
+                fields.extend(der_items(body))
+    else:
+        raise ValueError("Invalid GeneralName tag")
+
+
 def dns_subject_alternative_names(certificate):
     """Decode GeneralName dNSName values. An absent SAN returns an empty list."""
     fields = sequence(certificate)
@@ -69,10 +122,10 @@ def dns_subject_alternative_names(certificate):
         raise ValueError("Empty subjectAltName extension")
     names = []
     for tag, value in general_names:
-        if tag not in (0xa0, 0x81, 0x82, 0xa3, 0xa4, 0xa5, 0x86, 0x87, 0x88):
-            raise ValueError("Invalid GeneralName tag")
         if tag == 0x82:  # [2] IMPLICIT IA5String, dNSName.
             if not re.fullmatch(rb"(?:\*\.)?[A-Za-z0-9.-]+", value):
                 raise ValueError("Invalid dNSName")
             names.append(value.decode("ascii"))
+        else:
+            validate_non_dns_name(tag, value)
     return names
