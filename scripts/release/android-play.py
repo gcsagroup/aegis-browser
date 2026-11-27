@@ -204,6 +204,9 @@ class Play:
             if status == 'completed':
                 release['versionCodes'] = sorted(set(retained_codes + [target_code]), key=int)
             else:
+                staged = next((existing for existing in existing_releases
+                               if existing['status'] in {'inProgress', 'halted'}), {})
+                release = {**staged, **release}
                 completed = [existing for existing in existing_releases if existing['status'] == 'completed']
                 completed_codes = {code for existing in completed for code in existing['versionCodes']}
                 require(target_code not in completed_codes, 'Play version is already completed on this track')

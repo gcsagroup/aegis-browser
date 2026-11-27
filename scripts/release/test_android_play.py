@@ -281,9 +281,12 @@ class PlayTests(unittest.TestCase):
         self.assertEqual(tracks['beta']['releases'], [
             completed, {'status': 'inProgress', 'versionCodes': [str(CODE)], 'userFraction': 0.1},
         ])
+        metadata = {'name': 'Beta preview', 'inAppUpdatePriority': 3,
+                    'releaseNotes': [{'language': 'en-US', 'text': 'Preview notes'}]}
+        tracks['beta']['releases'][1].update(metadata)
         client.update_track(CODE, 'beta', 'inProgress', '0.2', authorize_write=authorize_fixture, **expected)
         self.assertEqual(tracks['beta']['releases'], [
-            completed, {'status': 'inProgress', 'versionCodes': [str(CODE)], 'userFraction': 0.2},
+            completed, {**metadata, 'status': 'inProgress', 'versionCodes': [str(CODE)], 'userFraction': 0.2},
         ])
         client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture, **expected)
         self.assertEqual(tracks['beta']['releases'], [{'status': 'completed', 'versionCodes': pending}])
