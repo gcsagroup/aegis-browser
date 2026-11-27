@@ -113,22 +113,35 @@ class PlayTests(unittest.TestCase):
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-1"}'
             if method == 'GET' and '/tracks/' in url:
-                return 200, {}, b'{"track":"internal","releases":[{"status":"completed","versionCodes":["99"]}]}'
+                return play._json_response(200, {'track': 'internal', 'releases': [existing]})
             if method == 'PUT':
                 bodies.append(json.loads(body))
             return 200, {}, b'{}'
-        play.Play(transport, 'token').update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture)
-        self.assertEqual(bodies[0]['releases'][0]['versionCodes'], ['99', str(CODE)])
+        for existing in (
+            {'status': 'completed', 'versionCodes': ['99']},
+            {'status': 'draft', 'versionCodes': ['99', str(CODE)]},
+        ):
+            with self.subTest(status=existing['status']):
+                play.Play(transport, 'token').update_track(CODE, 'internal', 'completed',
+                                                          authorize_write=authorize_fixture,
+                                                          pending_codes=['99', str(CODE)], expected_existing=['99'])
+                self.assertEqual(bodies[-1]['releases'], [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}])
 
-    def test_upload_retains_existing_test_track_codes(self):
+    def test_upload_preserves_completed_test_releases_and_metadata(self):
         bodies = []
+        completed = [
+            {'status': 'completed', 'versionCodes': ['99'], 'name': 'Previous release',
+             'releaseNotes': [{'language': 'en-US', 'text': 'Previous notes'}], 'inAppUpdatePriority': 2},
+            {'status': 'completed', 'versionCodes': ['97', '98']},
+        ]
+
         def transport(method, url, body, headers):
             if url.endswith(f'/generatedApks/{CODE}'):
                 return 404, {}, b'{}'
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-1"}'
             if method == 'GET' and url.endswith('/tracks/internal'):
-                return 200, {}, b'{"track":"internal","releases":[{"status":"completed","versionCodes":["99"]}]}'
+                return play._json_response(200, {'track': 'internal', 'releases': completed})
             if method == 'GET' and url.endswith('/tracks/beta'):
                 return 404, {}, b'{}'
             if '/bundles?' in url:
@@ -136,8 +149,13 @@ class PlayTests(unittest.TestCase):
             if method == 'PUT':
                 bodies.append(json.loads(body))
             return 200, {}, b'{}'
-        play.Play(transport, 'token').upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
-        self.assertEqual(bodies[0]['releases'][0]['versionCodes'], ['99', str(CODE)])
+        result = play.Play(transport, 'token').upload_draft(Path(__file__), CODE, 'internal',
+                                                          authorize_write=authorize_fixture)
+        self.assertEqual(bodies, [{'track': 'internal', 'releases': [
+            *completed, {'status': 'draft', 'versionCodes': [str(CODE)]},
+        ]}])
+        self.assertEqual(result['retainedVersionCodes'], ['97', '98', '99', str(CODE)])
+        self.assertEqual(result['trackVersionCodes'], {'internal': ['97', '98', '99'], 'beta': []})
 
     def test_other_pending_test_rollout_blocks_writes(self):
         requests = []
@@ -175,17 +193,24 @@ class PlayTests(unittest.TestCase):
             return 200, {}, b'{}'
         client = play.Play(transport, 'token')
         client.check_test_track(CODE, 'internal', authorize_write=authorize_fixture)
-        client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
-        self.assertEqual(track['releases'][0]['versionCodes'], ['99', str(CODE)])
-        track['releases'][0]['versionCodes'].append('98')
+        result = client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
+        expected = {'pending_codes': result['retainedVersionCodes'],
+                    'expected_existing': result['trackVersionCodes']['internal'], 'upload_track': result['track']}
+        self.assertEqual(track['releases'], [
+            {'status': 'completed', 'versionCodes': ['99']},
+            {'status': 'draft', 'versionCodes': [str(CODE)]},
+        ])
+        track['releases'][1]['versionCodes'].append('98')
         with self.assertRaisesRegex(ValueError, 'another pending rollout'):
+            client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture, **expected)
+        track['releases'][1]['versionCodes'].remove('98')
+        completed = track['releases'].pop(0)
+        with self.assertRaisesRegex(ValueError, 'changed since'):
             client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
-                                pending_codes=['99', str(CODE)])
-        track['releases'][0]['versionCodes'].remove('98')
-        client.update_track(CODE, 'internal', 'inProgress', '0.1', authorize_write=authorize_fixture,
-                            pending_codes=['99', str(CODE)])
-        client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
-                            pending_codes=['99', str(CODE)])
+                                pending_codes=expected['pending_codes'], upload_track=expected['upload_track'])
+        track['releases'].insert(0, completed)
+        client.update_track(CODE, 'internal', 'inProgress', '0.1', authorize_write=authorize_fixture, **expected)
+        client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture, **expected)
         self.assertEqual(track['releases'], [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}])
 
     def test_cross_track_rollout_uses_recorded_destination_snapshot(self):
@@ -213,15 +238,22 @@ class PlayTests(unittest.TestCase):
         existing = result['trackVersionCodes']['beta']
         self.assertEqual(existing, ['99'])
         pending = ['99', str(CODE)]
-        client.update_track(CODE, 'beta', 'inProgress', '0.1', authorize_write=authorize_fixture,
-                            pending_codes=pending, expected_existing=existing)
-        client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture,
-                            pending_codes=pending, expected_existing=existing)
+        expected = {'pending_codes': pending, 'expected_existing': existing, 'upload_track': result['track']}
+        tracks['beta']['releases'].append({'status': 'draft', 'versionCodes': [str(CODE)]})
+        with self.assertRaisesRegex(ValueError, 'another pending rollout'):
+            client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture, **expected)
+        completed = tracks['beta']['releases'].pop(0)
+        with self.assertRaisesRegex(ValueError, 'another pending rollout'):
+            client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture,
+                                pending_codes=[str(CODE)], expected_existing=[], upload_track=result['track'])
+        tracks['beta']['releases'].insert(0, completed)
+        tracks['beta']['releases'].pop()
+        client.update_track(CODE, 'beta', 'inProgress', '0.1', authorize_write=authorize_fixture, **expected)
+        client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture, **expected)
         self.assertEqual(tracks['beta']['releases'], [{'status': 'completed', 'versionCodes': pending}])
         tracks['beta']['releases'][0]['versionCodes'].append('98')
         with self.assertRaisesRegex(ValueError, 'changed since'):
-            client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture,
-                                pending_codes=pending, expected_existing=existing)
+            client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture, **expected)
 
     def test_main_change_during_play_edit_blocks_remaining_writes(self):
         for action in ('upload', 'production'):
