@@ -107,7 +107,12 @@ test("设置入口的组件 ID 与清单公钥及产品补丁一致", async (con
     "portal.js",
     "sync.js",
     "profile.js",
-  ])
+  ]) {
     assert.ok(patch.includes('file="aegis_link/' + file + '"'));
+    // 发行构建通过 git am 还原资源，光在 GRIT 中声明文件无法将内容带入源码树。
+    const path = "chrome/browser/resources/aegis_link/" + file;
+    assert.ok(patch.includes("diff --git a/" + path + " b/" + path), file);
+  }
+  assert.ok(patch.includes("b/chrome/browser/resources/settings/aegis_page/aegis_page.html"));
   assert.equal(manifest.incognito, "not_allowed");
 });

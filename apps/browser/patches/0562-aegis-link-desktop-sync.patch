@@ -1,13 +1,30 @@
-From d6b210d1a274ab50fbeaae65788fea2807ae7ff3 Mon Sep 17 00:00:00 2001
+From ee14128f8f8e64f7fc8273e35921ae8c707cb2ef Mon Sep 17 00:00:00 2001
 From: lain665 <lain@erjinyi.com>
-Date: Fri, 27 Nov 2026 18:35:36 +0800
-Subject: [PATCH] Register Aegis Link desktop profile sync
+Date: Fri, 27 Nov 2026 18:41:03 +0800
+Subject: [PATCH] Register and package Aegis Link desktop profile sync
 
 ---
- .../component_extensions_allowlist/allowlist.cc           | 1 +
- chrome/browser/extensions/component_loader.cc             | 7 +++++++
- .../browser/resources/component_extension_resources.grd   | 8 ++++++++
- 3 files changed, 16 insertions(+)
+ .../allowlist.cc                              |   1 +
+ chrome/browser/extensions/component_loader.cc |   7 +
+ .../browser/resources/aegis_link/account.css  |  75 ++++++++
+ .../browser/resources/aegis_link/account.html |  65 +++++++
+ .../browser/resources/aegis_link/account.js   | 142 +++++++++++++++
+ chrome/browser/resources/aegis_link/codec.js  | 102 +++++++++++
+ .../resources/aegis_link/manifest.json        |  11 ++
+ chrome/browser/resources/aegis_link/portal.js |  59 +++++++
+ .../browser/resources/aegis_link/profile.js   | 161 ++++++++++++++++++
+ chrome/browser/resources/aegis_link/sync.js   |  49 ++++++
+ .../component_extension_resources.grd         |   8 +
+ .../settings/aegis_page/aegis_page.html       |   1 +
+ 12 files changed, 681 insertions(+)
+ create mode 100644 chrome/browser/resources/aegis_link/account.css
+ create mode 100644 chrome/browser/resources/aegis_link/account.html
+ create mode 100644 chrome/browser/resources/aegis_link/account.js
+ create mode 100644 chrome/browser/resources/aegis_link/codec.js
+ create mode 100644 chrome/browser/resources/aegis_link/manifest.json
+ create mode 100644 chrome/browser/resources/aegis_link/portal.js
+ create mode 100644 chrome/browser/resources/aegis_link/profile.js
+ create mode 100644 chrome/browser/resources/aegis_link/sync.js
 
 diff --git a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
 index 720671265ee9851248a0f6369f758f0872e31ca3..bcc6aa2910ee76e23b81ac5f1a0613e8fbebac3c 100644
@@ -39,6 +56,718 @@ index e6feac0151a4fa1a2aa587d27ff7bd3668982aab..44863ea41ddce909c72dc5d31303a410
    // Do not add component extensions that have background pages here -- add them
    // to AddDefaultComponentExtensionsWithBackgroundPages.
  #if BUILDFLAG(IS_CHROMEOS)
+diff --git a/chrome/browser/resources/aegis_link/account.css b/chrome/browser/resources/aegis_link/account.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..eebddb028e1b70903309c00b8011d18a16cbc1fd
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/account.css
+@@ -0,0 +1,75 @@
++/* 使用浏览器系统色，账号操作在浅色、暗色和强制颜色模式下保持可读。 */
++:root {
++  color-scheme: light dark;
++  font:
++    16px/1.55 system-ui,
++    sans-serif;
++  color: CanvasText;
++  background: Canvas;
++}
++* {
++  box-sizing: border-box;
++}
++main {
++  max-width: 34rem;
++  margin: clamp(2rem, 8vh, 6rem) auto;
++  padding: 0 1.25rem;
++}
++h1 {
++  font-size: 2rem;
++  margin: 0 0 1.25rem;
++}
++h2 {
++  font-size: 1.2rem;
++  margin: 1.8rem 0 1rem;
++}
++form,
++fieldset {
++  display: grid;
++  gap: 0.65rem;
++}
++fieldset {
++  margin: 0 0 0.6rem;
++  border: 0;
++  padding: 0;
++}
++legend {
++  margin-bottom: 0.45rem;
++}
++label:has(input) {
++  display: flex;
++  gap: 0.5rem;
++  align-items: center;
++}
++input:not([type="checkbox"]) {
++  width: 100%;
++  font: inherit;
++  border: 1px solid GrayText;
++  border-radius: 0.4rem;
++  padding: 0.5rem 0.7rem;
++}
++button {
++  justify-self: start;
++  font: inherit;
++  cursor: pointer;
++  padding: 0.45rem 0.85rem;
++  border-radius: 0.4rem;
++  border: 1px solid GrayText;
++}
++#run {
++  background: Highlight;
++  color: HighlightText;
++  border-color: Highlight;
++}
++small {
++  color: GrayText;
++}
++dialog {
++  max-width: min(30rem, 90vw);
++  padding: 1.4rem;
++  border: 1px solid GrayText;
++  border-radius: 0.6rem;
++}
++dialog h2 {
++  margin: 0;
++}
+diff --git a/chrome/browser/resources/aegis_link/account.html b/chrome/browser/resources/aegis_link/account.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..614ad92c3458977b7ac28c8931a32c3fe97de4fa
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/account.html
+@@ -0,0 +1,65 @@
++<!doctype html>
++<!-- 浏览器内部的同步操作页。同步口令仅在本页内存中使用。 -->
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <title>Aegis Link</title>
++    <link rel="stylesheet" href="account.css" />
++  </head>
++  <body>
++    <main>
++      <h1>Aegis Link</h1>
++      <form id="connection">
++        <label for="site" data-text="site">Portal address</label>
++        <input type="url" id="site" required placeholder="https://" autocomplete="url" />
++        <button data-text="login">Open portal to sign in</button>
++      </form>
++      <section>
++        <h2 data-text="sync">Sync</h2>
++        <form id="sync">
++          <fieldset>
++            <legend data-text="what">Data to sync</legend>
++            <label
++              ><input type="checkbox" id="bookmarks" checked /><span data-text="bookmarks"
++                >Aegis Link bookmark folder</span
++              ></label
++            >
++            <label
++              ><input type="checkbox" id="preferences" /><span data-text="preferences"
++                >Default and minimum font sizes</span
++              ></label
++            >
++          </fieldset>
++          <label for="pass" data-text="pass">Sync passphrase</label>
++          <input
++            id="pass"
++            type="password"
++            minlength="12"
++            required
++            autocomplete="off"
++            aria-describedby="hint"
++          />
++          <small id="hint" data-text="hint"
++            >Use the same passphrase on each device. It cannot be recovered by the
++            portal.</small
++          >
++          <button id="run" data-text="now">Sync now</button>
++        </form>
++      </section>
++      <p role="status" aria-live="polite" id="status"></p>
++      <dialog id="decision">
++        <form method="dialog">
++          <h2 id="subject"></h2>
++          <p data-text="changed">
++            Both this profile and the cloud have data. Choose which copy to keep.
++          </p>
++          <button value="cancel" data-text="cancel">Cancel</button>
++          <button value="restore" data-text="cloud">Use cloud copy</button>
++          <button value="upload" data-text="local">Use this device</button>
++        </form>
++      </dialog>
++    </main>
++    <script type="module" src="account.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/aegis_link/account.js b/chrome/browser/resources/aegis_link/account.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..217ed0255b22c2eb5093fcdf4075d119af6cb802
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/account.js
+@@ -0,0 +1,142 @@
++// 普通浏览器配置文件才提供同步；账号沿用门户自己的登录流程。站点权限仅在用户选择该站时申请。
++import { portalOrigin } from "./codec.js";
++import { portalRequest } from "./portal.js";
++import { synchronize } from "./sync.js";
++
++const labels = {
++  site: ["Portal address", "门户地址"],
++  login: ["Open portal to sign in", "打开门户登录"],
++  sync: ["Sync", "同步"],
++  what: ["Data to sync", "同步内容"],
++  bookmarks: ["Aegis Link bookmark folder", "Aegis Link 书签文件夹"],
++  preferences: ["Default and minimum font sizes", "默认字号和最小字号"],
++  pass: ["Sync passphrase", "同步口令"],
++  hint: [
++    "Use the same passphrase (12 characters or more) on each device. The portal cannot recover it.",
++    "每台设备使用相同的同步口令，至少 12 个字符。门户无法找回此口令。",
++  ],
++  now: ["Sync now", "立即同步"],
++  cancel: ["Cancel", "取消"],
++  cloud: ["Use cloud copy", "使用云端副本"],
++  local: ["Use this device", "使用本机副本"],
++  changed: [
++    "Both copies have data. Choose which copy to keep.",
++    "本机和云端均有数据，请选择要保留的副本。",
++  ],
++  opened: [
++    "Sign in on the portal tab, then return here.",
++    "请在门户标签页登录后回到这里。",
++  ],
++  done: ["Synced", "已同步"],
++  running: ["Syncing…", "正在同步…"],
++  signin: ["Open the portal and sign in first.", "请先打开门户并登录。"],
++  network: [
++    "Cannot reach the portal. Check its address and try again.",
++    "无法访问门户，请检查地址后重试。",
++  ],
++  origin: [
++    "Use an HTTPS portal address, or a local development address.",
++    "请输入 HTTPS 门户地址或本机开发地址。",
++  ],
++  account: ["The signed-in account changed. Try again.", "当前登录账号已变更，请重试。"],
++  unlock: [
++    "The passphrase could not unlock this cloud copy.",
++    "同步口令无法解开这份云端副本。",
++  ],
++  conflict: [
++    "Data changed during sync. Try again to compare the latest copies.",
++    "同步期间数据已变化，请重试以比较最新副本。",
++  ],
++  limit: ["This collection exceeds the 2 MiB limit.", "此集合超过 2 MiB 限制。"],
++  invalid: ["The sync data format is invalid.", "同步资料格式无效。"],
++  folder: ["Bookmark folder unavailable.", "无法访问书签文件夹。"],
++  url: [
++    "Only HTTP and HTTPS bookmarks without embedded credentials are supported.",
++    "仅支持未嵌入凭据的 HTTP 和 HTTPS 书签。",
++  ],
++  choose: ["Select data to sync.", "请选择同步内容。"],
++  denied: ["Portal access was not granted.", "未获得该门户的访问权限。"],
++  settings: [
++    "These font settings could not be changed. Check your browser policies.",
++    "无法更改字号，请检查浏览器管理策略。",
++  ],
++  cancelled: ["Sync cancelled.", "本次同步已取消。"],
++};
++const language = navigator.language.startsWith("zh") ? 1 : 0;
++const messages = new Map(Object.entries(labels));
++const text = (key) => {
++  const [english, chinese] = messages.get(key) ?? labels.network;
++  return language ? chinese : english;
++};
++const el = (id) => document.getElementById(id);
++const status = (value) => {
++  el("status").textContent = value;
++};
++document.documentElement.lang = language ? "zh-CN" : "en";
++document.querySelectorAll("[data-text]").forEach((node) => {
++  node.textContent = text(node.dataset.text);
++});
++const saved = await globalThis.chrome.storage.local.get(["portal", "kinds"]);
++el("site").value = saved.portal || "";
++if (saved.kinds)
++  for (const kind of ["bookmarks", "preferences"])
++    el(kind).checked = saved.kinds.includes(kind);
++
++function originAndPermission() {
++  const origin = portalOrigin(el("site").value.trim());
++  const permission = { origins: [origin + "/*"] };
++  return { origin, permission };
++}
++el("connection").onsubmit = async (e) => {
++  e.preventDefault();
++  try {
++    const { origin, permission } = originAndPermission();
++    if (!(await globalThis.chrome.permissions.request(permission)))
++      throw new Error("denied");
++    await globalThis.chrome.storage.local.set({ portal: origin });
++    await globalThis.chrome.tabs.create({ url: origin + "/account" });
++    status(text("opened"));
++  } catch (err) {
++    status(text(err.message));
++  }
++};
++async function choose(kind) {
++  const dialog = el("decision");
++  el("subject").textContent = text(kind);
++  dialog.returnValue = "cancel";
++  const choice = new Promise((resolve) =>
++    dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true }),
++  );
++  dialog.showModal();
++  const answer = await choice;
++  if (!["restore", "upload"].includes(answer)) throw new Error("cancelled");
++  return answer;
++}
++el("sync").onsubmit = async (e) => {
++  e.preventDefault();
++  if (el("run").disabled) return;
++  el("run").disabled = true;
++  const pass = el("pass").value;
++  try {
++    const { origin, permission } = originAndPermission();
++    if (!(await globalThis.chrome.permissions.contains(permission)))
++      throw new Error("signin");
++    const kinds = ["bookmarks", "preferences"].filter((k) => el(k).checked);
++    if (!kinds.length) throw new Error("choose");
++    const tabs = await globalThis.chrome.tabs.query({ url: origin + "/*" });
++    const tab = tabs.find(
++      (t) => !t.incognito && t.url && new URL(t.url).origin === origin,
++    );
++    if (!tab) throw new Error("signin");
++    const user = await portalRequest(tab.id, origin, null);
++    status(text("running") + " " + user.email);
++    await globalThis.chrome.storage.local.set({ kinds });
++    for (const kind of kinds) await synchronize(tab.id, origin, user, kind, pass, choose);
++    status(text("done") + " · " + user.email + " · " + kinds.map(text).join(" / "));
++    el("pass").value = "";
++  } catch (err) {
++    status(text(err.message));
++  } finally {
++    el("run").disabled = false;
++  }
++};
+diff --git a/chrome/browser/resources/aegis_link/codec.js b/chrome/browser/resources/aegis_link/codec.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..29915c1e5e7c0370ed161e4541dccab908aeee2a
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/codec.js
+@@ -0,0 +1,102 @@
++// 同步协议 v1：PBKDF2-SHA256 与 AES-GCM，盐和随机 nonce 随密文发送。
++// 附加认证数据绑定门户、用户和集合，跨账号复制密文不能还原为有效的本地资料。
++const encoder = new TextEncoder();
++const decoder = new TextDecoder("utf-8", { fatal: true });
++export const maxEnvelope = 2 * 1024 * 1024;
++
++export function portalOrigin(raw) {
++  const url = new URL(raw);
++  const local = ["127.0.0.1", "localhost"].includes(url.hostname);
++  if (
++    url.username ||
++    url.password ||
++    url.search ||
++    url.hash ||
++    url.pathname !== "/" ||
++    (url.protocol !== "https:" && !(url.protocol === "http:" && local))
++  ) {
++    throw new Error("origin");
++  }
++  return url.origin;
++}
++
++function toBase64(bytes) {
++  let binary = "";
++  for (let i = 0; i < bytes.length; i += 8192) {
++    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
++  }
++  return btoa(binary);
++}
++
++async function keyFor(password, salt) {
++  const input = await crypto.subtle.importKey(
++    "raw",
++    encoder.encode(password),
++    "PBKDF2",
++    false,
++    ["deriveKey"],
++  );
++  return crypto.subtle.deriveKey(
++    { name: "PBKDF2", salt, iterations: 600000, hash: "SHA-256" },
++    input,
++    { name: "AES-GCM", length: 256 },
++    false,
++    ["encrypt", "decrypt"],
++  );
++}
++
++/** 将已验证的同步资料封装为门户可保存的标准 Base64。 */
++export async function seal(data, password, binding) {
++  const plain = encoder.encode(JSON.stringify(data));
++  if (plain.length + 45 > maxEnvelope) throw new Error("limit");
++  const out = new Uint8Array(45 + plain.length);
++  out[0] = 1;
++  const salt = crypto.getRandomValues(out.subarray(1, 17));
++  const iv = crypto.getRandomValues(out.subarray(17, 29));
++  const key = await keyFor(password, salt);
++  out.set(
++    new Uint8Array(
++      await crypto.subtle.encrypt(
++        { name: "AES-GCM", iv, additionalData: encoder.encode(binding) },
++        key,
++        plain,
++      ),
++    ),
++    29,
++  );
++  return toBase64(out);
++}
++
++/** 在任何本地写入前验证信封版本、大小与认证标签。 */
++export async function unseal(encoded, password, binding) {
++  if (typeof encoded !== "string" || encoded.length > 4 * Math.ceil(maxEnvelope / 3))
++    throw new Error("limit");
++  const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
++  if (bytes.length < 46 || bytes.length > maxEnvelope || bytes[0] !== 1)
++    throw new Error("invalid");
++  const key = await keyFor(password, bytes.subarray(1, 17));
++  let plaintext;
++  try {
++    plaintext = await crypto.subtle.decrypt(
++      {
++        name: "AES-GCM",
++        iv: bytes.subarray(17, 29),
++        additionalData: encoder.encode(binding),
++      },
++      key,
++      bytes.subarray(29),
++    );
++  } catch {
++    throw new Error("unlock");
++  }
++  return JSON.parse(decoder.decode(plaintext));
++}
++
++/** 比较本地内容，无变更时不重写密文，双方均有修改时由用户选择保留哪一份。 */
++export async function fingerprint(data) {
++  return toBase64(
++    new Uint8Array(
++      await crypto.subtle.digest("SHA-256", encoder.encode(JSON.stringify(data))),
++    ),
++  );
++}
+diff --git a/chrome/browser/resources/aegis_link/manifest.json b/chrome/browser/resources/aegis_link/manifest.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0374cd5f663442182da3215383696aa23b06eee
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/manifest.json
+@@ -0,0 +1,11 @@
++{
++  "manifest_version": 3,
++  "name": "Aegis Link",
++  "description": "Sign in to your Aegis Link portal and sync bookmarks and font sizes across desktop profiles.",
++  "version": "1.0.0",
++  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0C2dnIqNpkipaj3NYkciHYmpF9OyR2UKTBEqM34QVvc3h5SUQTEbnXZaqqChmCvQw5cvHPmjtLG3yLxqs8tMeT68b+WIASlDWJBRcqVl+ApA+FgLcn7LHNhVAzrqZFwZekqPd1UkD0qqD0gLShS/DJSMe+SJcusNIytLMz+GemOlFYEhEULIIGXeLnhc0Byx1/ojONKUQOURtRYTvfd05p1Kc2jkBBQM/c54zuklfLMSBSAN5UjATG59kgdJCYyVfQOkN3y87L2uyAjd7XemPUY8XerTkmVxYDlSlBi2c8uy1r7C4FbDPR3sDjOz6xycluOZyqcLN1lEDDFwZ4G2WQIDAQAB",
++  "incognito": "not_allowed",
++  "options_page": "account.html",
++  "permissions": ["storage", "scripting", "bookmarks", "fontSettings"],
++  "optional_host_permissions": ["https://*/*", "http://127.0.0.1/*", "http://localhost/*"]
++}
+diff --git a/chrome/browser/resources/aegis_link/portal.js b/chrome/browser/resources/aegis_link/portal.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b5b232fbd3c0fd038e92ae29cdc0e5dd94c11dc
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/portal.js
+@@ -0,0 +1,59 @@
++// API 请求在用户授权的门户标签页的隔离脚本环境内执行。扩展不申请 Cookie 权限，
++// 不接收会话 Cookie 或 CSRF，账号、站点和具体 API 均在请求发出前核对。
++export async function portalRequest(
++  tabId,
++  origin,
++  collection,
++  accountId = "",
++  update = null,
++) {
++  const [reply] = await globalThis.chrome.scripting.executeScript({
++    target: { tabId },
++    world: "ISOLATED",
++    args: [origin, collection, accountId, update],
++    func: async (trustedOrigin, kind, expectedUser, change) => {
++      if (location.origin !== trustedOrigin || window.top !== window)
++        return { error: "origin" };
++      const options = {
++        credentials: "same-origin",
++        cache: "no-store",
++        redirect: "error",
++      };
++      const session = await fetch("/api/v1/auth/session", options);
++      if (!session.ok) return { error: session.status === 401 ? "signin" : "network" };
++      const { data } = await session.json();
++      const user = data?.principal;
++      if (user?.kind !== "user" || !user.id || (expectedUser && user.id !== expectedUser))
++        return { error: "account" };
++      if (kind === null) return { id: user.id, email: user.email };
++      if (!["bookmarks", "preferences"].includes(kind)) return { error: "invalid" };
++      const result = await fetch(
++        "/api/v1/me/browser-sync/" + kind,
++        change
++          ? {
++              ...options,
++              method: "PUT",
++              headers: {
++                "Content-Type": "application/json",
++                "X-CSRF-Token": data.csrf_token,
++              },
++              body: JSON.stringify(change),
++            }
++          : options,
++      );
++      if (!result.ok)
++        return {
++          error:
++            result.status === 409
++              ? "conflict"
++              : result.status === 401
++                ? "signin"
++                : "network",
++        };
++      return (await result.json()).data;
++    },
++  });
++  if (!reply?.result || reply.result.error)
++    throw new Error(reply?.result?.error || "network");
++  return reply.result;
++}
+diff --git a/chrome/browser/resources/aegis_link/profile.js b/chrome/browser/resources/aegis_link/profile.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..b1a52cc1665cf2be7fc07f87f3b4c4f094206d2e
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/profile.js
+@@ -0,0 +1,161 @@
++// 仅同步本账号专属书签文件夹与 Chromium 的两项字号设置。文件夹引用按门户和账号分开持久化。
++// 还原书签先构建临时树，确认旧树未被同时编辑后再切换引用，写入失败时旧内容仍然可用。
++export function validateTree(items, level = 0, budget = { left: 10000 }) {
++  if (!Array.isArray(items) || level > 40) throw new Error("invalid");
++  return items.map((item) => {
++    if (
++      --budget.left < 0 ||
++      !item ||
++      typeof item.title !== "string" ||
++      item.title.length > 8192
++    )
++      throw new Error("invalid");
++    if (Array.isArray(item.children) && item.url === undefined) {
++      return {
++        title: item.title,
++        children: validateTree(item.children, level + 1, budget),
++      };
++    }
++    if (
++      typeof item.url !== "string" ||
++      item.url.length > 32768 ||
++      item.children !== undefined
++    )
++      throw new Error("invalid");
++    const url = new URL(item.url);
++    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
++      throw new Error("url");
++    return { title: item.title, url: item.url };
++  });
++}
++
++export function validatePreferences(value) {
++  if (
++    ![value?.defaultSize, value?.minimumSize].every(
++      (n) => Number.isInteger(n) && n >= 0 && n <= 100,
++    ) ||
++    value.defaultSize < 1
++  )
++    throw new Error("invalid");
++  return { defaultSize: value.defaultSize, minimumSize: value.minimumSize };
++}
++
++async function subtree(id) {
++  const [folder] = await globalThis.chrome.bookmarks.getSubTree(id);
++  if (!folder || !Array.isArray(folder.children)) throw new Error("folder");
++  return validateTree(folder.children);
++}
++
++async function folder(name, key) {
++  const id = Object.values(await globalThis.chrome.storage.local.get(key))[0];
++  if (id) {
++    const existing = await globalThis.chrome.bookmarks.get(id).catch(() => []);
++    if (existing[0] && !existing[0].url) return existing[0];
++  }
++  const [tree] = await globalThis.chrome.bookmarks.getTree();
++  const parent =
++    tree.children.find((n) => n.folderType === "bookmarks-bar") ||
++    tree.children.find((n) => !n.unmodifiable);
++  if (!parent) throw new Error("folder");
++  const created = await globalThis.chrome.bookmarks.create({
++    parentId: parent.id,
++    title: name,
++  });
++  await globalThis.chrome.storage.local.set({ [key]: created.id });
++  return created;
++}
++
++async function fill(parentId, items) {
++  try {
++    for (const item of items) {
++      const node = await globalThis.chrome.bookmarks.create({
++        parentId,
++        title: item.title,
++        ...(item.url ? { url: item.url } : {}),
++      });
++      if (item.children) await fill(node.id, item.children);
++    }
++  } catch (error) {
++    // 写入失败时由上层移除暂存树，同时向用户报告本地书签错误。
++    throw new Error("folder", { cause: error });
++  }
++}
++
++/** 获取本账号同步范围的一致性比较值，普通书签栏及其他门户账号的目录不参与。 */
++export async function profileStore(collection, binding, email) {
++  if (collection === "preferences") {
++    return {
++      async read() {
++        const [a, b] = await Promise.all([
++          globalThis.chrome.fontSettings.getDefaultFontSize({}),
++          globalThis.chrome.fontSettings.getMinimumFontSize({}),
++        ]);
++        return validatePreferences({
++          defaultSize: a.pixelSize,
++          minimumSize: b.pixelSize,
++        });
++      },
++      async apply(data, before) {
++        const next = validatePreferences(data);
++        const current = await this.read();
++        if (
++          current.defaultSize !== before.defaultSize ||
++          current.minimumSize !== before.minimumSize
++        )
++          throw new Error("conflict");
++        // 两个 Chromium 设置没有事务；次项写入失败时还原本次修改的首项。
++        await globalThis.chrome.fontSettings.setDefaultFontSize({
++          pixelSize: next.defaultSize,
++        });
++        try {
++          await globalThis.chrome.fontSettings.setMinimumFontSize({
++            pixelSize: next.minimumSize,
++          });
++          const actual = await this.read();
++          if (
++            actual.defaultSize !== next.defaultSize ||
++            actual.minimumSize !== next.minimumSize
++          )
++            throw new Error("settings");
++        } catch (error) {
++          await globalThis.chrome.fontSettings.setDefaultFontSize({
++            pixelSize: before.defaultSize,
++          });
++          await globalThis.chrome.fontSettings.setMinimumFontSize({
++            pixelSize: before.minimumSize,
++          });
++          throw new Error("settings", { cause: error });
++        }
++      },
++    };
++  }
++  const key = "folder:" + binding;
++  const name = "Aegis Link · " + email;
++  const original = await folder(name, key);
++  return {
++    read: () => subtree(original.id),
++    async apply(data, before, keepCopy) {
++      const items = validateTree(data);
++      const staged = await globalThis.chrome.bookmarks.create({
++        parentId: original.parentId,
++        title: name + " (…)",
++      });
++      let installed = false;
++      try {
++        await fill(staged.id, items);
++        if (JSON.stringify(await subtree(original.id)) !== JSON.stringify(before))
++          throw new Error("conflict");
++        await globalThis.chrome.bookmarks.update(staged.id, { title: name });
++        await globalThis.chrome.storage.local.set({ [key]: staged.id });
++        installed = true;
++        if (keepCopy)
++          await globalThis.chrome.bookmarks.update(original.id, {
++            title: name + " · " + new Date().toISOString(),
++          });
++        else await globalThis.chrome.bookmarks.removeTree(original.id);
++      } finally {
++        if (!installed) await globalThis.chrome.bookmarks.removeTree(staged.id);
++      }
++    },
++  };
++}
+diff --git a/chrome/browser/resources/aegis_link/sync.js b/chrome/browser/resources/aegis_link/sync.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..23daa39e9a434ba376df9b26da3679c01242e211
+--- /dev/null
++++ b/chrome/browser/resources/aegis_link/sync.js
+@@ -0,0 +1,49 @@
++// 同步状态按设备、站点、用户和集合隔离。服务端版本与本地摘要共同识别并发修改。
++import { fingerprint, seal, unseal } from "./codec.js";
++import { profileStore } from "./profile.js";
++import { portalRequest } from "./portal.js";
++
++/** 首次双端均有资料或离线修改冲突时，交由本人明确选择。对旧版本的上传由服务端拒绝。 */
++export async function synchronize(tabId, origin, user, kind, password, choose) {
++  const binding = JSON.stringify(["aegis-link-v1", origin, user.id, kind]);
++  return navigator.locks.request(binding, async () => {
++    const store = await profileStore(kind, binding, user.email);
++    const current = await store.read(),
++      local = await fingerprint(current);
++    const key = "revision:" + binding,
++      previous = Object.values(await globalThis.chrome.storage.local.get(key))[0];
++    const remote = await portalRequest(tabId, origin, kind, user.id);
++    let version = remote.version,
++      digest = local;
++    let action = "upload";
++    if (version !== "0") {
++      // 即使只是上传，也用用户输入的口令解开现有资料，避免输错口令后重加密覆盖云端。
++      const cloud = await unseal(remote.envelope, password, binding);
++      const cloudHash = await fingerprint(cloud);
++      if (cloudHash === local) action = "same";
++      else if (previous?.version === version) action = "upload";
++      else if (
++        previous?.digest === local ||
++        (!previous && kind === "bookmarks" && !current.length)
++      )
++        action = "download";
++      else action = await choose(kind);
++      if (action === "download" || action === "restore") {
++        if ((await fingerprint(await store.read())) !== local)
++          throw new Error("conflict");
++        await store.apply(cloud, current, action === "restore");
++        digest = cloudHash;
++      }
++    }
++    if (action === "upload") {
++      const envelope = await seal(current, password, binding);
++      const saved = await portalRequest(tabId, origin, kind, user.id, {
++        expected_version: version,
++        envelope,
++      });
++      version = saved.version;
++    }
++    await globalThis.chrome.storage.local.set({ [key]: { version, digest } });
++    return action;
++  });
++}
 diff --git a/chrome/browser/resources/component_extension_resources.grd b/chrome/browser/resources/component_extension_resources.grd
 index 37f5f7edf273e7ad3651a5f83fd6c1e2892c0912..f550b3d3314131a645dde89381af868fe70c65ce 100644
 --- a/chrome/browser/resources/component_extension_resources.grd
@@ -58,3 +787,15 @@ index 37f5f7edf273e7ad3651a5f83fd6c1e2892c0912..f550b3d3314131a645dde89381af868f
        <include name="IDR_NETWORK_SPEECH_SYNTHESIS_JS" file="network_speech_synthesis/tts_extension.js" type="BINDATA" />
  
        <include name="IDR_NETWORK_SPEECH_SYNTHESIS_MV3_AUDIO_HTML" file="network_speech_synthesis/mv3/audio.html" type="BINDATA" />
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.html b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+index c1908d791e7ddf870514f68011f9615527209bd4..03dace7b39539a2c886b1a7f30ef0080842b0dd9 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.html
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+@@ -42,6 +42,7 @@
+ <h1 class="page-title">[[pageTitle_(mode)]]</h1>
+ <template is="dom-if" if="[[isMode_(mode, 'home')]]"><p>$i18n{aegisSettingsDescription}</p><nav class="hub" aria-label="$i18n{aegisSettingsTitle}">
+   <a href="/aegisPrivacy"><cr-icon icon="settings:security"></cr-icon><span><strong>$i18n{aegisPrivacyTitle}</strong><small>$i18n{aegisPrivacyDescription}</small></span></a>
++  <if expr="is_win or is_macosx or is_linux"><a href="chrome-extension://cleemhfjcppbfefmnmhjademobdmdoaj/account.html" target="_blank" rel="noopener"><cr-icon icon="settings:person"></cr-icon><span><strong>Aegis Link</strong></span></a></if>
+   <a href="/aegisEnhancements"><cr-icon icon="settings:chrome-extension"></cr-icon><span><strong>$i18n{aegisEnhancementsTitle}</strong><small>$i18n{aegisEnhancementsDescription}</small></span></a>
+   <a href="/aegisReading"><cr-icon icon="settings:translate"></cr-icon><span><strong>$i18n{aegisReadingTitle}</strong><small>$i18n{aegisReadingDescription}</small></span></a>
+   <a href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span><strong>$i18n{aegisGesturesTitle}</strong><small>$i18n{aegisGesturesDescription}</small></span></a>

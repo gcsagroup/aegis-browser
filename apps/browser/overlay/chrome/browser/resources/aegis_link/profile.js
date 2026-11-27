@@ -75,9 +75,9 @@ async function fill(parentId, items) {
       });
       if (item.children) await fill(node.id, item.children);
     }
-  } catch (cause) {
+  } catch (error) {
     // 写入失败时由上层移除暂存树，同时向用户报告本地书签错误。
-    throw new Error("folder", { cause });
+    throw new Error("folder", { cause: error });
   }
 }
 
