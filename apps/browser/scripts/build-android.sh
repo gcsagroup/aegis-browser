@@ -99,6 +99,11 @@ if [[ -n "$bundle_profile" ]]; then
     fi
   fi
   args="$(printf '%s\n%s' "$args" 'debuggable_apks = false')"
+  if [[ "$host_arch" =~ ^(aarch64|arm64)$ && "${AEGIS_ANDROID_EXPERIMENTAL_ARM64:-}" == true ]]; then
+    # The pinned Linux Rust and Clang host tools are x86-64 binaries. Keep
+    # their generated host targets x86-64 while Android remains arm64.
+    args="$(printf '%s\n%s' "$args" 'host_cpu = "x64"')"
+  fi
   gn gen "$OUT" --args="$args"
   autoninja -C "$OUT" chrome_public_bundle
   python3 "$ROOT_DIR/scripts/verify-build-source.py" --source "$SRC" --platform android
