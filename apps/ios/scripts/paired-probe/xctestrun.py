@@ -2,6 +2,14 @@
 
 from pathlib import Path
 import plistlib
+import re
+
+
+def device_identifier(value):
+    """Keep the device ID a single destination value in xcodebuild."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,127}", value):
+        raise SystemExit("AEGIS_PROBE_DEVICE must be a paired device identifier")
+    return value
 
 
 def aegis_test_target(descriptor):

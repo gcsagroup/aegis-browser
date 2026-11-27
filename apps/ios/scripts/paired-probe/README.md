@@ -6,7 +6,7 @@ These opt-in XCTest cases compare direct and embedded Reality Vision requests on
 
 Use a disposable source checkout on a Mac with Xcode, a paired iPhone and the repository's private Alpha device build prerequisites. From the repository root, apply `git apply apps/ios/scripts/paired-probe/device-trace.patch` in that checkout before building the `Aegis-Release` scheme for testing with the embedded core. The patch adds CONNECT instrumentation and the diagnostic LAN usage description to the test host. Use the normal Alpha signing and Firebase inputs for the test device. Grant the test host Local Network access when prompted.
 
-Set `AEGIS_PROBE_XCTESTRUN` to the resulting physical-device `.xctestrun`, `AEGIS_PROBE_DEVICE` to the paired device identifier, and `AEGIS_PROBE_OUTPUT` to a private output directory. For an existing node, set `AEGIS_PROBE_NODE_FILE` to a private file containing one matching Reality Vision share URI. For a temporary comparison node, set `AEGIS_PROBE_XRAY` to the local Xray executable. The comparison runner generates temporary credentials for each invocation.
+Set `AEGIS_PROBE_XCTESTRUN` to the resulting physical-device `.xctestrun`, `AEGIS_PROBE_DEVICE` to the paired device identifier, and `AEGIS_PROBE_OUTPUT` to a private output directory. For an existing node, set `AEGIS_PROBE_NODE_FILE` to a private file containing one matching Reality Vision share URI. For a temporary comparison node, set `AEGIS_PROBE_XRAY` to the absolute path of a trusted local Xray executable. The comparison runner generates temporary credentials for each invocation.
 
 ## Run and inspect
 

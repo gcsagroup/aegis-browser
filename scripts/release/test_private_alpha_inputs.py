@@ -507,6 +507,31 @@ class PrivateAlphaInputsTests(unittest.TestCase):
 class PairedProbeReceiptRecoveryTests(unittest.TestCase):
     def test_receipts_use_the_selected_host_container_for_every_node_source(self):
         probes = RELEASE.parents[1] / 'apps/ios/scripts/paired-probe'
+        # Run each entry point in a fresh interpreter and replace only the
+        # pinned Apple tools. A PATH lookup must fail this harness.
+        harness = '''
+from pathlib import Path
+import os
+import runpy
+import subprocess
+import sys
+from unittest.mock import patch
+
+fixture_tools = Path(os.environ["PROBE_FIXTURE_TOOLS"])
+launch = subprocess.Popen
+
+def launch_fixture(command, *args, **kwargs):
+    executable = command[0]
+    assert executable in ("/usr/bin/xcodebuild", "/usr/bin/xcrun", "/usr/bin/openssl"), command
+    if executable == "/usr/bin/openssl":
+        return launch(command, *args, **kwargs)
+    return launch([str(fixture_tools / Path(executable).name), *command[1:]], *args, **kwargs)
+
+sys.argv = sys.argv[1:]
+sys.path.insert(0, str(Path(sys.argv[0]).parent))
+with patch.object(subprocess, "Popen", side_effect=launch_fixture):
+    runpy.run_path(sys.argv[0], run_name="__main__")
+'''
         cases = [
             ('dev', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit', 'bundled'),
             ('alpha', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit', 'bundled'),
@@ -515,7 +540,10 @@ class PairedProbeReceiptRecoveryTests(unittest.TestCase):
             ('dev', 'com.gcsa.aegis', None, '--search-only', 'webkit', 'file'),
             ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'file'),
             ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'comparison'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'comparison-traversal'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'comparison-symlink'),
             ('alpha', 'com.gcsa.aegis.alpha.internal', None, None, None, 'paired'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, None, None, 'invalid-device'),
             ('alpha', 'com.example.unexpected', None, '--tls-only', 'tls', 'reject'),
         ]
         for channel, bundle_id, flag, mode, result_name, source in cases:
@@ -535,31 +563,55 @@ class PairedProbeReceiptRecoveryTests(unittest.TestCase):
                 node_file = root / 'node.txt'
                 node_file.write_text(LIST[2] + '\n')
 
+                certificate = root / 'leaf.der'
+                if source == 'comparison':
+                    config = root / 'fixture.cnf'
+                    config.write_text(
+                        '[req]\nprompt = no\ndistinguished_name = dn\nx509_extensions = ext\n'
+                        '[dn]\nCN = DNS:unrelated.example\n'
+                        '[ext]\nsubjectAltName = DNS:fixture.example,DNS:*.fixture.example,IP:192.0.2.1\n'
+                    )
+                    subprocess.run(
+                        ['/usr/bin/openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                         '-config', str(config), '-outform', 'DER', '-out', str(certificate), '-keyout', os.devnull],
+                        check=True, capture_output=True, timeout=10,
+                    )
+
                 bin_dir = root / 'bin'
                 bin_dir.mkdir()
                 xcodebuild = bin_dir / 'xcodebuild'
-                xcodebuild.write_text("#!/bin/sh\nprintf '%s\\n' \"Test Case '-[AegisTests.AccessEmbeddedCoreLiveTests testPhoneWiFiBlockedCNPaired]' started\"\n")
+                xcodebuild.write_text(
+                    "#!/bin/sh\n"
+                    "if [ \"$5\" != 'id=fixture-device' ]; then exit 1; fi\n"
+                    "printf '%s\\n' \"Test Case '-[AegisTests.AccessEmbeddedCoreLiveTests testPhoneWiFiBlockedCNPaired]' started\"\n"
+                )
                 xcodebuild.chmod(0o755)
                 xcrun = bin_dir / 'xcrun'
                 xcrun.write_text('''#!/usr/bin/env python3
+import base64
+import json
 import os
 from pathlib import Path
 import sys
 
 arguments = sys.argv[1:]
-if not arguments or arguments[0] != 'devicectl':
+if not arguments or arguments[0] != 'devicectl' or '--device=fixture-device' not in arguments:
     raise SystemExit(1)
 bundle_id = arguments[arguments.index('--domain-identifier') + 1]
 Path(os.environ['PROBE_COPY_RECORD']).write_text(bundle_id)
 if bundle_id != os.environ['PROBE_EXPECTED_BUNDLE_ID']:
     raise SystemExit(1)
-payload = '{"samples": [], "preflight": {}}' if os.environ.get('PROBE_COMPARISON') else '[]'
-Path(arguments[arguments.index('--destination') + 1]).write_text(payload)
+payload = []
+if os.environ.get('PROBE_COMPARISON'):
+    certificate = Path(os.environ['PROBE_CERTIFICATE']).read_bytes()
+    trust = {"leafDER": base64.b64encode(certificate).decode("ascii")}
+    payload = {"samples": [{"proxy": {"serverTrust": trust}}], "preflight": {}}
+Path(arguments[arguments.index('--destination') + 1]).write_text(json.dumps(payload))
 ''')
                 xcrun.chmod(0o755)
                 copy_record = root / 'copy-record'
                 env = {
-                    'PATH': os.pathsep.join((str(bin_dir), str(Path(sys.executable).parent), os.defpath)),
+                    'PATH': os.pathsep.join((str(Path(sys.executable).parent), os.defpath)),
                     'HOME': str(root),
                     'AEGIS_PROBE_OUTPUT': str(root / 'output'),
                     'AEGIS_PROBE_XCTESTRUN': str(template),
@@ -567,26 +619,56 @@ Path(arguments[arguments.index('--destination') + 1]).write_text(payload)
                     'AEGIS_PROBE_NODE_FILE': str(node_file),
                     'PROBE_COPY_RECORD': str(copy_record),
                     'PROBE_EXPECTED_BUNDLE_ID': bundle_id,
+                    'PROBE_FIXTURE_TOOLS': str(bin_dir),
                 }
-                if source == 'comparison':
-                    (root / 'output' / 'comparison-fixture').mkdir(parents=True)
-                    env.update(AEGIS_COMPARISON_NODE_FILE=str(node_file), AEGIS_COMPARISON_RUN='comparison-fixture',
-                               AEGIS_COMPARISON_PROXY_COUNTRY='US', PROBE_COMPARISON='1')
-                probe = probes / ('run-device.py' if source == 'paired' else 'run-targeted.py')
-                arguments = [sys.executable, '-B', str(probe)]
+                if source.startswith('comparison'):
+                    output = root / 'output'
+                    output.mkdir()
+                    outside = root / 'outside'
+                    outside.mkdir()
+                    comparison_run = 'comparison-fixture'
+                    if source == 'comparison-traversal':
+                        comparison_run = '../outside'
+                    elif source == 'comparison-symlink':
+                        (output / comparison_run).symlink_to(outside, target_is_directory=True)
+                    else:
+                        (output / comparison_run).mkdir()
+                    env.update(AEGIS_COMPARISON_NODE_FILE=str(node_file), AEGIS_COMPARISON_RUN=comparison_run,
+                               AEGIS_COMPARISON_PROXY_COUNTRY='US', PROBE_COMPARISON='1',
+                               PROBE_CERTIFICATE=str(certificate))
+                if source == 'invalid-device':
+                    env['AEGIS_PROBE_DEVICE'] = 'fixture-device,platform=iOS Simulator'
+                probe = probes / ('run-device.py' if source in {'paired', 'invalid-device'} else 'run-targeted.py')
+                arguments = [sys.executable, '-B', '-c', harness, str(probe)]
                 if mode:
                     arguments.append(mode)
                 if flag:
                     arguments.append(flag)
                 result = subprocess.run(arguments, env=env, capture_output=True, text=True, timeout=20)
-                if source == 'reject':
+                rejections = {
+                    'reject': 'valid Aegis app test host',
+                    'invalid-device': 'must be a paired device identifier',
+                    'comparison-traversal': 'Invalid comparison relay run name',
+                    'comparison-symlink': 'Expected a fresh comparison relay run directory',
+                }
+                if source in rejections:
                     self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(rejections[source], result.stderr)
                     self.assertFalse(copy_record.exists())
+                    if source.startswith('comparison'):
+                        self.assertEqual(list(outside.iterdir()), [])
                     continue
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(copy_record.read_text(), bundle_id)
                 summary = json.loads(next(line for line in result.stdout.splitlines() if line.startswith('{')))
                 if source == 'paired':
                     self.assertEqual(set(summary['recoveredCounts'].values()), {0})
+                elif source == 'comparison':
+                    self.assertEqual(summary[result_name], 1)
+                    receipt = json.loads((output / comparison_run / 'tls.json').read_text())
+                    self.assertEqual(receipt['samples'][0]['proxy']['serverTrust'], {
+                        'dnsSANs': ['fixture.example', '*.fixture.example'],
+                        'certificateParsed': True,
+                    })
                 else:
                     self.assertEqual(summary[result_name], 0)

@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
-from xctestrun import aegis_test_host, aegis_test_target
+from xctestrun import aegis_test_host, aegis_test_target, device_identifier
 import re
 import subprocess
 import tempfile
@@ -13,10 +13,10 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 run = str(uuid4())
+device = device_identifier(os.environ['AEGIS_PROBE_DEVICE'])
 os.umask(0o077)
 base = Path(os.environ['AEGIS_PROBE_OUTPUT']).resolve() / run
 base.mkdir(mode=0o700, parents=True)
-device = os.environ['AEGIS_PROBE_DEVICE']
 template = Path(os.environ['AEGIS_PROBE_XCTESTRUN']).resolve(strict=True)
 products = template.parent
 node_file = Path(os.environ['AEGIS_PROBE_NODE_FILE'])
@@ -63,19 +63,19 @@ with tempfile.TemporaryDirectory(prefix="aegis-blocked-cn-private-") as temp_dir
         with os.fdopen(fd, "wb") as handle:
             plistlib.dump(descriptor, handle)
         result = Path(temp_dir) / "Paired.xcresult"
-        command = [
-            "xcodebuild", "test-without-building", "-xctestrun", str(transient),
-            "-destination", f"id={device}", "-parallel-testing-enabled", "NO",
-            "-only-testing:AegisTests/AccessEmbeddedCoreLiveTests/testPhoneWiFiBlockedCNPaired",
-            "-resultBundlePath", str(result)
-        ]
         # Copy only recognized, fixed-format progress out of the XCTest output.
         progress = re.compile(r"blocked-cn-paired (?:primary|www) \d+/\d+ complete")
         test_state = re.compile(r"Test Case '-\[AegisTests\.AccessEmbeddedCoreLiveTests testPhoneWiFiBlockedCNPaired\]' (?:started|(?:passed|failed) \([0-9.]+ seconds\))")
         diagnostic = re.compile(r"(?:Missing node environment|Reality Vision fixture could not be parsed|Expected 2,051 unique primary probe hosts|Testing failed|Wi-Fi or egress controls failed at boundary [123]|Reality Vision reached \d+/7 known hosts, expected at least 4|Active Wi-Fi required|Failed to prepare the device|device is locked|Unlock .{0,80} to continue)", re.I)
         started = False
         with (base / "device-progress.log").open("w") as log:
-            with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1) as proc:
+            with subprocess.Popen(
+                ["/usr/bin/xcodebuild", "test-without-building", "-xctestrun", str(transient),
+                 "-destination", f"id={device}", "-parallel-testing-enabled", "NO",
+                 "-only-testing:AegisTests/AccessEmbeddedCoreLiveTests/testPhoneWiFiBlockedCNPaired",
+                 "-resultBundlePath", str(result)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1,
+            ) as proc:
                 for line in proc.stdout:
                     match = progress.search(line) or test_state.search(line) or diagnostic.search(line)
                     if match:
@@ -88,7 +88,8 @@ with tempfile.TemporaryDirectory(prefix="aegis-blocked-cn-private-") as temp_dir
                 exit_code = proc.wait()
         summary = {"xcodeExitCode": exit_code, "testStarted": started}
         if result.is_dir():
-            p = subprocess.run(["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", str(result)], capture_output=True)
+            p = subprocess.run(["/usr/bin/xcrun", "xcresulttool", "get", "test-results", "summary",
+                                "--path", str(result)], capture_output=True)
             if p.returncode == 0:
                 result_summary = json.loads(p.stdout)
                 for key in ("totalTestCount", "passedTests", "failedTests", "skippedTests", "result"):
@@ -105,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix="aegis-blocked-cn-private-") as temp_dir
                 continue
             staged = Path(temp_dir) / name
             copy = subprocess.run(
-                ["xcrun", "devicectl", "--timeout", "25", "device", "copy", "from", "--device", device,
+                ["/usr/bin/xcrun", "devicectl", "--timeout", "25", "device", "copy", "from", f"--device={device}",
                  "--domain-type", "appDataContainer", "--domain-identifier", host_bundle_id,
                  "--source", f"/Library/Caches/{run}-{remote}", "--destination", str(staged)],
                 capture_output=True,
