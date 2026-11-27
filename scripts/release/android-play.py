@@ -113,8 +113,8 @@ class Play:
         releases = []
         codes = set()
         pending = set(pending_codes or ())
-        draft_codes = {str(version_code)}
-        has_recorded_draft = False
+        target_codes = {str(version_code)}
+        has_pending = False
         for release in document.get('releases', []):
             require(isinstance(release, dict) and isinstance(release.get('versionCodes'), list)
                     and release['versionCodes'] and all(isinstance(code, str) and receipt.CODE.fullmatch(code)
@@ -123,17 +123,17 @@ class Play:
                     'Invalid Play test track version codes')
             state = release.get('status')
             require(state in {'draft', 'completed', 'inProgress', 'halted'}, 'Invalid Play test release status')
-            if state != 'completed' and ignore_pending:
-                continue
             release_codes = set(release['versionCodes'])
-            singleton_draft = state == 'draft' and release_codes == draft_codes
-            recorded_draft = allow_recorded_draft and singleton_draft and draft_codes <= pending
-            require(state == 'completed' or recorded_draft or (not singleton_draft and release_codes == pending),
-                    'Play test track has another pending rollout; reconcile it before writing')
-            has_recorded_draft = has_recorded_draft or recorded_draft
+            if state != 'completed':
+                if ignore_pending:
+                    continue
+                matches_upload = target_codes <= pending and release_codes in (target_codes, pending)
+                require(matches_upload and not has_pending and (state != 'draft' or allow_recorded_draft),
+                        'Play test track has another pending rollout; reconcile it before writing')
+                has_pending = True
             releases.append(release)
             codes.update(release_codes)
-        require(not has_recorded_draft or codes == pending,
+        require(not has_pending or codes == pending,
                 'Play test track changed since the recorded upload; reconcile before writing')
         return releases, sorted(codes, key=int)
 
@@ -183,27 +183,36 @@ class Play:
                 'A completed rollout cannot specify a user fraction')
         require(status != 'inProgress' or (track != 'production' and user_fraction),
                 'A partial rollout needs a non-production track and a user fraction')
+        target_code = str(version_code)
+        release = {'status': status, 'versionCodes': [target_code]}
         if user_fraction:
             require(re.fullmatch(r'0\.(?:[0-9]{0,3}[1-9])', user_fraction), 'Invalid Play user fraction')
-            body = ('{"releases":[{"status":"%s","userFraction":%s,"versionCodes":["%s"]}],"track":"%s"}'
-                    % (status, user_fraction, version_code, track)).encode()
-        else:
-            body = canonical({'releases': [{'status': status, 'versionCodes': [str(version_code)]}], 'track': track}).encode()
+            release['userFraction'] = float(user_fraction)
+        completed = []
         edits = API + f'/androidpublisher/v3/applications/{APPLICATION_ID}/edits'
         _status, payload = self._write(authorize_write, 'POST', edits, b'{}', {'Content-Type': 'application/json'})
         edit_id = json.loads(payload.decode()).get('id')
         require(isinstance(edit_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', edit_id), 'Play edit identity is invalid')
         if track != 'production':
-            _, retained_codes = self._test_track_state(
+            existing_releases, retained_codes = self._test_track_state(
                 edits, edit_id, track, version_code, pending_codes=pending_codes,
                 allow_recorded_draft=track == upload_track,
             )
             if expected_existing is not None:
                 require(pending_codes is not None and set(retained_codes) in (set(expected_existing), set(pending_codes)),
                         'Play test track changed since the recorded upload; reconcile before writing')
-            updated = json.loads(body)
-            updated['releases'][0]['versionCodes'] = sorted(set(retained_codes + [str(version_code)]), key=int)
-            body = canonical(updated).encode()
+            if status == 'completed':
+                release['versionCodes'] = sorted(set(retained_codes + [target_code]), key=int)
+            else:
+                completed = [existing for existing in existing_releases if existing['status'] == 'completed']
+                completed_codes = {code for existing in completed for code in existing['versionCodes']}
+                require(target_code not in completed_codes, 'Play version is already completed on this track')
+                legacy_codes = set(retained_codes) - completed_codes - {target_code}
+                if legacy_codes:
+                    require(legacy_codes <= set(expected_existing or ()),
+                            'Play test track changed since the recorded upload; reconcile before writing')
+                    completed.append({'status': 'completed', 'versionCodes': sorted(legacy_codes, key=int)})
+        body = canonical({'releases': [*completed, release], 'track': track}).encode()
         self._write(authorize_write, 'PUT', f'{edits}/{edit_id}/tracks/{track}', body, {'Content-Type': 'application/json'})
         self._write(authorize_write, 'POST', f'{edits}/{edit_id}:commit', b'')
         return {'editId': edit_id, 'status': status, 'track': track, 'versionCode': version_code}

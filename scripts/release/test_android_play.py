@@ -124,8 +124,17 @@ class PlayTests(unittest.TestCase):
             with self.subTest(status=existing['status']):
                 play.Play(transport, 'token').update_track(CODE, 'internal', 'completed',
                                                           authorize_write=authorize_fixture,
-                                                          pending_codes=['99', str(CODE)], expected_existing=['99'])
+                                                          pending_codes=['99', str(CODE)], expected_existing=['99'],
+                                                          upload_track='internal')
                 self.assertEqual(bodies[-1]['releases'], [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}])
+        play.Play(transport, 'token').update_track(CODE, 'internal', 'inProgress', '0.2',
+                                                  authorize_write=authorize_fixture,
+                                                  pending_codes=['99', str(CODE)], expected_existing=['99'],
+                                                  upload_track='internal')
+        self.assertEqual(bodies[-1]['releases'], [
+            {'status': 'completed', 'versionCodes': ['99']},
+            {'status': 'inProgress', 'versionCodes': [str(CODE)], 'userFraction': 0.2},
+        ])
 
     def test_upload_preserves_completed_test_releases_and_metadata(self):
         bodies = []
@@ -171,7 +180,9 @@ class PlayTests(unittest.TestCase):
         self.assertEqual(requests, ['POST', 'GET'])
 
     def test_upload_then_distribute_retains_completed_codes(self):
-        track = {'track': 'internal', 'releases': [{'status': 'completed', 'versionCodes': ['99']}]}
+        completed = {'status': 'completed', 'versionCodes': ['99'], 'name': 'Stable',
+                     'releaseNotes': [{'language': 'en-US', 'text': 'Previously released'}]}
+        track = {'track': 'internal', 'releases': [completed]}
         uploaded = False
         def transport(method, url, body, headers):
             nonlocal track, uploaded
@@ -197,21 +208,36 @@ class PlayTests(unittest.TestCase):
         expected = {'pending_codes': result['retainedVersionCodes'],
                     'expected_existing': result['trackVersionCodes']['internal'], 'upload_track': result['track']}
         self.assertEqual(track['releases'], [
-            {'status': 'completed', 'versionCodes': ['99']},
+            completed,
             {'status': 'draft', 'versionCodes': [str(CODE)]},
         ])
         track['releases'][1]['versionCodes'].append('98')
         with self.assertRaisesRegex(ValueError, 'another pending rollout'):
             client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture, **expected)
         track['releases'][1]['versionCodes'].remove('98')
-        completed = track['releases'].pop(0)
+        track['releases'].pop(0)
         with self.assertRaisesRegex(ValueError, 'changed since'):
             client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
                                 pending_codes=expected['pending_codes'], upload_track=expected['upload_track'])
         track['releases'].insert(0, completed)
         client.update_track(CODE, 'internal', 'inProgress', '0.1', authorize_write=authorize_fixture, **expected)
+        staged = {'status': 'inProgress', 'versionCodes': [str(CODE)], 'userFraction': 0.1}
+        self.assertEqual(track['releases'], [completed, staged])
+        track['releases'].pop(0)
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture, **expected)
+        track['releases'].insert(0, completed)
+        track['releases'][1]['status'] = 'halted'
+        client.update_track(CODE, 'internal', 'inProgress', '0.1', authorize_write=authorize_fixture, **expected)
+        self.assertEqual(track['releases'], [completed, staged])
+        track['releases'].append({'status': 'inProgress', 'versionCodes': ['98'], 'userFraction': 0.2})
+        with self.assertRaisesRegex(ValueError, 'another pending rollout'):
+            client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture, **expected)
+        track['releases'].pop()
         client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture, **expected)
         self.assertEqual(track['releases'], [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}])
+        with self.assertRaisesRegex(ValueError, 'version is already completed'):
+            client.update_track(CODE, 'internal', 'inProgress', '0.1', authorize_write=authorize_fixture, **expected)
 
     def test_cross_track_rollout_uses_recorded_destination_snapshot(self):
         tracks = {'internal': {'track': 'internal', 'releases': []},
@@ -246,9 +272,19 @@ class PlayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'another pending rollout'):
             client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture,
                                 pending_codes=[str(CODE)], expected_existing=[], upload_track=result['track'])
+        tracks['beta']['releases'][0]['versionCodes'] = pending
+        with self.assertRaisesRegex(ValueError, 'another pending rollout'):
+            client.update_track(CODE, 'beta', 'inProgress', '0.1', authorize_write=authorize_fixture, **expected)
         tracks['beta']['releases'].insert(0, completed)
         tracks['beta']['releases'].pop()
         client.update_track(CODE, 'beta', 'inProgress', '0.1', authorize_write=authorize_fixture, **expected)
+        self.assertEqual(tracks['beta']['releases'], [
+            completed, {'status': 'inProgress', 'versionCodes': [str(CODE)], 'userFraction': 0.1},
+        ])
+        client.update_track(CODE, 'beta', 'inProgress', '0.2', authorize_write=authorize_fixture, **expected)
+        self.assertEqual(tracks['beta']['releases'], [
+            completed, {'status': 'inProgress', 'versionCodes': [str(CODE)], 'userFraction': 0.2},
+        ])
         client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture, **expected)
         self.assertEqual(tracks['beta']['releases'], [{'status': 'completed', 'versionCodes': pending}])
         tracks['beta']['releases'][0]['versionCodes'].append('98')
