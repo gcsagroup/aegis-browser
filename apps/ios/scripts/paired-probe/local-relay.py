@@ -352,7 +352,8 @@ def local_address():
     iface = next(line.split(":", 1)[1].strip() for line in subprocess.check_output(
         ["route", "-n", "get", "default"], text=True).splitlines() if "interface:" in line)
     ip = subprocess.check_output(["ipconfig", "getifaddr", iface], text=True).strip()
-    assert ipaddress.ip_address(ip).is_private
+    if not ipaddress.ip_address(ip).is_private:
+        raise RuntimeError("Comparison relay requires a private local address")
     return ip
 
 def keypair():
