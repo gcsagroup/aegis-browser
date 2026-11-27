@@ -50,14 +50,13 @@ def source_identity(root=ROOT):
     require(git_output('status', '--porcelain', '--untracked-files=all') == '',
             'Android packaging requires a clean committed source')
     sha, tree = git_output('rev-parse', 'HEAD'), git_output('rev-parse', 'HEAD^{tree}')
-    gn = (root / 'apps/browser/args/aegis-android.gn').read_text()
-    header = (root / 'apps/browser/overlay/chrome/browser/ui/webui/help/aegis_github_update.h').read_text()
-    version = re.search(r'kProductVersion\[\] = "([^"]+)"', header)
-    code = re.search(r'^android_override_version_code = "(\d+)"$', gn, re.M)
-    label = re.search(r'^android_override_version_name = "([^"]+)"$', gn, re.M)
-    require(version and code and label and label.group(1) in header, 'Committed Android version metadata is incomplete')
-    receipt.require_version_code(version.group(1), code.group(1))
-    return {'sha': sha, 'tree': tree, 'version': version.group(1), 'build': code.group(1)}
+    metadata = json.loads((root / 'apps/browser/args/android-delivery-version.json').read_text())
+    require(isinstance(metadata, dict) and set(metadata) == {'versionName', 'versionCode'},
+            'Committed Android version metadata is incomplete')
+    version, code = metadata['versionName'], metadata['versionCode']
+    receipt.require_version_code(version, code)
+    require(len(version.split('.')) == 3, 'Android versionName must have three components')
+    return {'sha': sha, 'tree': tree, 'version': version, 'build': code}
 
 
 def zip_symbols(out_dir, destination):
@@ -76,7 +75,7 @@ def producer_output(run_id):
     return chromium, output
 
 
-def verify_bundle_manifest(chromium, aab, build):
+def verify_bundle_manifest(chromium, aab, build, *, version_name=None):
     jar = chromium / 'src/third_party/android_build_tools/bundletool/cipd/bundletool.jar'
     require(jar.is_file(), 'The pinned Chromium bundletool is missing')
     output = subprocess.run(['java', '-jar', str(jar), 'dump', 'manifest',
@@ -88,6 +87,9 @@ def verify_bundle_manifest(chromium, aab, build):
     require(manifest.tag == 'manifest' and manifest.get('package') == archive.APPLICATION_ID
             and manifest.get(android + 'versionCode') == build,
             'Generated Android bundle package or versionCode differs from the producer')
+    if version_name is not None:
+        require(manifest.get(android + 'versionName') == version_name,
+                'Generated Android bundle versionName differs from the producer')
     require(application is not None and application.get(android + 'debuggable', 'false') == 'false',
             'Generated App Bundle is debuggable')
 
@@ -123,13 +125,14 @@ def build_and_seal(plan):
     release_dir = ROOT / '.artifacts/android-delivery'
     release_dir.mkdir(parents=True, exist_ok=True)
     # The unsigned AAB and symbols must come from this run's empty GN output.
-    env = {**os.environ, 'CHROMIUM_ROOT': str(chromium), 'OUT_DIR': str(out)}
+    env = {**os.environ, 'CHROMIUM_ROOT': str(chromium), 'OUT_DIR': str(out),
+           'AEGIS_ANDROID_VERSION_NAME': identity['version'], 'AEGIS_ANDROID_VERSION_CODE': identity['build']}
     subprocess.run(['bash', str(ROOT / 'apps/browser/scripts/build-android.sh'), '--app-bundle', plan['profile']],
                    cwd=ROOT, env=env, check=True)
     require(source_identity() == identity, 'Android producer source changed during the build')
     unsigned = out / 'apks/ChromePublic.aab'
     archive.assert_aab(unsigned)
-    verify_bundle_manifest(chromium, unsigned, identity['build'])
+    verify_bundle_manifest(chromium, unsigned, identity['build'], version_name=identity['version'])
     with tempfile.TemporaryDirectory(prefix='producer-', dir=release_dir) as temp:
         signed = Path(temp) / 'signed.aab'
         release._assert_current_release_source({'source': {'sha': identity['sha'], 'tree': identity['tree']}})
