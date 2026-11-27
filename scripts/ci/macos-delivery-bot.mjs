@@ -117,7 +117,7 @@ export async function driveMacosDmg({environment = process.env, api, quality, re
   let receipt;
   try {
     receipt = await api(admitted.prefix+'/actions/workflows/macos-dmg.yml/dispatches',
-      {method: 'POST', body: {ref: 'main', inputs: dispatched}});
+      {method: 'POST', body: {ref: 'main', return_run_details: true, inputs: dispatched}});
   } catch { throw new Error('DMG dispatch outcome unknown for '+inputs.version+'('+inputs.build+'); reconcile before another request'); }
   requireValue(positiveId(receipt?.workflow_run_id), 'DMG run identity unknown; reconcile without retrying');
   const id = receipt.workflow_run_id;
@@ -214,7 +214,7 @@ export async function completeMacosDmg({environment = process.env, api, manifest
   let receipt;
   try {
     receipt = await api(admitted.prefix+'/actions/workflows/macos-delivery-bot.yml/dispatches',
-      {method: 'POST', body: {ref: 'main', inputs}});
+      {method: 'POST', body: {ref: 'main', return_run_details: true, inputs}});
   } catch { throw new Error('Bot dispatch outcome unknown; reconcile before another request'); }
   requireValue(positiveId(receipt?.workflow_run_id), 'Bot run identity unknown; reconcile without retrying');
   return {workflowRunId: receipt.workflow_run_id, parentRunId: Number(parent), operation: 'package',

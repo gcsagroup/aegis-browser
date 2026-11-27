@@ -33,13 +33,13 @@ on:
       tag_release:
         description: "Publish candidate/macos/<version>-<kind>.<build> as a prerelease after the DMG is sealed."
         type: choice
-        options: [yes, no]
-        default: no
+        options: ['yes', 'no']
+        default: 'no'
       bot_callback:
         description: "Record verified completion, including after the controller monitoring budget expires."
         type: choice
-        options: [yes, no]
-        default: yes
+        options: ['yes', 'no']
+        default: 'yes'
 permissions:
   contents: read
   actions: read
@@ -87,23 +87,53 @@ jobs:
           AEGIS_MACOS_INPUT_BOT_CALLBACK: ${{ inputs.bot_callback }}
         run: python3 scripts/release/macos-dmg-delivery.py plan
 
+      - name: Verify the current upstream source for ad-hoc delivery
+        if: ${{ github.repository == 'gcsagroup/aegis-browser' && steps.plan.outputs.package_kind == 'ad-hoc' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {assertRemoteHeads} from './scripts/ci/promotion-github.mjs';
+          import {requireGreenQuality} from './scripts/ci/promotion-quality.mjs';
+          const {GITHUB_REPOSITORY: repo, GITHUB_SHA: sha, GH_TOKEN: token} = process.env;
+          const branch = 'main';
+          const heads = [{repo, branch, sha, token}];
+          await assertRemoteHeads(heads);
+          if (!await requireGreenQuality(repo, branch, sha, token)) {
+            throw new Error('Exact-source quality and secret scanning must pass before packaging');
+          }
+          await assertRemoteHeads(heads);
+          NODE
+
   package-ad-hoc:
     name: package-ad-hoc
     needs: admission
     if: ${{ needs.admission.outputs.package_kind == 'ad-hoc' }}
     runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
-    timeout-minutes: 360
+    timeout-minutes: 1080
     env:
       MACOS_SIGNING_MODE: ad-hoc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
       - name: Bind job-local DMG output
         run: printf 'MACOS_OUTPUT_DIR=%s/macos-dmg\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Rebuild and seal the ad-hoc arm64 DMG
+        env:
+          MACOS_CD_CHROMIUM_ROOT: ${{ vars.AEGIS_MACOS_CHROMIUM_ROOT }}
+          MACOS_CD_DEPOT_TOOLS_DIR: ${{ vars.AEGIS_MACOS_DEPOT_TOOLS_DIR }}
         run: |
-          bash scripts/release/macos-rebuild-dmg.sh "${{ needs.admission.outputs.version }}" arm64
+          build_options=()
+          if [[ "$GITHUB_REPOSITORY" == gcsagroup/aegis-browser ]]; then
+            export CHROMIUM_ROOT="$MACOS_CD_CHROMIUM_ROOT"
+            export DEPOT_TOOLS_DIR="$MACOS_CD_DEPOT_TOOLS_DIR"
+            build_options=(--ad-hoc-cd)
+          fi
+          bash scripts/release/macos-rebuild-dmg.sh "${{ needs.admission.outputs.version }}" arm64 "${build_options[@]}"
           python3 scripts/release/macos-dmg-delivery.py seal \
             --directory "$MACOS_OUTPUT_DIR" \
             --package-kind ad-hoc \

@@ -460,7 +460,7 @@ console.log(JSON.stringify({verified:true, localCandidate:true, source:{root:{sh
 
 
 class BuildLifecycleLockTests(unittest.TestCase):
-    def exercise_rebuild(self, package_status):
+    def exercise_rebuild(self, package_status, ad_hoc_cd=False):
         with tempfile.TemporaryDirectory(prefix='aegis-dmg-lock-') as directory:
             root = Path(directory).resolve()
             browser = root / 'apps/browser'
@@ -468,7 +468,7 @@ class BuildLifecycleLockTests(unittest.TestCase):
             depot = root / 'depot_tools'
             src = root / 'chromium/src'
             for path in (browser / 'scripts', browser / 'args', release, depot,
-                         src / 'chrome', src / 'build'):
+                         src / 'chrome', src / 'build', src / 'buildtools/mac'):
                 path.mkdir(parents=True, exist_ok=True)
             for relative in ('apps/browser/scripts/build-release.sh',
                              'scripts/release/macos-rebuild-dmg.sh'):
@@ -517,6 +517,7 @@ exit "$FAKE_PACKAGE_STATUS"
             for path, content in scripts.items():
                 path.write_text(content)
                 path.chmod(0o700)
+            (src / 'buildtools/mac/gn').symlink_to(depot / 'gn')
             out = src / 'out/AegisRelease'
             log = root / 'phases'
             # Run the copied scripts with fixture tools and system utilities,
@@ -533,7 +534,8 @@ exit "$FAKE_PACKAGE_STATUS"
             }
             try:
                 result = subprocess.run(
-                    ['/bin/bash', str(release / 'macos-rebuild-dmg.sh'), '0.8.0', 'arm64'],
+                    ['/bin/bash', str(release / 'macos-rebuild-dmg.sh'), '0.8.0', 'arm64']
+                    + (['--ad-hoc-cd'] if ad_hoc_cd else []),
                     env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     timeout=20,
                 )
@@ -544,7 +546,7 @@ exit "$FAKE_PACKAGE_STATUS"
                           f'{package_status}; completed lock checks: {completed}\n{output}')
             self.assertEqual(result.returncode, package_status, result.stdout)
             phases = ['gn', 'begin', 'compile']
-            if platform.system() == 'Darwin':
+            if platform.system() == 'Darwin' and not ad_hoc_cd:
                 phases.append('sign')
             self.assertEqual(log.read_text().splitlines(), phases + ['finalize', 'package'])
             self.assertFalse((out / '.aegis/build.lock').exists())
@@ -558,6 +560,10 @@ exit "$FAKE_PACKAGE_STATUS"
             with patch.dict(os.environ, {'PATH': str(ambient) + os.pathsep + os.environ['PATH']}):
                 self.exercise_rebuild(0)
             self.assertFalse((ambient / 'uname-invoked').exists())
+
+    @unittest.skipUnless(platform.system() == 'Darwin', 'macOS fixed signing only')
+    def test_ad_hoc_cd_packages_without_the_fixed_certificate(self):
+        self.exercise_rebuild(0, ad_hoc_cd=True)
 
     def test_failed_package_releases_the_original_build_lock(self):
         with tempfile.TemporaryDirectory(prefix='aegis-dmg-ambient-') as directory:

@@ -44,6 +44,8 @@ Android 交付与公开发布实现经 fork 分支 PR 进入 `gcsagroup/aegis-br
 
 资产先上传到 draft。发布者在公开 Release 前会重新读取每一份资产摘要。仅当注解、identity digest、元数据与 SHA-256 都匹配时，才复用已有 tag 或 Release。若 GitHub 或 Play 的变更响应含糊，保留 run URL，先通过读回对账，再发起下一次变更。
 
-`versionCode` 必须在 1 到 2100000000 之间，且 `versionCode % 10000` 等于产品版本第四段。仓库中的示例是 `7.2.0.339` / `2007000339`。不要用主版本号重算 versionCode。
+Android 交付从 `apps/browser/args/android-delivery-version.json` 读取三段式 `versionName` 和独立的 `versionCode`。当前测试版本是 `0.8.0` / `1`。版本代码必须在 1 到 2100000000 之间，并满足 Play 对该应用的升级顺序。历史四段式凭据继续要求版本代码末四位与版本第四段一致。
 
 英文说明见 [android-github-public-releases.md](android-github-public-releases.md)。
+
+Full 模式下，`distribute` 会在写入前读取测试轨道。传入合法的 `userFraction` 时，会保留现有已完成的发布，仅对本次上传的版本按比例分发。省略 `userFraction` 时，会完成分发，并在已完成的发布中保留现有 versionCode。若有其他版本的草稿或进行中的分发，需要先核对处理。

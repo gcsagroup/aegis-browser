@@ -84,14 +84,26 @@ if [[ -n "$bundle_profile" ]]; then
   mkdir "$OUT"
   printf '%s\n%s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > "$OUT/.aegis-producer"
   args="$(cat "$ARGS_FILE")"
+  if [[ ! "${AEGIS_ANDROID_VERSION_NAME:-}" =~ ^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$ ||
+        ! "${AEGIS_ANDROID_VERSION_CODE:-}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Android App Bundle requires committed versionName and versionCode." >&2
+    exit 1
+  fi
+  args="$(sed -E "s/^android_override_version_name = .*/android_override_version_name = \"$AEGIS_ANDROID_VERSION_NAME\"/;
+    s/^android_override_version_code = .*/android_override_version_code = \"$AEGIS_ANDROID_VERSION_CODE\"/" <<< "$args")"
   if [[ "$bundle_profile" == release ]]; then
-    args="$(sed -E 's/^symbol_level = [0-9]+$/symbol_level = 1/' "$ARGS_FILE")"
+    args="$(sed -E 's/^symbol_level = [0-9]+$/symbol_level = 1/' <<< "$args")"
     if ! grep -qx 'symbol_level = 1' <<< "$args"; then
       echo "Android Release requires effective native symbol generation." >&2
       exit 1
     fi
   fi
   args="$(printf '%s\n%s' "$args" 'debuggable_apks = false')"
+  if [[ "$host_arch" =~ ^(aarch64|arm64)$ && "${AEGIS_ANDROID_EXPERIMENTAL_ARM64:-}" == true ]]; then
+    # The pinned Linux Rust and Clang host tools are x86-64 binaries. Keep
+    # their generated host targets x86-64 while Android remains arm64.
+    args="$(printf '%s\n%s' "$args" 'host_cpu = "x64"')"
+  fi
   gn gen "$OUT" --args="$args"
   autoninja -C "$OUT" chrome_public_bundle
   python3 "$ROOT_DIR/scripts/verify-build-source.py" --source "$SRC" --platform android

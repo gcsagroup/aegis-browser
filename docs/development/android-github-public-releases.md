@@ -44,4 +44,6 @@ The release workflow accepts only first-attempt App dispatches on canonical `mai
 
 Assets upload to a draft. The publisher re-reads every asset digest before making the release public. An existing tag or release is reused only when its annotation, identity digest, metadata, and SHA-256 match. If a GitHub or Play mutation response is ambiguous, retain the run URL and reconcile by readback before starting another mutation.
 
-`versionCode` must be between 1 and 2100000000, and `versionCode % 10000` must equal the fourth product-version component. The committed example is `7.2.0.339` / `2007000339`. Do not recompute it from the major version.
+Android delivery reads the three-component `versionName` and independent `versionCode` from `apps/browser/args/android-delivery-version.json`. The current test coordinate is `0.8.0` / `1`. The code must be between 1 and 2100000000 and must satisfy Play upgrade ordering for the application. Historical four-component receipts remain valid when their code ends in the fourth component.
+
+In Full mode, `distribute` reads the test track before writing. With a valid `userFraction`, the workflow keeps the existing completed releases and stages only the uploaded version. Omitting `userFraction` completes the rollout and retains the existing version codes in the completed release. Reconcile unrelated drafts or rollouts before writing.

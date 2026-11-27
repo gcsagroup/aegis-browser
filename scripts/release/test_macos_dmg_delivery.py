@@ -62,13 +62,32 @@ def write_package(root, version='0.8.0', package_kind='ad-hoc', body=b'arm64-dmg
 
 class PlanTests(unittest.TestCase):
     def test_plan_admits_one_arm64_dmg_and_aliases_unsigned(self):
-        planned = delivery.plan(environment(), inputs(package_kind='unsigned-dmg', signing_mode='none', tag_release='yes'))
+        version, build = delivery.desktop_product_version().rsplit('.', 1)
+        planned = delivery.plan(environment(), inputs(version=version, build=build,
+                                                      package_kind='unsigned-dmg', signing_mode='none', tag_release='yes'))
         self.assertEqual(planned['package_kind'], 'ad-hoc')
         self.assertEqual(planned['signing_mode'], 'ad-hoc')
         self.assertEqual(planned['upload'], 'false')
         self.assertEqual(planned['tag_release'], 'true')
         self.assertEqual(planned['architectures'], 'arm64')
         self.assertEqual(json.loads(planned['runner']), ['self-hosted', 'macOS', 'ARM64', 'aegis-ios-fork-migration'])
+
+    def test_upstream_ad_hoc_version_and_build_must_match_the_product_source(self):
+        version, build = delivery.desktop_product_version().rsplit('.', 1)
+        with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+            delivery.plan(environment(), inputs(version=version, build=str(int(build) + 1)))
+        with self.assertRaisesRegex(delivery.DeliveryError, 'ad-hoc only'):
+            delivery.plan(environment(), inputs(package_kind='notarized', signing_mode='notarized'))
+
+    def test_upstream_test_candidate_is_bound_to_its_desktop_product_version(self):
+        with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.345'):
+            planned = delivery.plan(environment(), inputs(build='1', tag_release='yes'))
+            self.assertEqual((planned['version'], planned['build'], planned['tag_release']), ('0.8.0', '1', 'true'))
+            with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                delivery.plan(environment(), inputs(build='2', tag_release='yes'))
+        with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.346'):
+            with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                delivery.plan(environment(), inputs(build='1', tag_release='yes'))
 
     def test_fork_admits_the_full_matrix_before_upstream_promotion(self):
         planned = delivery.plan(environment(GITHUB_REPOSITORY='quinn521/aegis-browser'), inputs(package_kind='host-signed', signing_mode='host-signed'))
@@ -79,7 +98,7 @@ class PlanTests(unittest.TestCase):
                                        repository='quinn521/aegis-browser')
 
     def test_macos_runner_label_wins_and_the_gate_must_be_exactly_true(self):
-        planned = delivery.plan(environment(AEGIS_MACOS_RUNNER_LABEL='aegis-mac-1'), inputs(package_kind='notarized', signing_mode='notarized'))
+        planned = delivery.plan(environment(AEGIS_MACOS_RUNNER_LABEL='aegis-mac-1', GITHUB_REPOSITORY=delivery.FORK), inputs(package_kind='notarized', signing_mode='notarized'))
         self.assertIn('aegis-mac-1', planned['runner'])
         with self.assertRaises(delivery.DeliveryError):
             delivery.plan(environment(AEGIS_MACOS_DELIVERY_ENABLED='yes'), inputs())
@@ -92,6 +111,24 @@ class PlanTests(unittest.TestCase):
 
 
 class SealTests(unittest.TestCase):
+    def test_upstream_test_candidate_seals_and_tags_the_product_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'package'
+            write_package(root)
+            with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.346'):
+                with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                    delivery.seal(root, 'ad-hoc', '0.8.0', '1', SHA, REPOSITORY)
+            with patch.object(delivery, 'desktop_product_version', return_value='7.5.0.345'):
+                manifest = delivery.seal(root, 'ad-hoc', '0.8.0', '1', SHA, REPOSITORY)
+            self.assertEqual(manifest['desktopProductVersion'], '7.5.0.345')
+            digest = hashlib.sha256((root / 'macos-delivery-manifest.json').read_bytes()).hexdigest()
+            planned = delivery.plan_dmg_tag(manifest, digest, SHA)
+            self.assertEqual(planned['tag'], 'candidate/macos/0.8.0-ad-hoc.1')
+            payload = json.loads(planned['message'].split('\n', 1)[1])
+            self.assertEqual(payload['desktopProductVersion'], '7.5.0.345')
+            with self.assertRaisesRegex(delivery.DeliveryError, 'product version'):
+                delivery.plan_dmg_tag(dict(manifest, desktopProductVersion='7.5.0.346'), digest, SHA)
+
     def test_seal_rejects_wrong_source_and_missing_distribution_signing(self):
         for changes in ({'sourceSha': 'b' * 40}, {'packagingSourceSha': 'b' * 40}, {'notarizationSigning': False}):
             with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
@@ -166,19 +203,39 @@ class TagTests(unittest.TestCase):
         planned, dmg, digest = self.artifact()
         calls = []
 
-        def api(path, method='GET', body=None, data=None, content_type=None):
+        def asset():
+            return {'id': 11, 'name': dmg.name, 'state': 'uploaded',
+                    'digest': 'sha256:' + digest, 'size': dmg.stat().st_size}
+
+        def api(path, method='GET', body=None, data=None, content_type=None, content_length=None):
             calls.append((method, path, body, data, content_type))
             if method == 'GET':
+                if '/git/ref/tags/' in path and any(call[1].endswith('/git/refs') for call in calls):
+                    return {'object': {'type': 'tag', 'sha': 'c' * 40}}
+                if '/releases?' in path:
+                    return []
+                if path.endswith('/releases/9'):
+                    return {'id': 9, 'tag_name': planned['tag'], 'draft': True, 'prerelease': True,
+                            'body': planned['message'], 'assets': [asset()]}
                 raise delivery.DeliveryStatus(404)
             if path.endswith('/git/tags'):
                 return {'sha': 'c' * 40}
             if path.endswith('/releases'):
-                return {'id': 9, 'prerelease': True, 'draft': False,
+                self.assertTrue(body['draft'])
+                return {'id': 9, 'tag_name': planned['tag'], 'prerelease': True, 'draft': True,
+                        'body': body['body'], 'assets': [],
                         'upload_url': 'https://uploads.github.com/repos/' + REPOSITORY + '/releases/9/assets{?name,label}'}
             if path.startswith('https://uploads.github.com/'):
+                data = data.read()
+                self.assertEqual(content_length, len(data))
                 self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
                 self.assertEqual(content_type, 'application/octet-stream')
-                return {'id': 11, 'name': dmg.name, 'state': 'uploaded'}
+                return asset()
+            if method == 'PATCH':
+                self.assertEqual(body, {'draft': False, 'prerelease': True, 'make_latest': 'false'})
+                self.assertTrue(any(call[1].startswith('https://uploads.github.com/') for call in calls))
+                return {'id': 9, 'tag_name': planned['tag'], 'draft': False, 'prerelease': True,
+                        'body': planned['message'], 'assets': [asset()]}
             return {}
 
         created = delivery.create_dmg_tag_release(api, planned, dmg)
@@ -193,6 +250,29 @@ class TagTests(unittest.TestCase):
         with self.assertRaises(delivery.DeliveryError):
             delivery.create_dmg_tag_release(present, planned, dmg)
         self.assertEqual([method for method, *_rest in calls if method == 'POST'], ['POST', 'POST', 'POST', 'POST'])
+
+    def test_same_published_candidate_is_reconciled_without_writes(self):
+        planned, dmg, digest = self.artifact()
+        tag_object = 'c' * 40
+        asset = {'id': 11, 'name': dmg.name, 'state': 'uploaded',
+                 'digest': 'sha256:' + digest, 'size': dmg.stat().st_size}
+
+        def api(path, method='GET', **kwargs):
+            self.assertEqual(method, 'GET')
+            if '/git/ref/tags/' in path:
+                return {'object': {'type': 'tag', 'sha': tag_object}}
+            if path.endswith('/git/tags/' + tag_object):
+                return {'tag': planned['tag'], 'message': planned['message'],
+                        'object': {'type': 'commit', 'sha': SHA}}
+            if '/releases/tags/' in path:
+                return {'id': 9, 'tag_name': planned['tag'], 'draft': False,
+                        'prerelease': True, 'body': planned['message'], 'assets': [asset]}
+            self.fail(f'Unexpected request {path}')
+
+        self.assertEqual(delivery.create_dmg_tag_release(api, planned, dmg)['assetId'], 11)
+        asset['size'] += 1
+        with self.assertRaisesRegex(delivery.DeliveryError, 'asset differs'):
+            delivery.create_dmg_tag_release(api, planned, dmg)
 
     def test_promote_accepts_only_an_approved_notarized_candidate(self):
         planned, _dmg, digest = self.artifact()

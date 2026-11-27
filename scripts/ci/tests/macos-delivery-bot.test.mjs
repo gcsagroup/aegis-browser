@@ -98,7 +98,7 @@ test('Package dispatches one arm64 DMG and waits for that child', async () => {
   assert.deepEqual(recorded, ['dispatched', 'completed']);
   assert.deepEqual(f.requests.filter(call => call.method === 'POST'), [{
     path: '/repos/'+repository+'/actions/workflows/macos-dmg.yml/dispatches',
-    method: 'POST', body: {ref: 'main', inputs: childInputs()},
+    method: 'POST', body: {ref: 'main', return_run_details: true, inputs: childInputs()},
   }]);
 });
 
@@ -255,6 +255,7 @@ test('complete dispatches the bot receipt for the sealed manifest and does not p
   assert.equal(value.candidateTag, 'candidate/macos/0.8.0-host-signed.800001');
   assert.equal(f.requests.filter(call => call.method === 'POST').length, 1);
   const dispatch = f.requests.find(call => call.method === 'POST');
+  assert.equal(dispatch.body.return_run_details, true);
   assert.equal(dispatch.body.inputs.operation, 'Complete');
   assert.equal(dispatch.body.inputs.completed_operation, 'package');
   assert.equal(dispatch.path.endsWith('/macos-delivery-bot.yml/dispatches'), true);
@@ -269,6 +270,16 @@ test('complete dispatches the bot receipt for the sealed manifest and does not p
       AEGIS_MACOS_DELIVERY_PACKAGE_KIND: 'host-signed', AEGIS_MACOS_DELIVERY_SIGNING_MODE: 'host-signed'}}), /DMG|parent/u);
     assert.equal(denied.requests.filter(call => call.method === 'POST').length, 0);
   }
+});
+
+test('DMG dispatch choices preserve yes and no as strings under boolean YAML parsing', () => {
+  const source = readFileSync('.github/workflows/macos-dmg.yml', 'utf8');
+  const doc = YAML.parse(source, {version: '1.1'});
+  const inputs = doc.true.workflow_dispatch.inputs;
+  assert.deepEqual(inputs.tag_release.options, ['yes', 'no']);
+  assert.equal(inputs.tag_release.default, 'no');
+  assert.deepEqual(inputs.bot_callback.options, ['yes', 'no']);
+  assert.equal(inputs.bot_callback.default, 'yes');
 });
 
 test('the controller form packages or tags a DMG, and promotion is a separate admin job', () => {
@@ -304,7 +315,7 @@ test('the controller form packages or tags a DMG, and promotion is a separate ad
   assert.equal(JSON.stringify(child).includes('store-credentials'), false);
   assert.equal(JSON.stringify(child).includes('macos-26'), false);
   assert.deepEqual(child.on.workflow_dispatch.inputs.operation.options, ['Package']);
-  assert.equal(child.jobs['package-ad-hoc']['timeout-minutes'], 360);
+  assert.equal(child.jobs['package-ad-hoc']['timeout-minutes'], 1080);
   assert.equal(child.jobs['package-notarized']['timeout-minutes'], 400);
   for (const kind of ['ad-hoc', 'host-signed', 'notarized']) {
     const packageJob = child.jobs['package-'+kind];

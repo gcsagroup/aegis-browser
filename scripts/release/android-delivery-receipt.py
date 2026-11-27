@@ -1,7 +1,7 @@
 """Copyable Android delivery identity pins. Never a substitute for producer checks."""
 import re
 
-VERSION = re.compile(r'(?:0|[1-9][0-9]{0,9})(?:\.(?:0|[1-9][0-9]{0,9})){3}\Z')
+VERSION = re.compile(r'(?:0|[1-9][0-9]{0,9})(?:\.(?:0|[1-9][0-9]{0,9})){2,3}\Z')
 CODE = re.compile(r'[1-9][0-9]{0,9}\Z')
 PROFILES = {'alpha', 'beta', 'release'}
 MAX_CODE = 2100000000
@@ -15,16 +15,19 @@ def require(condition, message):
 def version_build_number(version):
     require(isinstance(version, str) and VERSION.fullmatch(version) is not None, 'Invalid Android product version')
     parts = [int(part) for part in version.split('.')]
-    require(all(part <= 2147483647 for part in parts) and parts[3] < 10000,
-            'Android product version is outside the supported range')
-    return parts[3]
+    require(all(part <= 2147483647 for part in parts), 'Android product version is outside the supported range')
+    if len(parts) == 4:
+        require(parts[3] < 10000, 'Android product version is outside the supported range')
+        return parts[3]
+    return None
 
 
 def require_version_code(version, build):
     require(isinstance(build, str) and CODE.fullmatch(build) is not None, 'Invalid Android versionCode')
     code = int(build)
-    require(1 <= code <= MAX_CODE and code % 10000 == version_build_number(version),
-            'versionCode must stay in range and end with the product build number')
+    legacy_build = version_build_number(version)
+    require(1 <= code <= MAX_CODE and (legacy_build is None or code % 10000 == legacy_build),
+            'versionCode must stay in range and match any legacy product build number')
     return code
 
 
