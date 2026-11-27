@@ -81,6 +81,13 @@ class CertificateSANTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Truncated DER value"):
             self.decoder.dns_subject_alternative_names(self.leaf_with_sans(directory_name))
 
+    def test_invalid_universal_forms_cannot_hide_a_constructed_value(self):
+        for invalid in (b"\x10\x00", b"\x11\x00", b"\x20\x00"):
+            with self.subTest(invalid=invalid):
+                other_name = b"\xa0\x09\x06\x03\x2a\x03\x04\xa0\x02" + invalid
+                with self.assertRaisesRegex(ValueError, "Invalid universal DER tag form"):
+                    self.decoder.dns_subject_alternative_names(self.leaf_with_sans(other_name))
+
 
 if __name__ == "__main__":
     unittest.main()

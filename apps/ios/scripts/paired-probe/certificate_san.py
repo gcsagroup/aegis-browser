@@ -8,9 +8,12 @@ def der_items(data):
     while cursor < len(data):
         tag = data[cursor]
         cursor += 1
-        if tag == 0:
-            raise ValueError("Unexpected end-of-contents tag in DER")
-        if tag & 0x1f == 0x1f:
+        number = tag & 0x1f
+        if tag & 0xc0 == 0:
+            constructed = bool(tag & 0x20)
+            if number in (0, 15) or constructed != (number in (8, 11, 16, 17, 29)):
+                raise ValueError("Invalid universal DER tag form")
+        if number == 0x1f:
             if cursor == len(data) or data[cursor] < 31 or data[cursor] == 0x80:
                 raise ValueError("Invalid high DER tag")
             while cursor < len(data) and data[cursor] & 0x80:
