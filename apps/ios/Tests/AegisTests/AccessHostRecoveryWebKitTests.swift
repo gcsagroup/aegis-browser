@@ -4566,6 +4566,34 @@ extension AccessHostRecoveryWebKitTests {
 }
 
 extension AccessHostRecoveryWebKitTests {
+    func testDirectedAssetControlRequiresProxiedPageAndLoadedScript() {
+        let page = "https://github.com/octocat/Hello-World"
+        let events: [[String: Any]] = [
+            ["event": "response", "url": page, "status": 200, "proxyCount": 1],
+            ["event": "commit", "url": page],
+            ["event": "finish", "url": page],
+        ]
+        let loaded: [String: Any] = ["scriptWitness": ["event": "load", "url": "https://github.githubassets.com/app.js"]]
+        func accepted(_ events: [[String: Any]], _ document: [String: Any],
+                      committed: String? = page, displayed: String? = page, loading: Bool = false) -> Bool {
+            DirectedWebKitObserver.successfulAssetControl(pageHost: "github.com", assetHost: "github.githubassets.com",
+                committed: committed, displayed: displayed, stillLoading: loading, events: events, document: document)
+        }
+        XCTAssertTrue(accepted(events, loaded))
+        for outcome in ["error", "timeout", "no-script"] {
+            XCTAssertFalse(accepted(events, ["scriptWitness": ["event": outcome]]))
+        }
+        XCTAssertFalse(accepted(events, [:]))
+        XCTAssertFalse(accepted(events, ["scriptWitness": ["event": "load", "url": "https://other.example/app.js"]]))
+        XCTAssertFalse(accepted(events, loaded, displayed: nil))
+        XCTAssertFalse(accepted(events, loaded, loading: true))
+        XCTAssertFalse(accepted([["event": "response", "url": page, "status": 500, "proxyCount": 1],
+                                 ["event": "commit", "url": page], ["event": "finish", "url": page]], loaded))
+        XCTAssertFalse(accepted([["event": "response", "url": page, "status": 200, "proxyCount": 0],
+                                 ["event": "commit", "url": page], ["event": "finish", "url": page]], loaded))
+        XCTAssertFalse(accepted([["event": "failure", "url": page]], loaded))
+    }
+
     func testDirectedSearchClicksTheRenderedRepositoryAnchor() async throws {
         let view = WKWebView()
         let window = show(view)
@@ -4816,7 +4844,14 @@ extension AccessHostRecoveryWebKitTests {
                 let bytes = try JSONSerialization.data(withJSONObject: observations, options: [.sortedKeys])
                 try bytes.write(to: output, options: .atomic)
                 NSLog("AEGIS-DIRECTED-PAGE %@ %@ end", mode, url.host ?? "?")
-                if entry == .homepage {
+                if assetsOnly {
+                    let pageHost = try XCTUnwrap(url.host)
+                    let assetHost = pageHost == "github.com" ? "github.githubassets.com" : "www.gstatic.com"
+                    XCTAssertTrue(DirectedWebKitObserver.successfulAssetControl(
+                        pageHost: pageHost, assetHost: assetHost, committed: committed, displayed: displayURL,
+                        stillLoading: stillLoading, events: observer.events, document: document),
+                        "Asset control must finish over the proxy and load its expected script")
+                } else if entry == .homepage {
                     XCTAssertEqual(committed, hkHomepage)
                     XCTAssertFalse(stillLoading)
                     XCTAssertTrue(DirectedWebKitObserver.finishedSuccessfulNavigation(to: hkHomepage, events: observer.events, requireProxy: true))
@@ -4870,6 +4905,17 @@ private final class DirectedWebKitObserver: NSObject, WKNavigationDelegate {
               let response = trace[..<commit].last(where: { $0["event"] as? String == "response" }),
               let status = response["status"] as? Int, (200..<300).contains(status) else { return false }
         return !requireProxy || (response["proxyCount"] as? Int ?? 0) > 0
+    }
+
+    static func successfulAssetControl(pageHost: String, assetHost: String, committed: String?, displayed: String?,
+                                       stillLoading: Bool, events: [[String: Any]], document: [String: Any]) -> Bool {
+        guard !stillLoading, let committed, committed == displayed,
+              let page = URL(string: committed), page.scheme == "https", page.host?.lowercased() == pageHost,
+              finishedSuccessfulNavigation(to: committed, events: events, requireProxy: true),
+              let witness = document["scriptWitness"] as? [String: Any], witness["event"] as? String == "load",
+              let assetURL = (witness["url"] as? String).flatMap(URL.init(string:)),
+              assetURL.scheme == "https", assetURL.host?.lowercased() == assetHost else { return false }
+        return true
     }
 
     static func matchesRepositoryLanding(_ url: String, repository: String, kind: String?) -> Bool {

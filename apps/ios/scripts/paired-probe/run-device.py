@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
-from xctestrun import aegis_test_target
+from xctestrun import aegis_test_host, aegis_test_target
 import re
 import subprocess
 import tempfile
@@ -38,6 +38,11 @@ if any(parse_qs(urlsplit(uri).query).get(key) != value for key, value in expecte
 with template.open("rb") as handle:
     descriptor = plistlib.load(handle)
 target = aegis_test_target(descriptor)
+try:
+    _, host_info = aegis_test_host(target, products)
+except (OSError, ValueError, TypeError, plistlib.InvalidFileException):
+    raise SystemExit("Probe requires a valid Aegis app test host") from None
+host_bundle_id = host_info["CFBundleIdentifier"]
 target.setdefault("EnvironmentVariables", {})["AEGIS_BLOCKED_CN_NODE_URI"] = uri
 target["EnvironmentVariables"]["AEGIS_PAIRED_RUN"] = run
 target["DefaultTestExecutionTimeAllowance"] = 14_400
@@ -101,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix="aegis-blocked-cn-private-") as temp_dir
             staged = Path(temp_dir) / name
             copy = subprocess.run(
                 ["xcrun", "devicectl", "--timeout", "25", "device", "copy", "from", "--device", device,
-                 "--domain-type", "appDataContainer", "--domain-identifier", "com.gcsa.aegis",
+                 "--domain-type", "appDataContainer", "--domain-identifier", host_bundle_id,
                  "--source", f"/Library/Caches/{run}-{remote}", "--destination", str(staged)],
                 capture_output=True,
             )

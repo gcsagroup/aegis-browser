@@ -505,17 +505,21 @@ class PrivateAlphaInputsTests(unittest.TestCase):
 
 
 class PairedProbeReceiptRecoveryTests(unittest.TestCase):
-    def test_receipts_use_the_selected_bundled_host_container(self):
-        probe = RELEASE.parents[1] / 'apps/ios/scripts/paired-probe/run-targeted.py'
+    def test_receipts_use_the_selected_host_container_for_every_node_source(self):
+        probes = RELEASE.parents[1] / 'apps/ios/scripts/paired-probe'
         cases = [
-            ('dev', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit'),
-            ('alpha', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit'),
-            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-alpha-node', '--search-only', 'webkit'),
-            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-test-node', '--tls-only', 'tls'),
-            ('dev', 'com.gcsa.aegis', None, '--search-only', 'webkit'),
+            ('dev', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit', 'bundled'),
+            ('alpha', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit', 'bundled'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-alpha-node', '--search-only', 'webkit', 'bundled'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-test-node', '--tls-only', 'tls', 'bundled'),
+            ('dev', 'com.gcsa.aegis', None, '--search-only', 'webkit', 'file'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'file'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'comparison'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, None, None, 'paired'),
+            ('alpha', 'com.example.unexpected', None, '--tls-only', 'tls', 'reject'),
         ]
-        for channel, bundle_id, flag, mode, result_name in cases:
-            with self.subTest(channel=channel, bundle_id=bundle_id, flag=flag, mode=mode), tempfile.TemporaryDirectory() as temp:
+        for channel, bundle_id, flag, mode, result_name, source in cases:
+            with self.subTest(channel=channel, bundle_id=bundle_id, flag=flag, mode=mode, source=source), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 products = root / 'products'
                 app = products / 'Aegis.app'
@@ -534,7 +538,7 @@ class PairedProbeReceiptRecoveryTests(unittest.TestCase):
                 bin_dir = root / 'bin'
                 bin_dir.mkdir()
                 xcodebuild = bin_dir / 'xcodebuild'
-                xcodebuild.write_text('#!/bin/sh\nexit 0\n')
+                xcodebuild.write_text("#!/bin/sh\nprintf '%s\\n' \"Test Case '-[AegisTests.AccessEmbeddedCoreLiveTests testPhoneWiFiBlockedCNPaired]' started\"\n")
                 xcodebuild.chmod(0o755)
                 xcrun = bin_dir / 'xcrun'
                 xcrun.write_text('''#!/usr/bin/env python3
@@ -549,7 +553,8 @@ bundle_id = arguments[arguments.index('--domain-identifier') + 1]
 Path(os.environ['PROBE_COPY_RECORD']).write_text(bundle_id)
 if bundle_id != os.environ['PROBE_EXPECTED_BUNDLE_ID']:
     raise SystemExit(1)
-Path(arguments[arguments.index('--destination') + 1]).write_text('[]')
+payload = '{"samples": [], "preflight": {}}' if os.environ.get('PROBE_COMPARISON') else '[]'
+Path(arguments[arguments.index('--destination') + 1]).write_text(payload)
 ''')
                 xcrun.chmod(0o755)
                 copy_record = root / 'copy-record'
@@ -563,10 +568,25 @@ Path(arguments[arguments.index('--destination') + 1]).write_text('[]')
                     'PROBE_COPY_RECORD': str(copy_record),
                     'PROBE_EXPECTED_BUNDLE_ID': bundle_id,
                 }
-                arguments = [sys.executable, '-B', str(probe), mode]
+                if source == 'comparison':
+                    (root / 'output' / 'comparison-fixture').mkdir(parents=True)
+                    env.update(AEGIS_COMPARISON_NODE_FILE=str(node_file), AEGIS_COMPARISON_RUN='comparison-fixture',
+                               AEGIS_COMPARISON_PROXY_COUNTRY='US', PROBE_COMPARISON='1')
+                probe = probes / ('run-device.py' if source == 'paired' else 'run-targeted.py')
+                arguments = [sys.executable, '-B', str(probe)]
+                if mode:
+                    arguments.append(mode)
                 if flag:
                     arguments.append(flag)
                 result = subprocess.run(arguments, env=env, capture_output=True, text=True, timeout=20)
+                if source == 'reject':
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(copy_record.exists())
+                    continue
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(copy_record.read_text(), bundle_id)
-                self.assertEqual(json.loads(result.stdout)[result_name], 0)
+                summary = json.loads(next(line for line in result.stdout.splitlines() if line.startswith('{')))
+                if source == 'paired':
+                    self.assertEqual(set(summary['recoveredCounts'].values()), {0})
+                else:
+                    self.assertEqual(summary[result_name], 0)

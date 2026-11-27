@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
-from xctestrun import aegis_test_target
+from xctestrun import aegis_test_host, aegis_test_target
 import re
 import subprocess
 import sys
@@ -13,16 +13,8 @@ from uuid import uuid4
 from urllib.parse import parse_qs,urlsplit
 
 
-def bundled_test_uri(target, products):
+def bundled_test_uri(app, info):
     """Read only for output redaction. XCTest reads the signed resource itself."""
-    prefix = "__TESTROOT__/"
-    host_path = target.get("TestHostPath", "")
-    if not host_path.startswith(prefix):
-        raise ValueError("Expected an app test host relative to the XCTest products")
-    app = (products / host_path.removeprefix(prefix)).resolve()
-    if not app.is_relative_to(products) or app.name != "Aegis.app":
-        raise ValueError("Expected Aegis.app inside the XCTest products")
-    info = plistlib.loads((app / "Info.plist").read_bytes())
     channel = info.get("AegisAccessReleaseChannel")
     bundle_id = info.get("CFBundleIdentifier")
     if (channel not in ("dev", "alpha") or info.get("AegisReleaseProfile") != channel
@@ -77,10 +69,14 @@ elif webkit_only:
     selectors=selectors[1:]
 descriptor = plistlib.loads(template.read_bytes())
 target = aegis_test_target(descriptor)
-host_bundle_id = "com.gcsa.aegis"
+try:
+    test_host, host_info = aegis_test_host(target, products)
+except (OSError, ValueError, TypeError, plistlib.InvalidFileException):
+    raise SystemExit("Probe requires a valid Aegis app test host") from None
+host_bundle_id = host_info["CFBundleIdentifier"]
 if use_bundled_node:
     try:
-        bundled_channel, host_bundle_id, uri = bundled_test_uri(target, products)
+        bundled_channel, _, uri = bundled_test_uri(test_host, host_info)
     except (OSError, ValueError, TypeError, plistlib.InvalidFileException):
         raise SystemExit("Bundled probe requires a signed Dev or Alpha app with one Reality Vision node") from None
 else:
