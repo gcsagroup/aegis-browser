@@ -26,11 +26,11 @@ function positiveInteger(value) {
 export function validAndroidCoordinate(version, build) {
   if (typeof version !== 'string' || typeof build !== 'string') return false;
   const parts = version.split('.');
-  if (parts.length !== 4 || !parts.every(part => /^(?:0|[1-9][0-9]{0,9})$/u.test(part))) return false;
-  const number = Number(parts[3]);
-  if (!Number.isSafeInteger(number) || number >= 10000 || !/^[1-9][0-9]{0,9}$/u.test(build)) return false;
+  if (![3, 4].includes(parts.length) || !parts.every(part => /^(?:0|[1-9][0-9]{0,9})$/u.test(part) && Number(part) <= 2147483647)) return false;
+  if (!/^[1-9][0-9]{0,9}$/u.test(build)) return false;
   const code = Number(build);
-  return Number.isSafeInteger(code) && code >= 1 && code <= 2100000000 && code % 10000 === number;
+  if (!Number.isSafeInteger(code) || code > 2100000000) return false;
+  return parts.length === 3 || (Number(parts[3]) < 10000 && code % 10000 === Number(parts[3]));
 }
 async function readGithub(path, token) {
   const response = await globalThis.fetch('https://api.github.com'+path, {method: 'GET', redirect: 'error', signal: globalThis.AbortSignal.timeout(30000),

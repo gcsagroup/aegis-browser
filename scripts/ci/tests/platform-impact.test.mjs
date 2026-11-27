@@ -443,7 +443,7 @@ test('paths select platforms and commit types select stage depth', () => {
     assert.equal(uninstall.windows, true);
     assert.equal(uninstall.ios, false);
     assert.equal(uninstall.integrate, true);
-    for (const file of ['apps/browser/ci-pins/android.json', 'apps/browser/args/aegis-android.gn']) {
+    for (const file of ['apps/browser/ci-pins/android.json', 'apps/browser/args/aegis-android.gn', 'apps/browser/args/android-delivery-version.json']) {
       assert.equal(pr(() => save(file, 'updated'), 'chore: change Android build input').android, true, file);
     }
     const releaseHelper = pr(() => save('fastlane/lib/ios_status.rb', 'changed'), 'docs: tidy iOS release');

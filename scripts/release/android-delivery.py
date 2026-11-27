@@ -39,7 +39,6 @@ def require(condition, message):
 def plan_from_env():
     value = json.loads(os.environ['ANDROID_DELIVERY_PLAN'])
     require(isinstance(value, dict), 'Android delivery plan is invalid')
-    receipt.alpha_self_test(value)
     return value
 
 
@@ -51,14 +50,13 @@ def source_identity(root=ROOT):
     require(git_output('status', '--porcelain', '--untracked-files=all') == '',
             'Android packaging requires a clean committed source')
     sha, tree = git_output('rev-parse', 'HEAD'), git_output('rev-parse', 'HEAD^{tree}')
-    gn = (root / 'apps/browser/args/aegis-android.gn').read_text()
-    header = (root / 'apps/browser/overlay/chrome/browser/ui/webui/help/aegis_github_update.h').read_text()
-    version = re.search(r'kProductVersion\[\] = "([^"]+)"', header)
-    code = re.search(r'^android_override_version_code = "(\d+)"$', gn, re.M)
-    label = re.search(r'^android_override_version_name = "([^"]+)"$', gn, re.M)
-    require(version and code and label and label.group(1) in header, 'Committed Android version metadata is incomplete')
-    receipt.require_version_code(version.group(1), code.group(1))
-    return {'sha': sha, 'tree': tree, 'version': version.group(1), 'build': code.group(1)}
+    metadata = json.loads((root / 'apps/browser/args/android-delivery-version.json').read_text())
+    require(isinstance(metadata, dict) and set(metadata) == {'versionName', 'versionCode'},
+            'Committed Android version metadata is incomplete')
+    version, code = metadata['versionName'], metadata['versionCode']
+    receipt.require_version_code(version, code)
+    require(len(version.split('.')) == 3, 'Android versionName must have three components')
+    return {'sha': sha, 'tree': tree, 'version': version, 'build': code}
 
 
 def zip_symbols(out_dir, destination):
@@ -117,8 +115,7 @@ def retire_producer_output():
 def build_and_seal(plan):
     identity = source_identity()
     require(identity['sha'] == os.environ['GITHUB_SHA'], 'Android producer checkout differs from workflow source')
-    self_test = receipt.alpha_self_test(plan)
-    require(self_test or (plan['version'], plan['build']) == (identity['version'], identity['build']),
+    require((plan['version'], plan['build']) == (identity['version'], identity['build']),
             'Requested versionCode differs from the committed Android source')
     require(os.environ.get('GITHUB_RUN_ATTEMPT') == '1', 'Package attempt must stay on the first run')
     run_id = int(os.environ['GITHUB_RUN_ID'])
@@ -128,17 +125,14 @@ def build_and_seal(plan):
     release_dir = ROOT / '.artifacts/android-delivery'
     release_dir.mkdir(parents=True, exist_ok=True)
     # The unsigned AAB and symbols must come from this run's empty GN output.
-    env = {**os.environ, 'CHROMIUM_ROOT': str(chromium), 'OUT_DIR': str(out)}
-    bundle_profile = 'alpha-self-test' if self_test else plan['profile']
-    subprocess.run(['bash', str(ROOT / 'apps/browser/scripts/build-android.sh'), '--app-bundle', bundle_profile],
+    env = {**os.environ, 'CHROMIUM_ROOT': str(chromium), 'OUT_DIR': str(out),
+           'AEGIS_ANDROID_VERSION_NAME': identity['version'], 'AEGIS_ANDROID_VERSION_CODE': identity['build']}
+    subprocess.run(['bash', str(ROOT / 'apps/browser/scripts/build-android.sh'), '--app-bundle', plan['profile']],
                    cwd=ROOT, env=env, check=True)
     require(source_identity() == identity, 'Android producer source changed during the build')
     unsigned = out / 'apks/ChromePublic.aab'
     archive.assert_aab(unsigned)
-    if self_test:
-        verify_bundle_manifest(chromium, unsigned, plan['build'], version_name=receipt.ALPHA_SELF_TEST_VERSION_NAME)
-    else:
-        verify_bundle_manifest(chromium, unsigned, identity['build'])
+    verify_bundle_manifest(chromium, unsigned, identity['build'], version_name=identity['version'])
     with tempfile.TemporaryDirectory(prefix='producer-', dir=release_dir) as temp:
         signed = Path(temp) / 'signed.aab'
         release._assert_current_release_source({'source': {'sha': identity['sha'], 'tree': identity['tree']}})
@@ -160,7 +154,7 @@ def build_and_seal(plan):
 
 def seal_package(plan, identity, aab, symbols, certificate, run_id):
     version, build = plan['version'], plan['build']
-    require(receipt.alpha_self_test(plan) or (version, build) == (identity['version'], identity['build']),
+    require((version, build) == (identity['version'], identity['build']),
             'Requested versionCode differs from the committed Android source')
     aab_name, symbols_name = archive.asset_names(version, build)
     files = {aab_name: aab}
@@ -212,7 +206,6 @@ def record_package(pending, artifact, job_id, store):
 
 
 def approved_package(plan, store):
-    receipt.alpha_self_test(plan)
     operation = plan['operation']
     pinned = operation in {'upload', 'distribute', 'submit'}
     if pinned:

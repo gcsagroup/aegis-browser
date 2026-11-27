@@ -244,6 +244,7 @@ const needsIosCompile = path => sharedIosProductInput(path)
 const selectsAndroid = path => path.startsWith('apps/browser/patches-android/')
   || path === 'apps/browser/ci-pins/android.json'
   || path === 'apps/browser/args/aegis-android.gn'
+  || path === 'apps/browser/args/android-delivery-version.json'
   || path === 'scripts/ci/check-android-platform-inputs.py'
   || path === 'scripts/ci/release-preflight.mjs'
   || path === '.github/android-public-release-tag-ruleset.json'

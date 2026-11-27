@@ -75,29 +75,19 @@ class PlanMatrix(unittest.TestCase):
                 self.assertFalse(value['tag'])
                 self.assertNotIn('\n', json.dumps(value))
 
-    def test_android_alpha_self_test_is_package_only(self):
+    def test_three_component_version_uses_independent_code(self):
         package = simple('Package', 'Alpha', '0.8.0', '1')
         self.assertEqual((package['version'], package['build'], package['destination']),
-                         ('0.8.0.1', '1', 'artifacts'))
-        self.assertEqual(full('Package', 'Alpha', '0.8.0.1(1)', '{}'), package)
-        for operation, profile, version in (
-                ('Package', 'Beta', '0.8.0'),
-                ('Package', 'Release', '0.8.0.1'),
-                ('Package and upload', 'Alpha', '0.8.0.1'),
-                ('Status', 'Alpha', '0.8.0.1')):
-            with self.subTest(operation=operation, profile=profile, version=version):
-                with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
-                    simple(operation, profile, version, '1')
-        with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
-            full('Full', 'Alpha', '0.8.0.1(1)', '{"operation":"draft"}')
-        packaged = receipt.encode('alpha', '0.8.0.1', '1', 41, 41, 1, 'ab' * 32)
-        with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
-            full('Upload', 'Auto', packaged, '{}')
-        store = mock.Mock()
-        with self.assertRaisesRegex(ValueError, 'Alpha self-test'):
-            delivery.approved_package({'operation': 'upload', 'version': '0.8.0.1', 'build': '1',
-                                       'profile': 'alpha'}, store)
-        store.read.assert_not_called()
+                         ('0.8.0', '1', 'artifacts'))
+        self.assertEqual(full('Package', 'Alpha', '0.8.0(1)', '{}'), package)
+        self.assertEqual(simple('Package and upload', 'Alpha', '0.8.0', '1')['track'], 'internal')
+        self.assertEqual(simple('Status', 'Alpha', '0.8.0', '1')['operation'], 'status-query')
+        encoded = receipt.encode('alpha', '0.8.0', '1', 41, 41, 1, 'ab' * 32)
+        self.assertEqual(receipt.decode(encoded)['version'], '0.8.0')
+        self.assertEqual(full('Upload', 'Auto', encoded, '{}')['track'], 'internal')
+        self.assertEqual(receipt.require_version_code('0.8.0', '2007000345'), 2007000345)
+        with self.assertRaises(ValueError):
+            receipt.require_version_code('0.8.0.1', '2')
 
     def test_both_released_coordinates_bind_version_code(self):
         for version, build in ((VERSION, BUILD), OLDER):
@@ -111,7 +101,7 @@ class PlanMatrix(unittest.TestCase):
             dict(operation='打包并上传 / Package and upload', product='Release', build='2007000340'),
             dict(operation='仅打包 / Package', product='自动 / Auto'),
             dict(operation='Package and upload', product='Release', approved_source_sha='b' * 40),
-            dict(operation='Status', product='Release', version='7.2.0', build='339'),
+            dict(operation='Status', product='Release', version='7.02.0', build='339'),
         ]
         for inputs in rejected:
             with self.subTest(inputs=inputs):
@@ -511,6 +501,20 @@ class DeliveryCommandMatrix(unittest.TestCase):
                                                   root / 'symbols.zip', 'cd' * 32, 41)
                     self.assertFalse((release_root / '.artifacts/android-delivery/package-pending.json').exists())
 
+    def test_source_identity_reads_committed_android_coordinate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            metadata = root / 'apps/browser/args/android-delivery-version.json'
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text(json.dumps({'versionName': '0.8.0', 'versionCode': '1'}))
+            with mock.patch.object(delivery, 'git_output', side_effect=['', SHA, TREE]):
+                self.assertEqual(delivery.source_identity(root),
+                                 {'sha': SHA, 'tree': TREE, 'version': '0.8.0', 'build': '1'})
+            metadata.write_text(json.dumps({'versionName': '0.8.0.1', 'versionCode': '1'}))
+            with mock.patch.object(delivery, 'git_output', side_effect=['', SHA, TREE]):
+                with self.assertRaisesRegex(ValueError, 'three components'):
+                    delivery.source_identity(root)
+
     def test_packaging_requires_current_source_and_builds_original_run_output(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -581,7 +585,7 @@ class DeliveryCommandMatrix(unittest.TestCase):
                 self.assertEqual(sealed['origin']['sourceTree'], TREE)
                 self.assertEqual(sealed['origin']['runId'], 41)
                 self.assertEqual([command[0] for command in commands], ['bash', 'jarsigner'])
-                verify_manifest.assert_called_once_with(chromium.resolve(), expected_out / 'apks/ChromePublic.aab', BUILD)
+                verify_manifest.assert_called_once_with(chromium.resolve(), expected_out / 'apks/ChromePublic.aab', BUILD, version_name=VERSION)
                 check_main.assert_called_once_with({'source': {'sha': SHA, 'tree': TREE}})
                 check_main.side_effect = ValueError('Producer source is no longer current')
                 with mock.patch.dict('os.environ', {'GITHUB_RUN_ID': '42'}):
@@ -589,16 +593,16 @@ class DeliveryCommandMatrix(unittest.TestCase):
                         delivery.build_and_seal(plan)
                 self.assertEqual([command[0] for command in commands], ['bash', 'jarsigner', 'bash'])
 
-                bundle_profile = 'alpha-self-test'
                 expected_out = chromium.resolve() / 'src/out/AegisAndroidDelivery-43-1'
-                self_test_root = root / 'self-test'
-                self_test_plan = simple('Package', 'Alpha', '0.8.0', '1')
+                test_root = root / 'versioned'
+                plan = simple('Package', 'Alpha', '0.8.0', '1')
+                read_source.return_value = {**identity, 'version': '0.8.0', 'build': '1'}
                 check_main.side_effect = None
                 verify_manifest.reset_mock()
                 with (mock.patch.dict('os.environ', {'GITHUB_RUN_ID': '43'}),
-                      mock.patch.object(delivery, 'ROOT', self_test_root)):
-                    sealed = delivery.build_and_seal(self_test_plan)
-                self.assertEqual((sealed['version'], sealed['build'], sealed['profile']), ('0.8.0.1', '1', 'alpha'))
+                      mock.patch.object(delivery, 'ROOT', test_root)):
+                    sealed = delivery.build_and_seal(plan)
+                self.assertEqual((sealed['version'], sealed['build'], sealed['profile']), ('0.8.0', '1', 'alpha'))
                 self.assertEqual(sealed['origin']['sourceSha'], SHA)
                 verify_manifest.assert_called_once_with(chromium.resolve(), expected_out / 'apks/ChromePublic.aab',
                                                         '1', version_name='0.8.0')

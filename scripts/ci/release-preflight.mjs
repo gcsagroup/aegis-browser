@@ -1,7 +1,7 @@
 import {pathToFileURL} from 'node:url';
 import {githubApi} from './promotion-github.mjs';
 import {requireGreenQuality} from './promotion-quality.mjs';
-import {requireAndroidAdministrator} from './android-operator.mjs';
+import {requireAndroidAdministrator, validAndroidCoordinate} from './android-operator.mjs';
 import {releaseLines} from './android-release-lines.mjs';
 
 const REPOSITORY = 'gcsagroup/aegis-browser';
@@ -16,14 +16,8 @@ function exactCandidateTag(tag) {
   if (dash <= 0 || dash >= parts[2].length - 1) return false;
   const version = parts[2].slice(0, dash);
   const audience = parts[2].slice(dash + 1).split('.');
-  const components = version.split('.');
-  const decimal = value => typeof value === 'string' && value.length >= 1 && value.length <= 10 &&
-    (value === '0' || (/^[1-9][0-9]*$/u.test(value) && value.length <= 10));
-  if (components.length !== 4 || !components.every(decimal) || audience.length !== 2) return false;
-  if (!['alpha', 'beta', 'release'].includes(audience[0]) || !/^[1-9][0-9]{0,9}$/u.test(audience[1])) return false;
-  const code = Number(audience[1]);
-  const build = Number(components[3]);
-  return Number.isSafeInteger(code) && code <= 2100000000 && code % 10000 === build && build < 10000;
+  return audience.length === 2 && ['alpha', 'beta', 'release'].includes(audience[0]) &&
+    validAndroidCoordinate(version, audience[1]);
 }
 
 export async function androidReleasePreflight(sha, {environment = process.env, api = githubApi, quality = requireGreenQuality,

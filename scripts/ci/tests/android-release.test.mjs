@@ -129,6 +129,9 @@ test('preflight stays closed until Android release is enabled on current main', 
   const admitted = await androidReleasePreflight(sha, {...options, environment: {...environment, RELEASE_DESTINATION: 'github-draft',
     RELEASE_TAG: 'candidate/android/7.2.0.339-release.2007000339'}});
   assert.equal(admitted.releaseReady, false);
+  const semantic = await androidReleasePreflight(sha, {...options, environment: {...environment, RELEASE_DESTINATION: 'github-draft',
+    RELEASE_TAG: 'candidate/android/0.8.0-alpha.1'}});
+  assert.equal(semantic.releaseReady, false);
 });
 
 test('runner selection stays on the ready x64 host unless ARM64 is explicitly experimental', () => {

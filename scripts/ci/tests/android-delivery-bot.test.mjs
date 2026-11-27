@@ -83,7 +83,7 @@ test('release publication stays disabled and bad coordinates never dispatch', as
   await assert.rejects(driveDelivery({...disabled, environment: {...environment, AEGIS_ANDROID_GITHUB_RELEASE_ENABLED: 'false',
     BOT_INPUTS: JSON.stringify(preview)}}), /disabled/iu);
   assert.equal(disabled.requests.length, 0);
-  for (const input of [{build: '2007000340'}, {version: '7.2.0'}, {product: 'Alpha', operation: 'Preview GitHub release'}, {unknown: 'value'}]) {
+  for (const input of [{build: '2007000340'}, {version: '7.02.0'}, {product: 'Alpha', operation: 'Preview GitHub release'}, {unknown: 'value'}]) {
     const f = fixture();
     await assert.rejects(driveDelivery({...f, environment: {...environment, BOT_INPUTS: JSON.stringify({...preview, ...input})}}));
     assert.equal(f.requests.length, 0);
