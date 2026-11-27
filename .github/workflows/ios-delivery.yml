@@ -148,8 +148,13 @@ jobs:
       - name: Verify bundled GeoSite release
         if: ${{ steps.plan.outputs.operation == 'package' || steps.plan.outputs.operation == 'package-upload' }}
         run: |
-          gh api repos/XTLS/Xray-rules-dat/releases/latest > "$RUNNER_TEMP/aegis-geosite-upstream.json"
-          python3 -B scripts/release/verify-geosite-release.py --latest "$RUNNER_TEMP/aegis-geosite-upstream.json"
+          # Authenticity is checked against the bundled tag; latest only bounds how far the bundle trails.
+          tag=$(jq -er .tag_name apps/ios/AegisApp/GeoSite/geosite-release.json)
+          [[ "$tag" =~ ^[0-9]{14}$ ]] || { echo '::error::Invalid bundled GeoSite tag' >&2; exit 1; }
+          gh api "repos/XTLS/Xray-rules-dat/releases/tags/$tag" > "$RUNNER_TEMP/aegis-geosite-official.json"
+          gh api repos/XTLS/Xray-rules-dat/releases/latest > "$RUNNER_TEMP/aegis-geosite-latest.json"
+          python3 -B scripts/release/verify-geosite-release.py --official "$RUNNER_TEMP/aegis-geosite-official.json" \
+            --latest "$RUNNER_TEMP/aegis-geosite-latest.json"
       - id: shared-runner
         name: Require a shared iOS runner label that excludes the private Alpha runner
         # Status, receipt-free Wait and Release Wait run only on ubuntu-24.04.
