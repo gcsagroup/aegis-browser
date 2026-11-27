@@ -1,6 +1,6 @@
-From 9014f536fa729a3135154c8eb8c0153e92978d3f Mon Sep 17 00:00:00 2001
-From: Aegis Link <dev@localhost>
-Date: Fri, 27 Nov 2026 17:52:27 +0800
+From d6b210d1a274ab50fbeaae65788fea2807ae7ff3 Mon Sep 17 00:00:00 2001
+From: lain665 <lain@erjinyi.com>
+Date: Fri, 27 Nov 2026 18:35:36 +0800
 Subject: [PATCH] Register Aegis Link desktop profile sync
 
 ---
@@ -10,10 +10,10 @@ Subject: [PATCH] Register Aegis Link desktop profile sync
  3 files changed, 16 insertions(+)
 
 diff --git a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
-index 4fb8aaa6b8c071c2540b105f64f1a2435c094738..1c0867e11aac694c2527a0846bbe3b51dc91bfad 100644
+index 720671265ee9851248a0f6369f758f0872e31ca3..bcc6aa2910ee76e23b81ac5f1a0613e8fbebac3c 100644
 --- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
 +++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
-@@ -93,6 +93,7 @@ bool IsComponentExtensionAllowlisted(int manifest_resource_id) {
+@@ -100,6 +100,7 @@ bool IsComponentExtensionAllowlisted(int manifest_resource_id) {
      case IDR_HANGOUT_SERVICES_MANIFEST_V2:
      case IDR_HANGOUT_SERVICES_MANIFEST_V3:
  #endif
@@ -22,10 +22,10 @@ index 4fb8aaa6b8c071c2540b105f64f1a2435c094738..1c0867e11aac694c2527a0846bbe3b51
      case IDR_CONTEXTUAL_TASKS_EXTENSION_MANIFEST_JSON:
      case IDR_GLIC_EXTENSION_MANIFEST:
 diff --git a/chrome/browser/extensions/component_loader.cc b/chrome/browser/extensions/component_loader.cc
-index 80927be5adaa7dac216aabc1cb8644e0edd44d9d..61674b0fc6313d99bdaf71f0d03319e358ee5009 100644
+index e6feac0151a4fa1a2aa587d27ff7bd3668982aab..44863ea41ddce909c72dc5d31303a410b9f10de0 100644
 --- a/chrome/browser/extensions/component_loader.cc
 +++ b/chrome/browser/extensions/component_loader.cc
-@@ -668,6 +668,13 @@ void ComponentLoader::DisableHelpAppForTesting() {
+@@ -700,6 +700,13 @@ void ComponentLoader::DisableHelpAppForTesting() {
  
  void ComponentLoader::AddDefaultComponentExtensions(
      bool skip_session_components) {

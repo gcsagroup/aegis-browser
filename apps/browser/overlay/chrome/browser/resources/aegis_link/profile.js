@@ -41,35 +41,43 @@ export function validatePreferences(value) {
 }
 
 async function subtree(id) {
-  const [folder] = await chrome.bookmarks.getSubTree(id);
+  const [folder] = await globalThis.chrome.bookmarks.getSubTree(id);
   if (!folder || !Array.isArray(folder.children)) throw new Error("folder");
   return validateTree(folder.children);
 }
 
 async function folder(name, key) {
-  const id = (await chrome.storage.local.get(key))[key];
+  const id = Object.values(await globalThis.chrome.storage.local.get(key))[0];
   if (id) {
-    const existing = await chrome.bookmarks.get(id).catch(() => []);
+    const existing = await globalThis.chrome.bookmarks.get(id).catch(() => []);
     if (existing[0] && !existing[0].url) return existing[0];
   }
-  const [tree] = await chrome.bookmarks.getTree();
+  const [tree] = await globalThis.chrome.bookmarks.getTree();
   const parent =
     tree.children.find((n) => n.folderType === "bookmarks-bar") ||
     tree.children.find((n) => !n.unmodifiable);
   if (!parent) throw new Error("folder");
-  const created = await chrome.bookmarks.create({ parentId: parent.id, title: name });
-  await chrome.storage.local.set({ [key]: created.id });
+  const created = await globalThis.chrome.bookmarks.create({
+    parentId: parent.id,
+    title: name,
+  });
+  await globalThis.chrome.storage.local.set({ [key]: created.id });
   return created;
 }
 
 async function fill(parentId, items) {
-  for (const item of items) {
-    const node = await chrome.bookmarks.create({
-      parentId,
-      title: item.title,
-      ...(item.url ? { url: item.url } : {}),
-    });
-    if (item.children) await fill(node.id, item.children);
+  try {
+    for (const item of items) {
+      const node = await globalThis.chrome.bookmarks.create({
+        parentId,
+        title: item.title,
+        ...(item.url ? { url: item.url } : {}),
+      });
+      if (item.children) await fill(node.id, item.children);
+    }
+  } catch (cause) {
+    // 写入失败时由上层移除暂存树，同时向用户报告本地书签错误。
+    throw new Error("folder", { cause });
   }
 }
 
@@ -79,8 +87,8 @@ export async function profileStore(collection, binding, email) {
     return {
       async read() {
         const [a, b] = await Promise.all([
-          chrome.fontSettings.getDefaultFontSize({}),
-          chrome.fontSettings.getMinimumFontSize({}),
+          globalThis.chrome.fontSettings.getDefaultFontSize({}),
+          globalThis.chrome.fontSettings.getMinimumFontSize({}),
         ]);
         return validatePreferences({
           defaultSize: a.pixelSize,
@@ -96,9 +104,13 @@ export async function profileStore(collection, binding, email) {
         )
           throw new Error("conflict");
         // 两个 Chromium 设置没有事务；次项写入失败时还原本次修改的首项。
-        await chrome.fontSettings.setDefaultFontSize({ pixelSize: next.defaultSize });
+        await globalThis.chrome.fontSettings.setDefaultFontSize({
+          pixelSize: next.defaultSize,
+        });
         try {
-          await chrome.fontSettings.setMinimumFontSize({ pixelSize: next.minimumSize });
+          await globalThis.chrome.fontSettings.setMinimumFontSize({
+            pixelSize: next.minimumSize,
+          });
           const actual = await this.read();
           if (
             actual.defaultSize !== next.defaultSize ||
@@ -106,8 +118,12 @@ export async function profileStore(collection, binding, email) {
           )
             throw new Error("settings");
         } catch (error) {
-          await chrome.fontSettings.setDefaultFontSize({ pixelSize: before.defaultSize });
-          await chrome.fontSettings.setMinimumFontSize({ pixelSize: before.minimumSize });
+          await globalThis.chrome.fontSettings.setDefaultFontSize({
+            pixelSize: before.defaultSize,
+          });
+          await globalThis.chrome.fontSettings.setMinimumFontSize({
+            pixelSize: before.minimumSize,
+          });
           throw new Error("settings", { cause: error });
         }
       },
@@ -120,7 +136,7 @@ export async function profileStore(collection, binding, email) {
     read: () => subtree(original.id),
     async apply(data, before, keepCopy) {
       const items = validateTree(data);
-      const staged = await chrome.bookmarks.create({
+      const staged = await globalThis.chrome.bookmarks.create({
         parentId: original.parentId,
         title: name + " (…)",
       });
@@ -129,16 +145,16 @@ export async function profileStore(collection, binding, email) {
         await fill(staged.id, items);
         if (JSON.stringify(await subtree(original.id)) !== JSON.stringify(before))
           throw new Error("conflict");
-        await chrome.bookmarks.update(staged.id, { title: name });
-        await chrome.storage.local.set({ [key]: staged.id });
+        await globalThis.chrome.bookmarks.update(staged.id, { title: name });
+        await globalThis.chrome.storage.local.set({ [key]: staged.id });
         installed = true;
         if (keepCopy)
-          await chrome.bookmarks.update(original.id, {
+          await globalThis.chrome.bookmarks.update(original.id, {
             title: name + " · " + new Date().toISOString(),
           });
-        else await chrome.bookmarks.removeTree(original.id);
+        else await globalThis.chrome.bookmarks.removeTree(original.id);
       } finally {
-        if (!installed) await chrome.bookmarks.removeTree(staged.id);
+        if (!installed) await globalThis.chrome.bookmarks.removeTree(staged.id);
       }
     },
   };

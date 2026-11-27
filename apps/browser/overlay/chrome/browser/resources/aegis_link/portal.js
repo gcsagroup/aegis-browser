@@ -7,7 +7,7 @@ export async function portalRequest(
   accountId = "",
   update = null,
 ) {
-  const [reply] = await chrome.scripting.executeScript({
+  const [reply] = await globalThis.chrome.scripting.executeScript({
     target: { tabId },
     world: "ISOLATED",
     args: [origin, collection, accountId, update],

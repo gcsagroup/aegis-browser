@@ -63,7 +63,11 @@ const labels = {
   cancelled: ["Sync cancelled.", "本次同步已取消。"],
 };
 const language = navigator.language.startsWith("zh") ? 1 : 0;
-const text = (k) => (labels[k] || labels.network)[language];
+const messages = new Map(Object.entries(labels));
+const text = (key) => {
+  const [english, chinese] = messages.get(key) ?? labels.network;
+  return language ? chinese : english;
+};
 const el = (id) => document.getElementById(id);
 const status = (value) => {
   el("status").textContent = value;
@@ -72,7 +76,7 @@ document.documentElement.lang = language ? "zh-CN" : "en";
 document.querySelectorAll("[data-text]").forEach((node) => {
   node.textContent = text(node.dataset.text);
 });
-const saved = await chrome.storage.local.get(["portal", "kinds"]);
+const saved = await globalThis.chrome.storage.local.get(["portal", "kinds"]);
 el("site").value = saved.portal || "";
 if (saved.kinds)
   for (const kind of ["bookmarks", "preferences"])
@@ -87,9 +91,10 @@ el("connection").onsubmit = async (e) => {
   e.preventDefault();
   try {
     const { origin, permission } = originAndPermission();
-    if (!(await chrome.permissions.request(permission))) throw new Error("denied");
-    await chrome.storage.local.set({ portal: origin });
-    await chrome.tabs.create({ url: origin + "/account" });
+    if (!(await globalThis.chrome.permissions.request(permission)))
+      throw new Error("denied");
+    await globalThis.chrome.storage.local.set({ portal: origin });
+    await globalThis.chrome.tabs.create({ url: origin + "/account" });
     status(text("opened"));
   } catch (err) {
     status(text(err.message));
@@ -114,17 +119,18 @@ el("sync").onsubmit = async (e) => {
   const pass = el("pass").value;
   try {
     const { origin, permission } = originAndPermission();
-    if (!(await chrome.permissions.contains(permission))) throw new Error("signin");
+    if (!(await globalThis.chrome.permissions.contains(permission)))
+      throw new Error("signin");
     const kinds = ["bookmarks", "preferences"].filter((k) => el(k).checked);
     if (!kinds.length) throw new Error("choose");
-    const tabs = await chrome.tabs.query({ url: origin + "/*" });
+    const tabs = await globalThis.chrome.tabs.query({ url: origin + "/*" });
     const tab = tabs.find(
       (t) => !t.incognito && t.url && new URL(t.url).origin === origin,
     );
     if (!tab) throw new Error("signin");
     const user = await portalRequest(tab.id, origin, null);
     status(text("running") + " " + user.email);
-    await chrome.storage.local.set({ kinds });
+    await globalThis.chrome.storage.local.set({ kinds });
     for (const kind of kinds) await synchronize(tab.id, origin, user, kind, pass, choose);
     status(text("done") + " · " + user.email + " · " + kinds.map(text).join(" / "));
     el("pass").value = "";

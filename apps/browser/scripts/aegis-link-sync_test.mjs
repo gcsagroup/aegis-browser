@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { createHash, createPublicKey } from "node:crypto";
 import {
   portalOrigin,
   seal,
@@ -71,24 +72,32 @@ test("在更改本地资料前验证整棵书签树与字号", () => {
     minimumSize: 0,
   });
 });
-test("设置入口的组件 ID 与清单公钥及产品补丁一致", async () => {
-  const root = new URL("../", import.meta.url);
-  const directory = "overlay/chrome/browser/resources/aegis_link/";
-  const manifest = JSON.parse(await readFile(new URL(directory + "manifest.json", root)));
+test("设置入口的组件 ID 与清单公钥及产品补丁一致", async (context) => {
+  // 此测试独立进程内使用仓库固定资源路径，结束时恢复调用者的工作目录。
+  const previous = process.cwd();
+  context.after(() => process.chdir(previous));
+  process.chdir(fileURLToPath(new URL("../", import.meta.url)));
+  const manifest = JSON.parse(
+    await readFile("overlay/chrome/browser/resources/aegis_link/manifest.json", "utf8"),
+  );
+  const publicKey = createPublicKey({
+    key: Buffer.from(manifest.key, "base64"),
+    format: "der",
+    type: "spki",
+  });
+  assert.equal(publicKey.type, "public");
+  assert.equal(publicKey.asymmetricKeyType, "rsa");
   const hash = createHash("sha256")
     .update(Buffer.from(manifest.key, "base64"))
     .digest("hex")
     .slice(0, 32);
   const id = Array.from(hash, (d) => String.fromCharCode(97 + parseInt(d, 16))).join("");
   const settings = await readFile(
-    new URL("overlay/chrome/browser/resources/settings/aegis_page/aegis_page.html", root),
+    "overlay/chrome/browser/resources/settings/aegis_page/aegis_page.html",
     "utf8",
   );
   assert.ok(settings.includes("chrome-extension://" + id + "/account.html"));
-  const patch = await readFile(
-    new URL("patches/0562-aegis-link-desktop-sync.patch", root),
-    "utf8",
-  );
+  const patch = await readFile("patches/0562-aegis-link-desktop-sync.patch", "utf8");
   for (const file of [
     "account.html",
     "account.css",

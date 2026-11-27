@@ -11,7 +11,7 @@ export async function synchronize(tabId, origin, user, kind, password, choose) {
     const current = await store.read(),
       local = await fingerprint(current);
     const key = "revision:" + binding,
-      previous = (await chrome.storage.local.get(key))[key];
+      previous = Object.values(await globalThis.chrome.storage.local.get(key))[0];
     const remote = await portalRequest(tabId, origin, kind, user.id);
     let version = remote.version,
       digest = local;
@@ -43,7 +43,7 @@ export async function synchronize(tabId, origin, user, kind, password, choose) {
       });
       version = saved.version;
     }
-    await chrome.storage.local.set({ [key]: { version, digest } });
+    await globalThis.chrome.storage.local.set({ [key]: { version, digest } });
     return action;
   });
 }
