@@ -120,15 +120,21 @@ class PlayTests(unittest.TestCase):
         play.Play(transport, 'token').update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture)
         self.assertEqual(bodies[0]['releases'][0]['versionCodes'], ['99', str(CODE)])
 
-    def test_upload_retains_existing_test_track_codes(self):
+    def test_upload_preserves_completed_releases(self):
         bodies = []
+        completed = [
+            {'status': 'completed', 'versionCodes': ['99'], 'name': 'Serving release',
+             'releaseNotes': [{'language': 'en-US', 'text': 'Existing release notes'}]},
+            {'status': 'completed', 'versionCodes': ['98'], 'name': 'Older serving release'},
+        ]
+
         def transport(method, url, body, headers):
             if url.endswith(f'/generatedApks/{CODE}'):
                 return 404, {}, b'{}'
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-1"}'
             if method == 'GET' and url.endswith('/tracks/internal'):
-                return 200, {}, b'{"track":"internal","releases":[{"status":"completed","versionCodes":["99"]}]}'
+                return 200, {}, json.dumps({'track': 'internal', 'releases': completed}).encode()
             if method == 'GET' and url.endswith('/tracks/beta'):
                 return 404, {}, b'{}'
             if '/bundles?' in url:
@@ -136,8 +142,13 @@ class PlayTests(unittest.TestCase):
             if method == 'PUT':
                 bodies.append(json.loads(body))
             return 200, {}, b'{}'
-        play.Play(transport, 'token').upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
-        self.assertEqual(bodies[0]['releases'][0]['versionCodes'], ['99', str(CODE)])
+        result = play.Play(transport, 'token').upload_draft(
+            Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
+        self.assertEqual(bodies, [
+            {'track': 'internal', 'releases': [*completed, {'status': 'draft', 'versionCodes': [str(CODE)]}]},
+        ])
+        self.assertEqual(result['trackVersionCodes'], {'internal': ['98', '99'], 'beta': []})
+        self.assertEqual(result['retainedVersionCodes'], ['98', '99', str(CODE)])
 
     def test_other_pending_test_rollout_blocks_writes(self):
         requests = []
@@ -175,18 +186,36 @@ class PlayTests(unittest.TestCase):
             return 200, {}, b'{}'
         client = play.Play(transport, 'token')
         client.check_test_track(CODE, 'internal', authorize_write=authorize_fixture)
-        client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
-        self.assertEqual(track['releases'][0]['versionCodes'], ['99', str(CODE)])
-        track['releases'][0]['versionCodes'].append('98')
+        result = client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
+        existing = result['trackVersionCodes']['internal']
+        pending = result['retainedVersionCodes']
+        self.assertEqual(track['releases'], [
+            {'status': 'completed', 'versionCodes': ['99']},
+            {'status': 'draft', 'versionCodes': [str(CODE)]},
+        ])
+        draft = track['releases'][1]
+        draft['versionCodes'].append('98')
         with self.assertRaisesRegex(ValueError, 'another pending rollout'):
             client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
-                                pending_codes=['99', str(CODE)])
-        track['releases'][0]['versionCodes'].remove('98')
+                                pending_codes=pending, expected_existing=existing)
+        draft['versionCodes'].remove('98')
+        completed = track['releases'].pop(0)
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
+                                pending_codes=pending, expected_existing=existing)
+        track['releases'].insert(0, completed)
         client.update_track(CODE, 'internal', 'inProgress', '0.1', authorize_write=authorize_fixture,
-                            pending_codes=['99', str(CODE)])
+                            pending_codes=pending, expected_existing=existing)
         client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
-                            pending_codes=['99', str(CODE)])
-        self.assertEqual(track['releases'], [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}])
+                            pending_codes=pending, expected_existing=existing)
+        expected_releases = [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}]
+        self.assertEqual(track['releases'], expected_releases)
+
+        # A receipt issued before this fix can point to a combined draft.
+        track['releases'] = [{'status': 'draft', 'versionCodes': pending}]
+        client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
+                            pending_codes=pending, expected_existing=existing)
+        self.assertEqual(track['releases'], expected_releases)
 
     def test_cross_track_rollout_uses_recorded_destination_snapshot(self):
         tracks = {'internal': {'track': 'internal', 'releases': []},
