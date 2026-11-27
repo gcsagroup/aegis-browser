@@ -33,13 +33,13 @@ on:
       tag_release:
         description: "Publish candidate/macos/<version>-<kind>.<build> as a prerelease after the DMG is sealed."
         type: choice
-        options: [yes, no]
-        default: no
+        options: ['yes', 'no']
+        default: 'no'
       bot_callback:
         description: "Record verified completion, including after the controller monitoring budget expires."
         type: choice
-        options: [yes, no]
-        default: yes
+        options: ['yes', 'no']
+        default: 'yes'
 permissions:
   contents: read
   actions: read
