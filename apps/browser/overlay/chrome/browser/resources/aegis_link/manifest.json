@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Aegis Link",
+  "description": "Sign in to your Aegis Link portal and sync bookmarks and font sizes across desktop profiles.",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0C2dnIqNpkipaj3NYkciHYmpF9OyR2UKTBEqM34QVvc3h5SUQTEbnXZaqqChmCvQw5cvHPmjtLG3yLxqs8tMeT68b+WIASlDWJBRcqVl+ApA+FgLcn7LHNhVAzrqZFwZekqPd1UkD0qqD0gLShS/DJSMe+SJcusNIytLMz+GemOlFYEhEULIIGXeLnhc0Byx1/ojONKUQOURtRYTvfd05p1Kc2jkBBQM/c54zuklfLMSBSAN5UjATG59kgdJCYyVfQOkN3y87L2uyAjd7XemPUY8XerTkmVxYDlSlBi2c8uy1r7C4FbDPR3sDjOz6xycluOZyqcLN1lEDDFwZ4G2WQIDAQAB",
+  "incognito": "not_allowed",
+  "options_page": "account.html",
+  "permissions": ["storage", "scripting", "bookmarks", "fontSettings"],
+  "optional_host_permissions": ["https://*/*", "http://127.0.0.1/*", "http://localhost/*"]
+}

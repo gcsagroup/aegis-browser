@@ -559,3 +559,4 @@
 0559-fix-aim-speech-fixture-constructor-type.patch
 0560-align-windows-uninstall-ui.patch
 0561-bump-product-build-345.patch
+0562-aegis-link-desktop-sync.patch

@@ -1,0 +1,60 @@
+From 9014f536fa729a3135154c8eb8c0153e92978d3f Mon Sep 17 00:00:00 2001
+From: Aegis Link <dev@localhost>
+Date: Fri, 27 Nov 2026 17:52:27 +0800
+Subject: [PATCH] Register Aegis Link desktop profile sync
+
+---
+ .../component_extensions_allowlist/allowlist.cc           | 1 +
+ chrome/browser/extensions/component_loader.cc             | 7 +++++++
+ .../browser/resources/component_extension_resources.grd   | 8 ++++++++
+ 3 files changed, 16 insertions(+)
+
+diff --git a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
+index 4fb8aaa..1c0867e 100644
+--- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
++++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
+@@ -93,6 +93,7 @@ bool IsComponentExtensionAllowlisted(int manifest_resource_id) {
+     case IDR_HANGOUT_SERVICES_MANIFEST_V2:
+     case IDR_HANGOUT_SERVICES_MANIFEST_V3:
+ #endif
++    case IDR_AEGIS_LINK_MANIFEST_JSON:
+     case IDR_AIM_ELIGIBILITY_EXTENSION_MANIFEST_JSON:
+     case IDR_CONTEXTUAL_TASKS_EXTENSION_MANIFEST_JSON:
+     case IDR_GLIC_EXTENSION_MANIFEST:
+diff --git a/chrome/browser/extensions/component_loader.cc b/chrome/browser/extensions/component_loader.cc
+index 80927be..61674b0 100644
+--- a/chrome/browser/extensions/component_loader.cc
++++ b/chrome/browser/extensions/component_loader.cc
+@@ -668,6 +668,13 @@ void ComponentLoader::DisableHelpAppForTesting() {
+ 
+ void ComponentLoader::AddDefaultComponentExtensions(
+     bool skip_session_components) {
++  // 账户页仅属于普通桌面配置，不向隐私窗口开放同步。
++#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
++  if (profile_->IsRegularProfile() && !profile_->IsOffTheRecord()) {
++    Add(IDR_AEGIS_LINK_MANIFEST_JSON,
++        base::FilePath(FILE_PATH_LITERAL("aegis_link")));
++  }
++#endif
+   // Do not add component extensions that have background pages here -- add them
+   // to AddDefaultComponentExtensionsWithBackgroundPages.
+ #if BUILDFLAG(IS_CHROMEOS)
+diff --git a/chrome/browser/resources/component_extension_resources.grd b/chrome/browser/resources/component_extension_resources.grd
+index 37f5f7e..f550b3d 100644
+--- a/chrome/browser/resources/component_extension_resources.grd
++++ b/chrome/browser/resources/component_extension_resources.grd
+@@ -12,6 +12,14 @@
+   </outputs>
+   <release seq="1">
+     <includes>
++      <include name="IDR_AEGIS_LINK_ACCOUNT_CSS" file="aegis_link/account.css" type="BINDATA" />
++      <include name="IDR_AEGIS_LINK_ACCOUNT_HTML" file="aegis_link/account.html" type="BINDATA" />
++      <include name="IDR_AEGIS_LINK_ACCOUNT_JS" file="aegis_link/account.js" type="BINDATA" />
++      <include name="IDR_AEGIS_LINK_CODEC_JS" file="aegis_link/codec.js" type="BINDATA" />
++      <include name="IDR_AEGIS_LINK_MANIFEST_JSON" file="aegis_link/manifest.json" type="BINDATA" />
++      <include name="IDR_AEGIS_LINK_PORTAL_JS" file="aegis_link/portal.js" type="BINDATA" />
++      <include name="IDR_AEGIS_LINK_PROFILE_JS" file="aegis_link/profile.js" type="BINDATA" />
++      <include name="IDR_AEGIS_LINK_SYNC_JS" file="aegis_link/sync.js" type="BINDATA" />
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_JS" file="network_speech_synthesis/tts_extension.js" type="BINDATA" />
+ 
+       <include name="IDR_NETWORK_SPEECH_SYNTHESIS_MV3_AUDIO_HTML" file="network_speech_synthesis/mv3/audio.html" type="BINDATA" />

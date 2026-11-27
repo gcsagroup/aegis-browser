@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- 浏览器内部的同步操作页。同步口令仅在本页内存中使用。 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aegis Link</title>
+    <link rel="stylesheet" href="account.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Aegis Link</h1>
+      <form id="connection">
+        <label for="site" data-text="site">Portal address</label>
+        <input type="url" id="site" required placeholder="https://" autocomplete="url" />
+        <button data-text="login">Open portal to sign in</button>
+      </form>
+      <section>
+        <h2 data-text="sync">Sync</h2>
+        <form id="sync">
+          <fieldset>
+            <legend data-text="what">Data to sync</legend>
+            <label
+              ><input type="checkbox" id="bookmarks" checked /><span data-text="bookmarks"
+                >Aegis Link bookmark folder</span
+              ></label
+            >
+            <label
+              ><input type="checkbox" id="preferences" /><span data-text="preferences"
+                >Default and minimum font sizes</span
+              ></label
+            >
+          </fieldset>
+          <label for="pass" data-text="pass">Sync passphrase</label>
+          <input
+            id="pass"
+            type="password"
+            minlength="12"
+            required
+            autocomplete="off"
+            aria-describedby="hint"
+          />
+          <small id="hint" data-text="hint"
+            >Use the same passphrase on each device. It cannot be recovered by the
+            portal.</small
+          >
+          <button id="run" data-text="now">Sync now</button>
+        </form>
+      </section>
+      <p role="status" aria-live="polite" id="status"></p>
+      <dialog id="decision">
+        <form method="dialog">
+          <h2 id="subject"></h2>
+          <p data-text="changed">
+            Both this profile and the cloud have data. Choose which copy to keep.
+          </p>
+          <button value="cancel" data-text="cancel">Cancel</button>
+          <button value="restore" data-text="cloud">Use cloud copy</button>
+          <button value="upload" data-text="local">Use this device</button>
+        </form>
+      </dialog>
+    </main>
+    <script type="module" src="account.js"></script>
+  </body>
+</html>

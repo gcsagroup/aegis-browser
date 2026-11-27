@@ -20,6 +20,10 @@ Aegis Browser 1.0.0 is available for iPhone and iPad. Join the external beta thr
 
 The iOS 1.0.1 candidate adds an Open Source Licenses & Acknowledgements page in Settings. See the [changelog](CHANGELOG.md#ios--ipados-101--testflight) for build status.
 
+## Desktop account and sync
+
+Open Aegis Link in Settings, enter your provider’s HTTPS portal address, sign in, and leave the portal tab open. Return to the sync page, select bookmarks or font sizes, enter a separate passphrase of at least 12 characters, and select **Sync now**. Use the same portal, account and passphrase on the other device. Save bookmarks to the Aegis Link folder named after your email. Font settings include default and minimum sizes. If both devices have changes, choose which copy to keep. The portal cannot recover the sync passphrase.
+
 ## Core capabilities
 
 | Capability | What it does | Platform and current stage |
