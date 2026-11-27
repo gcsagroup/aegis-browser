@@ -394,10 +394,13 @@ class DeliveryCommandMatrix(unittest.TestCase):
                     authorize_write()
                     calls.append(('upload', track, code))
                     return {'status': 'uploaded_draft', 'packageName': archive.APPLICATION_ID,
-                            'track': track, 'releaseStatus': 'draft', 'versionCode': code}
+                            'track': track, 'releaseStatus': 'draft', 'versionCode': code,
+                            'trackVersionCodes': {'internal': [], 'beta': ['99']}}
 
-                def update_track(self, code, track, state, fraction, *, authorize_write, pending_codes=None):
+                def update_track(self, code, track, state, fraction, *, authorize_write, pending_codes=None, expected_existing=None):
                     authorize_write()
+                    if track == 'beta':
+                        assert pending_codes == ['99', BUILD] and expected_existing == ['99']
                     calls.append(('track', track, state, fraction))
                     return {'status': state, 'track': track}
 

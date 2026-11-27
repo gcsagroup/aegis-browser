@@ -59,10 +59,10 @@ class PlayTests(unittest.TestCase):
         calls.clear()
         result = client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
         self.assertEqual(result['status'], 'uploaded_draft')
-        self.assertEqual([item[0] for item in calls], ['GET', 'POST', 'GET', 'POST', 'PUT', 'POST'])
+        self.assertEqual([item[0] for item in calls], ['GET', 'POST', 'GET', 'GET', 'POST', 'PUT', 'POST'])
         self.assertTrue(calls[0][1].endswith(f'/applications/{play.APPLICATION_ID}/generatedApks/{CODE}'))
-        self.assertIn(b'"track":"internal"', calls[4][2])
-        self.assertIn(b'"status":"draft"', calls[4][2])
+        self.assertIn(b'"track":"internal"', calls[5][2])
+        self.assertIn(b'"status":"draft"', calls[5][2])
         occupied = play.Play(lambda *args: (200, {}, json.dumps({'generatedApks': [{'certificateSha256Hash': 'key-1'}]}).encode()), 'token')
         with self.assertRaises(ValueError):
             occupied.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
@@ -127,8 +127,10 @@ class PlayTests(unittest.TestCase):
                 return 404, {}, b'{}'
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-1"}'
-            if method == 'GET' and '/tracks/' in url:
+            if method == 'GET' and url.endswith('/tracks/internal'):
                 return 200, {}, b'{"track":"internal","releases":[{"status":"completed","versionCodes":["99"]}]}'
+            if method == 'GET' and url.endswith('/tracks/beta'):
+                return 404, {}, b'{}'
             if '/bundles?' in url:
                 return 200, {}, json.dumps({'versionCode': CODE}).encode()
             if method == 'PUT':
@@ -161,8 +163,10 @@ class PlayTests(unittest.TestCase):
                 return 200, {}, json.dumps({'generatedApks': [{'generatedUniversalApk': {'downloadId': 'u'}}]}).encode()
             if url.endswith('/edits'):
                 return 200, {}, b'{"id":"edit-1"}'
-            if method == 'GET' and '/tracks/' in url:
+            if method == 'GET' and url.endswith('/tracks/internal'):
                 return 200, {}, json.dumps(track).encode()
+            if method == 'GET' and url.endswith('/tracks/beta'):
+                return 404, {}, b'{}'
             if '/bundles?' in url:
                 uploaded = True
                 return 200, {}, json.dumps({'versionCode': CODE}).encode()
@@ -183,6 +187,41 @@ class PlayTests(unittest.TestCase):
         client.update_track(CODE, 'internal', 'completed', authorize_write=authorize_fixture,
                             pending_codes=['99', str(CODE)])
         self.assertEqual(track['releases'], [{'status': 'completed', 'versionCodes': ['99', str(CODE)]}])
+
+    def test_cross_track_rollout_uses_recorded_destination_snapshot(self):
+        tracks = {'internal': {'track': 'internal', 'releases': []},
+                  'beta': {'track': 'beta', 'releases': [{'status': 'completed', 'versionCodes': ['99']}]}}
+        uploaded = False
+        def transport(method, url, body, headers):
+            nonlocal uploaded
+            if url.endswith(f'/generatedApks/{CODE}'):
+                if not uploaded:
+                    return 404, {}, b'{}'
+                return 200, {}, json.dumps({'generatedApks': [{'generatedUniversalApk': {'downloadId': 'u'}}]}).encode()
+            if url.endswith('/edits'):
+                return 200, {}, b'{"id":"edit-1"}'
+            if method == 'GET' and '/tracks/' in url:
+                return 200, {}, json.dumps(tracks[url.rsplit('/', 1)[-1]]).encode()
+            if '/bundles?' in url:
+                uploaded = True
+                return 200, {}, json.dumps({'versionCode': CODE}).encode()
+            if method == 'PUT':
+                tracks[url.rsplit('/', 1)[-1]] = json.loads(body)
+            return 200, {}, b'{}'
+        client = play.Play(transport, 'token')
+        result = client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize_fixture)
+        existing = result['trackVersionCodes']['beta']
+        self.assertEqual(existing, ['99'])
+        pending = ['99', str(CODE)]
+        client.update_track(CODE, 'beta', 'inProgress', '0.1', authorize_write=authorize_fixture,
+                            pending_codes=pending, expected_existing=existing)
+        client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture,
+                            pending_codes=pending, expected_existing=existing)
+        self.assertEqual(tracks['beta']['releases'], [{'status': 'completed', 'versionCodes': pending}])
+        tracks['beta']['releases'][0]['versionCodes'].append('98')
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            client.update_track(CODE, 'beta', 'completed', authorize_write=authorize_fixture,
+                                pending_codes=pending, expected_existing=existing)
 
     def test_main_change_during_play_edit_blocks_remaining_writes(self):
         for action in ('upload', 'production'):
@@ -217,7 +256,7 @@ class PlayTests(unittest.TestCase):
                         client.upload_draft(Path(__file__), CODE, 'internal', authorize_write=authorize)
                     else:
                         client.update_track(CODE, 'production', 'completed', authorize_write=authorize)
-                expected = ['GET', 'POST', 'GET', 'POST'] if action == 'upload' else ['GET', 'POST', 'PUT']
+                expected = ['GET', 'POST', 'GET', 'GET', 'POST'] if action == 'upload' else ['GET', 'POST', 'PUT']
                 self.assertEqual([method for method, _ in requests], expected)
 
     def test_status_maps_missing_version_code_to_not_found(self):

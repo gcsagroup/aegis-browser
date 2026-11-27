@@ -325,15 +325,20 @@ def play_stage(plan, package_dir, client, store):
     if plan['operation'] == 'distribute':
         status = 'inProgress' if plan['user_fraction'] else 'completed'
         upload_result = terminal['result']
-        pending_codes = upload_result.get('retainedVersionCodes', [str(code)])
-        require(isinstance(pending_codes, list) and pending_codes and str(code) in pending_codes
-                and all(isinstance(item, str) and receipt.CODE.fullmatch(item)
-                        and int(item) <= receipt.MAX_CODE for item in pending_codes),
+        snapshots = upload_result.get('trackVersionCodes')
+        if snapshots is None:
+            original = upload_result.get('retainedVersionCodes', [str(code)])
+            snapshots = {upload_result['track']: [item for item in original if item != str(code)]}
+        require(isinstance(snapshots, dict) and not set(snapshots) - {'internal', 'beta'},
+                'Recorded Play test track snapshots are invalid')
+        existing = snapshots.get(plan['track'], [])
+        require(isinstance(existing, list) and all(isinstance(item, str) and receipt.CODE.fullmatch(item)
+                and int(item) <= receipt.MAX_CODE for item in existing),
                 'Recorded Play test track version codes are invalid')
-        if upload_result['track'] != plan['track']:
-            pending_codes = [str(code)]
+        pending_codes = sorted(set(existing + [str(code)]), key=int)
         return client.update_track(code, plan['track'], status, plan['user_fraction'],
-                                   authorize_write=authorize_write, pending_codes=pending_codes)
+                                   authorize_write=authorize_write, pending_codes=pending_codes,
+                                   expected_existing=existing)
     return client.update_track(code, 'production', 'completed', '', authorize_write=authorize_write)
 
 
