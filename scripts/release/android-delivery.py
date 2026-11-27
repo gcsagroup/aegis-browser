@@ -307,6 +307,7 @@ def play_stage(plan, package_dir, client, store):
         upload_run_id = int(os.environ['GITHUB_RUN_ID'])
         require_absent(version, build, store, ('upload-start', 'upload-result'))
         intent = play.draft_intent(version, build, plan['profile'], origin['manifestSha256'], plan['track'])
+        client.check_test_track(code, plan['track'], authorize_write=authorize_write)
         store.create('upload-start', key, intent, authorize_create=authorize_write)
         result = client.upload_draft(Path(package_dir) / archive.asset_names(version, build)[0], code, plan['track'],
                                      authorize_write=authorize_write)
@@ -322,8 +323,22 @@ def play_stage(plan, package_dir, client, store):
     release.verify_play_upload(plan, origin, store.read('upload-start', key), terminal,
                                release.load_upload_run(terminal))
     if plan['operation'] == 'distribute':
-        return client.update_track(code, plan['track'], 'inProgress', plan['user_fraction'],
-                                   authorize_write=authorize_write)
+        status = 'inProgress' if plan['user_fraction'] else 'completed'
+        upload_result = terminal['result']
+        snapshots = upload_result.get('trackVersionCodes')
+        if snapshots is None:
+            original = upload_result.get('retainedVersionCodes', [str(code)])
+            snapshots = {upload_result['track']: [item for item in original if item != str(code)]}
+        require(isinstance(snapshots, dict) and not set(snapshots) - {'internal', 'beta'},
+                'Recorded Play test track snapshots are invalid')
+        existing = snapshots.get(plan['track'], [])
+        require(isinstance(existing, list) and all(isinstance(item, str) and receipt.CODE.fullmatch(item)
+                and int(item) <= receipt.MAX_CODE for item in existing),
+                'Recorded Play test track version codes are invalid')
+        pending_codes = sorted(set(existing + [str(code)]), key=int)
+        return client.update_track(code, plan['track'], status, plan['user_fraction'],
+                                   authorize_write=authorize_write, pending_codes=pending_codes,
+                                   expected_existing=existing)
     return client.update_track(code, 'production', 'completed', '', authorize_write=authorize_write)
 
 

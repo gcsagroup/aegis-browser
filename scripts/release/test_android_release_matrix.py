@@ -124,6 +124,8 @@ class PlanMatrix(unittest.TestCase):
         uploaded = receipt_for('beta', '41', '43', draft=True)
         beta_track = full('完整模式 / Full', 'Beta', uploaded, '{"operation":"distribute","track":"beta","userFraction":"0.1"}')
         self.assertEqual((beta_track['destination'], beta_track['user_fraction']), ('play-beta', '0.1'))
+        full_track = full('Full', 'Beta', uploaded, '{"operation":"distribute","track":"beta"}')
+        self.assertEqual((full_track['destination'], full_track['user_fraction']), ('play-beta', ''))
         for fraction in ('0.1', '0.001', '0.0001'):
             with self.subTest(fraction=fraction):
                 value = full('完整模式 / Full', 'Auto', uploaded,
@@ -385,14 +387,20 @@ class DeliveryCommandMatrix(unittest.TestCase):
             calls = []
 
             class Client:
+                def check_test_track(self, code, track, *, authorize_write):
+                    authorize_write()
+
                 def upload_draft(self, aab, code, track, *, authorize_write):
                     authorize_write()
                     calls.append(('upload', track, code))
                     return {'status': 'uploaded_draft', 'packageName': archive.APPLICATION_ID,
-                            'track': track, 'releaseStatus': 'draft', 'versionCode': code}
+                            'track': track, 'releaseStatus': 'draft', 'versionCode': code,
+                            'trackVersionCodes': {'internal': [], 'beta': ['99']}}
 
-                def update_track(self, code, track, state, fraction, *, authorize_write):
+                def update_track(self, code, track, state, fraction, *, authorize_write, pending_codes=None, expected_existing=None):
                     authorize_write()
+                    if track == 'beta':
+                        assert pending_codes == ['99', BUILD] and expected_existing == ['99']
                     calls.append(('track', track, state, fraction))
                     return {'status': state, 'track': track}
 
@@ -438,6 +446,9 @@ class DeliveryCommandMatrix(unittest.TestCase):
             delivery.play_stage(submitted, directory, Client(), store)
             self.assertEqual(calls[-2], ('track', 'beta', 'inProgress', '0.1'))
             self.assertEqual(calls[-1], ('track', 'production', 'completed', ''))
+            delivery.play_stage({**submitted, 'operation': 'distribute', 'track': 'beta', 'user_fraction': ''},
+                                directory, Client(), store)
+            self.assertEqual(calls[-1], ('track', 'beta', 'completed', ''))
 
     def test_import_checks_exact_producer_before_downloading(self):
         with tempfile.TemporaryDirectory() as temp:
