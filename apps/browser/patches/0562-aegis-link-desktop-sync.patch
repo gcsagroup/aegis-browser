@@ -10,7 +10,7 @@ Subject: [PATCH] Register Aegis Link desktop profile sync
  3 files changed, 16 insertions(+)
 
 diff --git a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
-index 4fb8aaa..1c0867e 100644
+index 4fb8aaa6b8c071c2540b105f64f1a2435c094738..1c0867e11aac694c2527a0846bbe3b51dc91bfad 100644
 --- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
 +++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
 @@ -93,6 +93,7 @@ bool IsComponentExtensionAllowlisted(int manifest_resource_id) {
@@ -22,7 +22,7 @@ index 4fb8aaa..1c0867e 100644
      case IDR_CONTEXTUAL_TASKS_EXTENSION_MANIFEST_JSON:
      case IDR_GLIC_EXTENSION_MANIFEST:
 diff --git a/chrome/browser/extensions/component_loader.cc b/chrome/browser/extensions/component_loader.cc
-index 80927be..61674b0 100644
+index 80927be5adaa7dac216aabc1cb8644e0edd44d9d..61674b0fc6313d99bdaf71f0d03319e358ee5009 100644
 --- a/chrome/browser/extensions/component_loader.cc
 +++ b/chrome/browser/extensions/component_loader.cc
 @@ -668,6 +668,13 @@ void ComponentLoader::DisableHelpAppForTesting() {
@@ -40,7 +40,7 @@ index 80927be..61674b0 100644
    // to AddDefaultComponentExtensionsWithBackgroundPages.
  #if BUILDFLAG(IS_CHROMEOS)
 diff --git a/chrome/browser/resources/component_extension_resources.grd b/chrome/browser/resources/component_extension_resources.grd
-index 37f5f7e..f550b3d 100644
+index 37f5f7edf273e7ad3651a5f83fd6c1e2892c0912..f550b3d3314131a645dde89381af868fe70c65ce 100644
 --- a/chrome/browser/resources/component_extension_resources.grd
 +++ b/chrome/browser/resources/component_extension_resources.grd
 @@ -12,6 +12,14 @@
