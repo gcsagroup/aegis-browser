@@ -376,12 +376,15 @@ final class AccessEmbeddedCoreLiveTests: XCTestCase {
             return
         }
         try save("controls-passed")
-        let hosts = [
+        let comparisonHosts = [
             "githubassets.com", "ytimg.com", "googlevideo.com", "www.githubcopilot.com", "nflxvideo.net",
         ]
-        let diagnosticHosts = comparisonResult == nil ? hosts + ["www.google.com", "www.google.com.hk"] : hosts
+        let diagnosticHosts = comparisonResult == nil
+            ? ["api.githubcopilot.com", "i.ytimg.com", "www.google.com", "www.google.com.hk"]
+            : comparisonHosts
         for host in diagnosticHosts {
-            let target = BlockedCNTarget(s: "directed", c: "TLS", h: host, k: "full", p: nil)
+            let path = host == "i.ytimg.com" ? "/vi/M7lc1UVf-VE/hqdefault.jpg" : nil
+            let target = BlockedCNTarget(s: "directed", c: "TLS", h: host, k: "full", p: path)
             let before = Set(AccessDiagnosticLog.shared.snapshot().split(separator: "\n").map(String.init))
             NSLog("AEGIS-DIRECTED-SAMPLE %@ begin", host)
             let collectTrust = comparisonResult != nil && ["googlevideo.com", "www.githubcopilot.com"].contains(host)
@@ -392,6 +395,10 @@ final class AccessEmbeddedCoreLiveTests: XCTestCase {
             let direct = await Self.headerProbe(target, phase: "direct", proxy: nil)
             output.samples.append(.init(target: target, proxy: via, direct: direct, xray: xray))
             try JSONEncoder().encode(output).write(to: result, options: .atomic)
+            if host == "api.githubcopilot.com" {
+                XCTAssertNotNil(via.status, "Copilot API must return an HTTP response over verified HTTPS")
+                XCTAssertEqual(via.transactions.last?.isProxy, true, "Copilot API must use the selected proxy")
+            }
         }
         if comparisonResult != nil, let cssURL = css.url {
             let resources = try await Self.directedResourceWitness(cssURL: cssURL, proxy: proxy)
