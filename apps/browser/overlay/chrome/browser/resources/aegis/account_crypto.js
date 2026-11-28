@@ -4,22 +4,6 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 export const maxEnvelope = 2 * 1024 * 1024;
 
-export function portalOrigin(raw) {
-  const url = new URL(raw);
-  const local = ["127.0.0.1", "localhost"].includes(url.hostname);
-  if (
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    url.pathname !== "/" ||
-    (url.protocol !== "https:" && !(url.protocol === "http:" && local))
-  ) {
-    throw new Error("origin");
-  }
-  return url.origin;
-}
-
 function toBase64(bytes) {
   let binary = "";
   for (let i = 0; i < bytes.length; i += 8192) {

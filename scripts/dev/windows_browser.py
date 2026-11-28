@@ -45,6 +45,11 @@ def synchronize(project, src, cache, state_file, check_only):
 
     args = src / "out/AegisRelease/args.gn"
     content = (project / GN_ARGS).read_bytes()
+    # 开发启动器复用 Windows 编译参数，但固定使用本机门户，与发行域名隔离。
+    content = content.replace(b'aegis_link_environment = "production"',
+                              b'aegis_link_environment = "development"')
+    content = content.replace(b'aegis_link_portal = getenv("AEGIS_LINK_PRODUCTION_PORTAL")',
+                              b'aegis_link_portal = ""')
     wanted_args = overlay_id(content)
     current = identities(args)
     args_changed = wanted_args not in current

@@ -4,6 +4,10 @@
 #   autoninja -C out/AegisRelease chrome
 #   OUT_DIR=.../out/AegisRelease pnpm --filter @gcsa-aegis/browser package
 
+# 正式打包要明确选择门户来源，禁止将开发回环地址带入发布包。
+aegis_link_environment = "production"
+aegis_link_portal = getenv("AEGIS_LINK_PRODUCTION_PORTAL")
+
 is_debug = false
 is_component_build = false
 symbol_level = 0

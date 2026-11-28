@@ -42,7 +42,7 @@
 <h1 class="page-title">[[pageTitle_(mode)]]</h1>
 <template is="dom-if" if="[[isMode_(mode, 'home')]]"><p>$i18n{aegisSettingsDescription}</p><nav class="hub" aria-label="$i18n{aegisSettingsTitle}">
   <a href="/aegisPrivacy"><cr-icon icon="settings:security"></cr-icon><span><strong>$i18n{aegisPrivacyTitle}</strong><small>$i18n{aegisPrivacyDescription}</small></span></a>
-  <if expr="is_win or is_macosx or is_linux"><a href="chrome-extension://cleemhfjcppbfefmnmhjademobdmdoaj/account.html" target="_blank" rel="noopener"><cr-icon icon="settings:person"></cr-icon><span><strong>Aegis Link</strong></span></a></if>
+  <if expr="is_win or is_macosx or is_linux"><a href="chrome://aegis/account.html" target="_blank" rel="noopener"><cr-icon icon="settings:person"></cr-icon><span><strong>Aegis Link</strong></span></a></if>
   <a href="/aegisEnhancements"><cr-icon icon="settings:chrome-extension"></cr-icon><span><strong>$i18n{aegisEnhancementsTitle}</strong><small>$i18n{aegisEnhancementsDescription}</small></span></a>
   <a href="/aegisReading"><cr-icon icon="settings:translate"></cr-icon><span><strong>$i18n{aegisReadingTitle}</strong><small>$i18n{aegisReadingDescription}</small></span></a>
   <a href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span><strong>$i18n{aegisGesturesTitle}</strong><small>$i18n{aegisGesturesDescription}</small></span></a>
