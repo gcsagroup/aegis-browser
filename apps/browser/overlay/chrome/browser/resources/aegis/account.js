@@ -34,6 +34,10 @@ const words = new Map(Object.entries({
   migrate: ["Migrate", "迁移"],
   sync: ["Sync now", "立即同步"],
   done: ["Synced", "已同步"],
+  resolve: ["Resolve sync issues", "处理同步问题"],
+  phone: ["Sign in on your phone", "在手机上登录"],
+  scan: ["Scan with your phone and sign in to Aegis Link.", "用手机相机扫码，登录 Aegis Link。"],
+  loopback: ["This development portal is only available on this computer.", "开发版门户仅可在这台电脑上访问。"],
   retry: ["Retry", "重试"],
   conflictTitle: ["Both copies have changes", "两台设备的资料都发生了变化"],
   local: ["Use this device", "使用本机副本"],
@@ -55,10 +59,26 @@ const el = (id) => document.getElementById(id);
 const call = (action, input = {}) => sendWithPromise("aegisLinkAccount", action, input);
 const kinds = ["bookmarks", "preferences"];
 const background = location.hash === "#autosync";
+const menuView = () => new URLSearchParams(location.search).get("view");
 const selectionKey = (u) => "sync-types:" + JSON.stringify([u.origin, u.id]);
+// 每个账号、来源和数据类型分别记录需要用户选择的冲突，不存储任何同步内容。
+const attentionKey = (u, kind) => "sync-attention:" + JSON.stringify([u.origin, u.id, kind]);
+function pendingKinds(u) {
+  return selectedKinds(u).filter((kind) => localStorage.getItem(attentionKey(u, kind)));
+}
+function updateAttention() {
+  el("resolve").hidden = !user || !pendingKinds(user).length;
+}
 function selectedKinds(u) {
   const saved = localStorage.getItem(selectionKey(u));
-  return saved ? JSON.parse(saved) : ["bookmarks"];
+  if (saved === null) return ["bookmarks"];
+  // 损坏的本机选择不能默认为同意上传，用户可重新勾选。
+  try {
+    const value = JSON.parse(saved);
+    return Array.isArray(value) ? kinds.filter((kind) => value.includes(kind)) : [];
+  } catch {
+    return [];
+  }
 }
 const welcomeWindow = await call("isWelcomeWindow");
 let user,
@@ -73,16 +93,24 @@ function show(account) {
     for (const kind of kinds) el(kind).checked = selected.includes(kind);
   }
   user = account;
-  el("heading").textContent = tr(welcomeWindow ? "heading" : "signed");
+  const phone = !!user && menuView() === "phone";
+  const signout = !!user && menuView() === "signout";
+  let heading = welcomeWindow || !user ? "heading" : "signed";
+  if (phone) heading = "phone";
+  if (signout) heading = "logout";
+  el("heading").textContent = tr(heading);
   document.querySelector(".benefits").hidden = !welcomeWindow;
   el("skip").hidden = !welcomeWindow;
   el("identity").hidden = !user;
   el("identity").textContent = user?.email || "";
-  el("sync").hidden = !user;
+  el("sync").hidden = !user || phone || signout;
+  el("phone").hidden = !phone;
+  el("signout").hidden = !signout;
   el("welcome").hidden = !!user;
+  updateAttention();
 }
-// 同一轮先核对真实会话，再获取仅在内存中使用的密钥。后台冲突留给用户打开账号页处理。
-async function refresh() {
+// 普通账号页只读取身份。隐藏文档执行常规同步，前台仅在用户选择解决冲突时取密钥。
+async function refresh(resolvePending = false) {
   if (busy) return;
   busy = true;
   el("retry").hidden = true;
@@ -93,26 +121,35 @@ async function refresh() {
     const current = await call("session");
     show(current);
     if (welcomeWindow) return;
-    const selected = selectedKinds(current);
-    if (!selected.length) {
-      el("status").textContent = tr("none");
+    el("status").textContent = "";
+    if (menuView() === "portal-profile") {
+      await call("portalProfile", { account: current.id });
       return;
     }
+    if (menuView() === "phone") {
+      const code = await call("phoneCode", { account: current.id });
+      if (code) el("phoneCode").src = code;
+      el("phoneCode").hidden = !code;
+      el("phoneHint").textContent = tr(code ? "scan" : "loopback");
+      return;
+    }
+    if (!background && !resolvePending) return;
+    const selected = background ? selectedKinds(current) : pendingKinds(current);
+    if (!selected.length) return;
     el("status").textContent = tr("working");
     const master = await importAccountKey(
       (await call("key", { account: current.id })).key,
     );
-    let pending;
     for (const kind of selected) {
-      if (!kinds.includes(kind)) continue;
       try {
         await synchronize(call, current, kind, master, choose, requestLegacy);
+        localStorage.removeItem(attentionKey(current, kind));
       } catch (error) {
         if (!background || error?.message !== "attention") throw error;
-        pending = true;
+        localStorage.setItem(attentionKey(current, kind), "1");
       }
     }
-    if (!pending) el("status").textContent = tr("done");
+    if (!background) el("status").textContent = tr("done");
   } catch (error) {
     const key = error?.message || error;
     if (key === "signin") {
@@ -120,9 +157,10 @@ async function refresh() {
       if (location.hash === "#signin") await call("login");
     }
     el("status").textContent = ["signin", "cancelled"].includes(key) ? "" : tr(key);
-    el("retry").hidden = ["signin", "cancelled"].includes(key) || !!user;
+    el("retry").hidden = ["signin", "cancelled"].includes(key) || resolvePending;
   } finally {
     busy = false;
+    updateAttention();
     el("sync").querySelector("fieldset").disabled = false;
     el("run").disabled = false;
     el("logout").disabled = false;
@@ -131,15 +169,20 @@ async function refresh() {
 }
 el("login").onclick = () => call("login");
 el("skip").onclick = () => call("skip");
-el("retry").onclick = refresh;
-el("logout").onclick = async () => {
+el("retry").onclick = () => refresh();
+el("resolve").onclick = () => refresh(true);
+el("confirmLogout").onclick = el("logout").onclick = async () => {
   if (busy) return;
+  busy = true;
   try {
     await call("logout");
+    history.replaceState(null, "", location.pathname);
     show(null);
     el("status").textContent = "";
   } catch (error) {
     el("status").textContent = tr(error);
+  } finally {
+    busy = false;
   }
 };
 async function decision(dialog) {
@@ -171,12 +214,26 @@ el("sync").onchange = (event) => {
     selectionKey(user),
     JSON.stringify(kinds.filter((k) => el(k).checked)),
   );
-  void refresh();
+  el("status").textContent = "";
+  updateAttention();
 };
-el("sync").onsubmit = (event) => {
+el("sync").onsubmit = async (event) => {
   event.preventDefault();
-  void refresh();
+  if (!user || busy) return;
+  if (!selectedKinds(user).length) {
+    el("status").textContent = tr("none");
+    return;
+  }
+  el("run").disabled = true;
+  try {
+    await call("syncAndGoHome", { account: user.id });
+  } catch (error) {
+    el("status").textContent = tr(error);
+    el("run").disabled = false;
+  }
 };
+window.addEventListener("storage", updateAttention);
+window.addEventListener("hashchange", () => { if (!background) void refresh(); });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && !background) void refresh();
 });

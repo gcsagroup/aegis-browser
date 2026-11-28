@@ -47,6 +47,7 @@
             ><input id="preferences" type="checkbox" /><span data-copy="fonts"></span
           ></label>
         </fieldset>
+        <button class="secondary" type="button" id="resolve" data-copy="resolve" hidden></button>
         <div class="actions">
           <button id="run" data-copy="sync"></button
           ><button
@@ -57,6 +58,13 @@
           ></button>
         </div>
       </form>
+      <section id="phone" hidden>
+        <img id="phoneCode" width="180" height="180" alt="" hidden />
+        <p id="phoneHint"></p>
+      </section>
+      <section id="signout" hidden>
+        <button id="confirmLogout" data-copy="logout"></button>
+      </section>
       <p role="status" id="status"></p>
       <button class="secondary" id="retry" data-copy="retry" hidden></button>
     </main>

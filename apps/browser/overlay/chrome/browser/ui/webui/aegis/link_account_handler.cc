@@ -13,6 +13,8 @@
 #include "chrome/browser/ui/webui/aegis/link_profile_data.h"
 #include "chrome/common/aegis/link_account.h"
 #include "components/prefs/pref_service.h"
+#include "components/qr_code_generator/bitmap_generator.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -22,6 +24,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "url/origin.h"
 
 namespace {
@@ -32,6 +35,23 @@ GURL Portal() {
 std::string Field(const base::DictValue& dict, std::string_view key) {
   const auto* value = dict.FindString(key);
   return value ? *value : std::string();
+}
+
+// 二维码只包含公开登录地址。开发包绑定本机，手机扫码无法访问该来源。
+std::optional<std::string> PhoneLoginCode() {
+  const auto login = Portal().Resolve("/login");
+  if (!login.SchemeIs("https") || login.host() == "localhost" ||
+      login.host() == "127.0.0.1") {
+    return std::string();
+  }
+  using namespace qr_code_generator;
+  auto bitmap = GenerateBitmap(base::as_byte_span(login.spec()),
+                               ModuleStyle::kSquares, LocatorStyle::kSquare,
+                               CenterImage::kNoCenterImage, QuietZone::kIncluded);
+  if (!bitmap.has_value()) {
+    return std::nullopt;
+  }
+  return webui::GetBitmapDataUrl(*bitmap);
 }
 }  // namespace
 
@@ -51,9 +71,12 @@ void LinkAccountHandler::OnJavascriptDisallowed() {
 void LinkAccountHandler::Dispatch(const base::ListValue& args) {
   auto* contents = web_ui()->GetWebContents();
   Profile* profile = Profile::FromWebUI(web_ui());
+  const auto page = contents->GetLastCommittedURL().GetWithoutRef();
   if (!profile->IsRegularProfile() || profile->IsOffTheRecord() ||
-      contents->GetLastCommittedURL().GetWithoutRef() !=
-          GURL(aegis::link::kPage) ||
+      (page != GURL(aegis::link::kPage) &&
+       page != GURL(aegis::link::kPhonePage) &&
+       page != GURL(aegis::link::kPortalProfilePage) &&
+       page != GURL(aegis::link::kSignoutPage)) ||
       args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
       !args[2].is_dict()) {
     return;
@@ -85,6 +108,34 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
   }
   if (request_) {
     RejectJavascriptCallback(callback, base::Value("busy"));
+    return;
+  }
+  if (action == "syncAndGoHome" || action == "phoneCode" ||
+      action == "portalProfile") {
+    if (user_id_.empty() || Field(input, "account") != user_id_ ||
+        aegis::link::FirstRunChoice::From(contents)) {
+      RejectJavascriptCallback(callback, base::Value("account"));
+      return;
+    }
+    if (action == "phoneCode") {
+      if (auto code = PhoneLoginCode()) {
+        ResolveJavascriptCallback(callback, base::Value(*code));
+      } else {
+        RejectJavascriptCallback(callback, base::Value("invalid"));
+      }
+      return;
+    }
+    const bool sync = action == "syncAndGoHome";
+    if (sync) {
+      aegis::link::RequestBackgroundSync(profile);
+    }
+    // 跳转目标仅由本机首页设置或打包来源决定；同步由 Profile 持有而非标签页。
+    content::NavigationController::LoadURLParams navigation(
+        sync ? profile->GetHomePage() : Portal().Resolve("/profile"));
+    navigation.should_replace_current_entry = true;
+    navigation.transition_type = ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
+    ResolveJavascriptCallback(callback, base::Value(true));
+    contents->GetController().LoadURLWithParams(navigation);
     return;
   }
   if (action == "session") {
@@ -197,6 +248,7 @@ void LinkAccountHandler::Received(std::string callback,
     user_id_.clear();
     csrf_.clear();
     prefs->ClearPref(aegis::link::kEmail);
+    prefs->ClearPref(aegis::link::kDisplayName);
     RejectJavascriptCallback(id, base::Value("signin"));
     return;
   }
@@ -204,6 +256,7 @@ void LinkAccountHandler::Received(std::string callback,
     user_id_.clear();
     csrf_.clear();
     prefs->ClearPref(aegis::link::kEmail);
+    prefs->ClearPref(aegis::link::kDisplayName);
     ResolveJavascriptCallback(id, base::Value(true));
     return;
   }
@@ -227,12 +280,14 @@ void LinkAccountHandler::Received(std::string callback,
       user_id_.clear();
       csrf_.clear();
       prefs->ClearPref(aegis::link::kEmail);
+      prefs->ClearPref(aegis::link::kDisplayName);
       RejectJavascriptCallback(id, base::Value("signin"));
       return;
     }
     user_id_ = Field(*principal, "id");
     csrf_ = Field(*data, "csrf_token");
     prefs->SetString(aegis::link::kEmail, Field(*principal, "email"));
+    prefs->SetString(aegis::link::kDisplayName, Field(*principal, "display_name"));
 
     base::DictValue result;
     result.Set("id", user_id_);

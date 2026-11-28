@@ -22,9 +22,9 @@ The iOS 1.0.1 candidate adds an Open Source Licenses & Acknowledgements page in 
 
 ## Desktop account and sync
 
-On first launch, choose **Sign in** or **Continue without signing in** in the welcome window. The main browser window opens after your choice. You can sign in later from the avatar at the right end of the toolbar. Bookmarks sync automatically after sign-in. Open **Manage sync** to select the data for this device.
+On first launch, choose **Sign in** or **Continue without signing in** in the welcome window. After signing in, open the toolbar avatar to see your account name and email. **Manage your Aegis Link account** opens your portal profile. **Your account in Aegis Browser** lets you choose what to sync. Select **Sync now** to open your browser homepage and sync in the background.
 
-Save bookmarks in the **Aegis Link · email** folder on the bookmarks bar. Font sync includes default and minimum sizes. Sign in to the same account on your other device. Sync continues in the background. If both copies change, open **Manage sync** to choose which to keep. Collections encrypted by an older release need the original passphrase once for migration.
+Save bookmarks in the **Aegis Link · email** folder on the bookmarks bar. Font sync includes default and minimum sizes. Sign in to the same account on your other device. If both copies change, open your browser account and choose **Resolve sync issues** to select the copy to keep. Collections encrypted by an older release need the original passphrase once for migration.
 
 The development build connects to `http://localhost:5176`. Packagers select `aegis_link_environment` and `aegis_link_portal` with GN. Testing and production require an explicit HTTPS domain. The Windows and macOS release presets read `AEGIS_LINK_PRODUCTION_PORTAL` when GN generates the build.
 

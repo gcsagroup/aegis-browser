@@ -38,17 +38,30 @@ class Scheduler : public base::SupportsUserData::Data, public ProfileObserver {
     timer_.Start(FROM_HERE, base::TimeDelta(), this, &Scheduler::Rest);
   }
 
+  void RequestNow() {
+    if (document_) {
+      queued_ = true;
+    } else {
+      Schedule();
+    }
+  }
+
  private:
   void Schedule() {
     timer_.Start(FROM_HERE, base::TimeDelta(), this, &Scheduler::Run);
   }
   void Rest() {
     document_.reset();
+    if (queued_) {
+      Schedule();
+      return;
+    }
     if (!profile_->GetPrefs()->GetString(kEmail).empty()) {
       timer_.Start(FROM_HERE, base::Minutes(2), this, &Scheduler::Run);
     }
   }
   void Run() {
+    queued_ = false;
     document_.reset();
     if (profile_->GetPrefs()->GetString(kEmail).empty()) {
       return;
@@ -73,6 +86,7 @@ class Scheduler : public base::SupportsUserData::Data, public ProfileObserver {
   base::ScopedObservation<Profile, ProfileObserver> observation_{this};
   PrefChangeRegistrar prefs_;
   base::OneShotTimer timer_;
+  bool queued_ = false;
   std::unique_ptr<content::WebContents> document_;
   base::WeakPtrFactory<Scheduler> weak_{this};
 };
@@ -81,6 +95,13 @@ void StartBackgroundSync(Profile* profile) {
   if (profile->IsRegularProfile() && !profile->IsOffTheRecord() &&
       !profile->GetUserData(&kSchedulerKey)) {
     profile->SetUserData(&kSchedulerKey, std::make_unique<Scheduler>(profile));
+  }
+}
+void RequestBackgroundSync(Profile* profile) {
+  StartBackgroundSync(profile);
+  if (auto* scheduler =
+          static_cast<Scheduler*>(profile->GetUserData(&kSchedulerKey))) {
+    scheduler->RequestNow();
   }
 }
 void FinishBackgroundSync(Profile* profile, content::WebContents* source) {
