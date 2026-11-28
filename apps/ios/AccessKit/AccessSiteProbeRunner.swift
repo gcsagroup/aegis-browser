@@ -1,9 +1,11 @@
 import Foundation
+import OSLog
 import Synchronization
 
 /// Outcome of one DEV/Alpha suggestion probe. Never expands authorization.
 public enum AccessSiteProbeOutcome: String, Sendable, Equatable {
     case reachable
+    case insecureTransportBlocked
     case timedOut
     case redirectedOffHost
     case skippedAlreadyProxied
@@ -13,12 +15,14 @@ public enum AccessSiteProbeOutcome: String, Sendable, Equatable {
 public struct AccessSiteProbeHostResult: Sendable, Equatable {
     public var host: AccessSiteHost
     public var outcome: AccessSiteProbeOutcome
+    public var httpStatus: Int?
     public var detail: String
 
-    public init(host: AccessSiteHost, outcome: AccessSiteProbeOutcome, detail: String) {
+    public init(host: AccessSiteHost, outcome: AccessSiteProbeOutcome, detail: String, httpStatus: Int? = nil) {
         self.host = host
         self.outcome = outcome
         self.detail = detail
+        self.httpStatus = httpStatus
     }
 }
 
@@ -34,7 +38,13 @@ public struct AccessSiteProbeReport: Sendable, Equatable {
     public var suggestionLines: [String] {
         results.map { item in
             switch item.outcome {
+            case .insecureTransportBlocked:
+                return "\(item.host.rawValue) · " + String(localized: "已阻止不安全的连接")
             case .reachable:
+                if let status = item.httpStatus, status >= 400 {
+                    let description = HTTPURLResponse.localizedString(forStatusCode: status)
+                    return "\(item.host.rawValue) · HTTP \(status) · \(description)"
+                }
                 return "\(item.host.rawValue) · 直连可达（仅建议）"
             case .timedOut:
                 return "\(item.host.rawValue) · 探测超时"
@@ -51,6 +61,7 @@ public struct AccessSiteProbeReport: Sendable, Equatable {
 
 /// Ephemeral HEAD probes. No cookies, no credentials, no navigation coupling.
 public struct AccessSiteProbeRunner: Sendable {
+    private static let logger = Logger(subsystem: "com.gcsa.aegis", category: "site-probe")
     public var sessionFactory: @Sendable () -> URLSession
 
     public init(
@@ -119,6 +130,11 @@ public struct AccessSiteProbeRunner: Sendable {
                 continue
             }
             let result = await probe(host: host, session: active)
+            if let status = result.httpStatus {
+                Self.logger.info("Site probe HTTP response \(status, privacy: .public)")
+            } else if result.outcome == .insecureTransportBlocked {
+                Self.logger.info("Site probe stopped by HTTPS transport policy")
+            }
             results.append(result)
             if result.outcome == AccessSiteProbeOutcome.redirectedOffHost {
                 break
@@ -132,56 +148,51 @@ public struct AccessSiteProbeRunner: Sendable {
         host: AccessSiteHost,
         session: URLSession
     ) async -> AccessSiteProbeHostResult {
-        guard let url = URL(string: "https://\(host.rawValue)/") else {
+        let path: String
+        switch host.rawValue {
+        case "avatars.githubusercontent.com": path = "/u/583231"
+        case "i.ytimg.com": path = "/vi/M7lc1UVf-VE/hqdefault.jpg"
+        case "raw.githubusercontent.com": path = "/octocat/Hello-World/master/README"
+        default: path = "/"
+        }
+        guard let url = URL(string: "https://\(host.rawValue)\(path)") else {
             return AccessSiteProbeHostResult(host: host, outcome: .failed, detail: "bad url")
         }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
         request.httpMethod = "HEAD"
-        let guardDelegate = RedirectGuard(expectedHost: host.rawValue)
+        let guardDelegate = AccessSiteProbeRedirectGuard(expectedHost: host.rawValue)
         do {
             let (_, response) = try await session.data(for: request, delegate: guardDelegate)
-            if guardDelegate.redirectedOffHost {
-                return AccessSiteProbeHostResult(
-                    host: host,
-                    outcome: .redirectedOffHost,
-                    detail: "cross-host redirect"
-                )
+            if let outcome = guardDelegate.stoppedOutcome {
+                return AccessSiteProbeHostResult(host: host, outcome: outcome, detail: "redirect stopped",
+                                                 httpStatus: (response as? HTTPURLResponse)?.statusCode)
             }
             guard let http = response as? HTTPURLResponse else {
                 return AccessSiteProbeHostResult(host: host, outcome: .failed, detail: "non-http")
             }
-            if (200..<400).contains(http.statusCode) {
-                return AccessSiteProbeHostResult(
-                    host: host,
-                    outcome: .reachable,
-                    detail: "status \(http.statusCode)"
-                )
-            }
-            return AccessSiteProbeHostResult(
-                host: host,
-                outcome: .failed,
-                detail: "status \(http.statusCode)"
-            )
-        } catch let error as URLError where error.code == .timedOut {
-            return AccessSiteProbeHostResult(host: host, outcome: .timedOut, detail: "url timeout")
+            return AccessSiteProbeHostResult(host: host, outcome: .reachable, detail: "status \(http.statusCode)",
+                                             httpStatus: http.statusCode)
         } catch {
-            if guardDelegate.redirectedOffHost {
-                return AccessSiteProbeHostResult(
-                    host: host,
-                    outcome: .redirectedOffHost,
-                    detail: "cross-host redirect"
-                )
+            if let outcome = guardDelegate.stoppedOutcome {
+                return AccessSiteProbeHostResult(host: host, outcome: outcome, detail: "redirect stopped")
             }
-            return AccessSiteProbeHostResult(host: host, outcome: .failed, detail: "network")
+            switch (error as? URLError)?.code {
+            case .appTransportSecurityRequiresSecureConnection:
+                return AccessSiteProbeHostResult(host: host, outcome: .insecureTransportBlocked, detail: "ATS")
+            case .timedOut:
+                return AccessSiteProbeHostResult(host: host, outcome: .timedOut, detail: "url timeout")
+            default:
+                return AccessSiteProbeHostResult(host: host, outcome: .failed, detail: "network")
+            }
         }
     }
 }
 
-private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+final class AccessSiteProbeRedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let expectedHost: String
-    private let flags = Mutex(false)
+    private let flags = Mutex<AccessSiteProbeOutcome?>(nil)
 
-    var redirectedOffHost: Bool {
+    var stoppedOutcome: AccessSiteProbeOutcome? {
         flags.withLock { $0 }
     }
 
@@ -198,13 +209,16 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
     ) {
         let nextHost = request.url?.host?.lowercased()
         if nextHost != expectedHost {
-            flags.withLock { $0 = true }
+            flags.withLock { $0 = .redirectedOffHost }
             completionHandler(nil)
             return
         }
+        if request.url?.scheme?.lowercased() == "http" {
+            flags.withLock { $0 = .insecureTransportBlocked }
+        }
         // Never follow same-host redirects on ephemeral probes. Following would
         // issue another direct hop after the caller may have armed proxy mid-flight.
-        // The redirect response itself (3xx) still counts as reachable above.
+        // A same-host HTTPS redirect still proves HTTP reachability.
         completionHandler(nil)
     }
 }

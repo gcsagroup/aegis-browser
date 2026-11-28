@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import plistlib
 import stat
 import subprocess
 import sys
@@ -88,16 +89,18 @@ class PrivateAlphaInputsTests(unittest.TestCase):
         source.write_bytes(json.dumps(LIST, ensure_ascii=False).encode())
         source.chmod(0o600)
         target = self.root / NODES
-        result = self.hook('alpha', source, target)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(target.read_bytes()), LIST)
+        for channel in ('dev', 'alpha'):
+            result = self.hook(channel, source, target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(target.read_bytes()), LIST)
         for channel in ('alpha', 'dev', 'beta', 'release'):
             target.write_text('stale')
             self.assertEqual(self.hook(channel, '/dev/null', target).returncode, 0)
             self.assertFalse(target.exists())
-        target.write_text('stale')
-        self.assertNotEqual(self.hook('beta', source, target).returncode, 0)
-        self.assertFalse(target.exists())
+        for channel in ('beta', 'release'):
+            target.write_text('stale')
+            self.assertNotEqual(self.hook(channel, source, target).returncode, 0)
+            self.assertFalse(target.exists())
 
     def test_stage_admits_mixed_tls_routes_and_rejects_cross_account_password(self):
         def vmess(network, cipher='auto'):
@@ -152,7 +155,7 @@ class PrivateAlphaInputsTests(unittest.TestCase):
             with self.subTest(case=type(nodes).__name__, count=len(nodes)):
                 source.write_text(json.dumps(nodes))
                 result = self.hook('alpha', source, target)
-                self.assertIn('private Alpha', result.stderr)
+                self.assertIn('Cannot package the private node list', result.stderr)
                 self.assertNotIn(UID, result.stderr + result.stdout)
                 self.assertFalse(target.exists())
         source.write_text(json.dumps(LIST))
@@ -499,3 +502,197 @@ class PrivateAlphaInputsTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 alpha.main()
             upload.assert_not_called()
+
+
+class PairedProbeReceiptRecoveryTests(unittest.TestCase):
+    def test_receipts_use_the_selected_host_container_for_every_node_source(self):
+        probes = RELEASE.parents[1] / 'apps/ios/scripts/paired-probe'
+        # Run each entry point in a fresh interpreter and replace only the
+        # pinned Apple tools. A PATH lookup must fail this harness.
+        harness = '''
+from pathlib import Path
+import os
+import runpy
+import subprocess
+import sys
+from unittest.mock import patch
+
+fixture_tools = Path(os.environ["PROBE_FIXTURE_TOOLS"])
+launch = subprocess.Popen
+
+def launch_fixture(command, *args, **kwargs):
+    executable = command[0]
+    if executable not in ("/usr/bin/xcodebuild", "/usr/bin/xcrun"):
+        raise AssertionError(command)
+    return launch([str(fixture_tools / Path(executable).name), *command[1:]], *args, **kwargs)
+
+sys.argv = sys.argv[1:]
+sys.path.insert(0, str(Path(sys.argv[0]).parent))
+with patch.object(subprocess, "Popen", side_effect=launch_fixture):
+    runpy.run_path(sys.argv[0], run_name="__main__")
+'''
+        cases = [
+            ('dev', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit', 'bundled'),
+            ('alpha', 'com.gcsa.aegis', '--bundled-test-node', '--search-only', 'webkit', 'bundled'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-alpha-node', '--search-only', 'webkit', 'bundled'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', '--bundled-test-node', '--tls-only', 'tls', 'bundled'),
+            ('dev', 'com.gcsa.aegis', None, '--search-only', 'webkit', 'file'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'file'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'comparison'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'comparison-traversal'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, '--tls-only', 'tls', 'comparison-symlink'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, None, None, 'paired'),
+            ('alpha', 'com.gcsa.aegis.alpha.internal', None, None, None, 'invalid-device'),
+            ('alpha', 'com.example.unexpected', None, '--tls-only', 'tls', 'reject'),
+        ]
+        for channel, bundle_id, flag, mode, result_name, source in cases:
+            with self.subTest(channel=channel, bundle_id=bundle_id, flag=flag, mode=mode, source=source), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                products = root / 'products'
+                app = products / 'Aegis.app'
+                app.mkdir(parents=True)
+                (app / 'Info.plist').write_bytes(plistlib.dumps({
+                    'AegisAccessReleaseChannel': channel,
+                    'AegisReleaseProfile': channel,
+                    'CFBundleIdentifier': bundle_id,
+                }))
+                (app / NODES).write_text(json.dumps([LIST[2]]))
+                template = products / 'Aegis.xctestrun'
+                template.write_bytes(plistlib.dumps({'AegisTests': {'TestHostPath': '__TESTROOT__/Aegis.app'}}))
+                node_file = root / 'node.txt'
+                node_file.write_text(LIST[2] + '\n')
+
+                certificate = root / 'leaf.der'
+                no_san_certificate = root / 'no-san.der'
+                directory_certificate = root / 'directory-san.der'
+                if source == 'comparison':
+                    config = root / 'fixture.cnf'
+                    certificate_config = (
+                        '[req]\nprompt = no\ndistinguished_name = dn\n{x509_extensions}'
+                        '[dn]\nCN = DNS:unrelated.example\n'
+                        '[mixed_ext]\nsubjectAltName = @san\n'
+                        '[directory_ext]\nsubjectAltName = dirName:directory\n'
+                        '[san]\nDNS.1 = fixture.example\nDNS.2 = *.fixture.example\nIP.1 = 192.0.2.1\n'
+                        'URI.1 = "https://fixture.example/, DNS:unrelated.example"\n'
+                        '[directory]\nO = fixture directory\n'
+                    )
+                    for cert_path, extensions in (
+                        (certificate, 'x509_extensions = mixed_ext\n'),
+                        (no_san_certificate, ''),
+                        (directory_certificate, 'x509_extensions = directory_ext\n'),
+                    ):
+                        config.write_text(certificate_config.format(x509_extensions=extensions))
+                        subprocess.run(
+                            ['/usr/bin/openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                             '-config', str(config), '-outform', 'DER', '-out', str(cert_path), '-keyout', os.devnull],
+                            check=True, capture_output=True, timeout=10,
+                        )
+
+                bin_dir = root / 'bin'
+                bin_dir.mkdir()
+                xcodebuild = bin_dir / 'xcodebuild'
+                xcodebuild.write_text(
+                    "#!/bin/sh\n"
+                    "if [ \"$5\" != 'id=fixture-device' ]; then exit 1; fi\n"
+                    "printf '%s\\n' \"Test Case '-[AegisTests.AccessEmbeddedCoreLiveTests testPhoneWiFiBlockedCNPaired]' started\"\n"
+                )
+                xcodebuild.chmod(0o755)
+                xcrun = bin_dir / 'xcrun'
+                xcrun.write_text('''#!/usr/bin/env python3
+import base64
+import json
+import os
+from pathlib import Path
+import sys
+
+arguments = sys.argv[1:]
+if not arguments or arguments[0] != 'devicectl' or '--device=fixture-device' not in arguments:
+    raise SystemExit(1)
+bundle_id = arguments[arguments.index('--domain-identifier') + 1]
+Path(os.environ['PROBE_COPY_RECORD']).write_text(bundle_id)
+if bundle_id != os.environ['PROBE_EXPECTED_BUNDLE_ID']:
+    raise SystemExit(1)
+payload = []
+if os.environ.get('PROBE_COMPARISON'):
+    certificate = Path(os.environ['PROBE_CERTIFICATE']).read_bytes()
+    no_san = Path(os.environ['PROBE_NO_SAN_CERTIFICATE']).read_bytes()
+    directory = Path(os.environ['PROBE_DIRECTORY_CERTIFICATE']).read_bytes()
+    malformed_dns = certificate.replace(b"\\x82\\x0ffixture.example", b"\\x82\\xfffixture.example", 1)
+    malformed_directory = directory.replace(b"\\x11fixture directory", b"\\xfffixture directory", 1)
+    if malformed_dns == certificate or malformed_directory == directory:
+        raise AssertionError("Expected SAN values to corrupt")
+    samples = []
+    for leaf in (certificate, no_san, directory, malformed_dns, malformed_directory):
+        trust = {"leafDER": base64.b64encode(leaf).decode("ascii")}
+        samples.append({"proxy": {"serverTrust": trust}})
+    payload = {"samples": samples, "preflight": {}}
+Path(arguments[arguments.index('--destination') + 1]).write_text(json.dumps(payload))
+''')
+                xcrun.chmod(0o755)
+                copy_record = root / 'copy-record'
+                env = {
+                    'PATH': os.pathsep.join((str(Path(sys.executable).parent), os.defpath)),
+                    'HOME': str(root),
+                    'AEGIS_PROBE_OUTPUT': str(root / 'output'),
+                    'AEGIS_PROBE_XCTESTRUN': str(template),
+                    'AEGIS_PROBE_DEVICE': 'fixture-device',
+                    'AEGIS_PROBE_NODE_FILE': str(node_file),
+                    'PROBE_COPY_RECORD': str(copy_record),
+                    'PROBE_EXPECTED_BUNDLE_ID': bundle_id,
+                    'PROBE_FIXTURE_TOOLS': str(bin_dir),
+                }
+                if source.startswith('comparison'):
+                    output = root / 'output'
+                    output.mkdir()
+                    outside = root / 'outside'
+                    outside.mkdir()
+                    comparison_run = 'comparison-fixture'
+                    if source == 'comparison-traversal':
+                        comparison_run = '../outside'
+                    elif source == 'comparison-symlink':
+                        (output / comparison_run).symlink_to(outside, target_is_directory=True)
+                    else:
+                        (output / comparison_run).mkdir()
+                    env.update(AEGIS_COMPARISON_NODE_FILE=str(node_file), AEGIS_COMPARISON_RUN=comparison_run,
+                               AEGIS_COMPARISON_PROXY_COUNTRY='US', PROBE_COMPARISON='1',
+                               PROBE_CERTIFICATE=str(certificate), PROBE_NO_SAN_CERTIFICATE=str(no_san_certificate),
+                               PROBE_DIRECTORY_CERTIFICATE=str(directory_certificate))
+                if source == 'invalid-device':
+                    env['AEGIS_PROBE_DEVICE'] = 'fixture-device,platform=iOS Simulator'
+                probe = probes / ('run-device.py' if source in {'paired', 'invalid-device'} else 'run-targeted.py')
+                arguments = [sys.executable, '-B', '-c', harness, str(probe)]
+                if mode:
+                    arguments.append(mode)
+                if flag:
+                    arguments.append(flag)
+                result = subprocess.run(arguments, env=env, capture_output=True, text=True, timeout=20)
+                rejections = {
+                    'reject': 'valid Aegis app test host',
+                    'invalid-device': 'must be a paired device identifier',
+                    'comparison-traversal': 'Invalid comparison relay run name',
+                    'comparison-symlink': 'Expected a fresh comparison relay run directory',
+                }
+                if source in rejections:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(rejections[source], result.stderr)
+                    self.assertFalse(copy_record.exists())
+                    if source.startswith('comparison'):
+                        self.assertEqual(list(outside.iterdir()), [])
+                    continue
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(copy_record.read_text(), bundle_id)
+                summary = json.loads(next(line for line in result.stdout.splitlines() if line.startswith('{')))
+                if source == 'paired':
+                    self.assertEqual(set(summary['recoveredCounts'].values()), {0})
+                elif source == 'comparison':
+                    self.assertEqual(summary[result_name], 5)
+                    receipt = json.loads((output / comparison_run / 'tls.json').read_text())
+                    self.assertEqual([sample['proxy']['serverTrust'] for sample in receipt['samples']], [
+                        {'dnsSANs': ['fixture.example', '*.fixture.example'], 'certificateParsed': True},
+                        {'dnsSANs': [], 'certificateParsed': True},
+                        {'dnsSANs': [], 'certificateParsed': True},
+                        {'dnsSANs': [], 'certificateParsed': False},
+                        {'dnsSANs': [], 'certificateParsed': False},
+                    ])
+                else:
+                    self.assertEqual(summary[result_name], 0)

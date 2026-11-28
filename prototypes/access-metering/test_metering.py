@@ -241,25 +241,6 @@ class RelayTests(unittest.TestCase):
         wait_until(lambda: sink.counts()[0] == 9)
         self.assertEqual(sink.counts(), (9, 0))
 
-    def test_download_only_activity_outlives_shared_idle_timeout(self) -> None:
-        source = EchoOrigin(echo=False, push_count=8, push_interval=0.12)
-        source.start()
-        self.addCleanup(source.close)
-        self.origin = source
-        connection = self._connect(self._start_relay(80, chunk=1, io_timeout=0.45))
-        started = time.monotonic()
-        for count in range(1, 9):
-            self.assertEqual(receive_exact(connection, 1), b"d")
-            # The origin keeps pushing while the test process is descheduled.
-            wait_until(lambda: self.ledger.snapshot("account", "period-1").actual_bytes >= count)
-        self.assertGreater(time.monotonic() - started, 0.45)
-        self.assertEqual(self.ledger.snapshot("account", "period-1").actual_bytes, 8)
-        wait_until(lambda: source.counts()[1] == 8)
-        connection.sendall(b"u")
-        wait_until(lambda: self.ledger.snapshot("account", "period-1").actual_bytes == 9)
-        wait_until(lambda: source.counts()[0] == 1)
-        self.assertEqual(source.counts(), (1, 8))
-
     def test_truly_idle_connection_closes_within_bound(self) -> None:
         connection = self._connect(self._start_relay(8, io_timeout=0.35))
         connection.settimeout(1.2)
@@ -402,7 +383,106 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(sink.counts(), (8, 0))
 
 
+class ManualIdleTimer:
+    def __init__(self, callback: Callable[[], None]):
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+    def fire(self) -> bool:
+        if self.cancelled:
+            return False
+        self.callback()
+        return True
+
+
 class ConcurrentPermitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_download_only_activity_rearms_shared_idle_timeout(self) -> None:
+        timeout = 5.0
+        loop = asyncio.get_running_loop()
+        origin_connection = loop.create_future()
+        timer_armed = asyncio.Event()
+        settled = asyncio.Event()
+        idle_timers: list[ManualIdleTimer] = []
+        original_call_later = loop.call_later
+
+        def accept_origin(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            if origin_connection.done():
+                writer.close()
+                return
+            origin_connection.set_result((reader, writer))
+
+        def control_idle(delay: float, callback: Callable[..., object],
+                         *args: object, **kwargs: object) -> object:
+            if getattr(callback, "__name__", "") == "expire_idle":
+                self.assertEqual(delay, timeout)
+                timer = ManualIdleTimer(callback)
+                idle_timers.append(timer)
+                timer_armed.set()
+                return timer
+            return original_call_later(delay, callback, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory(prefix="aegis-w2-download-") as directory:
+            ledger = Ledger(Path(directory) / "ledger.db")
+            ledger.configure("account", "period-1", 80)
+            complete = ledger.complete
+
+            def observe_complete(permit_id: str, actual_bytes: int) -> bool:
+                result = complete(permit_id, actual_bytes)
+                settled.set()
+                return result
+
+            async with await asyncio.start_server(accept_origin, "127.0.0.1", 0) as origin:
+                relay = MeteredRelay(ledger, "account", "period-1",
+                                     origin.sockets[0].getsockname()[1], chunk_bytes=1,
+                                     io_timeout=timeout)
+                with patch.object(loop, "call_later", new=control_idle), \
+                     patch.object(ledger, "complete", new=observe_complete):
+                    serve = asyncio.create_task(relay.serve(0))
+                    client_writer: asyncio.StreamWriter | None = None
+                    try:
+                        # serve sets up the listener before its first await.
+                        await asyncio.sleep(0)
+                        self.assertIsNotNone(relay.listener)
+                        client_reader, client_writer = await asyncio.wait_for(
+                            asyncio.open_connection("127.0.0.1", relay.listener.getsockname()[1]), timeout)
+                        origin_reader, origin_writer = await asyncio.wait_for(origin_connection, timeout)
+                        await asyncio.wait_for(timer_armed.wait(), timeout)
+                        for count in range(1, 9):
+                            previous = idle_timers[-1]
+                            settled.clear()
+                            origin_writer.write(b"d")
+                            await asyncio.wait_for(origin_writer.drain(), timeout)
+                            self.assertEqual(await asyncio.wait_for(client_reader.readexactly(1), timeout), b"d")
+                            await asyncio.wait_for(settled.wait(), timeout)
+                            self.assertFalse(previous.fire())
+                            self.assertIsNot(idle_timers[-1], previous)
+                            self.assertFalse(idle_timers[-1].cancelled)
+                            self.assertEqual(ledger.snapshot("account", "period-1").actual_bytes, count)
+                        settled.clear()
+                        client_writer.write(b"u")
+                        await asyncio.wait_for(client_writer.drain(), timeout)
+                        self.assertEqual(await asyncio.wait_for(origin_reader.readexactly(1), timeout), b"u")
+                        await asyncio.wait_for(settled.wait(), timeout)
+                        self.assertEqual(ledger.snapshot("account", "period-1").actual_bytes, 9)
+                        self.assertTrue(idle_timers[-1].fire())
+                        self.assertEqual(await asyncio.wait_for(client_reader.read(1), timeout), b"")
+                    finally:
+                        if client_writer is not None:
+                            client_writer.transport.abort()
+                        if origin_connection.done() and not origin_connection.cancelled():
+                            _, origin_writer = origin_connection.result()
+                            origin_writer.transport.abort()
+                        else:
+                            origin_connection.cancel()
+                        serve.cancel()
+                        _, pending = await asyncio.wait({serve}, timeout=timeout)
+                        self.assertFalse(pending, "relay shutdown exceeded the test deadline")
+                        if not serve.cancelled():
+                            await serve
+
     async def _exercise_existing_permit(self, quota: int, initial: bytes,
                                         down_grant: int | None,
                                         fire_previous_idle: bool = False) -> None:
@@ -417,20 +497,6 @@ class ConcurrentPermitTests(unittest.IsolatedAsyncioTestCase):
             down_prepared = asyncio.Event()
             origin_received = bytearray()
             observed_grants: list[int | None] = []
-
-            class ManualIdleTimer:
-                def __init__(self, callback: Callable[[], None]):
-                    self.callback = callback
-                    self.cancelled = False
-
-                def cancel(self) -> None:
-                    self.cancelled = True
-
-                def fire(self) -> bool:
-                    if self.cancelled:
-                        return False
-                    self.callback()
-                    return True
 
             idle_timers: list[ManualIdleTimer] = []
             previous_idle: ManualIdleTimer | None = None

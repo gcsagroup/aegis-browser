@@ -315,7 +315,7 @@ test('the controller form packages or tags a DMG, and promotion is a separate ad
   assert.equal(JSON.stringify(child).includes('store-credentials'), false);
   assert.equal(JSON.stringify(child).includes('macos-26'), false);
   assert.deepEqual(child.on.workflow_dispatch.inputs.operation.options, ['Package']);
-  assert.equal(child.jobs['package-ad-hoc']['timeout-minutes'], 360);
+  assert.equal(child.jobs['package-ad-hoc']['timeout-minutes'], 1080);
   assert.equal(child.jobs['package-notarized']['timeout-minutes'], 400);
   for (const kind of ['ad-hoc', 'host-signed', 'notarized']) {
     const packageJob = child.jobs['package-'+kind];

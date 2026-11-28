@@ -98,6 +98,8 @@ public enum BrowserPreferenceError: LocalizedError {
 /// 应用和全部窗口共用同一实例；测试注入独立 defaults，避免覆盖日常配置。
 @MainActor
 public final class BrowserPreferences: ObservableObject {
+    private nonisolated static let googleHongKongHomepage = URL(string: "https://www.google.com.hk/")!
+
     @Published public private(set) var values: BrowserPreferenceValues
     @Published private var errorPresentation: AegisLocalizedMessage?
     public private(set) var error: String? {
@@ -195,7 +197,7 @@ public final class BrowserPreferences: ObservableObject {
         var parameter: String
         switch engine {
         case .duckDuckGo: address = "https://duckduckgo.com/"; parameter = "q"
-        case .google: address = "https://www.google.com/search"; parameter = "q"
+        case .google: address = googleHongKongHomepage.appendingPathComponent("search").absoluteString; parameter = "q"
         case .bing: address = "https://www.bing.com/search"; parameter = "q"
         case .baidu: address = "https://www.baidu.com/s"; parameter = "wd"
         case .custom:
@@ -211,7 +213,18 @@ public final class BrowserPreferences: ObservableObject {
         return parts?.url
     }
 
-    public var homeURL: URL { URL(string: values.homepage) ?? URL(string: "aegis://start")! }
+    public var homeURL: URL {
+        guard let url = URL(string: values.homepage) else { return URL(string: "aegis://start")! }
+        // Google's global homepage can send this client to an unavailable mainland URL.
+        if let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let host = parts.host?.lowercased(), ["google.com", "www.google.com"].contains(host),
+           parts.port == nil, parts.user == nil, parts.password == nil,
+           parts.percentEncodedPath.isEmpty || parts.percentEncodedPath == "/",
+           parts.query == nil, parts.fragment == nil {
+            return Self.googleHongKongHomepage
+        }
+        return url
+    }
 
     /// 失败后的检查也记账，前后台切换不会形成规则服务请求风暴。
     public func claimFilterUpdate(lastSuccess: Date?, now: Date = Date()) -> Bool {

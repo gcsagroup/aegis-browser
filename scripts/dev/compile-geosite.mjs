@@ -36,18 +36,18 @@ const DLC = {
 };
 const XTLS = {
   project: 'XTLS/Xray-rules-dat',
-  version: '20261126014317',
-  commit: 'd74acca73490cb57a937674ce8a8709d2a3021ba',
+  version: '20261127013728',
+  commit: '71449413dd268821143695c5bf3720545f392e63',
   tagCommit: '0f8082e3b11bbe8ee65f26de86cbd2e0d510c983',
   file: 'geosite.dat',
-  bytes: 7_734_731,
-  sha256: '35f58454ed79be85285a333716e3016727d536ef872c53e13c60e411d43b7dd7',
-  url: 'https://github.com/XTLS/Xray-rules-dat/releases/download/20261126014317/geosite.dat',
-  sourceUrl: 'https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/README.md',
+  bytes: 7_735_216,
+  sha256: '919a4b32cc9e6619e5bc17831cd388f89df77d9bf9817dab98b489d479162047',
+  url: 'https://github.com/XTLS/Xray-rules-dat/releases/download/20261127013728/geosite.dat',
+  sourceUrl: 'https://github.com/XTLS/Xray-rules-dat/blob/71449413dd268821143695c5bf3720545f392e63/README.md',
   license: 'MIT',
   licenseScope: 'Inherited V2Fly data',
   copyright: 'Copyright (c) 2018-2019 V2Ray',
-  licenseUrl: 'https://github.com/XTLS/Xray-rules-dat/blob/d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited',
+  licenseUrl: 'https://github.com/XTLS/Xray-rules-dat/blob/71449413dd268821143695c5bf3720545f392e63/LICENSE-inherited',
 };
 const PSL = {
   project: 'Chromium',

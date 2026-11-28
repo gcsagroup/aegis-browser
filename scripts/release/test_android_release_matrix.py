@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 from threading import Thread
 import unittest
@@ -397,10 +398,11 @@ class DeliveryCommandMatrix(unittest.TestCase):
                             'track': track, 'releaseStatus': 'draft', 'versionCode': code,
                             'trackVersionCodes': {'internal': [], 'beta': ['99']}}
 
-                def update_track(self, code, track, state, fraction, *, authorize_write, pending_codes=None, expected_existing=None):
+                def update_track(self, code, track, state, fraction, *, authorize_write, pending_codes=None,
+                                 expected_existing=None, upload_track=None):
                     authorize_write()
                     if track == 'beta':
-                        assert pending_codes == ['99', BUILD] and expected_existing == ['99']
+                        assert pending_codes == ['99', BUILD] and expected_existing == ['99'] and upload_track == 'internal'
                     calls.append(('track', track, state, fraction))
                     return {'status': state, 'track': track}
 
@@ -525,6 +527,45 @@ class DeliveryCommandMatrix(unittest.TestCase):
             with mock.patch.object(delivery, 'git_output', side_effect=['', SHA, TREE]):
                 with self.assertRaisesRegex(ValueError, 'three components'):
                     delivery.source_identity(root)
+
+    def test_emulated_arm64_bundle_uses_x64_host_tools(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            chromium = root / 'chromium'
+            (chromium / 'src').mkdir(parents=True)
+            (chromium / '.gclient').write_text("target_os = ['android']\n")
+            depot = root / 'depot'
+            depot.mkdir()
+            commands = {
+                'uname': '#!/bin/bash\nif [[ "$1" == "-s" ]]; then echo Linux; else echo "$TEST_HOST_ARCH"; fi\n',
+                'python3': '#!/bin/bash\nexit 0\n',
+                'gn': '#!/bin/bash\nprintf "%s\n" "$3" > "$TEST_GN_ARGS"\n',
+                'autoninja': '#!/bin/bash\nexit 0\n',
+            }
+            for name, contents in commands.items():
+                path = depot / name
+                path.write_text(contents)
+                path.chmod(0o755)
+            for run_id, arch, experimental, allowed, expected in (
+                    ('41', 'aarch64', 'true', '', True),
+                    ('42', 'arm64', 'true', '', True),
+                    ('43', 'x86_64', 'true', '', False),
+                    ('44', 'aarch64', '', '1', False)):
+                with self.subTest(arch=arch, experimental=experimental):
+                    captured = root / f'gn-{run_id}.txt'
+                    env = {**os.environ, 'CHROMIUM_ROOT': str(chromium), 'DEPOT_TOOLS_DIR': str(depot),
+                           'PATH': str(depot) + os.pathsep + os.environ['PATH'], 'TEST_HOST_ARCH': arch,
+                           'TEST_GN_ARGS': str(captured), 'AEGIS_ANDROID_EXPERIMENTAL_ARM64': experimental,
+                           'AEGIS_ANDROID_ALLOW_ARM64_HOST': allowed, 'AEGIS_ANDROID_MIN_FREE_GB': '0',
+                           'AEGIS_ANDROID_VERSION_NAME': '0.8.0', 'AEGIS_ANDROID_VERSION_CODE': '1',
+                           'GITHUB_RUN_ID': run_id, 'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_SHA': SHA,
+                           'OUT_DIR': str(chromium / 'src/out' / f'AegisAndroidDelivery-{run_id}-1')}
+                    subprocess.run(['bash', str(delivery.ROOT / 'apps/browser/scripts/build-android.sh'),
+                                    '--app-bundle', 'alpha'], env=env, check=True, capture_output=True, text=True)
+                    args = captured.read_text()
+                    self.assertEqual('host_cpu = "x64"' in args, expected)
+                    self.assertIn('android_override_version_name = "0.8.0"', args)
+                    self.assertIn('android_override_version_code = "1"', args)
 
     def test_packaging_requires_current_source_and_builds_original_run_output(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -1,0 +1,96 @@
+name: iOS GeoSite Refresh
+
+on:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ios-geosite-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: ${{ github.repository == 'quinn521/aegis-browser' && github.ref == 'refs/heads/develop' }}
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Refresh and verify GeoSite
+        id: refresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B scripts/release/ios-refresh-geosite.py
+          if git diff --quiet; then
+            exit 0
+          fi
+          git diff --check
+          python3 -B -m unittest scripts/release/test_ios_geosite_release.py
+          python3 -B scripts/licenses/third_party_notices.py check
+          tag=$(jq -er .tag_name apps/ios/AegisApp/GeoSite/geosite-release.json)
+          [[ "$tag" =~ ^[0-9]{14}$ ]]
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+      - name: Open refresh pull request
+        if: ${{ steps.refresh.outputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.AEGIS_FORK_AUTOMATION_TOKEN }}
+          TAG: ${{ steps.refresh.outputs.tag }}
+        run: |
+          : "${GH_TOKEN:?Configure AEGIS_FORK_AUTOMATION_TOKEN with Contents and Pull requests write access}"
+          branch="feat/ios-geosite-refresh-$TAG"
+          existing_number=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f base=develop -f "head=$GITHUB_REPOSITORY_OWNER:$branch" -f state=all \
+            --jq '.[0].number // empty')
+          if [[ -n "$existing_number" ]]; then
+            existing=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$existing_number")
+            existing_url=$(jq -er .html_url <<< "$existing")
+            if ! jq -e '.state == "open" or .merged == true' <<< "$existing" >/dev/null; then
+              printf 'GeoSite %s has a closed, unmerged pull request. Reopen %s to continue.\n' \
+                "$TAG" "$existing_url" >&2
+              exit 1
+            fi
+            printf 'GeoSite %s already has a pull request at %s\n' "$TAG" "$existing_url"
+            exit 0
+          fi
+          title="fix(ios): refresh bundled GeoSite to $TAG"
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -am "$title"
+          gh auth setup-git --hostname github.com
+          ref="refs/heads/$branch"
+          remote=$(git ls-remote --heads origin "$ref")
+          if [[ -n "$remote" ]]; then
+            remote_head="refs/remotes/origin/$branch"
+            fetch_args=(--no-tags)
+            if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
+              fetch_args+=(--unshallow)
+            fi
+            git fetch "${fetch_args[@]}" origin refs/heads/develop "$ref:$remote_head"
+            parent=$(git show -s --format=%P "$remote_head")
+            if [[ ! "$parent" =~ ^[0-9a-f]{40}$ ]] || ! git merge-base --is-ancestor "$parent" HEAD^; then
+              printf 'Existing refresh branch %s is not based on develop history\n' "$branch" >&2
+              exit 1
+            fi
+            expected_tree=$(git rev-parse 'HEAD^{tree}')
+            if ! merged_tree=$(git merge-tree --write-tree HEAD^ "$remote_head") || [[ "$merged_tree" != "$expected_tree" ]]; then
+              printf 'Existing refresh branch %s would not produce the verified tree\n' "$branch" >&2
+              exit 1
+            fi
+          else
+            git push origin "HEAD:$ref"
+          fi
+          body="$RUNNER_TEMP/geosite-pr.md"
+          {
+            printf 'Refresh the bundled DAT, checksum, provenance pins, and notices from [XTLS release %s](https://github.com/XTLS/Xray-rules-dat/releases/tag/%s).\n\n' "$TAG" "$TAG"
+            printf '%s\n' 'The DEBIAN, DOUBAN, and MEITUAN typed digests and Swift bundle admission passed verification.'
+          } > "$body"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base develop --head "$branch" --title "$title" --body-file "$body"
