@@ -1,5 +1,8 @@
+From bde4536c8fda66f5d6bc09d13c897bb28e368b2e Mon Sep 17 00:00:00 2001
 From: Aegis Browser <dev@localhost>
+Date: Sat, 28 Nov 2026 11:54:21 +0800
 Subject: [PATCH] Integrate desktop profile sign-in and encrypted sync natively
+
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
 index 7f65745a7abcfecc06f51b672bb6d68eb00a3dc6..990d5bdc0da6541df6cf0a48cd0f347ca209f808 100644
@@ -340,7 +343,7 @@ index 0000000000000000000000000000000000000000..f5a7352a864653aa668b4db20116dd71
 +</html>
 diff --git a/chrome/browser/resources/aegis/account.js b/chrome/browser/resources/aegis/account.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..d48b7da938262a558b129fd8badf622ea82a8fb9
+index 0000000000000000000000000000000000000000..c1c46f38789ac84b9a612883ba37f577087a83a6
 --- /dev/null
 +++ b/chrome/browser/resources/aegis/account.js
 @@ -0,0 +1,151 @@
@@ -348,7 +351,7 @@ index 0000000000000000000000000000000000000000..d48b7da938262a558b129fd8badf622e
 +import { sendWithPromise } from "chrome://resources/js/cr.js";
 +import { synchronize } from "./account_sync.js";
 +const zh = navigator.language.startsWith("zh");
-+const words = {
++const words = new Map(Object.entries({
 +  heading: ["Sign in to Aegis Browser", "登录 Aegis Browser"],
 +  signed: ["Your Aegis Browser", "你的 Aegis Browser"],
 +  bookmarks: ["Bookmarks", "书签"],
@@ -392,8 +395,8 @@ index 0000000000000000000000000000000000000000..d48b7da938262a558b129fd8badf622e
 +  settings: ["Your administrator manages these font settings.", "这些字号由管理员管理。"],
 +  none: ["Select what to sync.", "请选择同步内容。"],
 +  working: ["Syncing…", "正在同步…"],
-+};
-+const tr = (key) => (words[key] || words.network)[zh ? 1 : 0];
++}));
++const tr = (key) => (words.get(key) ?? words.get("network"))[zh ? 1 : 0];
 +const el = (id) => document.getElementById(id);
 +const call = (action, input = {}) => sendWithPromise("aegisLinkAccount", action, input);
 +const welcomeWindow = await call("isWelcomeWindow");

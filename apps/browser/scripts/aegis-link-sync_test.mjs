@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   fingerprint,
   seal,
@@ -33,7 +35,7 @@ test("同步信封绑定用户与集合，错误口令和损坏密文均不返�
 
 test("欢迎页、工具栏、菜单和同步资料在原生补丁中交付", async () => {
   const patch = await readFile(
-    new URL("../patches/0562-aegis-link-desktop-sync.patch", import.meta.url),
+    resolve(dirname(fileURLToPath(import.meta.url)), "../patches/0562-aegis-link-desktop-sync.patch"),
     "utf8",
   );
   for (const path of [

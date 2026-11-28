@@ -2,7 +2,7 @@
 import { sendWithPromise } from "chrome://resources/js/cr.js";
 import { synchronize } from "./account_sync.js";
 const zh = navigator.language.startsWith("zh");
-const words = {
+const words = new Map(Object.entries({
   heading: ["Sign in to Aegis Browser", "登录 Aegis Browser"],
   signed: ["Your Aegis Browser", "你的 Aegis Browser"],
   bookmarks: ["Bookmarks", "书签"],
@@ -46,8 +46,8 @@ const words = {
   settings: ["Your administrator manages these font settings.", "这些字号由管理员管理。"],
   none: ["Select what to sync.", "请选择同步内容。"],
   working: ["Syncing…", "正在同步…"],
-};
-const tr = (key) => (words[key] || words.network)[zh ? 1 : 0];
+}));
+const tr = (key) => (words.get(key) ?? words.get("network"))[zh ? 1 : 0];
 const el = (id) => document.getElementById(id);
 const call = (action, input = {}) => sendWithPromise("aegisLinkAccount", action, input);
 const welcomeWindow = await call("isWelcomeWindow");
