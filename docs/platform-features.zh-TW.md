@@ -62,6 +62,7 @@
 | DevTools 與 MCP 連線隔離 | 原始碼接入 | 原始碼接入 | 原始碼接入 | 部分 |
 | Windows帳戶、本機核心與診斷分享 | 未移植 | 原始碼接入 | 未移植 | 未移植 |
 | Mac內部Access Options | 原始碼接入 | 未移植 | 未移植 | 未移植 |
+| 桌面網址列權限與焦點恢復 | 原始碼接入 | 原始碼接入 | 未移植 | 未移植 |
 
 ## iOS 範圍與依據
 
@@ -494,6 +495,14 @@ iOS 模擬器證據：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 `mac-access-options` — 本條目專指macOS實作；未移植到本端，不代表本端其他帳戶或代理功能缺失。
 
 原始碼：[apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc) · [apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc)
+
+本項未完成本輪執行驗收。
+
+### 桌面網址列權限與焦點恢復
+
+`desktop-omnibox-permission-focus` — 本條目僅涵蓋桌面 Views/WebUI 網址列視窗，不適用於本端；行動端權限及焦點行為須獨立驗收。
+
+原始碼：[apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json) · [apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch](../apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch) · [apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch](../apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch)
 
 本項未完成本輪執行驗收。
 

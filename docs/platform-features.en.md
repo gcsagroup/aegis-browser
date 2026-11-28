@@ -62,6 +62,7 @@ Source: supported by source or the product contract. Partial: defined difference
 | DevTools and MCP connection isolation | Source | Source | Source | Partial |
 | Windows account, local core and diagnostic sharing | Not ported | Source | Not ported | Not ported |
 | Mac internal Access Options | Source | Not ported | Not ported | Not ported |
+| Desktop omnibox permission and focus restoration | Source | Source | Not ported | Not ported |
 
 ## iOS scope and evidence
 
@@ -494,6 +495,14 @@ Runtime acceptance not completed for this item in this work。
 `mac-access-options` — This item describes the macOS implementation. It is not ported to this platform and does not describe other account or proxy capabilities.
 
 Source：[apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc) · [apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc](../apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc)
+
+Runtime acceptance not completed for this item in this work。
+
+### Desktop omnibox permission and focus restoration
+
+`desktop-omnibox-permission-focus` — This item covers desktop Views/WebUI omnibox windows and does not apply to this port; mobile permission and focus behavior requires separate acceptance.
+
+Source：[apps/browser/release-feature-contract.json](../apps/browser/release-feature-contract.json) · [apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch](../apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch) · [apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch](../apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch)
 
 Runtime acceptance not completed for this item in this work。
 

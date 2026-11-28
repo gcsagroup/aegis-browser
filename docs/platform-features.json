@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-11-18",
+  "updated": "2026-11-27",
   "platforms": [
     "macOS",
     "Windows",
@@ -3539,6 +3539,76 @@
           "source": [
             "apps/browser/overlay/chrome/browser/aegis/access/access_options_service.cc",
             "apps/browser/overlay/chrome/browser/aegis/access/access_options_store.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "desktop-omnibox-permission-focus",
+      "name": {
+        "zh-CN": "桌面地址栏权限与焦点恢复",
+        "en": "Desktop omnibox permission and focus restoration",
+        "zh-TW": "桌面網址列權限與焦點恢復"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "桌面权限提示与焦点修复已纳入补丁和发行门禁；本次产物原生验收尚未完成。",
+            "en": "Desktop permission and focus fixes are included in patches and release gates; native acceptance of this artifact is pending.",
+            "zh-TW": "桌面權限提示與焦點修復已納入修補及發行門檻；本次產物原生驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch",
+            "apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "桌面权限提示与焦点修复已纳入补丁和发行门禁；本次产物原生验收尚未完成。",
+            "en": "Desktop permission and focus fixes are included in patches and release gates; native acceptance of this artifact is pending.",
+            "zh-TW": "桌面權限提示與焦點修復已納入修補及發行門檻；本次產物原生驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch",
+            "apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目仅覆盖桌面 Views/WebUI 地址栏窗口，不适用于本端；移动端权限和焦点行为须独立验收。",
+            "en": "This item covers desktop Views/WebUI omnibox windows and does not apply to this port; mobile permission and focus behavior requires separate acceptance.",
+            "zh-TW": "本條目僅涵蓋桌面 Views/WebUI 網址列視窗，不適用於本端；行動端權限及焦點行為須獨立驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch",
+            "apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本条目仅覆盖桌面 Views/WebUI 地址栏窗口，不适用于本端；移动端权限和焦点行为须独立验收。",
+            "en": "This item covers desktop Views/WebUI omnibox windows and does not apply to this port; mobile permission and focus behavior requires separate acceptance.",
+            "zh-TW": "本條目僅涵蓋桌面 Views/WebUI 網址列視窗，不適用於本端；行動端權限及焦點行為須獨立驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/patches/0555-complete-aim-permission-dismissal-focus.patch",
+            "apps/browser/patches/0556-complete-permission-focus-across-voice-and-window-handoff.patch"
           ],
           "validation": "not-run",
           "evidence": []

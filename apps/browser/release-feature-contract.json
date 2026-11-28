@@ -507,11 +507,17 @@
     },
     {
       "id": "windows-uninstall-localization",
-      "name": "Windows卸载确认和占用提示的产品名称与语言",
+      "name": "Windows卸载确认的品牌、语言与资料保护",
       "platforms": [
         "win-x64"
       ],
-      "additionalChecks": "使用本次Windows真实构建执行python3 apps/browser/scripts/windows-uninstall-locales_test.py <src> <out>，读取英文、简体和繁体语言包；再实际确认卸载提示，不卸载日常App。"
+      "additionalChecks": "使用本次Windows真实构建运行aegis_uninstall_view_unittests --gtest_filter=UninstallViewTest.*，覆盖默认保留资料、显式删除选择、取消/关闭/销毁保守退出、安全键盘默认项、长译文布局及高对比度；执行python3 apps/browser/scripts/windows-uninstall-locales_test.py <src> <out>和python3 apps/browser/scripts/windows-uninstall-branding_test.py <src> <out>，核对英文、简体、繁体语言包及卸载图标与安装器ICO一致；再实际确认卸载提示，不卸载日常App。",
+      "testFilters": [
+        "UninstallViewTest.*"
+      ],
+      "nativeTargets": [
+        "aegis_uninstall_view_unittests"
+      ]
     },
     {
       "id": "webpage-capture-ocr",
@@ -586,6 +592,37 @@
         "apps/browser/overlay/chrome/browser/aegis/access/verify_access_build_identity_test.py"
       ],
       "additionalChecks": "真实App验证内部渠道允许、公开渠道拒绝、直接导航和消息同样受原生准入控制；验证不同资料与隐私会话隔离、旧配置迁移、写入中断恢复和私有资源暂存。不能为发行测试打开内部准入。"
+    },
+    {
+      "id": "desktop-omnibox-permission-focus",
+      "name": "桌面地址栏权限提示、窗口所有权与焦点恢复",
+      "platforms": [
+        "mac-arm64",
+        "win-x64"
+      ],
+      "nativeTargets": [
+        "unit_tests",
+        "browser_tests",
+        "interactive_ui_tests"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "OmniboxPopupPresenterBaseTest.*",
+          "OmniboxAimPopupBrowserTest.*",
+          "OmniboxAimPopupFullWebUIBrowserTest.*",
+          "OmniboxAimPopupEmbeddedPermissionBrowserTest.*",
+          "OmniboxAimPopupEmbeddedPermissionWebUILocationBarBrowserTest.*",
+          "AllPopupModes/OmniboxPopupVisibilityBrowserTest.*"
+        ],
+        "win-x64": [
+          "OmniboxPopupPresenterBaseTest.*",
+          "OmniboxAimPopupBrowserTest.*",
+          "OmniboxAimPopupFullWebUIBrowserTest.*",
+          "OmniboxAimPopupEmbeddedPermissionBrowserTest.*",
+          "OmniboxAimPopupEmbeddedPermissionWebUILocationBarBrowserTest.*"
+        ]
+      },
+      "additionalChecks": "使用本次真实产物和独立测试资料，串行验证 Views 与 WebUI 地址栏的权限提示创建失败回滚、原提示锁不被其他请求释放、取消后焦点恢复、语音请求及跨窗口切换；Mac 另运行原生窗口隐藏、重新呈现和全屏场景。按各平台实际编译的测试列表核对非零选择并保留失败记录，源码匹配或旧二进制不能替代本次运行。"
     }
   ]
 }
