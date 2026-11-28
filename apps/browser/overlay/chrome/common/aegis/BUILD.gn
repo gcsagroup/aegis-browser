@@ -33,6 +33,7 @@ source_set("aegis") {
     "cookie_classify.cc",
     "cookie_classify.h",
     "features.cc",
+    "link_account.h",
     "features.h",
     "filter_list.cc",
     "filter_list.h",

@@ -1,0 +1,181 @@
+/* 原生账号页随系统主题和窗口宽度调整；装饰不遮挡键盘操作和系统高对比度。 */
+:root {
+  color-scheme: light dark;
+  font:
+    16px/1.45 system-ui,
+    sans-serif;
+  color: light-dark(#192b3b, #e7f2f6);
+  background: light-dark(#fafcfd, #14212a);
+  --action: light-dark(#006882, #88d7e8);
+  --on-action: light-dark(white, #092e38);
+  --line: light-dark(#d6e2e6, #3a515b);
+  --paper: light-dark(white, #1b2c36);
+}
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+  background:
+    radial-gradient(ellipse at 0% 0%, light-dark(#def2f5, #193541), transparent 40%),
+    radial-gradient(ellipse at 100% 100%, light-dark(#e7effc, #203047), transparent 40%);
+}
+main {
+  width: min(820px, 100%);
+  text-align: center;
+}
+.brand {
+  object-fit: contain;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  margin: 22px 0 36px;
+}
+h2,
+p {
+  margin: 0;
+}
+.benefits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.benefits article,
+fieldset,
+dialog {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 24px 18px;
+}
+.benefits article > span {
+  display: block;
+  font-size: 24px;
+  color: var(--action);
+  font-weight: 600;
+}
+.benefits h2 {
+  font-size: 16px;
+  margin: 10px 0 5px;
+}
+.benefits p,
+#identity {
+  font-size: 14px;
+  color: light-dark(#48616d, #b6cbd3);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 28px auto 0;
+}
+button {
+  font: inherit;
+  font-weight: 600;
+  background: var(--action);
+  color: var(--on-action);
+  border: 1px solid transparent;
+  border-radius: 24px;
+  padding: 10px 24px;
+  cursor: pointer;
+}
+button.secondary {
+  background: var(--paper);
+  color: var(--action);
+  border-color: var(--line);
+}
+button:hover {
+  filter: brightness(0.94);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+:focus-visible {
+  outline: 3px solid var(--action);
+  outline-offset: 3px;
+}
+#sync {
+  max-width: 420px;
+  margin: 20px auto;
+  text-align: start;
+}
+fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+legend {
+  font-weight: 650;
+}
+label {
+  display: block;
+}
+input[type="checkbox"] {
+  accent-color: var(--action);
+  margin-inline-end: 9px;
+}
+input[type="password"] {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+  margin: 6px 0;
+}
+#status {
+  margin: 16px 0;
+}
+dialog {
+  color: inherit;
+  max-width: min(90vw, 500px);
+}
+dialog::backdrop {
+  background: #0c202a66;
+}
+@media (max-width: 600px) {
+  body {
+    padding: 24px 16px;
+  }
+  .benefits {
+    grid-template-columns: 1fr;
+  }
+  .benefits article {
+    padding: 12px 18px;
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    text-align: start;
+    align-items: center;
+  }
+  .benefits article > span {
+    grid-row: span 2;
+  }
+  .benefits h2 {
+    margin: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  main {
+    animation: enter 0.24s ease-out;
+  }
+  @keyframes enter {
+    from {
+      transform: translateY(5px);
+    }
+    to {
+      transform: none;
+    }
+  }
+}

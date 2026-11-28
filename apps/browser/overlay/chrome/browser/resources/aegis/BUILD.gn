@@ -8,6 +8,11 @@ generate_grd("enhancement_resources") {
   out_grd = "$target_gen_dir/enhancement_resources.grdp"
   input_files_base_dir = rebase_path(".", "//")
   input_files = [
+    "account.html",
+    "account.js",
+    "account.css",
+    "account_sync.js",
+    "account_crypto.js",
     "enhancements.html",
     "enhancements.css",
     "enhancements.js",
@@ -66,6 +71,7 @@ build_webui("build") {
   extra_grdp_files = [
     "$target_gen_dir/capture_resources.grdp",
     "$target_gen_dir/enhancement_resources.grdp",
+    "account_icon.grdp",
   ]
   grd_prefix = "aegis"
   static_files = [

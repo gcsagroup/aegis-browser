@@ -20,6 +20,16 @@ Aegis Browser 1.0.0 已在 App Store 上架，支持 iPhone 和 iPad。外部 Be
 
 iOS 1.0.1 候选版在设置中新增「开源许可与鸣谢」。构建状态见[变更日志](CHANGELOG.zh-CN.md#ios--ipados-101--testflight)。
 
+## 桌面账号与同步
+
+首次启动时，在独立欢迎窗点「登录」，完成门户认证后进入浏览器。选「保持未登录状态」可直接开始浏览。
+
+登录后点右上角头像可查看账号名称和邮箱。「管理您的 Aegis Link 账号」打开门户个人资料。「您在 Aegis Browser 中的账号」可以选择书签和阅读字号。点「立即同步」后会直接打开浏览器首页，所选资料在后台同步。
+
+将要同步的书签保存在书签栏的「Aegis Link · 邮箱」文件夹。字号包括默认字号和最小字号。请在另一台设备上登录同一账号。两端都有修改或旧资料需要解锁时，在浏览器账号页点「处理同步问题」选择副本或输入原口令。
+
+开发包内置 `http://localhost:5176`。打包时用 GN 参数 `aegis_link_environment` 选择 `development`、`testing` 或 `production`，用 `aegis_link_portal` 指定来源。测试和正式包必须提供 HTTPS 域名。Windows 和 macOS 的正式预设在 GN 生成阶段读取 `AEGIS_LINK_PRODUCTION_PORTAL`。
+
 ## 核心能力
 
 | 能力 | 用途 | 平台与当前阶段 |

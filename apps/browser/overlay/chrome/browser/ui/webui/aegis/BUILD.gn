@@ -4,6 +4,60 @@
 declare_args() {
   # 发行构建可预置正式的 HTTPS OCR 接口地址。
   aegis_ocr_service_url = ""
+  # 打包环境决定登录目的地，测试和正式包必须显式传入 HTTPS 地址。
+  aegis_link_environment = "development"
+  aegis_link_portal = ""
+}
+
+if (!is_android) {
+  source_set("link_background_sync") {
+    sources = [
+      "link_background_sync.cc",
+      "link_background_sync.h",
+    ]
+    deps = [
+      "//base",
+      "//chrome/browser/profiles:profile",
+      "//chrome/common/aegis",
+      "//components/prefs",
+      "//content/public/browser",
+      "//ui/base",
+    ]
+  }
+
+  source_set("link_browser_login") {
+    sources = [
+      "link_browser_login.cc",
+      "link_browser_login.h",
+    ]
+    deps = [
+      ":link_configuration",
+      ":link_first_run_choice",
+      "//base",
+      "//chrome/common/aegis",
+      "//content/public/browser",
+      "//url",
+    ]
+  }
+
+  source_set("link_first_run_choice") {
+    sources = [
+      "link_first_run_choice.cc",
+      "link_first_run_choice.h",
+    ]
+    public_deps = [ "//base", "//content/public/browser" ]
+  }
+
+  # 显式生成依赖保证切换环境后重新编译账号网络客户端。
+  action("link_configuration") {
+    script = "link_environment.py"
+    outputs = [ "$target_gen_dir/link_portal_origin.h" ]
+    args = [
+      "--environment=$aegis_link_environment",
+      "--portal=$aegis_link_portal",
+      "--output=" + rebase_path(outputs[0], root_build_dir),
+    ]
+  }
 }
 
 source_set("aegis") {
@@ -48,6 +102,20 @@ source_set("aegis") {
     frameworks = [ "Vision.framework" ]
   }
   if (!is_android) {
+    sources += [
+      "link_account_handler.cc",
+      "link_account_handler.h",
+      "link_profile_data.cc",
+      "link_profile_data.h",
+    ]
+    deps += [
+      ":link_background_sync",
+      ":link_browser_login",
+      ":link_configuration",
+      ":link_first_run_choice",
+      "//chrome/browser/bookmarks",
+      "//components/bookmarks/browser",
+    ]
     sources += [
       "aegis_enhancement_handler.cc",
       "aegis_enhancement_handler.h",

@@ -1,0 +1,53 @@
+From: Aegis Browser <dev@localhost>
+Subject: [PATCH] Use the dedicated account sign-in window
+
+diff --git a/chrome/browser/ui/webui/aegis/link_browser_login.cc b/chrome/browser/ui/webui/aegis/link_browser_login.cc
+index adaf5ac50fd445982f67b550f06dd6dd441bf9b9..03f2f8a001bd2dceb9e773c034258e89fcc2676a 100644
+--- a/chrome/browser/ui/webui/aegis/link_browser_login.cc
++++ b/chrome/browser/ui/webui/aegis/link_browser_login.cc
+@@ -14,6 +14,9 @@
+ #include "url/origin.h"
+ 
+ namespace {
++// 专用页面仅提供账号登录；是否来自原生操作仍由当前标签的 LoginReturn 状态判定。
++constexpr char kLoginPath[] = "/login/browser";
++constexpr char kRegisterPath[] = "/login/browser/register";
+ GURL Portal() {
+   return GURL(AEGIS_LINK_PORTAL_ORIGIN);
+ }
+@@ -26,7 +29,7 @@ class LoginReturn : public content::WebContentsObserver,
+     opening_login_ = true;
+     submitted_here_ = false;
+     web_contents()->GetController().LoadURL(
+-        Portal().Resolve("/login?next=/account"), content::Referrer(),
++        Portal().Resolve(kLoginPath), content::Referrer(),
+         ui::PAGE_TRANSITION_AUTO_BOOKMARK, {});
+   }
+   void DidFinishNavigation(content::NavigationHandle* nav) override {
+@@ -37,13 +40,13 @@ class LoginReturn : public content::WebContentsObserver,
+     if (opening_login_) {
+       opening_login_ = false;
+       submitted_here_ = !nav->IsErrorPage() &&
+-                        url == Portal().Resolve("/login?next=/account");
++                        url == Portal().Resolve(kLoginPath);
+     }
+     // SPA 切到 /account
+     // 后密码管理器可能才收到提交结果，保留到原生账号页完成返回。
+     const bool login_page =
+         url::Origin::Create(url) == url::Origin::Create(Portal()) &&
+-        (url.path() == "/login" || url.path() == "/login/success");
++        (url.path() == kLoginPath || url.path().starts_with("/login/browser/"));
+     if (!login_page && url != Portal().Resolve("/account") &&
+         url.GetWithoutRef() != GURL(aegis::link::kPage)) {
+       submitted_here_ = false;
+@@ -73,7 +76,9 @@ class LoginReturn : public content::WebContentsObserver,
+   }
+ 
+   bool Matches(const GURL& form) const {
+-    return submitted_here_ && form.path() == "/login" &&
++    // 登录与注册共用门户表单，只有原生发起且同源的这两个凭据表单由客户端管理。
++    return submitted_here_ &&
++           (form.path() == kLoginPath || form.path() == kRegisterPath) &&
+            url::Origin::Create(form) == url::Origin::Create(Portal());
+   }
+ 

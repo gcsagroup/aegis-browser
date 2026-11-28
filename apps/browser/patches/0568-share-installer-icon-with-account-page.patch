@@ -1,0 +1,50 @@
+From a5c73ffe4047669d87d992d4f0567b3db4a80c20 Mon Sep 17 00:00:00 2001
+From: Aegis Browser <dev@localhost>
+Date: Sat, 28 Nov 2026 16:58:15 +0800
+Subject: [PATCH] Use the installer app icon on the desktop account page
+
+---
+ chrome/browser/resources/aegis/BUILD.gn          | 1 +
+ chrome/browser/resources/aegis/account.html      | 2 +-
+ chrome/browser/resources/aegis/account_icon.grdp | 7 +++++++
+ 3 files changed, 9 insertions(+), 1 deletion(-)
+ create mode 100644 chrome/browser/resources/aegis/account_icon.grdp
+
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+index c9219d80a8181c96c26701948732a9bd65f06e5b..007cf9c82af83bc62f6b19317e13570ee4db6630 100644
+--- a/chrome/browser/resources/aegis/BUILD.gn
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -71,6 +71,7 @@ build_webui("build") {
+   extra_grdp_files = [
+     "$target_gen_dir/capture_resources.grdp",
+     "$target_gen_dir/enhancement_resources.grdp",
++    "account_icon.grdp",
+   ]
+   grd_prefix = "aegis"
+   static_files = [
+diff --git a/chrome/browser/resources/aegis/account.html b/chrome/browser/resources/aegis/account.html
+index f395ae30bcce37d60f3a803565fa6298b37565c4..112830dfa22e677614469ee730fcadadab2266f4 100644
+--- a/chrome/browser/resources/aegis/account.html
++++ b/chrome/browser/resources/aegis/account.html
+@@ -10,7 +10,7 @@
+   </head>
+   <body>
+     <main aria-labelledby="heading">
+-      <img class="brand" src="product_logo.svg" alt="" width="72" height="72" />
++      <img class="brand" src="account_icon.png" alt="" width="72" height="72" />
+       <h1 id="heading">Aegis Browser</h1>
+       <p id="identity" hidden></p>
+       <section id="welcome" hidden>
+diff --git a/chrome/browser/resources/aegis/account_icon.grdp b/chrome/browser/resources/aegis/account_icon.grdp
+new file mode 100644
+index 0000000000000000000000000000000000000000..40c9ab3bff7b7d594fdd9eebd3dd85b745fcad1f
+--- /dev/null
++++ b/chrome/browser/resources/aegis/account_icon.grdp
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<grit-part>
++  <!-- 账号页与 Windows 卸载窗口直接引用同一张原图，对应安装器 ICO 的 256px 图层。 -->
++  <include name="IDR_AEGIS_ACCOUNT_ICON" resource_path="account_icon.png"
++           file="${root_src_dir}/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_256.png"
++           use_base_dir="false" type="BINDATA" />
++</grit-part>

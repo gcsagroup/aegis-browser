@@ -23,6 +23,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/aegis/aegis_capture_handler.h"
 #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/webui/aegis/link_account_handler.h"
+#endif
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/aegis_resources.h"
 #include "chrome/grit/aegis_resources_map.h"
@@ -716,6 +719,7 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
   web_ui->AddMessageHandler(std::make_unique<AegisUIHandler>());
 #if !BUILDFLAG(IS_ANDROID)
+  web_ui->AddMessageHandler(std::make_unique<LinkAccountHandler>());
   web_ui->AddMessageHandler(std::make_unique<AegisGestureHandler>());
   web_ui->AddMessageHandler(std::make_unique<AegisEnhancementHandler>());
   web_ui->AddRequestableScheme("chrome-untrusted");

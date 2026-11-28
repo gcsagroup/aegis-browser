@@ -8,12 +8,19 @@
 #include "chrome/browser/aegis/access/access_build_channel.h"
 #include "chrome/browser/aegis/gestures/gesture_settings.h"
 #include "chrome/common/aegis/features.h"
+#include "chrome/common/aegis/link_account.h"
 #include "chrome/common/aegis/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 
 namespace aegis {
 
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  // 账号标识和书签映射只属于本机 Profile，不参与 Chromium 的云偏好同步。
+  registry->RegisterStringPref(link::kEmail, "");
+  registry->RegisterStringPref(link::kDisplayName, "");
+  registry->RegisterBooleanPref(link::kWelcomeSeen, false);
+  registry->RegisterBooleanPref(link::kWelcomePending, false);
+  registry->RegisterDictionaryPref(link::kFolders);
   const std::string core_log_level(access::DefaultCoreLogLevelForCurrentBuild());
   registry->RegisterStringPref(kAccessCoreLogLevel, core_log_level);
   registry->RegisterStringPref(kAccessPrivateCoreLogLevel, core_log_level);

@@ -20,6 +20,14 @@ Aegis Browser 1.0.0 is available for iPhone and iPad. Join the external beta thr
 
 The iOS 1.0.1 candidate adds an Open Source Licenses & Acknowledgements page in Settings. See the [changelog](CHANGELOG.md#ios--ipados-101--testflight) for build status.
 
+## Desktop account and sync
+
+On first launch, choose **Sign in** or **Continue without signing in** in the welcome window. After signing in, open the toolbar avatar to see your account name and email. **Manage your Aegis Link account** opens your portal profile. **Your account in Aegis Browser** lets you choose what to sync. Select **Sync now** to open your browser homepage and sync in the background.
+
+Save bookmarks in the **Aegis Link · email** folder on the bookmarks bar. Font sync includes default and minimum sizes. Sign in to the same account on your other device. If both copies change, open your browser account and choose **Resolve sync issues** to select the copy to keep. Collections encrypted by an older release need the original passphrase once for migration.
+
+The development build connects to `http://localhost:5176`. Packagers select `aegis_link_environment` and `aegis_link_portal` with GN. Testing and production require an explicit HTTPS domain. The Windows and macOS release presets read `AEGIS_LINK_PRODUCTION_PORTAL` when GN generates the build.
+
 ## Core capabilities
 
 | Capability | What it does | Platform and current stage |

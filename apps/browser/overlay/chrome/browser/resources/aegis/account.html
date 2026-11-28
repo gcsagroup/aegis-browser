@@ -1,0 +1,94 @@
+<!doctype html>
+<!-- 浏览器内置登录页。访客先选择登录或继续浏览，同步操作只在门户确认会话后出现。 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aegis Browser</title>
+    <link rel="stylesheet" href="account.css" />
+    <script type="module" src="account.js"></script>
+  </head>
+  <body>
+    <main aria-labelledby="heading">
+      <img class="brand" src="account_icon.png" alt="" width="72" height="72" />
+      <h1 id="heading">Aegis Browser</h1>
+      <p id="identity" hidden></p>
+      <section id="welcome" hidden>
+        <div class="benefits">
+          <article>
+            <span aria-hidden="true">▤</span>
+            <h2 data-copy="bookmarks"></h2>
+            <p data-copy="bookmarkHint"></p>
+          </article>
+          <article>
+            <span aria-hidden="true">Aa</span>
+            <h2 data-copy="fonts"></h2>
+            <p data-copy="fontHint"></p>
+          </article>
+          <article>
+            <span aria-hidden="true">◇</span>
+            <h2 data-copy="privacy"></h2>
+            <p data-copy="privacyHint"></p>
+          </article>
+        </div>
+        <div class="actions">
+          <button id="login" data-copy="signIn"></button
+          ><button class="secondary" id="skip" data-copy="skip"></button>
+        </div>
+      </section>
+      <form id="sync" hidden>
+        <fieldset>
+          <legend data-copy="choose"></legend>
+          <label
+            ><input id="bookmarks" type="checkbox" checked /><span
+              data-copy="bookmarks"
+            ></span></label
+          ><label
+            ><input id="preferences" type="checkbox" /><span data-copy="fonts"></span
+          ></label>
+        </fieldset>
+        <button class="secondary" type="button" id="resolve" data-copy="resolve" hidden></button>
+        <div class="actions">
+          <button id="run" data-copy="sync"></button
+          ><button
+            class="secondary"
+            type="button"
+            id="logout"
+            data-copy="logout"
+          ></button>
+        </div>
+      </form>
+      <section id="signout" hidden>
+        <button id="confirmLogout" data-copy="logout"></button>
+      </section>
+      <p role="status" id="status"></p>
+      <button class="secondary" id="retry" data-copy="retry" hidden></button>
+    </main>
+    <dialog id="legacy" aria-labelledby="legacyTitle">
+      <form method="dialog">
+        <h2 id="legacyTitle" data-copy="legacyTitle"></h2>
+        <p data-copy="legacyHint"></p>
+        <label for="oldPass" data-copy="oldPass"></label>
+        <input id="oldPass" type="password" required autocomplete="off" />
+        <div class="actions">
+          <button value="migrate" data-copy="migrate"></button>
+          <button
+            value="cancel"
+            formnovalidate
+            class="secondary"
+            data-copy="cancel"
+          ></button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="decision">
+      <h2 data-copy="conflictTitle"></h2>
+      <p id="subject"></p>
+      <form method="dialog" class="actions">
+        <button value="upload" data-copy="local"></button
+        ><button value="restore" class="secondary" data-copy="cloud"></button
+        ><button value="cancel" class="secondary" data-copy="cancel"></button>
+      </form>
+    </dialog>
+  </body>
+</html>

@@ -1,0 +1,557 @@
+From: Aegis Browser <dev@localhost>
+Subject: [PATCH] Integrate signed-in profile actions and start sync from the homepage
+
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 990d5bdc0da6541df6cf0a48cd0f347ca209f808..d355fa8b1eec9e6f2faf87e885b76140e081863b 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -17,6 +17,7 @@ namespace aegis {
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   // 账号标识和书签映射只属于本机 Profile，不参与 Chromium 的云偏好同步。
+   registry->RegisterStringPref(link::kEmail, "");
++  registry->RegisterStringPref(link::kDisplayName, "");
+   registry->RegisterBooleanPref(link::kWelcomeSeen, false);
+   registry->RegisterBooleanPref(link::kWelcomePending, false);
+   registry->RegisterDictionaryPref(link::kFolders);
+diff --git a/chrome/browser/resources/aegis/account.html b/chrome/browser/resources/aegis/account.html
+index 029a92afd546267eb2e60791967912a2f86256c5..4325f2ef60ea8f5af885bd3ecfba3a6089bfbb00 100644
+--- a/chrome/browser/resources/aegis/account.html
++++ b/chrome/browser/resources/aegis/account.html
+@@ -47,6 +47,7 @@
+             ><input id="preferences" type="checkbox" /><span data-copy="fonts"></span
+           ></label>
+         </fieldset>
++        <button class="secondary" type="button" id="resolve" data-copy="resolve" hidden></button>
+         <div class="actions">
+           <button id="run" data-copy="sync"></button
+           ><button
+@@ -57,6 +58,13 @@
+           ></button>
+         </div>
+       </form>
++      <section id="phone" hidden>
++        <img id="phoneCode" width="180" height="180" alt="" hidden />
++        <p id="phoneHint"></p>
++      </section>
++      <section id="signout" hidden>
++        <button id="confirmLogout" data-copy="logout"></button>
++      </section>
+       <p role="status" id="status"></p>
+       <button class="secondary" id="retry" data-copy="retry" hidden></button>
+     </main>
+diff --git a/chrome/browser/resources/aegis/account.js b/chrome/browser/resources/aegis/account.js
+index b628a4863633bfc51c9e58a993bae5bc1bdde3c8..ee35483ba8af675baaff7a8f2095aaa08398a840 100644
+--- a/chrome/browser/resources/aegis/account.js
++++ b/chrome/browser/resources/aegis/account.js
+@@ -34,6 +34,10 @@ const words = new Map(Object.entries({
+   migrate: ["Migrate", "迁移"],
+   sync: ["Sync now", "立即同步"],
+   done: ["Synced", "已同步"],
++  resolve: ["Resolve sync issues", "处理同步问题"],
++  phone: ["Sign in on your phone", "在手机上登录"],
++  scan: ["Scan with your phone and sign in to Aegis Link.", "用手机相机扫码，登录 Aegis Link。"],
++  loopback: ["This development portal is only available on this computer.", "开发版门户仅可在这台电脑上访问。"],
+   retry: ["Retry", "重试"],
+   conflictTitle: ["Both copies have changes", "两台设备的资料都发生了变化"],
+   local: ["Use this device", "使用本机副本"],
+@@ -55,10 +59,26 @@ const el = (id) => document.getElementById(id);
+ const call = (action, input = {}) => sendWithPromise("aegisLinkAccount", action, input);
+ const kinds = ["bookmarks", "preferences"];
+ const background = location.hash === "#autosync";
++const menuView = () => new URLSearchParams(location.search).get("view");
+ const selectionKey = (u) => "sync-types:" + JSON.stringify([u.origin, u.id]);
++// 每个账号、来源和数据类型分别记录需要用户选择的冲突，不存储任何同步内容。
++const attentionKey = (u, kind) => "sync-attention:" + JSON.stringify([u.origin, u.id, kind]);
++function pendingKinds(u) {
++  return selectedKinds(u).filter((kind) => localStorage.getItem(attentionKey(u, kind)));
++}
++function updateAttention() {
++  el("resolve").hidden = !user || !pendingKinds(user).length;
++}
+ function selectedKinds(u) {
+   const saved = localStorage.getItem(selectionKey(u));
+-  return saved ? JSON.parse(saved) : ["bookmarks"];
++  if (saved === null) return ["bookmarks"];
++  // 损坏的本机选择不能默认为同意上传，用户可重新勾选。
++  try {
++    const value = JSON.parse(saved);
++    return Array.isArray(value) ? kinds.filter((kind) => value.includes(kind)) : [];
++  } catch {
++    return [];
++  }
+ }
+ const welcomeWindow = await call("isWelcomeWindow");
+ let user,
+@@ -73,16 +93,24 @@ function show(account) {
+     for (const kind of kinds) el(kind).checked = selected.includes(kind);
+   }
+   user = account;
+-  el("heading").textContent = tr(welcomeWindow ? "heading" : "signed");
++  const phone = !!user && menuView() === "phone";
++  const signout = !!user && menuView() === "signout";
++  let heading = welcomeWindow || !user ? "heading" : "signed";
++  if (phone) heading = "phone";
++  if (signout) heading = "logout";
++  el("heading").textContent = tr(heading);
+   document.querySelector(".benefits").hidden = !welcomeWindow;
+   el("skip").hidden = !welcomeWindow;
+   el("identity").hidden = !user;
+   el("identity").textContent = user?.email || "";
+-  el("sync").hidden = !user;
++  el("sync").hidden = !user || phone || signout;
++  el("phone").hidden = !phone;
++  el("signout").hidden = !signout;
+   el("welcome").hidden = !!user;
++  updateAttention();
+ }
+-// 同一轮先核对真实会话，再获取仅在内存中使用的密钥。后台冲突留给用户打开账号页处理。
+-async function refresh() {
++// 普通账号页只读取身份。隐藏文档执行常规同步，前台仅在用户选择解决冲突时取密钥。
++async function refresh(resolvePending = false) {
+   if (busy) return;
+   busy = true;
+   el("retry").hidden = true;
+@@ -93,26 +121,35 @@ async function refresh() {
+     const current = await call("session");
+     show(current);
+     if (welcomeWindow) return;
+-    const selected = selectedKinds(current);
+-    if (!selected.length) {
+-      el("status").textContent = tr("none");
++    el("status").textContent = "";
++    if (menuView() === "portal-profile") {
++      await call("portalProfile", { account: current.id });
+       return;
+     }
++    if (menuView() === "phone") {
++      const code = await call("phoneCode", { account: current.id });
++      if (code) el("phoneCode").src = code;
++      el("phoneCode").hidden = !code;
++      el("phoneHint").textContent = tr(code ? "scan" : "loopback");
++      return;
++    }
++    if (!background && !resolvePending) return;
++    const selected = background ? selectedKinds(current) : pendingKinds(current);
++    if (!selected.length) return;
+     el("status").textContent = tr("working");
+     const master = await importAccountKey(
+       (await call("key", { account: current.id })).key,
+     );
+-    let pending;
+     for (const kind of selected) {
+-      if (!kinds.includes(kind)) continue;
+       try {
+         await synchronize(call, current, kind, master, choose, requestLegacy);
++        localStorage.removeItem(attentionKey(current, kind));
+       } catch (error) {
+         if (!background || error?.message !== "attention") throw error;
+-        pending = true;
++        localStorage.setItem(attentionKey(current, kind), "1");
+       }
+     }
+-    if (!pending) el("status").textContent = tr("done");
++    if (!background) el("status").textContent = tr("done");
+   } catch (error) {
+     const key = error?.message || error;
+     if (key === "signin") {
+@@ -120,9 +157,10 @@ async function refresh() {
+       if (location.hash === "#signin") await call("login");
+     }
+     el("status").textContent = ["signin", "cancelled"].includes(key) ? "" : tr(key);
+-    el("retry").hidden = ["signin", "cancelled"].includes(key) || !!user;
++    el("retry").hidden = ["signin", "cancelled"].includes(key) || resolvePending;
+   } finally {
+     busy = false;
++    updateAttention();
+     el("sync").querySelector("fieldset").disabled = false;
+     el("run").disabled = false;
+     el("logout").disabled = false;
+@@ -131,15 +169,20 @@ async function refresh() {
+ }
+ el("login").onclick = () => call("login");
+ el("skip").onclick = () => call("skip");
+-el("retry").onclick = refresh;
+-el("logout").onclick = async () => {
++el("retry").onclick = () => refresh();
++el("resolve").onclick = () => refresh(true);
++el("confirmLogout").onclick = el("logout").onclick = async () => {
+   if (busy) return;
++  busy = true;
+   try {
+     await call("logout");
++    history.replaceState(null, "", location.pathname);
+     show(null);
+     el("status").textContent = "";
+   } catch (error) {
+     el("status").textContent = tr(error);
++  } finally {
++    busy = false;
+   }
+ };
+ async function decision(dialog) {
+@@ -171,12 +214,26 @@ el("sync").onchange = (event) => {
+     selectionKey(user),
+     JSON.stringify(kinds.filter((k) => el(k).checked)),
+   );
+-  void refresh();
++  el("status").textContent = "";
++  updateAttention();
+ };
+-el("sync").onsubmit = (event) => {
++el("sync").onsubmit = async (event) => {
+   event.preventDefault();
+-  void refresh();
++  if (!user || busy) return;
++  if (!selectedKinds(user).length) {
++    el("status").textContent = tr("none");
++    return;
++  }
++  el("run").disabled = true;
++  try {
++    await call("syncAndGoHome", { account: user.id });
++  } catch (error) {
++    el("status").textContent = tr(error);
++    el("run").disabled = false;
++  }
+ };
++window.addEventListener("storage", updateAttention);
++window.addEventListener("hashchange", () => { if (!background) void refresh(); });
+ document.addEventListener("visibilitychange", () => {
+   if (!document.hidden && !background) void refresh();
+ });
+diff --git a/chrome/browser/ui/views/profiles/profile_menu_view.cc b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+index 7ea297be3a273593fd608d3e4d1476f5a28ad2ba..70af5ac4ad7777e639fdccc316335a38920fd3ba 100644
+--- a/chrome/browser/ui/views/profiles/profile_menu_view.cc
++++ b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+@@ -117,6 +117,25 @@
+ 
+ namespace {
+ 
++// 菜单只读取本机显示缓存；打开账号操作后仍由 WebUI 核验当前门户会话。
++bool HasAegisAccount(Profile& profile) {
++  if (!profile.IsRegularProfile() || profile.IsOffTheRecord() || profile.IsChild() ||
++      profile.GetPrefs()->GetString(aegis::link::kEmail).empty()) {
++    return false;
++  }
++  const auto* entry = g_browser_process->profile_manager()
++                          ->GetProfileAttributesStorage()
++                          .GetProfileAttributesWithPath(profile.GetPath());
++  return entry && !entry->IsDasherlessManagement();
++}
++
++std::u16string AegisAccountName(Profile& profile) {
++  const auto* prefs = profile.GetPrefs();
++  const auto& name = prefs->GetString(aegis::link::kDisplayName);
++  const auto& email = prefs->GetString(aegis::link::kEmail);
++  return base::UTF8ToUTF16(name.empty() ? email.substr(0, email.find('@')) : name);
++}
++
+ std::u16string GetSyncErrorButtonText(
+     Profile* profile,
+     syncer::SyncService::UserActionableError error) {
+@@ -558,6 +577,14 @@ void ProfileMenuView::OnBatchUploadButtonClicked(ActionableItem button_type) {
+ }
+ 
+ void ProfileMenuView::SetMenuTitleForAccessibility() {
++  if (HasAegisAccount(profile()) && !web_app::AppBrowserController::IsWebApp(&browser())) {
++    menu_title_ = AegisAccountName(profile());
++    menu_subtitle_ = base::UTF8ToUTF16(profile().GetPrefs()->GetString(aegis::link::kEmail));
++    if (GetWidget()) {
++      GetWidget()->UpdateAccessibleNameForRootView();
++    }
++    return;
++  }
+   const signin::IdentityManager* identity_manager =
+       IdentityManagerFactory::GetForProfile(&profile());
+   CoreAccountInfo core_account_info =
+@@ -695,17 +722,21 @@ ProfileMenuView::GetIdentitySectionParams(const ProfileAttributesEntry& entry) {
+   // 本地身份卡和工具栏共用账号页；企业标记、访客和独立应用仍由原生资料菜单处理。
+   if (profile().IsRegularProfile() && !profile().IsOffTheRecord() && !profile().IsChild()) {
+     const bool zh = g_browser_process->GetApplicationLocale().starts_with("zh");
+-    const auto& email = profile().GetPrefs()->GetString(aegis::link::kEmail);
++    if (HasAegisAccount(profile())) {
++      params.title = AegisAccountName(profile());
++      params.subtitle = base::UTF8ToUTF16(profile().GetPrefs()->GetString(aegis::link::kEmail));
++      params.profile_image = ui::ImageModel::FromImage(
++          entry.GetAvatarIcon(kIdentityInfoImageSize, /*use_high_res_file=*/true, icon_params));
++      return params;
++    }
+     params.title = zh ? u"你的 Aegis Browser" : u"Your Aegis Browser";
+-    params.subtitle = email.empty()
+-        ? (zh ? u"登录后可在设备间同步书签和阅读字号。" : u"Sign in to sync bookmarks and font sizes across devices.")
+-        : base::UTF8ToUTF16(email);
+-    params.button_text = email.empty()
+-        ? (zh ? u"登录 Aegis Browser" : u"Sign in to Aegis Browser")
+-        : (zh ? u"管理同步" : u"Manage sync");
++    params.subtitle = zh ? u"登录后可在设备间同步书签和阅读字号。"
++                         : u"Sign in to sync bookmarks and font sizes across devices.";
++    params.button_text = zh ? u"登录 Aegis Browser" : u"Sign in to Aegis Browser";
+     params.button_action = base::BindRepeating([](ProfileMenuView* menu) {
+-      ShowSingletonTab(&menu->browser(), GURL(menu->profile().GetPrefs()->GetString(aegis::link::kEmail).empty()
+-          ? aegis::link::kSigninPage : aegis::link::kPage));
++      auto* browser = &menu->browser();
++      menu->GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
++      ShowSingletonTab(browser, GURL(aegis::link::kSigninPage));
+     }, base::Unretained(this));
+     return params;
+   }
+@@ -1215,6 +1246,30 @@ void ProfileMenuView::MaybeBuildSignoutButton() {
+ 
+ void ProfileMenuView::BuildFeatureButtons() {
+   CHECK(!profile().IsGuestSession());
++  if (HasAegisAccount(profile())) {
++    const bool zh = g_browser_process->GetApplicationLocale().starts_with("zh");
++    // 使用与 Chrome 相同的原生菜单行和分组，账号入口绑定至本产品。
++    auto open = [this](const char* page) {
++      return base::BindRepeating([](ProfileMenuView* menu, const char* target) {
++        if (menu->perform_menu_actions()) {
++          auto* browser = &menu->browser();
++          menu->GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
++          ShowSingletonTab(browser, GURL(target));
++        }
++      }, base::Unretained(this), page);
++    };
++    AddFeatureButton(zh ? u"在手机上登录" : u"Sign in on your phone",
++                     open(aegis::link::kPhonePage), kMobileIcon);
++    BuildAutofillSettingsButton();
++    AddFeatureButton(zh ? u"管理您的 Aegis Link 账号" : u"Manage your Aegis Link account",
++                     open(aegis::link::kPortalProfilePage), kManageAccountsIcon);
++    BuildCustomizeProfileButton();
++    AddFeatureButton(zh ? u"您在 Aegis Browser 中的账号" : u"Your account in Aegis Browser",
++                     open(aegis::link::kPage), vector_icons::kSettingsIcon);
++    AddFeatureButton(zh ? u"在 Aegis Browser 中退出账号" : u"Sign out of Aegis Browser",
++                     open(aegis::link::kSignoutPage), kLogoutIcon);
++    return;
++  }
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+   MaybeBuildCrossDeviceSigninButton();
+ #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index 2008adcf52cd28f04820db3feea92469a19faf2b..43f42be4f4daa3529c374e0fbabff603fa2bbd4f 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -115,6 +115,7 @@ source_set("aegis") {
+       ":link_first_run_choice",
+       "//chrome/browser/bookmarks",
+       "//components/bookmarks/browser",
++      "//components/qr_code_generator:bitmap_generator",
+     ]
+     sources += [
+       "aegis_enhancement_handler.cc",
+diff --git a/chrome/browser/ui/webui/aegis/link_account_handler.cc b/chrome/browser/ui/webui/aegis/link_account_handler.cc
+index 79ab6ca9fa3b366e95a913838fac345b83208ee7..57886fbdaa7585bc9a41b222ec93afd94c02b0ab 100644
+--- a/chrome/browser/ui/webui/aegis/link_account_handler.cc
++++ b/chrome/browser/ui/webui/aegis/link_account_handler.cc
+@@ -13,6 +13,8 @@
+ #include "chrome/browser/ui/webui/aegis/link_profile_data.h"
+ #include "chrome/common/aegis/link_account.h"
+ #include "components/prefs/pref_service.h"
++#include "components/qr_code_generator/bitmap_generator.h"
++#include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_ui.h"
+@@ -22,6 +24,7 @@
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
++#include "ui/base/webui/web_ui_util.h"
+ #include "url/origin.h"
+ 
+ namespace {
+@@ -33,6 +36,23 @@ std::string Field(const base::DictValue& dict, std::string_view key) {
+   const auto* value = dict.FindString(key);
+   return value ? *value : std::string();
+ }
++
++// 二维码只包含公开登录地址。开发包绑定本机，手机扫码无法访问该来源。
++std::optional<std::string> PhoneLoginCode() {
++  const auto login = Portal().Resolve("/login");
++  if (!login.SchemeIs("https") || login.host() == "localhost" ||
++      login.host() == "127.0.0.1") {
++    return std::string();
++  }
++  using namespace qr_code_generator;
++  auto bitmap = GenerateBitmap(base::as_byte_span(login.spec()),
++                               ModuleStyle::kSquares, LocatorStyle::kSquare,
++                               CenterImage::kNoCenterImage, QuietZone::kIncluded);
++  if (!bitmap.has_value()) {
++    return std::nullopt;
++  }
++  return webui::GetBitmapDataUrl(*bitmap);
++}
+ }  // namespace
+ 
+ LinkAccountHandler::LinkAccountHandler() = default;
+@@ -51,9 +71,12 @@ void LinkAccountHandler::OnJavascriptDisallowed() {
+ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
+   auto* contents = web_ui()->GetWebContents();
+   Profile* profile = Profile::FromWebUI(web_ui());
++  const auto page = contents->GetLastCommittedURL().GetWithoutRef();
+   if (!profile->IsRegularProfile() || profile->IsOffTheRecord() ||
+-      contents->GetLastCommittedURL().GetWithoutRef() !=
+-          GURL(aegis::link::kPage) ||
++      (page != GURL(aegis::link::kPage) &&
++       page != GURL(aegis::link::kPhonePage) &&
++       page != GURL(aegis::link::kPortalProfilePage) &&
++       page != GURL(aegis::link::kSignoutPage)) ||
+       args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
+       !args[2].is_dict()) {
+     return;
+@@ -87,6 +110,34 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
+     RejectJavascriptCallback(callback, base::Value("busy"));
+     return;
+   }
++  if (action == "syncAndGoHome" || action == "phoneCode" ||
++      action == "portalProfile") {
++    if (user_id_.empty() || Field(input, "account") != user_id_ ||
++        aegis::link::FirstRunChoice::From(contents)) {
++      RejectJavascriptCallback(callback, base::Value("account"));
++      return;
++    }
++    if (action == "phoneCode") {
++      if (auto code = PhoneLoginCode()) {
++        ResolveJavascriptCallback(callback, base::Value(*code));
++      } else {
++        RejectJavascriptCallback(callback, base::Value("invalid"));
++      }
++      return;
++    }
++    const bool sync = action == "syncAndGoHome";
++    if (sync) {
++      aegis::link::RequestBackgroundSync(profile);
++    }
++    // 跳转目标仅由本机首页设置或打包来源决定；同步由 Profile 持有而非标签页。
++    content::NavigationController::LoadURLParams navigation(
++        sync ? profile->GetHomePage() : Portal().Resolve("/profile"));
++    navigation.should_replace_current_entry = true;
++    navigation.transition_type = ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
++    ResolveJavascriptCallback(callback, base::Value(true));
++    contents->GetController().LoadURLWithParams(navigation);
++    return;
++  }
+   if (action == "session") {
+     Fetch(callback.GetString(), action, "/api/v1/auth/session", input);
+     return;
+@@ -197,6 +248,7 @@ void LinkAccountHandler::Received(std::string callback,
+     user_id_.clear();
+     csrf_.clear();
+     prefs->ClearPref(aegis::link::kEmail);
++    prefs->ClearPref(aegis::link::kDisplayName);
+     RejectJavascriptCallback(id, base::Value("signin"));
+     return;
+   }
+@@ -204,6 +256,7 @@ void LinkAccountHandler::Received(std::string callback,
+     user_id_.clear();
+     csrf_.clear();
+     prefs->ClearPref(aegis::link::kEmail);
++    prefs->ClearPref(aegis::link::kDisplayName);
+     ResolveJavascriptCallback(id, base::Value(true));
+     return;
+   }
+@@ -227,12 +280,14 @@ void LinkAccountHandler::Received(std::string callback,
+       user_id_.clear();
+       csrf_.clear();
+       prefs->ClearPref(aegis::link::kEmail);
++      prefs->ClearPref(aegis::link::kDisplayName);
+       RejectJavascriptCallback(id, base::Value("signin"));
+       return;
+     }
+     user_id_ = Field(*principal, "id");
+     csrf_ = Field(*data, "csrf_token");
+     prefs->SetString(aegis::link::kEmail, Field(*principal, "email"));
++    prefs->SetString(aegis::link::kDisplayName, Field(*principal, "display_name"));
+ 
+     base::DictValue result;
+     result.Set("id", user_id_);
+diff --git a/chrome/browser/ui/webui/aegis/link_background_sync.cc b/chrome/browser/ui/webui/aegis/link_background_sync.cc
+index a1c867716aaac9349ed10ca70ed832ed21e4337c..12be8842ac94fd8de81aca6c81bbe76b767b5122 100644
+--- a/chrome/browser/ui/webui/aegis/link_background_sync.cc
++++ b/chrome/browser/ui/webui/aegis/link_background_sync.cc
+@@ -38,17 +38,30 @@ class Scheduler : public base::SupportsUserData::Data, public ProfileObserver {
+     timer_.Start(FROM_HERE, base::TimeDelta(), this, &Scheduler::Rest);
+   }
+ 
++  void RequestNow() {
++    if (document_) {
++      queued_ = true;
++    } else {
++      Schedule();
++    }
++  }
++
+  private:
+   void Schedule() {
+     timer_.Start(FROM_HERE, base::TimeDelta(), this, &Scheduler::Run);
+   }
+   void Rest() {
+     document_.reset();
++    if (queued_) {
++      Schedule();
++      return;
++    }
+     if (!profile_->GetPrefs()->GetString(kEmail).empty()) {
+       timer_.Start(FROM_HERE, base::Minutes(2), this, &Scheduler::Run);
+     }
+   }
+   void Run() {
++    queued_ = false;
+     document_.reset();
+     if (profile_->GetPrefs()->GetString(kEmail).empty()) {
+       return;
+@@ -73,6 +86,7 @@ class Scheduler : public base::SupportsUserData::Data, public ProfileObserver {
+   base::ScopedObservation<Profile, ProfileObserver> observation_{this};
+   PrefChangeRegistrar prefs_;
+   base::OneShotTimer timer_;
++  bool queued_ = false;
+   std::unique_ptr<content::WebContents> document_;
+   base::WeakPtrFactory<Scheduler> weak_{this};
+ };
+@@ -83,6 +97,13 @@ void StartBackgroundSync(Profile* profile) {
+     profile->SetUserData(&kSchedulerKey, std::make_unique<Scheduler>(profile));
+   }
+ }
++void RequestBackgroundSync(Profile* profile) {
++  StartBackgroundSync(profile);
++  if (auto* scheduler =
++          static_cast<Scheduler*>(profile->GetUserData(&kSchedulerKey))) {
++    scheduler->RequestNow();
++  }
++}
+ void FinishBackgroundSync(Profile* profile, content::WebContents* source) {
+   if (auto* scheduler =
+           static_cast<Scheduler*>(profile->GetUserData(&kSchedulerKey))) {
+diff --git a/chrome/browser/ui/webui/aegis/link_background_sync.h b/chrome/browser/ui/webui/aegis/link_background_sync.h
+index ec7e5c9363556aaabea516f57044c5905aebe975..5add1de9d58a471457d5892ec6f497418c9f6060 100644
+--- a/chrome/browser/ui/webui/aegis/link_background_sync.h
++++ b/chrome/browser/ui/webui/aegis/link_background_sync.h
+@@ -8,6 +8,8 @@ class WebContents;
+ namespace aegis::link {
+ // 每个普通 Profile 安装一次调度器，已登录时才打开一次性同步文档。
+ void StartBackgroundSync(Profile* profile);
++// 用户提交选择时立即排队。正在运行的同步完成后再读取最新选择。
++void RequestBackgroundSync(Profile* profile);
+ // 只有调度器创建的文档可以结束本轮，普通账号页不能关闭其他页面。
+ void FinishBackgroundSync(Profile* profile, content::WebContents* source);
+ }  // namespace aegis::link
+diff --git a/chrome/common/aegis/link_account.h b/chrome/common/aegis/link_account.h
+index b7388f19ac14f53550756dfaa05401323f137e11..2f7e1d60ec1d85ee3247925b91c23d9016b696f4 100644
+--- a/chrome/common/aegis/link_account.h
++++ b/chrome/common/aegis/link_account.h
+@@ -6,9 +6,16 @@ inline constexpr char kDeferredStartup[] = "aegis-deferred-first-run";
+ inline constexpr char kPage[] = "chrome://aegis/account.html";
+ inline constexpr char kBackgroundPage[] = "chrome://aegis/account.html#autosync";
+ inline constexpr char kSigninPage[] = "chrome://aegis/account.html#signin";
++// Chromium 的单例标签匹配会忽略片段，用查询区分各菜单入口。
++inline constexpr char kPhonePage[] = "chrome://aegis/account.html?view=phone";
++inline constexpr char kPortalProfilePage[] =
++    "chrome://aegis/account.html?view=portal-profile";
++inline constexpr char kSignoutPage[] = "chrome://aegis/account.html?view=signout";
+ inline constexpr char kWelcomePage[] = "chrome://aegis/account.html#welcome";
+ inline constexpr char kWelcomePending[] = "aegis.link.welcome_pending";
+ inline constexpr char kEmail[] = "aegis.link.email";
++// 仅作本机头像菜单的展示缓存，授权仍以真实门户会话为准。
++inline constexpr char kDisplayName[] = "aegis.link.display_name";
+ inline constexpr char kWelcomeSeen[] = "aegis.link.welcome_seen";
+ inline constexpr char kFolders[] = "aegis.link.folders";
+ }  // namespace aegis::link

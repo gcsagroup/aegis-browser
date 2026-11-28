@@ -1,0 +1,262 @@
+From: Aegis Browser <dev@localhost>
+Subject: [PATCH] Remove phone sign-in and honor portal sync preferences
+
+diff --git a/chrome/browser/resources/aegis/account.html b/chrome/browser/resources/aegis/account.html
+index 4325f2ef60ea8f5af885bd3ecfba3a6089bfbb00..355c8701561750f05245a92964dfa6ffa56fd857 100644
+--- a/chrome/browser/resources/aegis/account.html
++++ b/chrome/browser/resources/aegis/account.html
+@@ -50,6 +50,7 @@
+         <button class="secondary" type="button" id="resolve" data-copy="resolve" hidden></button>
+         <div class="actions">
+           <button id="run" data-copy="sync"></button
++          ><button type="button" id="manage" data-copy="manage" hidden></button
+           ><button
+             class="secondary"
+             type="button"
+@@ -58,10 +59,6 @@
+           ></button>
+         </div>
+       </form>
+-      <section id="phone" hidden>
+-        <img id="phoneCode" width="180" height="180" alt="" hidden />
+-        <p id="phoneHint"></p>
+-      </section>
+       <section id="signout" hidden>
+         <button id="confirmLogout" data-copy="logout"></button>
+       </section>
+diff --git a/chrome/browser/resources/aegis/account.js b/chrome/browser/resources/aegis/account.js
+index ee35483ba8af675baaff7a8f2095aaa08398a840..f591208c3656bf347c86ac8dd5b9a3f5505dc42e 100644
+--- a/chrome/browser/resources/aegis/account.js
++++ b/chrome/browser/resources/aegis/account.js
+@@ -35,9 +35,8 @@ const words = new Map(Object.entries({
+   sync: ["Sync now", "立即同步"],
+   done: ["Synced", "已同步"],
+   resolve: ["Resolve sync issues", "处理同步问题"],
+-  phone: ["Sign in on your phone", "在手机上登录"],
+-  scan: ["Scan with your phone and sign in to Aegis Link.", "用手机相机扫码，登录 Aegis Link。"],
+-  loopback: ["This development portal is only available on this computer.", "开发版门户仅可在这台电脑上访问。"],
++  paused: ["Sync is paused in your Aegis Link account.", "浏览器同步已在门户中暂停。"],
++  manage: ["Manage sync in the portal", "在门户管理同步"],
+   retry: ["Retry", "重试"],
+   conflictTitle: ["Both copies have changes", "两台设备的资料都发生了变化"],
+   local: ["Use this device", "使用本机副本"],
+@@ -60,6 +59,10 @@ const call = (action, input = {}) => sendWithPromise("aegisLinkAccount", action,
+ const kinds = ["bookmarks", "preferences"];
+ const background = location.hash === "#autosync";
+ const menuView = () => new URLSearchParams(location.search).get("view");
++// 历史记录中已下线的入口返回普通账号页，未识别的页面没有桥接权限。
++if (location.search && !["?view=portal-profile", "?view=signout"].includes(location.search)) {
++  location.replace(location.pathname);
++}
+ const selectionKey = (u) => "sync-types:" + JSON.stringify([u.origin, u.id]);
+ // 每个账号、来源和数据类型分别记录需要用户选择的冲突，不存储任何同步内容。
+ const attentionKey = (u, kind) => "sync-attention:" + JSON.stringify([u.origin, u.id, kind]);
+@@ -93,18 +96,15 @@ function show(account) {
+     for (const kind of kinds) el(kind).checked = selected.includes(kind);
+   }
+   user = account;
+-  const phone = !!user && menuView() === "phone";
+   const signout = !!user && menuView() === "signout";
+   let heading = welcomeWindow || !user ? "heading" : "signed";
+-  if (phone) heading = "phone";
+   if (signout) heading = "logout";
+   el("heading").textContent = tr(heading);
+   document.querySelector(".benefits").hidden = !welcomeWindow;
+   el("skip").hidden = !welcomeWindow;
+   el("identity").hidden = !user;
+   el("identity").textContent = user?.email || "";
+-  el("sync").hidden = !user || phone || signout;
+-  el("phone").hidden = !phone;
++  el("sync").hidden = !user || signout;
+   el("signout").hidden = !signout;
+   el("welcome").hidden = !!user;
+   updateAttention();
+@@ -126,14 +126,15 @@ async function refresh(resolvePending = false) {
+       await call("portalProfile", { account: current.id });
+       return;
+     }
+-    if (menuView() === "phone") {
+-      const code = await call("phoneCode", { account: current.id });
+-      if (code) el("phoneCode").src = code;
+-      el("phoneCode").hidden = !code;
+-      el("phoneHint").textContent = tr(code ? "scan" : "loopback");
++    if (!background && !resolvePending) {
++      if (menuView() !== "signout") {
++        const policy = await call("syncPolicy", { account: current.id });
++        el("run").hidden = policy.paused === true;
++        el("manage").hidden = !policy.paused;
++        if (policy.paused) el("status").textContent = tr("paused");
++      }
+       return;
+     }
+-    if (!background && !resolvePending) return;
+     const selected = background ? selectedKinds(current) : pendingKinds(current);
+     if (!selected.length) return;
+     el("status").textContent = tr("working");
+@@ -168,6 +169,7 @@ async function refresh(resolvePending = false) {
+   }
+ }
+ el("login").onclick = () => call("login");
++el("manage").onclick = () => call("portalSync", { account: user.id });
+ el("skip").onclick = () => call("skip");
+ el("retry").onclick = () => refresh();
+ el("resolve").onclick = () => refresh(true);
+@@ -219,7 +221,7 @@ el("sync").onchange = (event) => {
+ };
+ el("sync").onsubmit = async (event) => {
+   event.preventDefault();
+-  if (!user || busy) return;
++  if (!user || busy || el("run").hidden) return;
+   if (!selectedKinds(user).length) {
+     el("status").textContent = tr("none");
+     return;
+diff --git a/chrome/browser/ui/views/profiles/profile_menu_view.cc b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+index 70af5ac4ad7777e639fdccc316335a38920fd3ba..86226c2e602dd7b1bc4643a663036a4145b543cb 100644
+--- a/chrome/browser/ui/views/profiles/profile_menu_view.cc
++++ b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+@@ -1258,8 +1258,6 @@ void ProfileMenuView::BuildFeatureButtons() {
+         }
+       }, base::Unretained(this), page);
+     };
+-    AddFeatureButton(zh ? u"在手机上登录" : u"Sign in on your phone",
+-                     open(aegis::link::kPhonePage), kMobileIcon);
+     BuildAutofillSettingsButton();
+     AddFeatureButton(zh ? u"管理您的 Aegis Link 账号" : u"Manage your Aegis Link account",
+                      open(aegis::link::kPortalProfilePage), kManageAccountsIcon);
+@@ -1270,9 +1268,6 @@ void ProfileMenuView::BuildFeatureButtons() {
+                      open(aegis::link::kSignoutPage), kLogoutIcon);
+     return;
+   }
+-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+-  MaybeBuildCrossDeviceSigninButton();
+-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+   // May add the button asynchronously, order is not be guaranteed.
+   MaybeBuildBatchUploadButton();
+   BuildAutofillSettingsButton();
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index 43f42be4f4daa3529c374e0fbabff603fa2bbd4f..2008adcf52cd28f04820db3feea92469a19faf2b 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -115,7 +115,6 @@ source_set("aegis") {
+       ":link_first_run_choice",
+       "//chrome/browser/bookmarks",
+       "//components/bookmarks/browser",
+-      "//components/qr_code_generator:bitmap_generator",
+     ]
+     sources += [
+       "aegis_enhancement_handler.cc",
+diff --git a/chrome/browser/ui/webui/aegis/link_account_handler.cc b/chrome/browser/ui/webui/aegis/link_account_handler.cc
+index 57886fbdaa7585bc9a41b222ec93afd94c02b0ab..22230cebefd8016b8273475df9c02453005cf9fa 100644
+--- a/chrome/browser/ui/webui/aegis/link_account_handler.cc
++++ b/chrome/browser/ui/webui/aegis/link_account_handler.cc
+@@ -13,7 +13,6 @@
+ #include "chrome/browser/ui/webui/aegis/link_profile_data.h"
+ #include "chrome/common/aegis/link_account.h"
+ #include "components/prefs/pref_service.h"
+-#include "components/qr_code_generator/bitmap_generator.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/web_contents.h"
+@@ -24,7 +23,6 @@
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+-#include "ui/base/webui/web_ui_util.h"
+ #include "url/origin.h"
+ 
+ namespace {
+@@ -37,22 +35,6 @@ std::string Field(const base::DictValue& dict, std::string_view key) {
+   return value ? *value : std::string();
+ }
+ 
+-// 二维码只包含公开登录地址。开发包绑定本机，手机扫码无法访问该来源。
+-std::optional<std::string> PhoneLoginCode() {
+-  const auto login = Portal().Resolve("/login");
+-  if (!login.SchemeIs("https") || login.host() == "localhost" ||
+-      login.host() == "127.0.0.1") {
+-    return std::string();
+-  }
+-  using namespace qr_code_generator;
+-  auto bitmap = GenerateBitmap(base::as_byte_span(login.spec()),
+-                               ModuleStyle::kSquares, LocatorStyle::kSquare,
+-                               CenterImage::kNoCenterImage, QuietZone::kIncluded);
+-  if (!bitmap.has_value()) {
+-    return std::nullopt;
+-  }
+-  return webui::GetBitmapDataUrl(*bitmap);
+-}
+ }  // namespace
+ 
+ LinkAccountHandler::LinkAccountHandler() = default;
+@@ -74,7 +56,6 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
+   const auto page = contents->GetLastCommittedURL().GetWithoutRef();
+   if (!profile->IsRegularProfile() || profile->IsOffTheRecord() ||
+       (page != GURL(aegis::link::kPage) &&
+-       page != GURL(aegis::link::kPhonePage) &&
+        page != GURL(aegis::link::kPortalProfilePage) &&
+        page != GURL(aegis::link::kSignoutPage)) ||
+       args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
+@@ -110,19 +91,15 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
+     RejectJavascriptCallback(callback, base::Value("busy"));
+     return;
+   }
+-  if (action == "syncAndGoHome" || action == "phoneCode" ||
+-      action == "portalProfile") {
++  if (action == "syncAndGoHome" || action == "syncPolicy" ||
++      action == "portalSync" || action == "portalProfile") {
+     if (user_id_.empty() || Field(input, "account") != user_id_ ||
+         aegis::link::FirstRunChoice::From(contents)) {
+       RejectJavascriptCallback(callback, base::Value("account"));
+       return;
+     }
+-    if (action == "phoneCode") {
+-      if (auto code = PhoneLoginCode()) {
+-        ResolveJavascriptCallback(callback, base::Value(*code));
+-      } else {
+-        RejectJavascriptCallback(callback, base::Value("invalid"));
+-      }
++    if (action == "syncPolicy") {
++      Fetch(callback.GetString(), action, "/api/v1/me/browser-sync", input);
+       return;
+     }
+     const bool sync = action == "syncAndGoHome";
+@@ -131,7 +108,8 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
+     }
+     // 跳转目标仅由本机首页设置或打包来源决定；同步由 Profile 持有而非标签页。
+     content::NavigationController::LoadURLParams navigation(
+-        sync ? profile->GetHomePage() : Portal().Resolve("/profile"));
++        sync ? profile->GetHomePage()
++             : Portal().Resolve(action == "portalSync" ? "/browser-sync" : "/profile"));
+     navigation.should_replace_current_entry = true;
+     navigation.transition_type = ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
+     ResolveJavascriptCallback(callback, base::Value(true));
+@@ -244,6 +222,17 @@ void LinkAccountHandler::Received(std::string callback,
+   const int status = info && info->headers ? info->headers->response_code() : 0;
+   auto* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+   const base::Value id(callback);
++  if (action == "syncPolicy" && status == 404) {
++    // 旧门户尚未实现账号级暂停，沿用原有同步行为。
++    base::DictValue policy;
++    policy.Set("paused", false);
++    ResolveJavascriptCallback(id, policy);
++    return;
++  }
++  if (status == 423) {
++    RejectJavascriptCallback(id, base::Value("paused"));
++    return;
++  }
+   if (status == 401 || status == 403) {
+     user_id_.clear();
+     csrf_.clear();
+diff --git a/chrome/common/aegis/link_account.h b/chrome/common/aegis/link_account.h
+index 2f7e1d60ec1d85ee3247925b91c23d9016b696f4..f5f1a91a97d1347aa22be029c45f724ef706d605 100644
+--- a/chrome/common/aegis/link_account.h
++++ b/chrome/common/aegis/link_account.h
+@@ -7,7 +7,6 @@ inline constexpr char kPage[] = "chrome://aegis/account.html";
+ inline constexpr char kBackgroundPage[] = "chrome://aegis/account.html#autosync";
+ inline constexpr char kSigninPage[] = "chrome://aegis/account.html#signin";
+ // Chromium 的单例标签匹配会忽略片段，用查询区分各菜单入口。
+-inline constexpr char kPhonePage[] = "chrome://aegis/account.html?view=phone";
+ inline constexpr char kPortalProfilePage[] =
+     "chrome://aegis/account.html?view=portal-profile";
+ inline constexpr char kSignoutPage[] = "chrome://aegis/account.html?view=signout";

@@ -1,4 +1,4 @@
-"""验证最终 Windows 资源包中的卸载图标与安装器 ICO 一致，不执行安装或卸载。"""
+"""在 Windows 构建产物中验证卸载窗口和浏览器账号页使用安装器 ICO 的同一图层。"""
 
 import argparse
 from pathlib import Path
@@ -28,7 +28,7 @@ def read_installer_png(icon_path: Path) -> bytes:
 
 
 def main():
-    """从同次构建的编号与资源包比对原图，防止卸载界面回退为透明 Logo。"""
+    """从同次构建的 GRIT 头文件解析资源编号，防止编号重排导致比对错误。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("src", type=Path, help="Chromium src 目录")
     parser.add_argument("out", type=Path, help="包含 gen 与 resources.pak 的构建目录")
@@ -36,15 +36,17 @@ def main():
     sys.path.insert(0, str(args.src / "tools/grit"))
     from grit.format.data_pack import ReadDataPack
 
-    header = (args.out / "gen/chrome/grit/chrome_unscaled_resources.h").read_text("utf-8")
-    match = re.search(r"^#define IDR_AEGIS_WINDOWS_APP_ICON (\d+)$", header, re.MULTILINE)
-    if match is None:
-        raise AssertionError("构建资源缺少卸载应用图标编号")
     resources = ReadDataPack(args.out / "resources.pak").resources
     expected = read_installer_png(args.src / "chrome/app/theme/gcsa_aegis/win/chromium.ico")
-    if resources[int(match[1])] != expected:
-        raise AssertionError("卸载图标与安装器 ICO 的 256px 图层不一致")
-    print("Windows 卸载图标与安装器应用图标完全一致。")
+    for header_name, symbol in (
+        ("chrome_unscaled_resources.h", "IDR_AEGIS_WINDOWS_APP_ICON"),
+        ("aegis_resources.h", "IDR_AEGIS_ACCOUNT_ICON"),
+    ):
+        header = (args.out / "gen/chrome/grit" / header_name).read_text("utf-8")
+        match = re.search(rf"^#define {symbol} (\d+)$", header, re.MULTILINE)
+        if match is None or resources.get(int(match[1])) != expected:
+            raise AssertionError(f"{symbol} 缺失或与安装器 ICO 的 256px 图层不一致")
+    print("Windows 安装器、卸载窗口和账号页的应用图标完全一致。")
 
 
 if __name__ == "__main__":

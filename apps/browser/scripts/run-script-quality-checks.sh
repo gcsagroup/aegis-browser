@@ -96,4 +96,6 @@ run_check 'fingerprint runtime verifier self-test' node ./scripts/verify-fingerp
 run_check 'miner runtime verifier syntax' node --check ./scripts/verify-miner-runtime.mjs
 run_check 'miner runtime verifier self-test' node ./scripts/verify-miner-runtime.mjs --self-test
 run_check 'multisite runtime verifier syntax' node --check ./scripts/verify-multisite-runtime.mjs
+run_check 'Aegis Link profile sync' node --test ./scripts/aegis-link-sync_test.mjs
+run_check 'Aegis Link package environment' python3 ./scripts/aegis_link_environment_test.py
 run_check 'Access account usage view' node --test ./scripts/access-account-usage_test.mjs
