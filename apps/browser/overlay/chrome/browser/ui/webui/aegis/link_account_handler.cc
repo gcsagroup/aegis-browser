@@ -13,7 +13,6 @@
 #include "chrome/browser/ui/webui/aegis/link_profile_data.h"
 #include "chrome/common/aegis/link_account.h"
 #include "components/prefs/pref_service.h"
-#include "components/qr_code_generator/bitmap_generator.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
@@ -24,7 +23,6 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
-#include "ui/base/webui/web_ui_util.h"
 #include "url/origin.h"
 
 namespace {
@@ -37,22 +35,6 @@ std::string Field(const base::DictValue& dict, std::string_view key) {
   return value ? *value : std::string();
 }
 
-// 二维码只包含公开登录地址。开发包绑定本机，手机扫码无法访问该来源。
-std::optional<std::string> PhoneLoginCode() {
-  const auto login = Portal().Resolve("/login");
-  if (!login.SchemeIs("https") || login.host() == "localhost" ||
-      login.host() == "127.0.0.1") {
-    return std::string();
-  }
-  using namespace qr_code_generator;
-  auto bitmap = GenerateBitmap(base::as_byte_span(login.spec()),
-                               ModuleStyle::kSquares, LocatorStyle::kSquare,
-                               CenterImage::kNoCenterImage, QuietZone::kIncluded);
-  if (!bitmap.has_value()) {
-    return std::nullopt;
-  }
-  return webui::GetBitmapDataUrl(*bitmap);
-}
 }  // namespace
 
 LinkAccountHandler::LinkAccountHandler() = default;
@@ -74,7 +56,6 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
   const auto page = contents->GetLastCommittedURL().GetWithoutRef();
   if (!profile->IsRegularProfile() || profile->IsOffTheRecord() ||
       (page != GURL(aegis::link::kPage) &&
-       page != GURL(aegis::link::kPhonePage) &&
        page != GURL(aegis::link::kPortalProfilePage) &&
        page != GURL(aegis::link::kSignoutPage)) ||
       args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
@@ -110,19 +91,15 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
     RejectJavascriptCallback(callback, base::Value("busy"));
     return;
   }
-  if (action == "syncAndGoHome" || action == "phoneCode" ||
-      action == "portalProfile") {
+  if (action == "syncAndGoHome" || action == "syncPolicy" ||
+      action == "portalSync" || action == "portalProfile") {
     if (user_id_.empty() || Field(input, "account") != user_id_ ||
         aegis::link::FirstRunChoice::From(contents)) {
       RejectJavascriptCallback(callback, base::Value("account"));
       return;
     }
-    if (action == "phoneCode") {
-      if (auto code = PhoneLoginCode()) {
-        ResolveJavascriptCallback(callback, base::Value(*code));
-      } else {
-        RejectJavascriptCallback(callback, base::Value("invalid"));
-      }
+    if (action == "syncPolicy") {
+      Fetch(callback.GetString(), action, "/api/v1/me/browser-sync", input);
       return;
     }
     const bool sync = action == "syncAndGoHome";
@@ -131,7 +108,8 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
     }
     // 跳转目标仅由本机首页设置或打包来源决定；同步由 Profile 持有而非标签页。
     content::NavigationController::LoadURLParams navigation(
-        sync ? profile->GetHomePage() : Portal().Resolve("/profile"));
+        sync ? profile->GetHomePage()
+             : Portal().Resolve(action == "portalSync" ? "/browser-sync" : "/profile"));
     navigation.should_replace_current_entry = true;
     navigation.transition_type = ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
     ResolveJavascriptCallback(callback, base::Value(true));
@@ -244,6 +222,17 @@ void LinkAccountHandler::Received(std::string callback,
   const int status = info && info->headers ? info->headers->response_code() : 0;
   auto* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
   const base::Value id(callback);
+  if (action == "syncPolicy" && status == 404) {
+    // 旧门户尚未实现账号级暂停，沿用原有同步行为。
+    base::DictValue policy;
+    policy.Set("paused", false);
+    ResolveJavascriptCallback(id, policy);
+    return;
+  }
+  if (status == 423) {
+    RejectJavascriptCallback(id, base::Value("paused"));
+    return;
+  }
   if (status == 401 || status == 403) {
     user_id_.clear();
     csrf_.clear();

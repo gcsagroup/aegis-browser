@@ -115,7 +115,6 @@ source_set("aegis") {
       ":link_first_run_choice",
       "//chrome/browser/bookmarks",
       "//components/bookmarks/browser",
-      "//components/qr_code_generator:bitmap_generator",
     ]
     sources += [
       "aegis_enhancement_handler.cc",

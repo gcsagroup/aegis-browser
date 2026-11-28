@@ -7,7 +7,6 @@ inline constexpr char kPage[] = "chrome://aegis/account.html";
 inline constexpr char kBackgroundPage[] = "chrome://aegis/account.html#autosync";
 inline constexpr char kSigninPage[] = "chrome://aegis/account.html#signin";
 // Chromium 的单例标签匹配会忽略片段，用查询区分各菜单入口。
-inline constexpr char kPhonePage[] = "chrome://aegis/account.html?view=phone";
 inline constexpr char kPortalProfilePage[] =
     "chrome://aegis/account.html?view=portal-profile";
 inline constexpr char kSignoutPage[] = "chrome://aegis/account.html?view=signout";

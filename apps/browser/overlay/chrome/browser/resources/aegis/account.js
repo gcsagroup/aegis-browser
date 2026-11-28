@@ -35,9 +35,8 @@ const words = new Map(Object.entries({
   sync: ["Sync now", "立即同步"],
   done: ["Synced", "已同步"],
   resolve: ["Resolve sync issues", "处理同步问题"],
-  phone: ["Sign in on your phone", "在手机上登录"],
-  scan: ["Scan with your phone and sign in to Aegis Link.", "用手机相机扫码，登录 Aegis Link。"],
-  loopback: ["This development portal is only available on this computer.", "开发版门户仅可在这台电脑上访问。"],
+  paused: ["Sync is paused in your Aegis Link account.", "浏览器同步已在门户中暂停。"],
+  manage: ["Manage sync in the portal", "在门户管理同步"],
   retry: ["Retry", "重试"],
   conflictTitle: ["Both copies have changes", "两台设备的资料都发生了变化"],
   local: ["Use this device", "使用本机副本"],
@@ -60,6 +59,10 @@ const call = (action, input = {}) => sendWithPromise("aegisLinkAccount", action,
 const kinds = ["bookmarks", "preferences"];
 const background = location.hash === "#autosync";
 const menuView = () => new URLSearchParams(location.search).get("view");
+// 历史记录中已下线的入口返回普通账号页，未识别的页面没有桥接权限。
+if (location.search && !["?view=portal-profile", "?view=signout"].includes(location.search)) {
+  location.replace(location.pathname);
+}
 const selectionKey = (u) => "sync-types:" + JSON.stringify([u.origin, u.id]);
 // 每个账号、来源和数据类型分别记录需要用户选择的冲突，不存储任何同步内容。
 const attentionKey = (u, kind) => "sync-attention:" + JSON.stringify([u.origin, u.id, kind]);
@@ -93,18 +96,15 @@ function show(account) {
     for (const kind of kinds) el(kind).checked = selected.includes(kind);
   }
   user = account;
-  const phone = !!user && menuView() === "phone";
   const signout = !!user && menuView() === "signout";
   let heading = welcomeWindow || !user ? "heading" : "signed";
-  if (phone) heading = "phone";
   if (signout) heading = "logout";
   el("heading").textContent = tr(heading);
   document.querySelector(".benefits").hidden = !welcomeWindow;
   el("skip").hidden = !welcomeWindow;
   el("identity").hidden = !user;
   el("identity").textContent = user?.email || "";
-  el("sync").hidden = !user || phone || signout;
-  el("phone").hidden = !phone;
+  el("sync").hidden = !user || signout;
   el("signout").hidden = !signout;
   el("welcome").hidden = !!user;
   updateAttention();
@@ -126,14 +126,15 @@ async function refresh(resolvePending = false) {
       await call("portalProfile", { account: current.id });
       return;
     }
-    if (menuView() === "phone") {
-      const code = await call("phoneCode", { account: current.id });
-      if (code) el("phoneCode").src = code;
-      el("phoneCode").hidden = !code;
-      el("phoneHint").textContent = tr(code ? "scan" : "loopback");
+    if (!background && !resolvePending) {
+      if (menuView() !== "signout") {
+        const policy = await call("syncPolicy", { account: current.id });
+        el("run").hidden = policy.paused === true;
+        el("manage").hidden = !policy.paused;
+        if (policy.paused) el("status").textContent = tr("paused");
+      }
       return;
     }
-    if (!background && !resolvePending) return;
     const selected = background ? selectedKinds(current) : pendingKinds(current);
     if (!selected.length) return;
     el("status").textContent = tr("working");
@@ -168,6 +169,7 @@ async function refresh(resolvePending = false) {
   }
 }
 el("login").onclick = () => call("login");
+el("manage").onclick = () => call("portalSync", { account: user.id });
 el("skip").onclick = () => call("skip");
 el("retry").onclick = () => refresh();
 el("resolve").onclick = () => refresh(true);
@@ -219,7 +221,7 @@ el("sync").onchange = (event) => {
 };
 el("sync").onsubmit = async (event) => {
   event.preventDefault();
-  if (!user || busy) return;
+  if (!user || busy || el("run").hidden) return;
   if (!selectedKinds(user).length) {
     el("status").textContent = tr("none");
     return;
