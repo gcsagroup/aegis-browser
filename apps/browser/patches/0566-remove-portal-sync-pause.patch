@@ -1,0 +1,112 @@
+From: Aegis Browser <dev@localhost>
+Subject: [PATCH] Remove portal pause controls from desktop sync
+
+diff --git a/chrome/browser/resources/aegis/account.html b/chrome/browser/resources/aegis/account.html
+index 355c8701561750f05245a92964dfa6ffa56fd857..f395ae30bcce37d60f3a803565fa6298b37565c4 100644
+--- a/chrome/browser/resources/aegis/account.html
++++ b/chrome/browser/resources/aegis/account.html
+@@ -50,7 +50,6 @@
+         <button class="secondary" type="button" id="resolve" data-copy="resolve" hidden></button>
+         <div class="actions">
+           <button id="run" data-copy="sync"></button
+-          ><button type="button" id="manage" data-copy="manage" hidden></button
+           ><button
+             class="secondary"
+             type="button"
+diff --git a/chrome/browser/resources/aegis/account.js b/chrome/browser/resources/aegis/account.js
+index f591208c3656bf347c86ac8dd5b9a3f5505dc42e..a53b7f606467913501ceff491937899217191bb4 100644
+--- a/chrome/browser/resources/aegis/account.js
++++ b/chrome/browser/resources/aegis/account.js
+@@ -35,8 +35,6 @@ const words = new Map(Object.entries({
+   sync: ["Sync now", "立即同步"],
+   done: ["Synced", "已同步"],
+   resolve: ["Resolve sync issues", "处理同步问题"],
+-  paused: ["Sync is paused in your Aegis Link account.", "浏览器同步已在门户中暂停。"],
+-  manage: ["Manage sync in the portal", "在门户管理同步"],
+   retry: ["Retry", "重试"],
+   conflictTitle: ["Both copies have changes", "两台设备的资料都发生了变化"],
+   local: ["Use this device", "使用本机副本"],
+@@ -126,15 +124,7 @@ async function refresh(resolvePending = false) {
+       await call("portalProfile", { account: current.id });
+       return;
+     }
+-    if (!background && !resolvePending) {
+-      if (menuView() !== "signout") {
+-        const policy = await call("syncPolicy", { account: current.id });
+-        el("run").hidden = policy.paused === true;
+-        el("manage").hidden = !policy.paused;
+-        if (policy.paused) el("status").textContent = tr("paused");
+-      }
+-      return;
+-    }
++    if (!background && !resolvePending) return;
+     const selected = background ? selectedKinds(current) : pendingKinds(current);
+     if (!selected.length) return;
+     el("status").textContent = tr("working");
+@@ -169,7 +159,6 @@ async function refresh(resolvePending = false) {
+   }
+ }
+ el("login").onclick = () => call("login");
+-el("manage").onclick = () => call("portalSync", { account: user.id });
+ el("skip").onclick = () => call("skip");
+ el("retry").onclick = () => refresh();
+ el("resolve").onclick = () => refresh(true);
+@@ -221,7 +210,7 @@ el("sync").onchange = (event) => {
+ };
+ el("sync").onsubmit = async (event) => {
+   event.preventDefault();
+-  if (!user || busy || el("run").hidden) return;
++  if (!user || busy) return;
+   if (!selectedKinds(user).length) {
+     el("status").textContent = tr("none");
+     return;
+diff --git a/chrome/browser/ui/webui/aegis/link_account_handler.cc b/chrome/browser/ui/webui/aegis/link_account_handler.cc
+index 22230cebefd8016b8273475df9c02453005cf9fa..c28052e1ebb8f7b9293128c382670378ee5ae379 100644
+--- a/chrome/browser/ui/webui/aegis/link_account_handler.cc
++++ b/chrome/browser/ui/webui/aegis/link_account_handler.cc
+@@ -91,25 +91,19 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
+     RejectJavascriptCallback(callback, base::Value("busy"));
+     return;
+   }
+-  if (action == "syncAndGoHome" || action == "syncPolicy" ||
+-      action == "portalSync" || action == "portalProfile") {
++  if (action == "syncAndGoHome" || action == "portalProfile") {
+     if (user_id_.empty() || Field(input, "account") != user_id_ ||
+         aegis::link::FirstRunChoice::From(contents)) {
+       RejectJavascriptCallback(callback, base::Value("account"));
+       return;
+     }
+-    if (action == "syncPolicy") {
+-      Fetch(callback.GetString(), action, "/api/v1/me/browser-sync", input);
+-      return;
+-    }
+     const bool sync = action == "syncAndGoHome";
+     if (sync) {
+       aegis::link::RequestBackgroundSync(profile);
+     }
+     // 跳转目标仅由本机首页设置或打包来源决定；同步由 Profile 持有而非标签页。
+     content::NavigationController::LoadURLParams navigation(
+-        sync ? profile->GetHomePage()
+-             : Portal().Resolve(action == "portalSync" ? "/browser-sync" : "/profile"));
++        sync ? profile->GetHomePage() : Portal().Resolve("/profile"));
+     navigation.should_replace_current_entry = true;
+     navigation.transition_type = ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
+     ResolveJavascriptCallback(callback, base::Value(true));
+@@ -222,17 +216,6 @@ void LinkAccountHandler::Received(std::string callback,
+   const int status = info && info->headers ? info->headers->response_code() : 0;
+   auto* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+   const base::Value id(callback);
+-  if (action == "syncPolicy" && status == 404) {
+-    // 旧门户尚未实现账号级暂停，沿用原有同步行为。
+-    base::DictValue policy;
+-    policy.Set("paused", false);
+-    ResolveJavascriptCallback(id, policy);
+-    return;
+-  }
+-  if (status == 423) {
+-    RejectJavascriptCallback(id, base::Value("paused"));
+-    return;
+-  }
+   if (status == 401 || status == 403) {
+     user_id_.clear();
+     csrf_.clear();

@@ -91,15 +91,10 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
     RejectJavascriptCallback(callback, base::Value("busy"));
     return;
   }
-  if (action == "syncAndGoHome" || action == "syncPolicy" ||
-      action == "portalSync" || action == "portalProfile") {
+  if (action == "syncAndGoHome" || action == "portalProfile") {
     if (user_id_.empty() || Field(input, "account") != user_id_ ||
         aegis::link::FirstRunChoice::From(contents)) {
       RejectJavascriptCallback(callback, base::Value("account"));
-      return;
-    }
-    if (action == "syncPolicy") {
-      Fetch(callback.GetString(), action, "/api/v1/me/browser-sync", input);
       return;
     }
     const bool sync = action == "syncAndGoHome";
@@ -108,8 +103,7 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
     }
     // 跳转目标仅由本机首页设置或打包来源决定；同步由 Profile 持有而非标签页。
     content::NavigationController::LoadURLParams navigation(
-        sync ? profile->GetHomePage()
-             : Portal().Resolve(action == "portalSync" ? "/browser-sync" : "/profile"));
+        sync ? profile->GetHomePage() : Portal().Resolve("/profile"));
     navigation.should_replace_current_entry = true;
     navigation.transition_type = ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
     ResolveJavascriptCallback(callback, base::Value(true));
@@ -222,17 +216,6 @@ void LinkAccountHandler::Received(std::string callback,
   const int status = info && info->headers ? info->headers->response_code() : 0;
   auto* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
   const base::Value id(callback);
-  if (action == "syncPolicy" && status == 404) {
-    // 旧门户尚未实现账号级暂停，沿用原有同步行为。
-    base::DictValue policy;
-    policy.Set("paused", false);
-    ResolveJavascriptCallback(id, policy);
-    return;
-  }
-  if (status == 423) {
-    RejectJavascriptCallback(id, base::Value("paused"));
-    return;
-  }
   if (status == 401 || status == 403) {
     user_id_.clear();
     csrf_.clear();

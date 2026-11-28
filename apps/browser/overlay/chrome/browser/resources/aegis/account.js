@@ -35,8 +35,6 @@ const words = new Map(Object.entries({
   sync: ["Sync now", "立即同步"],
   done: ["Synced", "已同步"],
   resolve: ["Resolve sync issues", "处理同步问题"],
-  paused: ["Sync is paused in your Aegis Link account.", "浏览器同步已在门户中暂停。"],
-  manage: ["Manage sync in the portal", "在门户管理同步"],
   retry: ["Retry", "重试"],
   conflictTitle: ["Both copies have changes", "两台设备的资料都发生了变化"],
   local: ["Use this device", "使用本机副本"],
@@ -126,15 +124,7 @@ async function refresh(resolvePending = false) {
       await call("portalProfile", { account: current.id });
       return;
     }
-    if (!background && !resolvePending) {
-      if (menuView() !== "signout") {
-        const policy = await call("syncPolicy", { account: current.id });
-        el("run").hidden = policy.paused === true;
-        el("manage").hidden = !policy.paused;
-        if (policy.paused) el("status").textContent = tr("paused");
-      }
-      return;
-    }
+    if (!background && !resolvePending) return;
     const selected = background ? selectedKinds(current) : pendingKinds(current);
     if (!selected.length) return;
     el("status").textContent = tr("working");
@@ -169,7 +159,6 @@ async function refresh(resolvePending = false) {
   }
 }
 el("login").onclick = () => call("login");
-el("manage").onclick = () => call("portalSync", { account: user.id });
 el("skip").onclick = () => call("skip");
 el("retry").onclick = () => refresh();
 el("resolve").onclick = () => refresh(true);
@@ -221,7 +210,7 @@ el("sync").onchange = (event) => {
 };
 el("sync").onsubmit = async (event) => {
   event.preventDefault();
-  if (!user || busy || el("run").hidden) return;
+  if (!user || busy) return;
   if (!selectedKinds(user).length) {
     el("status").textContent = tr("none");
     return;

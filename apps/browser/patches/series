@@ -563,3 +563,4 @@
 0563-account-managed-browser-sync.patch
 0564-native-profile-menu-and-sync-home.patch
 0565-remove-phone-signin-and-respect-account-sync-policy.patch
+0566-remove-portal-sync-pause.patch
