@@ -81,7 +81,7 @@ index 6978a870..73956fc4 100644
          default:
              response = AccessHTTPConnectParser.badRequestResponse()
 diff --git a/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift b/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift
-index 55629e7e..459b8773 100644
+index 55629e7e..ff87bd76 100644
 --- a/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift
 +++ b/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift
 @@ -36,34 +36,46 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
@@ -183,7 +183,7 @@ index 55629e7e..459b8773 100644
 +              let target = URLComponents(string: String(fields[1])),
 +              let scheme = target.scheme?.lowercased(),
 +              ["http", "https"].contains(scheme),
-+              target.user == nil, target.password == nil else { return "unknown" }
++              target.percentEncodedUser == nil, target.percentEncodedPassword == nil else { return "unknown" }
 +        return safeHost(target.host)
 +    }
 +
@@ -247,10 +247,10 @@ index 1f4000c6..3e540b13 100644
  	<dict>
  		<key>NSAllowsLocalNetworking</key>
 diff --git a/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift b/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift
-index f21dddc2..b1b682e7 100644
+index f21dddc2..86bdfb73 100644
 --- a/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift
 +++ b/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift
-@@ -103,6 +103,77 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
+@@ -103,6 +103,81 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
          XCTAssertEqual(diagnostics.snapshot(), "")
      }
  
@@ -320,6 +320,10 @@ index f21dddc2..b1b682e7 100644
 +                       "example.com")
 +        XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data("GET https://user:secret@example.com/ HTTP/1.1\r\n".utf8)),
 +                       "unknown")
++        for target in ["https://%FF@example.com/", "https://:%80@example.com/", "https://@example.com/"] {
++            XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data("GET \(target) HTTP/1.1\r\n".utf8)),
++                           "unknown")
++        }
 +        let overlong = String(repeating: "G", count: 1_000) + " https://sensitive.example@public.example/ HTTP/1.1\r\n"
 +        XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data(overlong.utf8)), "unknown")
 +        XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data("GET https://example.com".utf8)), "unknown")
