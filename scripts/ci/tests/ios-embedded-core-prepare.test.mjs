@@ -347,6 +347,9 @@ function fixture(t, scenario) {
 }
 
 const bash = ['-e', '-o', 'pipefail', '-c', prepare.run];
+// The full fixture starts several interpreters and writes a synthetic XCFramework.
+// Give slow macOS runners time for that work while retaining a finite hang limit.
+const fullPreparationTimeoutMs = 45_000;
 
 function assertPrivate({job, trace, foreignTemp, globalPair, globalToolBytes}, stdout, stderr) {
   const sinks = [];
@@ -395,7 +398,7 @@ for (const [scenario, phase, status] of [
 ]) {
   test(`EmbeddedCore preparation contains ${scenario} failure output and returns its status`, t => {
     const setup = fixture(t, scenario);
-    const result = spawnSync('bash', bash, {...setup.options, timeout: 20000});
+    const result = spawnSync('bash', bash, {...setup.options, timeout: fullPreparationTimeoutMs});
     assert.ifError(result.error);
     assertPrivate(setup, result.stdout, result.stderr);
     assert.equal(result.status, status, result.stderr);
@@ -413,7 +416,7 @@ for (const [scenario, status, reachesArchive] of [
 ]) {
   test(`locked Go setup contains ${scenario} output and gates preparation`, t => {
     const setup = fixture(t, scenario);
-    const result = spawnSync('bash', bash, {...setup.options, timeout: 20000});
+    const result = spawnSync('bash', bash, {...setup.options, timeout: fullPreparationTimeoutMs});
     assert.ifError(result.error);
     assertPrivate(setup, result.stdout, result.stderr);
     assert.equal(result.status, status, result.stderr);
@@ -428,7 +431,7 @@ for (const [scenario, status, reachesArchive] of [
 for (const scenario of ['cold-install', 'installed-gomobile', 'wrong-gobind']) {
   test(`EmbeddedCore preparation retains the archive inputs on ${scenario}`, t => {
     const setup = fixture(t, scenario);
-    const result = spawnSync('bash', bash, {...setup.options, timeout: 20000});
+    const result = spawnSync('bash', bash, {...setup.options, timeout: fullPreparationTimeoutMs});
     assert.ifError(result.error);
     assertPrivate(setup, result.stdout, result.stderr);
     assert.equal(result.status, 0, result.stderr);
@@ -477,7 +480,7 @@ test('local EmbeddedCore preparation records the toolchain selected by the build
   writeFileSync(join(cwd, 'bin', 'mise'), '#!/bin/bash\n[[ "$*" == "where go@1.27.3" ]] || exit 98\nprintf "%s\\n" "$PREP_LOCAL_GO"\n',
     {mode: 0o755});
   const result = spawnSync('bash', ['scripts/release/prepare-ios-access-core.sh', lock, '../job/EmbeddedCore'], {
-    ...setup.options, cwd: env.IOS_CI_SOURCE, timeout: 20000,
+    ...setup.options, cwd: env.IOS_CI_SOURCE, timeout: fullPreparationTimeoutMs,
     env: {...env, GIT_DIR: '', GIT_TRACE: '', GOTOOLCHAIN: 'local',
       PREP_LOCAL_GO: join(cwd, 'distribution', 'go'), AEGIS_EMBEDDED_CORE_DIGEST_MODE: 'ci-rebuild'},
   });
