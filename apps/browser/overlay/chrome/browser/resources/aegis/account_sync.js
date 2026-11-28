@@ -2,7 +2,7 @@
 import { fingerprint, seal, unseal } from "./account_crypto.js";
 
 /** 首次双端均有资料或离线修改冲突时，交由本人明确选择。对旧版本的上传由服务端拒绝。 */
-export async function synchronize(call, user, kind, password, choose) {
+export async function synchronize(call, user, kind, master, choose, requestLegacy) {
   const binding = JSON.stringify(["aegis-link-v1", user.origin, user.id, kind]);
   return navigator.locks.request(binding, async () => {
     const input = { account: user.id, collection: kind };
@@ -15,9 +15,12 @@ export async function synchronize(call, user, kind, password, choose) {
     let version = remote.version,
       digest = local;
     let action = "upload";
+    let migrate = false,
+      value = current;
     if (version !== "0") {
-      // 即使只是上传，也用用户输入的口令解开现有资料，避免输错口令后重加密覆盖云端。
-      const cloud = await unseal(remote.envelope, password, binding);
+      const opened = await unseal(remote.envelope, master, binding, requestLegacy);
+      const cloud = opened.value;
+      migrate = opened.legacy;
       const cloudHash = await fingerprint(cloud);
       if (cloudHash === local) action = "same";
       else if (previous?.version === version) action = "upload";
@@ -28,18 +31,12 @@ export async function synchronize(call, user, kind, password, choose) {
         action = "download";
       else action = await choose(kind);
       if (action === "download" || action === "restore") {
-        if ((await fingerprint(await readLocal())) !== local) throw new Error("conflict");
-        await call("profile", {
-          ...input,
-          value: cloud,
-          before: current,
-          backup: action === "restore",
-        });
+        value = cloud;
         digest = cloudHash;
       }
     }
-    if (action === "upload") {
-      const envelope = await seal(current, password, binding);
+    if (action === "upload" || migrate) {
+      const envelope = await seal(value, master, binding);
       const saved = await call("write", {
         ...input,
         change: {
@@ -48,6 +45,16 @@ export async function synchronize(call, user, kind, password, choose) {
         },
       });
       version = saved.version;
+    }
+    if (action === "download" || action === "restore") {
+      // 迁移必须先赢得云端版本比较，再由原生模型检查本地前像，避免用过期副本替换本机资料。
+      if ((await fingerprint(await readLocal())) !== local) throw new Error("conflict");
+      await call("profile", {
+        ...input,
+        value,
+        before: current,
+        backup: action === "restore",
+      });
     }
     localStorage.setItem(key, JSON.stringify({ version, digest }));
     return action;

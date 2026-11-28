@@ -4,6 +4,7 @@
 namespace aegis::link {
 inline constexpr char kDeferredStartup[] = "aegis-deferred-first-run";
 inline constexpr char kPage[] = "chrome://aegis/account.html";
+inline constexpr char kBackgroundPage[] = "chrome://aegis/account.html#autosync";
 inline constexpr char kSigninPage[] = "chrome://aegis/account.html#signin";
 inline constexpr char kWelcomePage[] = "chrome://aegis/account.html#welcome";
 inline constexpr char kWelcomePending[] = "aegis.link.welcome_pending";

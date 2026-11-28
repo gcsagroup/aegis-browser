@@ -68,7 +68,6 @@ dialog {
   margin: 10px 0 5px;
 }
 .benefits p,
-small,
 #identity {
   font-size: 14px;
   color: light-dark(#48616d, #b6cbd3);
@@ -117,8 +116,7 @@ fieldset {
   gap: 12px;
   margin: 0 0 16px;
 }
-legend,
-.pass {
+legend {
   font-weight: 650;
 }
 label {

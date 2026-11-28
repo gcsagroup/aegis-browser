@@ -47,15 +47,6 @@
             ><input id="preferences" type="checkbox" /><span data-copy="fonts"></span
           ></label>
         </fieldset>
-        <label class="pass" for="pass" data-copy="pass"></label
-        ><input
-          id="pass"
-          type="password"
-          minlength="12"
-          required
-          autocomplete="off"
-          aria-describedby="passHint"
-        /><small id="passHint" data-copy="passHint"></small>
         <div class="actions">
           <button id="run" data-copy="sync"></button
           ><button
@@ -69,6 +60,23 @@
       <p role="status" id="status"></p>
       <button class="secondary" id="retry" data-copy="retry" hidden></button>
     </main>
+    <dialog id="legacy" aria-labelledby="legacyTitle">
+      <form method="dialog">
+        <h2 id="legacyTitle" data-copy="legacyTitle"></h2>
+        <p data-copy="legacyHint"></p>
+        <label for="oldPass" data-copy="oldPass"></label>
+        <input id="oldPass" type="password" required autocomplete="off" />
+        <div class="actions">
+          <button value="migrate" data-copy="migrate"></button>
+          <button
+            value="cancel"
+            formnovalidate
+            class="secondary"
+            data-copy="cancel"
+          ></button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="decision">
       <h2 data-copy="conflictTitle"></h2>
       <p id="subject"></p>

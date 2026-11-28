@@ -1,5 +1,6 @@
 // WebUI 只调用本机编译的账号消息；门户地址、Cookie 和 CSRF 均由浏览器进程处理。
 import { sendWithPromise } from "chrome://resources/js/cr.js";
+import { importAccountKey } from "./account_crypto.js";
 import { synchronize } from "./account_sync.js";
 const zh = navigator.language.startsWith("zh");
 const words = new Map(Object.entries({
@@ -17,18 +18,20 @@ const words = new Map(Object.entries({
   ],
   privacy: ["Encrypted sync", "加密同步"],
   privacyHint: [
-    "Only your sync passphrase unlocks your data.",
-    "只有持有同步口令才能解开资料。",
+    "Sign in on another device to access your encrypted data.",
+    "在其他设备登录同一账号，即可同步加密保存的资料。",
   ],
   signIn: ["Sign in", "登录"],
   skip: ["Continue without signing in", "保持未登录状态"],
   logout: ["Sign out", "退出账号"],
   choose: ["Sync on this device", "在此设备同步"],
-  pass: ["Sync passphrase", "同步口令"],
-  passHint: [
-    "Use the same passphrase of 12 or more characters on both devices.",
-    "请在两台设备使用相同的同步口令，至少 12 个字符。",
+  legacyTitle: ["Move your existing data to account sync", "将旧资料迁移到账号同步"],
+  legacyHint: [
+    "Enter the passphrase used to encrypt this copy. After migration, signing in is enough.",
+    "输入当时加密这份资料的口令。迁移后，在其他设备登录同一账号即可同步。",
   ],
+  oldPass: ["Previous passphrase", "旧同步口令"],
+  migrate: ["Migrate", "迁移"],
   sync: ["Sync now", "立即同步"],
   done: ["Synced", "已同步"],
   retry: ["Retry", "重试"],
@@ -50,6 +53,13 @@ const words = new Map(Object.entries({
 const tr = (key) => (words.get(key) ?? words.get("network"))[zh ? 1 : 0];
 const el = (id) => document.getElementById(id);
 const call = (action, input = {}) => sendWithPromise("aegisLinkAccount", action, input);
+const kinds = ["bookmarks", "preferences"];
+const background = location.hash === "#autosync";
+const selectionKey = (u) => "sync-types:" + JSON.stringify([u.origin, u.id]);
+function selectedKinds(u) {
+  const saved = localStorage.getItem(selectionKey(u));
+  return saved ? JSON.parse(saved) : ["bookmarks"];
+}
 const welcomeWindow = await call("isWelcomeWindow");
 let user,
   busy = false;
@@ -58,7 +68,10 @@ document
   .querySelectorAll("[data-copy]")
   .forEach((node) => (node.textContent = tr(node.dataset.copy)));
 function show(account) {
-  if (user?.id !== account?.id) el("pass").value = "";
+  if (account && account.id !== user?.id) {
+    const selected = selectedKinds(account);
+    for (const kind of kinds) el(kind).checked = selected.includes(kind);
+  }
   user = account;
   el("heading").textContent = tr(welcomeWindow ? "heading" : "signed");
   document.querySelector(".benefits").hidden = !welcomeWindow;
@@ -68,23 +81,52 @@ function show(account) {
   el("sync").hidden = !user;
   el("welcome").hidden = !!user;
 }
+// 同一轮先核对真实会话，再获取仅在内存中使用的密钥。后台冲突留给用户打开账号页处理。
 async function refresh() {
   if (busy) return;
   busy = true;
   el("retry").hidden = true;
+  el("run").disabled = true;
+  el("logout").disabled = true;
+  el("sync").querySelector("fieldset").disabled = true;
   try {
-    show(await call("session"));
-    el("status").textContent = "";
-  } catch (error) {
-    if (error === "signin" && location.hash === "#signin") {
-      await call("login");
+    const current = await call("session");
+    show(current);
+    if (welcomeWindow) return;
+    const selected = selectedKinds(current);
+    if (!selected.length) {
+      el("status").textContent = tr("none");
       return;
     }
-    show(null);
-    el("status").textContent = error === "signin" ? "" : tr(error);
-    el("retry").hidden = error === "signin";
+    el("status").textContent = tr("working");
+    const master = await importAccountKey(
+      (await call("key", { account: current.id })).key,
+    );
+    let pending;
+    for (const kind of selected) {
+      if (!kinds.includes(kind)) continue;
+      try {
+        await synchronize(call, current, kind, master, choose, requestLegacy);
+      } catch (error) {
+        if (!background || error?.message !== "attention") throw error;
+        pending = true;
+      }
+    }
+    if (!pending) el("status").textContent = tr("done");
+  } catch (error) {
+    const key = error?.message || error;
+    if (key === "signin") {
+      show(null);
+      if (location.hash === "#signin") await call("login");
+    }
+    el("status").textContent = ["signin", "cancelled"].includes(key) ? "" : tr(key);
+    el("retry").hidden = ["signin", "cancelled"].includes(key) || !!user;
   } finally {
     busy = false;
+    el("sync").querySelector("fieldset").disabled = false;
+    el("run").disabled = false;
+    el("logout").disabled = false;
+    if (background) await call("finishAutoSync");
   }
 }
 el("login").onclick = () => call("login");
@@ -100,52 +142,43 @@ el("logout").onclick = async () => {
     el("status").textContent = tr(error);
   }
 };
-async function choose(kind) {
-  const dialog = el("decision");
-  el("subject").textContent = tr(kind === "preferences" ? "fonts" : "bookmarks");
+async function decision(dialog) {
+  if (background) throw new Error("attention");
   dialog.returnValue = "cancel";
   const closed = new Promise((resolve) =>
     dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true }),
   );
   dialog.showModal();
-  const value = await closed;
-  if (!["restore", "upload"].includes(value)) throw new Error("cancelled");
-  return value;
+  const answer = await closed;
+  if (answer === "cancel") throw new Error("cancelled");
+  return answer;
 }
-el("sync").onsubmit = async (event) => {
-  event.preventDefault();
-  if (busy || !user) return;
-  const selected = ["bookmarks", "preferences"].filter((k) => el(k).checked);
-  if (!selected.length) {
-    el("status").textContent = tr("none");
-    return;
-  }
-  busy = true;
-  el("run").disabled = true;
-  el("logout").disabled = true;
+async function choose(kind) {
+  el("subject").textContent = tr(kind === "preferences" ? "fonts" : "bookmarks");
+  return decision(el("decision"));
+}
+async function requestLegacy() {
   try {
-    const current = await call("session");
-    if (current.id !== user.id) {
-      show(current);
-      throw new Error("account");
-    }
-    el("status").textContent = tr("working");
-    for (const kind of selected)
-      await synchronize(call, current, kind, el("pass").value, choose);
-    el("status").textContent = tr("done");
-  } catch (error) {
-    const key = error?.message || error;
-    if (key === "signin") show(null);
-    el("status").textContent = key === "cancelled" ? "" : tr(key);
+    await decision(el("legacy"));
+    return el("oldPass").value;
   } finally {
-    el("pass").value = "";
-    busy = false;
-    el("run").disabled = false;
-    el("logout").disabled = false;
+    el("oldPass").value = "";
   }
+}
+el("sync").onchange = (event) => {
+  if (!user || !kinds.includes(event.target.id)) return;
+  localStorage.setItem(
+    selectionKey(user),
+    JSON.stringify(kinds.filter((k) => el(k).checked)),
+  );
+  void refresh();
+};
+el("sync").onsubmit = (event) => {
+  event.preventDefault();
+  void refresh();
 };
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && !el("decision").open) void refresh();
+  if (!document.hidden && !background) void refresh();
 });
 show(null);
 void refresh();

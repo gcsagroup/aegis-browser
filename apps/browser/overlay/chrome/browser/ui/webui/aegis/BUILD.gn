@@ -10,6 +10,36 @@ declare_args() {
 }
 
 if (!is_android) {
+  source_set("link_background_sync") {
+    sources = [
+      "link_background_sync.cc",
+      "link_background_sync.h",
+    ]
+    deps = [
+      "//base",
+      "//chrome/browser/profiles:profile",
+      "//chrome/common/aegis",
+      "//components/prefs",
+      "//content/public/browser",
+      "//ui/base",
+    ]
+  }
+
+  source_set("link_browser_login") {
+    sources = [
+      "link_browser_login.cc",
+      "link_browser_login.h",
+    ]
+    deps = [
+      ":link_configuration",
+      ":link_first_run_choice",
+      "//base",
+      "//chrome/common/aegis",
+      "//content/public/browser",
+      "//url",
+    ]
+  }
+
   source_set("link_first_run_choice") {
     sources = [
       "link_first_run_choice.cc",
@@ -79,6 +109,8 @@ source_set("aegis") {
       "link_profile_data.h",
     ]
     deps += [
+      ":link_background_sync",
+      ":link_browser_login",
       ":link_configuration",
       ":link_first_run_choice",
       "//chrome/browser/bookmarks",

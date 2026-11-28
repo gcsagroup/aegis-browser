@@ -1,23 +1,20 @@
-// 账号页的浏览器进程桥接。只向打包来源的三个固定接口发送当前 Profile
+// 账号页的浏览器进程桥接。只向打包来源的固定接口发送当前 Profile
 // 的第一方会话。
 #include "chrome/browser/ui/webui/aegis/link_account_handler.h"
 
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
-#include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/aegis/link_background_sync.h"
+#include "chrome/browser/ui/webui/aegis/link_browser_login.h"
 #include "chrome/browser/ui/webui/aegis/link_first_run_choice.h"
 #include "chrome/browser/ui/webui/aegis/link_portal_origin.h"
 #include "chrome/browser/ui/webui/aegis/link_profile_data.h"
 #include "chrome/common/aegis/link_account.h"
 #include "components/prefs/pref_service.h"
-#include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_user_data.h"
 #include "content/public/browser/web_ui.h"
 #include "net/base/isolation_info.h"
 #include "net/base/load_flags.h"
@@ -31,49 +28,6 @@ namespace {
 GURL Portal() {
   return GURL(AEGIS_LINK_PORTAL_ORIGIN);
 }
-
-// 只有从原生登录按钮开始的本次标签页导航可以返回账号页。普通网页不能发起特权导航。
-class LoginReturn : public content::WebContentsObserver,
-                    public content::WebContentsUserData<LoginReturn> {
- public:
-  void Begin() {
-    waiting_ = true;
-    web_contents()->GetController().LoadURL(
-        Portal().Resolve("/login?next=/account"), content::Referrer(),
-        ui::PAGE_TRANSITION_AUTO_BOOKMARK, {});
-  }
-  void DidFinishNavigation(content::NavigationHandle* nav) override {
-    if (!waiting_ || !nav->IsInPrimaryMainFrame() || !nav->HasCommitted() ||
-        nav->IsErrorPage())
-      return;
-    if (nav->GetURL() != Portal().Resolve("/account"))
-      return;
-    waiting_ = false;
-    // 同文档 SPA 登录回跳也会到这里。延迟导航避免在提交回调内重入。
-    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(
-                       [](base::WeakPtr<content::WebContents> tab) {
-                         if (tab && tab->GetLastCommittedURL() ==
-                                        Portal().Resolve("/account"))
-                           tab->GetController().LoadURL(
-                               GURL(aegis::link::FirstRunChoice::From(tab.get())
-                                        ? aegis::link::kWelcomePage
-                                        : aegis::link::kPage),
-                               content::Referrer(),
-                               ui::PAGE_TRANSITION_AUTO_BOOKMARK, {});
-                       },
-                       web_contents()->GetWeakPtr()));
-  }
-
- private:
-  friend class content::WebContentsUserData<LoginReturn>;
-  explicit LoginReturn(content::WebContents* tab)
-      : content::WebContentsObserver(tab),
-        content::WebContentsUserData<LoginReturn>(*tab) {}
-  bool waiting_ = false;
-  WEB_CONTENTS_USER_DATA_KEY_DECL();
-};
-WEB_CONTENTS_USER_DATA_KEY_IMPL(LoginReturn);
 
 std::string Field(const base::DictValue& dict, std::string_view key) {
   const auto* value = dict.FindString(key);
@@ -101,23 +55,29 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
       contents->GetLastCommittedURL().GetWithoutRef() !=
           GURL(aegis::link::kPage) ||
       args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
-      !args[2].is_dict())
+      !args[2].is_dict()) {
     return;
+  }
   AllowJavascript();
   const auto& callback = args[0];
   const auto& action = args[1].GetString();
   const auto& input = args[2].GetDict();
+  if (action == "finishAutoSync") {
+    ResolveJavascriptCallback(callback, base::Value(true));
+    aegis::link::FinishBackgroundSync(profile, contents);
+    return;
+  }
   if (action == "isWelcomeWindow") {
     // 标签页即使打开相同 URL，也只能看到普通账号管理界面。
-    ResolveJavascriptCallback(callback, base::Value(
-        aegis::link::FirstRunChoice::From(contents) != nullptr));
+    ResolveJavascriptCallback(
+        callback,
+        base::Value(aegis::link::FirstRunChoice::From(contents) != nullptr));
     return;
   }
   if (action == "login" || action == "skip") {
     ResolveJavascriptCallback(callback, base::Value(true));
     if (action == "login") {
-      LoginReturn::CreateForWebContents(contents);
-      LoginReturn::FromWebContents(contents)->Begin();
+      aegis::link::BeginBrowserLogin(contents);
     } else if (auto* decision = aegis::link::FirstRunChoice::From(contents)) {
       decision->Complete();
     }
@@ -135,6 +95,11 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
     Fetch(callback.GetString(), action, "/api/v1/auth/logout", input);
     return;
   }
+  if (action == "key" && !user_id_.empty() && !csrf_.empty() &&
+      Field(input, "account") == user_id_) {
+    Fetch(callback.GetString(), action, "/api/v1/me/browser-sync/key", input);
+    return;
+  }
   const auto kind = Field(input, "collection");
   if (user_id_.empty() || Field(input, "account") != user_id_ ||
       (kind != "preferences" && kind != "bookmarks")) {
@@ -145,10 +110,11 @@ void LinkAccountHandler::Dispatch(const base::ListValue& args) {
     auto data = aegis::link::ProfileData(
         profile, Portal().spec() + user_id_,
         profile->GetPrefs()->GetString(aegis::link::kEmail), kind, input);
-    if (data.has_value())
+    if (data.has_value()) {
       ResolveJavascriptCallback(callback, *data);
-    else
+    } else {
       RejectJavascriptCallback(callback, base::Value(data.error()));
+    }
   } else if (action == "read" || action == "write") {
     Fetch(callback.GetString(), action, "/api/v1/me/browser-sync/" + kind,
           input);
@@ -173,8 +139,9 @@ void LinkAccountHandler::Fetch(std::string callback,
   request->trusted_params->isolation_info =
       net::IsolationInfo::CreateForInternalRequest(origin);
   std::string payload;
-  if (action != "session")
+  if (action != "session") {
     request->headers.SetHeader("X-Aegis-Browser-Account", user_id_);
+  }
   if (action == "write") {
     auto* change = input.FindDict("change");
     if (!change || csrf_.empty() ||
@@ -187,7 +154,7 @@ void LinkAccountHandler::Fetch(std::string callback,
     request->headers.SetHeader("Origin", origin.Serialize());
     request->headers.SetHeader("X-CSRF-Token", csrf_);
   }
-  if (action == "logout") {
+  if (action == "logout" || action == "key") {
     request->method = "POST";
     request->headers.SetHeader("Origin", origin.Serialize());
     request->headers.SetHeader("X-CSRF-Token", csrf_);
@@ -196,15 +163,18 @@ void LinkAccountHandler::Fetch(std::string callback,
   constexpr auto annotation =
       net::DefineNetworkTrafficAnnotation("aegis_profile_account", R"(
     semantics { sender: "Aegis Browser Account" description: "Check the portal session or sync encrypted profile data."
-      trigger: "User opens the account page or requests sync." data: "First-party session or encrypted collection."
+      trigger: "Sign-in, opening the account page, or periodic sync of selected data."
+      data: "First-party session, account encryption key or encrypted collection."
       destination: OTHER destination_other: "The Aegis Link portal selected at build time." }
     policy { cookies_allowed: YES cookies_store: "Current regular profile"
-      setting: "Sync is optional and initiated from the browser account page." policy_exception_justification: "User-initiated action." })");
+      setting: "Select sync categories in Manage sync or sign out to stop."
+      policy_exception_justification: "Available to signed-in regular profiles." })");
   request_ = network::SimpleURLLoader::Create(std::move(request), annotation);
   request_->SetTimeoutDuration(base::Seconds(15));
   request_->SetAllowHttpErrorResults(true);
-  if (!payload.empty())
+  if (!payload.empty()) {
     request_->AttachStringForUpload(payload, "application/json");
+  }
   request_->DownloadToString(
       Profile::FromWebUI(web_ui())
           ->GetDefaultStoragePartition()
@@ -271,8 +241,9 @@ void LinkAccountHandler::Received(std::string callback,
     ResolveJavascriptCallback(id, result);
     // 会话和 CSRF 由门户验证成功后，首启窗口才能恢复启动请求。
     if (auto* choice =
-            aegis::link::FirstRunChoice::From(web_ui()->GetWebContents()))
+            aegis::link::FirstRunChoice::From(web_ui()->GetWebContents())) {
       choice->Complete();
+    }
     return;
   }
   ResolveJavascriptCallback(id, *data);
