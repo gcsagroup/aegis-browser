@@ -133,12 +133,12 @@ precondition(presented.contains { $0.title.contains("libXray") && $0.body.contai
 precondition(presented.contains {
     $0.title == "GeoSite standard data — sources and licenses"
         && $0.body.contains("The unmodified standard geosite.dat is shipped in the iOS app.")
-        && $0.body.contains("https://github.com/XTLS/Xray-rules-dat/releases/tag/20261126014317")
+        && $0.body.contains("https://github.com/XTLS/Xray-rules-dat/releases/tag/20261127013728")
         && $0.body.contains("GFWList data — LGPL-2.1")
 })
 precondition(presented.contains {
     $0.title == "V2Fly Domain List Community and inherited GeoSite tools — MIT"
-        && $0.body.contains("d74acca73490cb57a937674ce8a8709d2a3021ba/LICENSE-inherited")
+        && $0.body.contains("71449413dd268821143695c5bf3720545f392e63/LICENSE-inherited")
         && $0.body.contains("Copyright (c) 2018-2019 V2Ray")
 })
 precondition(presented.contains {

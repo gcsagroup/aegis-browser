@@ -198,15 +198,15 @@ final class AccessGeoSiteFullFrozenAdmissionTests: XCTestCase {
         XCTAssertEqual(overseas.counts.rejected, 36)
         XCTAssertEqual(overseas.counts.unsupported, 13)
         XCTAssertEqual(overseas.counts.exclusions, 32)
-        XCTAssertEqual(overseas.hosts.values.reduce(0) { $0 + $1.count }, 34)
+        XCTAssertEqual(overseas.hosts.values.reduce(0) { $0 + $1.count }, 42)
         XCTAssertEqual(overseas.hosts, [
             .video: ["www.youtube.com", "www.netflix.com", "vimeo.com", "www.twitch.tv", "m.youtube.com", "m.twitch.tv"],
-            .ai: ["chatgpt.com", "claude.ai", "gemini.google.com", "www.perplexity.ai"],
-            .web: ["www.google.com", "duckduckgo.com", "search.yahoo.com"],
-            .social: ["x.com", "www.instagram.com", "t.me", "discord.com", "telegram.org"],
+            .ai: ["openai.com", "www.anthropic.com", "chatgpt.com", "claude.ai", "gemini.google.com", "www.perplexity.ai"],
+            .web: ["www.google.com.hk", "www.google.com", "duckduckgo.com", "search.yahoo.com"],
+            .social: ["web.telegram.org", "x.com", "www.instagram.com", "t.me", "discord.com", "telegram.org"],
             .news: ["www.bbc.com", "www.nytimes.com", "www.reuters.com", "www.dw.com"],
-            .development: ["github.com", "gist.github.com", "raw.githubusercontent.com", "hub.docker.com"],
-            .reference: ["zh.wikipedia.org", "scholar.google.com", "archive.org"],
+            .development: ["github.githubassets.com", "avatars.githubusercontent.com", "github.com", "gist.github.com", "raw.githubusercontent.com", "hub.docker.com"],
+            .reference: ["www.wikipedia.org", "en.wikipedia.org", "zh.wikipedia.org", "scholar.google.com", "archive.org"],
             .cloud: ["drive.google.com", "docs.google.com", "www.dropbox.com", "onedrive.live.com", "accounts.google.com"],
         ])
         // iPhone WebKit lands on these hosts after the first hop of a listed entry.
@@ -217,6 +217,9 @@ final class AccessGeoSiteFullFrozenAdmissionTests: XCTestCase {
             ("drive.google.com", "accounts.google.com", .cloud, .web),
             ("docs.google.com", "accounts.google.com", .cloud, .ai),
             ("t.me", "telegram.org", .social, .video),
+            ("github.com", "github.githubassets.com", .development, .web),
+            ("github.com", "avatars.githubusercontent.com", .development, .cloud),
+            ("www.google.com", "www.google.com.hk", .web, .social),
         ] {
             let entryURL = try XCTUnwrap(URL(string: "https://\(entry)/"))
             let landingURL = try XCTUnwrap(URL(string: "https://\(landing)/"))

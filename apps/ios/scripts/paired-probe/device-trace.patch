@@ -1,0 +1,334 @@
+diff --git a/apps/ios/AccessKit/AccessDiagnosticLog.swift b/apps/ios/AccessKit/AccessDiagnosticLog.swift
+index 065f2934..8c8f432e 100644
+--- a/apps/ios/AccessKit/AccessDiagnosticLog.swift
++++ b/apps/ios/AccessKit/AccessDiagnosticLog.swift
+@@ -517,6 +517,22 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
+         return false
+     }
+ 
++    private static let directedRoutePrefix = "default route for "
++    private static let directedFailureFragments = [
++        "no such host", "connection refused", "connection reset", "unexpected EOF",
++        "failed to decode response header", "failed to transfer response payload",
++        "failed to process outbound traffic", "failed to find an available destination"
++    ]
++
++    private static var directedProbeEnabled: Bool {
++        ProcessInfo.processInfo.environment["AEGIS_DIRECTED_PROBE"] == "1"
++    }
++
++    private static func directedFailureDetail(_ raw: String) -> String? {
++        let matches = directedFailureFragments.filter { raw.localizedCaseInsensitiveContains($0) }
++        return matches.isEmpty ? nil : matches.joined(separator: " | ")
++    }
++
+     private func append(_ raw: String) {
+         let event = #"^(\d{4}/\d\d/\d\d \d\d:\d\d:\d\d(?:\.\d+)?) (.*)$"#
+         guard let timestamp = Self.firstMatch(event, in: raw, group: 1),
+@@ -540,6 +556,9 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
+                let target = Self.firstMatch(tunnel, in: message, group: 1),
+                let via = Self.firstMatch(tunnel, in: message, group: 2) {
+                 detail = "tunneling request to \(safeTarget(target)) via \(safeTarget(via))"
++            } else if Self.directedProbeEnabled, module == "app/dispatcher",
++                      message.hasPrefix(Self.directedRoutePrefix) {
++                detail = Self.directedRoutePrefix + safeTarget(String(message.dropFirst(Self.directedRoutePrefix.count)))
+             } else if module == "core", message == "Xray 26.11.9 started" {
+                 // The admitted core version is fixed; never retain an
+                 // arbitrary numeric payload from a forged event.
+@@ -551,9 +570,15 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
+                 let messages = ["pre-connect failed", "failed to create mux server worker",
+                                 "failed to pick route", "REALITY: received real certificate",
+                                 "default outbound handler not exist", "Reader is not timeout reader"]
+-                detail = modules.contains(module)
+-                    ? (messages.first(where: { message == $0 || message.hasPrefix($0 + " ") }) ?? "details withheld")
+-                    : "details withheld"
++                if modules.contains(module),
++                   let known = messages.first(where: { message == $0 || message.hasPrefix($0 + " ") }) {
++                    detail = known
++                } else if Self.directedProbeEnabled, ["app/proxyman/outbound", "proxy/vless/outbound"].contains(module),
++                          let failure = Self.directedFailureDetail(message) {
++                    detail = failure
++                } else {
++                    detail = "details withheld"
++                }
+             }
+         }
+         guard severityRank >= minimumRank else { return }
+@@ -611,6 +636,11 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
+         } else if let target = Self.firstMatch(tunnel, in: message, group: 1),
+                   let via = Self.firstMatch(tunnel, in: message, group: 2) {
+             detail = "tunneling request to \(safeTarget(target)) via \(safeTarget(via))"
++        } else if Self.directedProbeEnabled,
++                  let target = Self.firstMatch(#"^default route for (\S+)$"#, in: message, group: 1) {
++            detail = Self.directedRoutePrefix + safeTarget(target)
++        } else if Self.directedProbeEnabled, Self.directedFailureDetail(message) == message {
++            detail = message
+         } else {
+             let known = ["core: Xray 26.11.9 started", "details withheld", "pre-connect failed",
+                          "failed to create mux server worker", "failed to pick route",
+diff --git a/apps/ios/AccessKit/AccessHTTPConnectSession.swift b/apps/ios/AccessKit/AccessHTTPConnectSession.swift
+index 6978a870..73956fc4 100644
+--- a/apps/ios/AccessKit/AccessHTTPConnectSession.swift
++++ b/apps/ios/AccessKit/AccessHTTPConnectSession.swift
+@@ -123,6 +123,9 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
+         let response: Data
+         switch error {
+         case .methodNotConnect:
++            if ProcessInfo.processInfo.environment["AEGIS_DIRECTED_PROBE"] == "1" {
++                NSLog("AEGIS-DIRECTED-CONNECT - %@ non-connect-405", DirectedConnectTrace.nonConnectHost(in: buffer))
++            }
+             response = AccessHTTPConnectParser.methodNotAllowedResponse()
+         default:
+             response = AccessHTTPConnectParser.badRequestResponse()
+diff --git a/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift b/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift
+index 55629e7e..ff87bd76 100644
+--- a/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift
++++ b/apps/ios/AccessKit/AccessHTTPTunnelBridge.swift
+@@ -36,34 +36,46 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
+         lock.lock()
+         defer { lock.unlock() }
+         guard !stopped, task == nil else { return }
++        let trace = DirectedConnectTrace(host: host, port: port)
+         task = Task { [weak self] in
+             guard let self else { return }
+             do {
+                 guard mayOpen() else { self.stop(); return }
+                 try Task.checkCancellation()
++                trace.emit("dial-called")
+                 let remote = try await self.opener.open(host: host, port: port)
++                trace.emit("stream-open")
+                 guard mayOpen(), self.storeRemote(remote) else {
+                     remote.close()
+                     self.stop()
+                     return
+                 }
+-                if let successResponse { try await self.sendClient(successResponse, maySend: mayOpen) }
++                if let successResponse {
++                    try await self.sendClient(successResponse, maySend: mayOpen)
++                    trace.emit("connect-200")
++                }
+                 guard mayOpen() else { self.stop(); return }
+                 try Task.checkCancellation()
+                 onEstablished?()
+                 if !prelude.isEmpty {
+                     guard mayOpen() else { self.stop(); return }
+                     try await remote.write(prelude)
++                    trace.uploaded(prelude)
+                 }
+-                async let download: Void = self.pumpRemote(remote, maySend: mayOpen)
++                async let download: Void = self.pumpRemote(remote, maySend: mayOpen, trace: trace)
+                 do {
+-                    try await Self.forwardUpload(receive: self.receiveClient, write: remote.write, maySend: mayOpen)
++                    try await Self.forwardUpload(receive: self.receiveClient, write: { data in
++                        try await remote.write(data)
++                        trace.uploaded(data)
++                    }, maySend: mayOpen)
+                 } catch {
+                     // A failed read or write terminates both directions, like EOF.
++                    trace.failure("upload-failed", error)
+                 }
+                 self.stop()
+                 await download
+             } catch {
++                trace.failure("open-or-reply-failed", error)
+                 self.stop()
+             }
+         }
+@@ -122,16 +134,24 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
+         }
+     }
+ 
+-    private func pumpRemote(_ remote: any AccessRealityPathStream, maySend: @escaping @Sendable () -> Bool) async {
++    private func pumpRemote(_ remote: any AccessRealityPathStream, maySend: @escaping @Sendable () -> Bool,
++                            trace: DirectedConnectTrace) async {
++        var sawDownstream = false
+         while !Task.isCancelled {
+             do {
+                 guard let chunk = try await remote.read(maxBytes: Self.chunkSize) else {
++                    trace.emit(sawDownstream ? "eof-after-downstream" : "eof-before-downstream")
+                     stop()
+                     return
+                 }
++                if !sawDownstream {
++                    sawDownstream = true
++                    trace.emit("first-downstream", data: chunk)
++                }
+                 try Task.checkCancellation()
+                 try await sendClient(chunk, maySend: maySend)
+             } catch {
++                trace.failure("downstream-failed", error)
+                 stop()
+                 return
+             }
+@@ -154,6 +174,72 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
+     }
+ }
+ 
++// Temporary, opt-in witness for the physical-device probe. Only sizes and
++// TLS record types leave this boundary, never stream bytes or credentials.
++final class DirectedConnectTrace: @unchecked Sendable {
++    private let enabled = ProcessInfo.processInfo.environment["AEGIS_DIRECTED_PROBE"] == "1"
++    private let id = String(UUID().uuidString.prefix(8))
++    private let destination: String
++    private let sentUpstream = OSAllocatedUnfairLock(initialState: false)
++
++    init(host: String, port: UInt16) { destination = "\(Self.safeHost(host)):\(port)" }
++
++    static func nonConnectHost(in buffer: Data) -> String {
++        let prefix = buffer.prefix(1_024)
++        guard let boundary = prefix.range(of: Data([13, 10])),
++              let line = String(data: prefix[..<boundary.lowerBound], encoding: .utf8) else { return "unknown" }
++        let fields = line.split(separator: " ")
++        guard fields.count == 3,
++              let target = URLComponents(string: String(fields[1])),
++              let scheme = target.scheme?.lowercased(),
++              ["http", "https"].contains(scheme),
++              target.percentEncodedUser == nil, target.percentEncodedPassword == nil else { return "unknown" }
++        return safeHost(target.host)
++    }
++
++    static func safeHost(_ host: String?) -> String {
++        guard let host, host.utf8.count <= 253, !host.contains("%") else { return "unknown" }
++        let literal = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
++        if literal.utf8.allSatisfy({ byte in
++            (48...58).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte) || byte == 46
++        }), IPv6Address(literal) != nil { return "[\(literal)]" }
++        let dns = host.hasSuffix(".") ? host.dropLast() : host[...]
++        let labels = dns.split(separator: ".", omittingEmptySubsequences: false)
++        guard !labels.isEmpty, labels.allSatisfy({ label in
++            (1...63).contains(label.utf8.count) && !label.hasPrefix("-") && !label.hasSuffix("-")
++                && label.utf8.allSatisfy { byte in
++                    (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte) || byte == 45
++                }
++        }) else { return "unknown" }
++        return host
++    }
++
++    func uploaded(_ data: Data) {
++        let first = sentUpstream.withLock {
++            let first = !$0
++            $0 = true
++            return first
++        }
++        if first { emit("first-upstream", data: data) }
++    }
++
++    func failure(_ event: String, _ error: Error) {
++        let failure = error as NSError
++        emit(event + " domain=\(failure.domain) code=\(failure.code)")
++    }
++
++    func emit(_ event: String, data: Data? = nil) {
++        guard enabled else { return }
++        var metadata = ""
++        if let data, let first = data.first {
++            let header = data.prefix(2)
++            let type = (20...23).contains(first) && header.count == 2 && header.last == 3 ? Int(first) : 0
++            metadata = " bytes=\(data.count) tlsRecord=\(type)"
++        }
++        NSLog("AEGIS-DIRECTED-CONNECT %@ %@ %@%@", id, destination, event, metadata)
++    }
++}
++
+ /// In-memory stream for tunnel tests. `close` wakes a pending read or write.
+ public final class AccessMemoryRealityStream: AccessRealityPathStream, @unchecked Sendable {
+     private let lock = OSAllocatedUnfairLock()
+diff --git a/apps/ios/AegisApp/Info.plist b/apps/ios/AegisApp/Info.plist
+index 1f4000c6..3e540b13 100644
+--- a/apps/ios/AegisApp/Info.plist
++++ b/apps/ios/AegisApp/Info.plist
+@@ -42,6 +42,8 @@
+ 	<string>当网站请求使用相机，或你扫描测试节点二维码时，Aegis 会先征求你的许可。</string>
+ 	<key>NSMicrophoneUsageDescription</key>
+ 	<string>在你明确同意后，向当前网站提供麦克风音频。</string>
++	<key>NSLocalNetworkUsageDescription</key>
++	<string>Connect directly to the local diagnostic relay for the device comparison.</string>
+ 	<key>NSAppTransportSecurity</key>
+ 	<dict>
+ 		<key>NSAllowsLocalNetworking</key>
+diff --git a/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift b/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift
+index f21dddc2..86bdfb73 100644
+--- a/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift
++++ b/apps/ios/Tests/AccessKitTests/AccessRealityVisionOutboundConfigTests.swift
+@@ -103,6 +103,81 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
+         XCTAssertEqual(diagnostics.snapshot(), "")
+     }
+ 
++    func testDirectedDiagnosticsRetainOnlyCanonicalProbeDetails() throws {
++        let key = "AEGIS_DIRECTED_PROBE"
++        let original = ProcessInfo.processInfo.environment[key]
++        defer {
++            if let original { setenv(key, original, 1) }
++            else { unsetenv(key) }
++        }
++        let rows = [
++            "[Info] app/dispatcher: default route for tcp:route.example:443",
++            "[Warning] app/proxyman/outbound: connection refused relay-secret.example, no such host",
++            "[Error] proxy/vless/outbound: unexpected EOF https://relay-secret.example/item?private=query",
++            "[Info] app/dispatcher: default route for tcp:relay-secret.example:443",
++            "[Warning] proxy/vless/outbound: Reader is not timeout reader",
++            "[Warning] proxy/vless/outbound: pre-connect failed > connection refused"
++        ]
++        func capture(probeEnabled: Bool) throws -> [String] {
++            setenv(key, probeEnabled ? "1" : "0", 1)
++            let log = AccessDiagnosticLog(pollInterval: .milliseconds(15))
++            let capture = try XCTUnwrap(log.start(level: .info, secrets: ["relay-secret.example"]))
++            defer { log.stop() }
++            let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: capture.path))
++            defer { try? writer.close() }
++            let input = rows.enumerated().map { index, row in "2026/11/11 00:00:0\(index) \(row)\n" }.joined()
++            try writer.write(contentsOf: Data(input.utf8))
++            let deadline = Date().addingTimeInterval(2)
++            var lines = log.snapshot().split(separator: "\n").map(String.init)
++            while lines.count < rows.count && Date() < deadline {
++                Thread.sleep(forTimeInterval: 0.01)
++                lines = log.snapshot().split(separator: "\n").map(String.init)
++            }
++            return lines
++        }
++        XCTAssertEqual(try capture(probeEnabled: true), [
++            "2026/11/11 00:00:00 [Info] default route for tcp:route.example:443",
++            "2026/11/11 00:00:01 [Warning] no such host | connection refused",
++            "2026/11/11 00:00:02 [Error] unexpected EOF",
++            "2026/11/11 00:00:03 [Info] default route for [redacted]",
++            "2026/11/11 00:00:04 [Warning] Reader is not timeout reader",
++            "2026/11/11 00:00:05 [Warning] pre-connect failed"
++        ])
++        XCTAssertEqual(try capture(probeEnabled: false), [
++            "2026/11/11 00:00:00 [Info] details withheld",
++            "2026/11/11 00:00:01 [Warning] details withheld",
++            "2026/11/11 00:00:02 [Error] details withheld",
++            "2026/11/11 00:00:03 [Info] details withheld",
++            "2026/11/11 00:00:04 [Warning] Reader is not timeout reader",
++            "2026/11/11 00:00:05 [Warning] pre-connect failed"
++        ])
++    }
++
++    func testDirectedConnectTraceSanitizesTheDestinationBeforeLogging() {
++        XCTAssertEqual(DirectedConnectTrace.safeHost("example.com"), "example.com")
++        XCTAssertEqual(DirectedConnectTrace.safeHost("192.0.2.1"), "192.0.2.1")
++        XCTAssertEqual(DirectedConnectTrace.safeHost("2001:db8::1"), "[2001:db8::1]")
++        XCTAssertEqual(DirectedConnectTrace.safeHost("[2001:db8::1]"), "[2001:db8::1]")
++        for invalid in ["user:secret@example.com", "user%40example.com", "example.com/path",
++                        "example.com\nsecret", "fe80::1%en0", "::1\u{0}secret", "", nil] {
++            XCTAssertEqual(DirectedConnectTrace.safeHost(invalid), "unknown")
++        }
++    }
++
++    func testDirectedNonConnectTraceRequiresCompleteRequestWithoutUserInfo() {
++        XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data("GET https://example.com/private HTTP/1.1\r\n".utf8)),
++                       "example.com")
++        XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data("GET https://user:secret@example.com/ HTTP/1.1\r\n".utf8)),
++                       "unknown")
++        for target in ["https://%FF@example.com/", "https://:%80@example.com/", "https://@example.com/"] {
++            XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data("GET \(target) HTTP/1.1\r\n".utf8)),
++                           "unknown")
++        }
++        let overlong = String(repeating: "G", count: 1_000) + " https://sensitive.example@public.example/ HTTP/1.1\r\n"
++        XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data(overlong.utf8)), "unknown")
++        XCTAssertEqual(DirectedConnectTrace.nonConnectHost(in: Data("GET https://example.com".utf8)), "unknown")
++    }
++
+     func testArchiveContainsCompressedSnapshotAndCanBeRemoved() throws {
+         let input = "access diagnostic event\n"
+         let file = try AccessDiagnosticArchive.createTemporary(snapshot: input)

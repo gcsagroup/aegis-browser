@@ -46,4 +46,4 @@ Assets upload to a draft. The publisher re-reads every asset digest before makin
 
 Android delivery reads the three-component `versionName` and independent `versionCode` from `apps/browser/args/android-delivery-version.json`. The current test coordinate is `0.8.0` / `1`. The code must be between 1 and 2100000000 and must satisfy Play upgrade ordering for the application. Historical four-component receipts remain valid when their code ends in the fourth component.
 
-In Full mode, `distribute` with a test `track` and no `userFraction` completes that test rollout. Providing a valid `userFraction` selects a partial rollout. Before a test-track write the workflow reads the current track and retains completed version codes in the requested release. An unrelated draft or partial rollout must be reconciled before writing.
+In Full mode, `distribute` reads the test track before writing. With a valid `userFraction`, the workflow keeps the existing completed releases and stages only the uploaded version. Omitting `userFraction` completes the rollout and retains the existing version codes in the completed release. Reconcile unrelated drafts or rollouts before writing.

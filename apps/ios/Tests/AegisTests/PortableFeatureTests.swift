@@ -79,7 +79,8 @@ final class PortableFeatureTests: XCTestCase {
         try prefs.save(values)
         let reopened = BrowserPreferences(defaults: defaults)
         XCTAssertEqual(reopened.values.availableSearchEngines, [.google, .baidu, .custom])
-        XCTAssertEqual(BrowserPreferences.searchURL("test", values: reopened.values)?.host, "www.google.com")
+        XCTAssertEqual(BrowserPreferences.searchURL("test", values: reopened.values)?.absoluteString,
+                       "https://www.google.com.hk/search?q=test")
         for engine in values.availableSearchEngines { values.removeSearchEngine(engine) }
         try prefs.save(values)
         let empty = BrowserPreferences(defaults: defaults)
@@ -185,6 +186,26 @@ final class PortableFeatureTests: XCTestCase {
         try await waitUntil { next.url?.path == "/article" && !next.isLoading }
         XCTAssertEqual(next.webView.pageZoom, 0.75)
         browser.visibleTabs.forEach { $0.stop() }
+    }
+
+    func testConfiguredGoogleHomepageUsesHongKongWithoutRewritingAddresses() throws {
+        let prefs = BrowserPreferences(defaults: defaults)
+        var values = prefs.values
+        for homepage in ["https://google.com", "https://www.google.com/", "http://www.google.com/"] {
+            values.homepage = homepage
+            try prefs.save(values)
+            let reopened = BrowserPreferences(defaults: defaults)
+            XCTAssertEqual(reopened.values.homepage, homepage)
+            XCTAssertEqual(reopened.homeURL.absoluteString, "https://www.google.com.hk/")
+            XCTAssertEqual(BrowserSession.normalizedURL(from: homepage, preferences: reopened.values), URL(string: homepage))
+        }
+        for homepage in ["https://www.apple.com/", "https://www.google.com/search?q=Aegis",
+                         "https://www.google.com/?num=10", "https://www.google.com/#search",
+                         "https://www.google.com:8443/", "https://www.google.com.example.org/"] {
+            values.homepage = homepage
+            try prefs.save(values)
+            XCTAssertEqual(prefs.homeURL.absoluteString, homepage)
+        }
     }
 
     func testJavaScriptGlobalAndSiteRulesInRealWebKit() async throws {

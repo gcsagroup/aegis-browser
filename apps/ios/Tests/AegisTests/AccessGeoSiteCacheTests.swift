@@ -170,6 +170,48 @@ final class AccessGeoSiteCacheTests: XCTestCase {
         XCTAssertEqual(reopened.runtimeView().overseas.match(target), .managed)
     }
 
+    func testSameReleaseCategoryExpansionRequiresNewConsentAfterRestore() async throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: AccessGeoSiteCatalogue.bundled.publishedAt))
+        fixture.clock.setWall(published.addingTimeInterval(3600))
+        let cache = fixture.cache(useProductBaseline: true)
+        await cache.restore()
+        let selection = AccessOverseasSelection(enabled: true, categories: [.development])
+        try await cache.confirmOverseas(cache.overseasConfirmation(for: selection)) { true }
+
+        // Reproduce the previous app's sealed development policy against the same DAT receipt.
+        let additions: Set<String> = ["avatars.githubusercontent.com", "github.githubassets.com"]
+        let ledgerBytes = try XCTUnwrap(fixture.storage.readLedger())
+        var ledger = try XCTUnwrap(JSONSerialization.jsonObject(with: ledgerBytes) as? [String: Any])
+        var reference = try XCTUnwrap(ledger["overseasActive"] as? [String: Any])
+        let digest = try XCTUnwrap(reference["digest"] as? String)
+        let length = try XCTUnwrap(reference["length"] as? Int)
+        let bytes = try fixture.storage.readOverseas(digest: digest, length: length, raw: false)
+        var blob = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        let rules = try XCTUnwrap(blob["rules"] as? [[String: Any]])
+        let prior = rules.filter { !additions.contains($0["value"] as? String ?? "") }
+        XCTAssertEqual(rules.count - prior.count, additions.count)
+        blob["rules"] = prior
+        let previous = try JSONSerialization.data(withJSONObject: blob, options: .sortedKeys)
+        let previousDigest = AccessGeoSiteAdmission.sha256(previous)
+        try fixture.storage.storeOverseas(previous, digest: previousDigest, raw: false)
+        reference["length"] = previous.count
+        reference["digest"] = previousDigest
+        ledger["overseasActive"] = reference
+        try fixture.storage.writeLedger(JSONSerialization.data(withJSONObject: ledger))
+
+        let restored = fixture.cache(useProductBaseline: true)
+        await restored.restore()
+        XCTAssertEqual(restored.runtimeView().overseas.match(URL(string: "https://github.com")!), .managed)
+        let urls = try additions.map { try XCTUnwrap(URL(string: "https://\($0)")) }
+        for url in urls { XCTAssertEqual(restored.runtimeView().overseas.match(url), .original) }
+        let confirmation = try await restored.overseasConfirmation(for: selection)
+        XCTAssertEqual(Set(confirmation.newRules.map(\.value)), additions)
+        try await restored.confirmOverseas(confirmation) { true }
+        for url in urls { XCTAssertEqual(restored.runtimeView().overseas.match(url), .managed) }
+    }
+
     func testUpgradeImmediatelyNarrowsApprovalFromAnOlderBundle() async throws {
         let fixture = Fixture()
         defer { fixture.clean() }

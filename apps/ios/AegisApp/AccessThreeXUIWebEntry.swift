@@ -3,7 +3,7 @@ import Combine
 import CryptoKit
 import Foundation
 
-/// A private Alpha package may provide a bounded list of preconfigured test
+/// A private Dev or Alpha package may provide a bounded list of preconfigured test
 /// routes. The UI receives only ordinal and protocol; URI data stays here.
 @MainActor
 final class AccessAlphaNodeCatalogue: ObservableObject {
@@ -34,16 +34,24 @@ final class AccessAlphaNodeCatalogue: ObservableObject {
     static func product(bundle: Bundle = .main, defaults: UserDefaults = .standard) -> AccessAlphaNodeCatalogue {
         let channel = bundle.object(forInfoDictionaryKey: "AegisAccessReleaseChannel") as? String
         let profile = bundle.object(forInfoDictionaryKey: "AegisReleaseProfile") as? String
+        let bundleID = bundle.bundleIdentifier
+        guard allowsPackagedNodes(channel: channel, profile: profile, bundleID: bundleID) else {
+            return .init(channel: channel, profile: profile, bundleID: bundleID, data: nil, defaults: defaults)
+        }
         let resource = bundle.url(forResource: "AegisAlphaTestNodes", withExtension: "json")
         // A present but unreadable resource remains configured and fails closed.
         let data = resource.map { (try? Data(contentsOf: $0, options: .mappedIfSafe)) ?? Data() }
-        return .init(channel: channel, profile: profile, bundleID: bundle.bundleIdentifier, data: data, defaults: defaults)
+        return .init(channel: channel, profile: profile, bundleID: bundleID, data: data, defaults: defaults)
+    }
+
+    private static func allowsPackagedNodes(channel: String?, profile: String?, bundleID: String?) -> Bool {
+        (channel == "dev" || channel == "alpha") && profile == channel
+            && ["com.gcsa.aegis", "com.gcsa.aegis.alpha.internal"].contains(bundleID ?? "")
     }
 
     init(channel: String?, profile: String?, bundleID: String?, data: Data?, defaults: UserDefaults) {
         self.defaults = defaults
-        isConfigured = channel == "alpha" && profile == "alpha"
-            && ["com.gcsa.aegis", "com.gcsa.aegis.alpha.internal"].contains(bundleID ?? "") && data != nil
+        isConfigured = Self.allowsPackagedNodes(channel: channel, profile: profile, bundleID: bundleID) && data != nil
         guard isConfigured, let data, data.count <= 131_500,
               let links = try? JSONDecoder().decode([String].self, from: data),
               (1...16).contains(links.count) else { return }

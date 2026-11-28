@@ -48,4 +48,4 @@ Android 交付从 `apps/browser/args/android-delivery-version.json` 读取三段
 
 英文说明见 [android-github-public-releases.md](android-github-public-releases.md)。
 
-Full 模式下，`distribute` 指定测试 `track` 且不传 `userFraction` 时，会完成该测试轨道的分发。传入合法的 `userFraction` 时按比例分发。写入测试轨道前会读取当前状态，并在目标 release 中保留已完成的 versionCode。若有其他版本的草稿或进行中的分发，需要先核对处理。
+Full 模式下，`distribute` 会在写入前读取测试轨道。传入合法的 `userFraction` 时，会保留现有已完成的发布，仅对本次上传的版本按比例分发。省略 `userFraction` 时，会完成分发，并在已完成的发布中保留现有 versionCode。若有其他版本的草稿或进行中的分发，需要先核对处理。
