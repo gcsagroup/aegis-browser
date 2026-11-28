@@ -1,4 +1,4 @@
-"""Install an explicitly supplied, ordered test relay list in the Alpha app bundle."""
+"""Install an explicitly supplied, ordered test relay list in a private Dev or Alpha app bundle."""
 import base64
 import ipaddress
 import json
@@ -397,8 +397,8 @@ def install(channel, source, output):
     output.unlink(missing_ok=True)
     if source == '/dev/null':
         return
-    if channel != 'alpha':
-        raise ValueError('Private Alpha list requires the Alpha channel')
+    if channel not in ('dev', 'alpha'):
+        raise ValueError('Private node list requires the Dev or Alpha channel')
     raw = canonicalize(read_private(source, MAX_JSON_BYTES))
     # The installed app must be able to read the bundle resource. The private
     # archive and build products are enclosed by the runner's 0700 directory.
@@ -411,4 +411,4 @@ if __name__ == '__main__':
         install(os.environ.get('AEGIS_ACCESS_RELEASE_CHANNEL'), os.environ['SCRIPT_INPUT_FILE_1'],
                 Path(os.environ['SCRIPT_OUTPUT_FILE_0']))
     except (KeyError, OSError, ValueError, UnicodeError, RecursionError):
-        sys.exit('Cannot package the private Alpha node list. Check the private input and channel.')
+        sys.exit('Cannot package the private node list. Check the private input and channel.')

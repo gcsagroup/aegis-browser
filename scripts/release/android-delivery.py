@@ -338,7 +338,7 @@ def play_stage(plan, package_dir, client, store):
         pending_codes = sorted(set(existing + [str(code)]), key=int)
         return client.update_track(code, plan['track'], status, plan['user_fraction'],
                                    authorize_write=authorize_write, pending_codes=pending_codes,
-                                   expected_existing=existing)
+                                   expected_existing=existing, upload_track=upload_result['track'])
     return client.update_track(code, 'production', 'completed', '', authorize_write=authorize_write)
 
 
