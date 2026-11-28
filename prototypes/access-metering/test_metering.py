@@ -438,39 +438,50 @@ class ConcurrentPermitTests(unittest.IsolatedAsyncioTestCase):
                 relay = MeteredRelay(ledger, "account", "period-1",
                                      origin.sockets[0].getsockname()[1], chunk_bytes=1,
                                      io_timeout=timeout)
-                relay_socket, peer = socket.socketpair()
-                with relay_socket, peer, patch.object(loop, "call_later", new=control_idle), \
+                with patch.object(loop, "call_later", new=control_idle), \
                      patch.object(ledger, "complete", new=observe_complete):
-                    relay_socket.setblocking(False)
-                    peer.setblocking(False)
-                    client = asyncio.create_task(relay._client(relay_socket, loop.create_future()))
+                    serve = asyncio.create_task(relay.serve(0))
+                    client_writer: asyncio.StreamWriter | None = None
                     try:
-                        reader, writer = await asyncio.wait_for(origin_connection, timeout)
+                        # serve sets up the listener before its first await.
+                        await asyncio.sleep(0)
+                        self.assertIsNotNone(relay.listener)
+                        client_reader, client_writer = await asyncio.wait_for(
+                            asyncio.open_connection("127.0.0.1", relay.listener.getsockname()[1]), timeout)
+                        origin_reader, origin_writer = await asyncio.wait_for(origin_connection, timeout)
                         await asyncio.wait_for(timer_armed.wait(), timeout)
                         for count in range(1, 9):
                             previous = idle_timers[-1]
                             settled.clear()
-                            writer.write(b"d")
-                            await writer.drain()
-                            self.assertEqual(await asyncio.wait_for(loop.sock_recv(peer, 1), timeout), b"d")
+                            origin_writer.write(b"d")
+                            await asyncio.wait_for(origin_writer.drain(), timeout)
+                            self.assertEqual(await asyncio.wait_for(client_reader.readexactly(1), timeout), b"d")
                             await asyncio.wait_for(settled.wait(), timeout)
                             self.assertFalse(previous.fire())
+                            self.assertIsNot(idle_timers[-1], previous)
+                            self.assertFalse(idle_timers[-1].cancelled)
                             self.assertEqual(ledger.snapshot("account", "period-1").actual_bytes, count)
                         settled.clear()
-                        await loop.sock_sendall(peer, b"u")
-                        self.assertEqual(await asyncio.wait_for(reader.readexactly(1), timeout), b"u")
+                        client_writer.write(b"u")
+                        await asyncio.wait_for(client_writer.drain(), timeout)
+                        self.assertEqual(await asyncio.wait_for(origin_reader.readexactly(1), timeout), b"u")
                         await asyncio.wait_for(settled.wait(), timeout)
                         self.assertEqual(ledger.snapshot("account", "period-1").actual_bytes, 9)
                         self.assertTrue(idle_timers[-1].fire())
-                        self.assertEqual(await asyncio.wait_for(loop.sock_recv(peer, 1), timeout), b"")
-                        await asyncio.wait_for(client, timeout)
+                        self.assertEqual(await asyncio.wait_for(client_reader.read(1), timeout), b"")
                     finally:
-                        client.cancel()
-                        await asyncio.gather(client, return_exceptions=True)
+                        if client_writer is not None:
+                            client_writer.transport.abort()
                         if origin_connection.done() and not origin_connection.cancelled():
-                            _, writer = origin_connection.result()
-                            writer.close()
-                            await asyncio.wait_for(writer.wait_closed(), timeout)
+                            _, origin_writer = origin_connection.result()
+                            origin_writer.transport.abort()
+                        else:
+                            origin_connection.cancel()
+                        serve.cancel()
+                        _, pending = await asyncio.wait({serve}, timeout=timeout)
+                        self.assertFalse(pending, "relay shutdown exceeded the test deadline")
+                        if not serve.cancelled():
+                            await serve
 
     async def _exercise_existing_permit(self, quota: int, initial: bytes,
                                         down_grant: int | None,
