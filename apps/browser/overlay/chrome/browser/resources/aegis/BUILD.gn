@@ -71,6 +71,7 @@ build_webui("build") {
   extra_grdp_files = [
     "$target_gen_dir/capture_resources.grdp",
     "$target_gen_dir/enhancement_resources.grdp",
+    "account_icon.grdp",
   ]
   grd_prefix = "aegis"
   static_files = [

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<grit-part>
+  <!-- 账号页与 Windows 卸载窗口直接引用同一张原图，对应安装器 ICO 的 256px 图层。 -->
+  <include name="IDR_AEGIS_ACCOUNT_ICON" resource_path="account_icon.png"
+           file="${root_src_dir}/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_256.png"
+           use_base_dir="false" type="BINDATA" />
+</grit-part>

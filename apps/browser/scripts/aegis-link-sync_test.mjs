@@ -107,6 +107,17 @@ test("旧口令迁移成功一次后，其他设备仅凭账号即可读回同�
   assert.equal(writes, 1);
 });
 
+test("账号页顶部展示随浏览器打包的应用图标", async () => {
+  const resources = new URL("../overlay/chrome/browser/resources/aegis/", import.meta.url);
+  const html = await readFile(new URL("account.html", resources), "utf8");
+  const manifest = await readFile(new URL("account_icon.grdp", resources), "utf8");
+  // 两份图都可以成功加载，须验证页面实际展示的是安装图标对应的资源。
+  const icon = manifest.match(/<include name="IDR_AEGIS_ACCOUNT_ICON" resource_path="([^"]+)"/u);
+  assert.ok(icon, "应用图标必须注册本地 WebUI 路径");
+  const brand = html.match(/<img\b[^>]*\bclass="brand"[^>]*>/u);
+  assert.equal(brand?.[0].match(/\bsrc="([^"]+)"/u)?.[1], icon[1]);
+});
+
 test("欢迎页、工具栏、菜单和同步资料在原生补丁中交付", async () => {
   const patch = await readFile(
     resolve(dirname(fileURLToPath(import.meta.url)), "../patches/0562-aegis-link-desktop-sync.patch"),
