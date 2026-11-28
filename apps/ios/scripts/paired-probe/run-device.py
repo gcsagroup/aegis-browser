@@ -6,7 +6,8 @@ from pathlib import Path
 import plistlib
 from xctestrun import aegis_test_host, aegis_test_target, device_identifier
 import re
-import subprocess
+# Only fixed Xcode executables are invoked below.
+import subprocess  # nosec B404
 import tempfile
 from urllib.parse import parse_qs, urlsplit
 
@@ -69,7 +70,8 @@ with tempfile.TemporaryDirectory(prefix="aegis-blocked-cn-private-") as temp_dir
         diagnostic = re.compile(r"(?:Missing node environment|Reality Vision fixture could not be parsed|Expected 2,051 unique primary probe hosts|Testing failed|Wi-Fi or egress controls failed at boundary [123]|Reality Vision reached \d+/7 known hosts, expected at least 4|Active Wi-Fi required|Failed to prepare the device|device is locked|Unlock .{0,80} to continue)", re.I)
         started = False
         with (base / "device-progress.log").open("w") as log:
-            with subprocess.Popen(
+            # The descriptor and result are private absolute paths; device is a validated ID.
+            with subprocess.Popen(  # nosec B603
                 ["/usr/bin/xcodebuild", "test-without-building", "-xctestrun", str(transient),
                  "-destination", f"id={device}", "-parallel-testing-enabled", "NO",
                  "-only-testing:AegisTests/AccessEmbeddedCoreLiveTests/testPhoneWiFiBlockedCNPaired",
@@ -88,7 +90,8 @@ with tempfile.TemporaryDirectory(prefix="aegis-blocked-cn-private-") as temp_dir
                 exit_code = proc.wait()
         summary = {"xcodeExitCode": exit_code, "testStarted": started}
         if result.is_dir():
-            p = subprocess.run(["/usr/bin/xcrun", "xcresulttool", "get", "test-results", "summary",
+            # Private result path.
+            p = subprocess.run(["/usr/bin/xcrun", "xcresulttool", "get", "test-results", "summary",  # nosec B603
                                 "--path", str(result)], capture_output=True)
             if p.returncode == 0:
                 result_summary = json.loads(p.stdout)
@@ -105,7 +108,8 @@ with tempfile.TemporaryDirectory(prefix="aegis-blocked-cn-private-") as temp_dir
                 recovered[name] = None
                 continue
             staged = Path(temp_dir) / name
-            copy = subprocess.run(
+            # Device and app host were validated; artifact names and output directory are fixed here.
+            copy = subprocess.run(  # nosec B603
                 ["/usr/bin/xcrun", "devicectl", "--timeout", "25", "device", "copy", "from", f"--device={device}",
                  "--domain-type", "appDataContainer", "--domain-identifier", host_bundle_id,
                  "--source", f"/Library/Caches/{run}-{remote}", "--destination", str(staged)],

@@ -6,7 +6,8 @@ from pathlib import Path
 import plistlib
 from xctestrun import aegis_test_host, aegis_test_target, device_identifier
 import re
-import subprocess
+# Only fixed Xcode executables are invoked below.
+import subprocess  # nosec B404
 import sys
 import tempfile
 from uuid import uuid4
@@ -154,7 +155,8 @@ with tempfile.TemporaryDirectory(prefix="aegis-directed-private-") as temp_dir:
             plistlib.dump(descriptor,f)
         result=temp/"Directed.xcresult"
         started_at = now()
-        with (out/"device.log").open("x") as log, subprocess.Popen(
+        # Xcode receives fixed selectors, a validated device ID and private absolute paths.
+        with (out/"device.log").open("x") as log, subprocess.Popen(  # nosec B603
                 ["/usr/bin/xcodebuild","test-without-building","-xctestrun",str(transient),
                  "-destination",f"id={device}","-parallel-testing-enabled","NO",
                  *["-only-testing:"+s for s in selectors],"-resultBundlePath",str(result)],stdout=subprocess.PIPE,
@@ -173,7 +175,8 @@ with tempfile.TemporaryDirectory(prefix="aegis-directed-private-") as temp_dir:
         node_source = f"bundled-{bundled_channel}" if use_bundled_node else "comparison-relay" if comparison_node else "node-file"
         summary={"exitCode":code, "startedAtUTC":started_at, "finishedAtUTC":now(), "nodeSource":node_source}
         if result.is_dir():
-            p=subprocess.run(["/usr/bin/xcrun","xcresulttool","get","test-results","summary","--path",str(result)],capture_output=True)
+            # Private result path.
+            p=subprocess.run(["/usr/bin/xcrun","xcresulttool","get","test-results","summary","--path",str(result)],capture_output=True)  # nosec B603
             if p.returncode==0:
                 d=json.loads(p.stdout)
                 summary.update({k:d[k] for k in ("totalTestCount","passedTests","failedTests","skippedTests","result") if k in d})
@@ -187,7 +190,8 @@ with tempfile.TemporaryDirectory(prefix="aegis-directed-private-") as temp_dir:
                     summary["failures"]=failures
         for name in (("tls",) if tls_only else (("webkit",) if webkit_only else ("webkit","tls"))):
             staged=temp/f"{name}.json"
-            result=subprocess.run(["/usr/bin/xcrun","devicectl","--timeout","20","device","copy","from",f"--device={device}",
+            # Device and app host were validated; comparison names pass the run-name guard above.
+            result=subprocess.run(["/usr/bin/xcrun","devicectl","--timeout","20","device","copy","from",f"--device={device}",  # nosec B603
                 "--domain-type","appDataContainer","--domain-identifier",host_bundle_id,
                 "--source",f"/Library/Caches/{comparison_result or (run_id + '-directed-' + name + '.json')}",
                 "--destination",str(staged)],capture_output=True)
